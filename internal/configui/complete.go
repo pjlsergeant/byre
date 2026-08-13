@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -166,13 +165,6 @@ func (m model) save() model {
 		m.status = ""
 		return m
 	}
-	// Staged credential values into a vault-less project: inline vault
-	// creation (ADR 0057) — ask for the new passphrase HERE, at the first ^s, then run
-	// this same save with the vault created on the way (finishCredPass).
-	// Checked before any write so a cancelled modal leaves disk untouched.
-	if len(m.stagedCredValues) > 0 && m.credVault != nil && !m.credVault.Exists() && m.credPassphrase == "" {
-		return m.openCredPass()
-	}
 	var ok bool
 	if m, ok = m.runPrepare(); !ok {
 		m.status = ""
@@ -197,93 +189,9 @@ func (m model) save() model {
 	m.savedOnce = true
 	m.uiWrote = true
 	m.confirmQuit = false
-	// Flush staged values AFTER the declarations landed (their kinds are on
-	// disk; a develop that decrypts now sees a coherent set). A flush error
-	// keeps the values staged — dirty stays true and says so.
-	if flushed, err := (&m).flushStagedCredentials(); err != nil {
-		// The error names exactly the credential that failed; values that
-		// landed before it are already unstaged (each Set publishes as it
-		// goes), so the count here is what genuinely remains unsaved.
-		m.errMsg = fmt.Sprintf("config saved; %v — %d staged credential value%s still unsaved",
-			err, len(m.stagedCredValues), plural(len(m.stagedCredValues)))
-		m.status = ""
-		// savedSig deliberately NOT advanced: the staged values are still
-		// unsaved work, so dirty() must stay true — the quit confirm and
-		// the ^e clean-state gate both key on it, and advancing the
-		// baseline here would let a quit silently discard the values. The
-		// config half re-saves idempotently on the next ^s.
-		return m
-	} else if flushed > 0 {
-		m.status = savedStatus + fmt.Sprintf("  (+%d credential value%s encrypted into the vault)", flushed, plural(flushed))
-		m.savedSig = m.sig()
-		return m
-	}
 	m.savedSig = m.sig()
 	m.status = savedStatus
 	return m
-}
-
-// plural is the status line's tiny -s helper.
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
-}
-
-// flushStagedCredentials writes the staged values into the vault (creating
-// it first when the modal collected a passphrase), under the caller's guard
-// lock like every other write. Each value unstages AS its write lands
-// (sorted order, so a partial failure is deterministic): the error then
-// names exactly the credential that failed and the remaining count is the
-// truth.
-func (m *model) flushStagedCredentials() (int, error) {
-	if len(m.stagedCredValues) == 0 || m.credVault == nil {
-		return 0, nil
-	}
-	kinds := map[string]string{}
-	for _, cd := range m.credentials {
-		kinds[cd.Name] = cd.Kind
-	}
-	// Each Set publishes as it goes, so a mid-loop failure leaves earlier
-	// values genuinely stored: unstage each success as it lands and let the
-	// error name exactly the credential that did not make it — "values NOT
-	// saved" would overstate, and re-encrypting stored values on retry is
-	// wasted work.
-	do := func() error {
-		if !m.credVault.Exists() {
-			if m.credPassphrase == "" {
-				return fmt.Errorf("no vault exists (byre credentials init)")
-			}
-			if err := m.credVault.Create(m.credPassphrase); err != nil {
-				return err
-			}
-		}
-		names := make([]string, 0, len(m.stagedCredValues))
-		for name := range m.stagedCredValues {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		for _, name := range names {
-			if err := m.credVault.Set(name, m.stagedCredValues[name], kinds[name]); err != nil {
-				return fmt.Errorf("credential %s: %w", name, err)
-			}
-			delete(m.stagedCredValues, name)
-			m.credStoredNames[name] = true
-			m.credStagedGen++
-		}
-		return nil
-	}
-	before := len(m.stagedCredValues)
-	var werr error
-	if m.guard == nil {
-		werr = do()
-	} else {
-		werr = m.guard(do)
-	}
-	// The passphrase is one-shot either way: on failure the next ^s re-asks.
-	m.credPassphrase = ""
-	return before - len(m.stagedCredValues), werr
 }
 
 // write runs Save inside whatever lock the caller supplied (the project
@@ -388,10 +296,6 @@ func (m model) assemble() config.Config {
 	if len(out.Contexts) == 0 {
 		out.Contexts = nil
 	}
-	out.Credentials = append([]config.CredentialDecl{}, m.credentials...)
-	if len(out.Credentials) == 0 {
-		out.Credentials = nil
-	}
 	// The primary agent is implied by `agent`, so never write it into `skills`
 	// (even if it lingers in m.skills from a config that listed it before it became
 	// primary) — the locked row shows it on via the agent, not via this list.
@@ -481,13 +385,6 @@ func (m model) sig() string {
 		// $EDITOR must flip dirty even when the first line didn't change.
 		parts = append(parts, "ctx:"+cd.Name+""+cd.File+""+cd.Text)
 	}
-	for _, cd := range m.credentials {
-		parts = append(parts, "cred:"+cd.Name+"\x01"+cd.Kind+"\x01"+cd.Target)
-	}
-	// Staged values sign by GENERATION, never by content: a staged value must
-	// flip dirty (quit needs the discard confirm; ^s must have work to do)
-	// without its bytes ever entering this signature string.
-	parts = append(parts, fmt.Sprintf("credstage:%d", m.credStagedGen))
 	parts = append(parts, "skills:"+strings.Join(m.skills, ","))
 	parts = append(parts, "ra:"+m.runArgs, "pre:"+m.dfPre, "post:"+m.dfPost)
 	parts = append(parts, fmt.Sprintf("wt:%v/%s", m.wtSibling, m.wtBase.Value()))

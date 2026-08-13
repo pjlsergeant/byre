@@ -104,6 +104,17 @@ var refusedConfigKeys = map[string]string{
 	"npm_global": "npm_global is removed. It assumed node/npm in the image and named one ecosystem in core config; use a raw build line instead:\n  dockerfile_pre = [\"RUN npm install -g <pkg>\"]",
 }
 
+// fileLocalConfigKeys are top-level tables that belong to the PHYSICAL FILE
+// and deliberately never reach the merged Config. Parse recognizes them and
+// drops them, which is not tolerance of a mistake: [credentials] carries one
+// file's own identity, and a merged Config that could hold it is a Config
+// that could merge it — a project's identity reaching for a layer's row is
+// precisely the accident the design forbids. config.ParseCredentialsBlock
+// reads them, out of one file's bytes, where they belong.
+var fileLocalConfigKeys = map[string]string{
+	"credentials": "the file's own credential identity",
+}
+
 var retiredConfigKeys = map[string]string{
 	// v0.1.7's machine-wide shared-auth decline record (ADR 0025); nothing
 	// has read it since the offer's default became No.
@@ -462,18 +473,6 @@ type Config struct {
 	// SKILL-declared Claude Skill after the union (the MCPClosed semantics,
 	// wholesale). Stored stripped.
 	ClaudeSkillsClosed []string `toml:"-"`
-
-	// Credentials are declared project credentials ([[credentials]]
-	// blocks): the names/kinds/targets of the vault-backed values — see
-	// credentialdecl.go for the model. Values never appear in config; they
-	// live in the host-side vault (internal/credentials). One home (config
-	// layers only); within the cascade a later layer replaces by name.
-	Credentials []CredentialDecl `toml:"credentials,omitempty"`
-	// CredentialsClosed is the set of `!name` credential closures that
-	// survived the cascade — never a TOML key of its own; Merge extracts
-	// markers here (genus uniformity — with no skill home to subtract from
-	// after the merge, survivors are inert). Stored stripped.
-	CredentialsClosed []string `toml:"-"`
 
 	// Contexts are declared standing-instruction snippets ([[context]]
 	// blocks): the operator's prose for the agent's memory — see
@@ -845,6 +844,9 @@ func Parse(content []byte) (Config, error) {
 		if len(k) == 1 && retiredConfigKeys[k[0]] != "" {
 			continue
 		}
+		if len(k) > 0 && fileLocalConfigKeys[k[0]] != "" {
+			continue
+		}
 		line, col := de.Position()
 		bad = append(bad, badKey{name: strings.Join(k, "."), line: line, col: col})
 	}
@@ -875,7 +877,7 @@ func Parse(content []byte) (Config, error) {
 		// this already fails loudly rather than guessing.
 		return Config{}, fmt.Errorf("unknown key(s): [%s] — a typo, or a config written by a newer byre (upgrade byre, or remove the key)", strings.Join(names, ", "))
 	}
-	// Retired keys only: decode again leniently so their values drop.
+	// Only keys the decode is allowed to drop: decode again leniently.
 	var lenient Config
 	d := toml.NewDecoder(bytes.NewReader(content))
 	d.EnableUnmarshalerInterface()
@@ -959,8 +961,6 @@ func Merge(base, over Config) Config {
 	// Context declarations: same taxonomy, one home (closures spend
 	// themselves in the merge; survivors are inert).
 	out.Contexts, out.ContextsClosed = mergeContexts(base, over)
-	// Credential declarations: same taxonomy, one home.
-	out.Credentials, out.CredentialsClosed = mergeCredentials(base, over)
 
 	// Raw blocks: append-only/union, no per-line removal in v0.
 	out.DockerfilePre = appendAll(base.DockerfilePre, over.DockerfilePre)
@@ -1132,8 +1132,8 @@ func (c Config) validateScalarsCommon(apt, egress, offered []string, extends fun
 	}
 
 	for k, src := range c.EnvFromHost {
-		if !envKeyRe.MatchString(k) {
-			return fmt.Errorf("env_from_host key %q: not a valid environment variable name", k)
+		if err := ValidateEnvFromHostKey(k); err != nil {
+			return err
 		}
 		// The same reservation [env] carries, on the other user-facing channel
 		// into the box's environment (ADR 0050 tier 1). The scheme set limits
@@ -1147,9 +1147,6 @@ func (c Config) validateScalarsCommon(apt, egress, offered []string, extends fun
 		// Not narrowed to the chassis knobs: skills read BYRE_ vars too
 		// (firewall.sh reads BYRE_EGRESS) and skills are user-installable, so
 		// no enumeration byre can build is complete. The prefix is.
-		if strings.HasPrefix(k, "BYRE_") {
-			return fmt.Errorf("env_from_host key %s: the BYRE_ namespace is byre's runtime vocabulary and can't be passed through\nto override one deliberately: run_args = [\"-e\", \"%s=<value>\"]\n(byre status will show the raw flag and degrade the claims it affects)", k, k)
-		}
 		if err := validateHostSource(src); err != nil {
 			return fmt.Errorf("env_from_host %s: %w", k, err)
 		}
@@ -1440,9 +1437,6 @@ func (c Config) Validate() error {
 	if err := c.validateContextsResolved(); err != nil {
 		return err
 	}
-	if err := c.validateCredentialsResolved(); err != nil {
-		return err
-	}
 	return c.validatePortsResolved()
 }
 
@@ -1530,9 +1524,6 @@ func (c Config) ValidateLayer() error {
 		return err
 	}
 	if err := c.validateContextsLayer(); err != nil {
-		return err
-	}
-	if err := c.validateCredentialsLayer(); err != nil {
 		return err
 	}
 	return c.validatePortsLayer()
@@ -1937,6 +1928,29 @@ func validateHostSource(src string) error {
 // spelling can. Keys are emitted as `ENV <key>=...` unquoted; a space or
 // newline in one would inject.
 const EnvKeyGrammar = `^[A-Za-z_][A-Za-z0-9_]*$`
+
+// ValidateEnvFromHostKey holds an env_from_host key to the two rules every
+// writer of one must obey: it is an environment variable name, and it is not
+// in the BYRE_ namespace.
+//
+// The reservation is the same one [env] carries, on the other user-facing
+// channel into the box's environment (ADR 0050 tier 1). The scheme set limits
+// the SPELLING -- a passthrough can only carry a host var, a git config key,
+// the timezone, or a credential -- but not the EFFECT: BYRE_EGRESS pulled
+// from the host lands in the chassis scripts' environment exactly as a
+// literal would, and status keeps asserting deny-by-default over it.
+//
+// Exported because the `byre credentials` verbs must refuse a bad key BEFORE
+// prompting for a value, not after the file fails to validate.
+func ValidateEnvFromHostKey(k string) error {
+	if !envKeyRe.MatchString(k) {
+		return fmt.Errorf("env_from_host key %q: not a valid environment variable name", k)
+	}
+	if strings.HasPrefix(k, "BYRE_") {
+		return fmt.Errorf("env_from_host key %s: the BYRE_ namespace is byre's runtime vocabulary and can't be passed through\nto override one deliberately: run_args = [\"-e\", \"%s=<value>\"]\n(byre status will show the raw flag and degrade the claims it affects)", k, k)
+	}
+	return nil
+}
 
 // NoneLabel is how the UIs (onboarding picker, config editor, status and
 // grant-review text) display an empty template/agent choice. OrNone/FromNone

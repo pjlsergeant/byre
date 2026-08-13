@@ -42,7 +42,7 @@ var claimSurface = map[string]claimClass{
 	"Apt":              inert("build input: package contents of the box, not a grant claim; anti-injection grammar at validation"),
 	"Env": rendered("the Env row (keys); reserved BYRE_* refused at validation, BYRE_EGRESS " +
 		"re-asserted at run so no key skews what the box is told byre enforces"),
-	"EnvFromHost": rendered("the Host env row, from resolveHostEnv outcomes (delivered / NOT passed / overridden)"),
+	"EnvFromHost": rendered("the Host env row, from resolveHostEnv outcomes (delivered / NOT passed / overridden); its encrypted: rows are the Credentials rows and the exposure tally's credentials segment, values nowhere"),
 	"Files": rendered("guard-collision warnings when an entry covers a security path (warnGuardCollisions); " +
 		"artifact shadows (mcp.json, agent context, claude-skills) degrade their delivery lines; otherwise build input"),
 	"Skills": rendered("the Skills row and every attributed grant, egress, posture, and containment row"),
@@ -62,8 +62,6 @@ var claimSurface = map[string]claimClass{
 	"ClaudeSkillsClosed": rendered("claude-skill closures, mirroring the MCP trio"),
 	"Contexts":           rendered("context rows + the delivery line"),
 	"ContextsClosed":     rendered("subtracts from the rendered context set at merge (genus uniformity)"),
-	"Credentials":        rendered("the Credentials status rows (name/kind/target/value-state) + the exposure tally's credentials segment; values render nowhere"),
-	"CredentialsClosed":  rendered("subtracts from the rendered credential set at merge (genus uniformity)"),
 	"DockerfilePre":      rendered("Raw build rows, verbatim + not-introspected note; presence degrades the network claim"),
 	"DockerfilePost":     rendered("Raw build rows, same treatment as DockerfilePre"),
 	"RunArgs":            rendered("the Raw run args row, verbatim; presence degrades the network claim"),

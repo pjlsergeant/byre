@@ -474,3 +474,9 @@ func stopCredentialsClosed(r sessionRunner, warn io.Writer, container string) {
 		fmt.Fprintf(warn, "byre: stopping the box failed: %v — its own bounded wait ends the launch instead.\n", err)
 	}
 }
+
+// credentialRowCount is the exposure tally's credential segment: the rows
+// the cascade would deliver, which is what a launch actually hands the box.
+func credentialRowCount(groups []config.CredentialFile) int {
+	return countRows(groups)
+}

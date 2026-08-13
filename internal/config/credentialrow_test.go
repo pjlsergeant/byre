@@ -356,10 +356,8 @@ func TestEncryptedRowsRefusalsNameTheFile(t *testing.T) {
 }
 
 // The cascade walk itself: labels, merge order, and per-file grouping against
-// files on disk. The [credentials] block cannot ride a real config file until
-// the [[credentials]] declaration genus is gone (it owns the same TOML key),
-// so this pins the half that can: the rows, their provenance, and the honest
-// report that no file here carries an identity.
+// files on disk — plus the honest report that no file here carries an
+// identity, which is what a row copied without its block looks like.
 func TestEncryptedRowsOverTheRealCascade(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BYRE_HOME", home)

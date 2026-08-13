@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"io"
 	"os"
@@ -11,276 +12,449 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/credentials"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
-func TestCredentialsInitAndSetRoundtrip(t *testing.T) {
-	p, proj := testPaths(t)
-	passphraseSeam(t, "pw", "pw") // init: passphrase + confirm
+// openCredRow reads one config file's credential row back the way a launch
+// does: parse the file's own block, unwrap it, decrypt the row.
+func openCredRow(t *testing.T, path, passphrase, key string) ([]byte, credentials.Kind) {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, ok, err := config.ParseCredentialsBlock(raw)
+	if err != nil || !ok {
+		t.Fatalf("%s carries no usable [credentials] block: ok=%v err=%v", path, ok, err)
+	}
+	cfg, err := config.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, isCred, err := config.ParseEncryptedRow(key, cfg.EnvFromHost[key])
+	if err != nil || !isCred {
+		t.Fatalf("%s has no credential row %s: %v", path, key, err)
+	}
+	id, err := credentials.UnwrapIdentity(block.Identity, passphrase)
+	if err != nil {
+		t.Fatalf("unwrap %s: %v", path, err)
+	}
+	value, outcome, err := id.DecryptValue(row.Key, row.Kind, row.Blob)
+	if err != nil {
+		t.Fatalf("decrypt %s: %s %v", key, outcome, err)
+	}
+	return value, row.Kind
+}
+
+func projectConfigPath(t *testing.T, proj string) string {
+	t.Helper()
+	p, err := project.Resolve(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(p.Dir, config.ProjectConfigName)
+}
+
+// The first set mints the file's identity and writes both the block and the
+// row; the value round-trips through the config file alone — there is no
+// second store.
+func TestCredentialsSetMintsTheIdentityAndWritesTheRow(t *testing.T) {
+	_, proj := testPaths(t)
+	passphraseSeam(t, "pw", "pw", "sk-live-9") // new passphrase, confirm, value
 	var errBuf bytes.Buffer
 	s := ttyStreams(&errBuf)
-	if err := CredentialsInit(s, proj, false); err != nil {
-		t.Fatalf("init: %v", err)
-	}
-	if !strings.Contains(errBuf.String(), "vault created") {
-		t.Fatalf("init notice: %s", errBuf.String())
-	}
-	// Second init refuses (the vault-exists rule); --replace recreates.
-	if err := CredentialsInit(s, proj, false); !errors.Is(err, credentials.ErrVaultExists) {
-		t.Fatalf("second init: %v, want ErrVaultExists", err)
-	}
-	// set via masked prompt (TTY path).
-	passphraseSeam(t, "sk-live-9")
-	if err := CredentialsSet(s, proj, "stripe"); err != nil {
+	if err := CredentialsSet(s, proj, "STRIPE_KEY", false, ""); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	// The undeclared-name hint names the remedy.
-	if !strings.Contains(errBuf.String(), "credentials declare stripe") {
-		t.Fatalf("undeclared hint: %s", errBuf.String())
+	if !strings.Contains(errBuf.String(), "minted this file's credentials identity") {
+		t.Fatalf("identity notice: %s", errBuf.String())
 	}
-	v := credentials.Open(p.Dir, p.ID)
-	if got := v.EntryNames(); len(got) != 1 || got[0] != "stripe" {
-		t.Fatalf("stored names = %v", got)
+	path := projectConfigPath(t, proj)
+	value, kind := openCredRow(t, path, "pw", "STRIPE_KEY")
+	if string(value) != "sk-live-9" || kind != credentials.KindEnv {
+		t.Fatalf("round trip: %q %s", value, kind)
 	}
-	u, err := v.Unlock("pw")
-	if err != nil {
-		t.Fatal(err)
+	raw, _ := os.ReadFile(path)
+	if !strings.Contains(string(raw), "[env_from_host]") || !strings.Contains(string(raw), config.EncryptedScheme) {
+		t.Fatalf("the row must live in env_from_host under the scheme:\n%s", raw)
 	}
-	val, oc, _ := u.Decrypt("stripe")
-	if oc != "" || string(val) != "sk-live-9" {
-		t.Fatalf("roundtrip: %s %q", oc, val)
+	if strings.Contains(string(raw), "sk-live-9") {
+		t.Fatal("the config must never carry the plaintext")
+	}
+
+	// A second set on the same file is a COLD write: the recipient is
+	// cleartext, so nothing asks for the passphrase again.
+	passphraseSeam(t, "tok")
+	if err := CredentialsSet(s, proj, "GH_TOKEN", false, ""); err != nil {
+		t.Fatalf("second set: %v", err)
+	}
+	if v, _ := openCredRow(t, path, "pw", "GH_TOKEN"); string(v) != "tok" {
+		t.Fatalf("second row: %q", v)
 	}
 }
 
-func TestCredentialsSetPipedStdin(t *testing.T) {
-	p, proj := testPaths(t)
-	passphraseSeam(t, "pw", "pw")
+// --file writes the encrypted-file: scheme, and the kind is stamped into the
+// payload so it cannot be delivered as the other one.
+func TestCredentialsSetFileKind(t *testing.T) {
+	_, proj := testPaths(t)
 	var errBuf bytes.Buffer
-	if err := CredentialsInit(ttyStreams(&errBuf), proj, false); err != nil {
+	passphraseSeam(t, "pw", "pw")
+	piped := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("-----END CERT-----\n"), TTY: false}
+	tty := ttyStreams(&errBuf)
+	// Minting needs a terminal, so seed the identity with a TTY set first.
+	passphraseSeam(t, "pw", "pw", "seed")
+	if err := CredentialsSet(tty, proj, "SEED", false, ""); err != nil {
 		t.Fatal(err)
 	}
-	// Piped (non-TTY): the value is stdin whole, one trailing newline
-	// stripped — the `op read ... | byre credentials set` shape.
-	s := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("tok-from-pipe\n"), TTY: false}
-	if err := CredentialsSet(s, proj, "github"); err != nil {
+	if err := CredentialsSet(piped, proj, "TLS_CERT", true, ""); err != nil {
+		t.Fatalf("file set: %v", err)
+	}
+	path := projectConfigPath(t, proj)
+	// A file value is arbitrary bytes: the env newline courtesy must not
+	// mutate a PEM's final newline.
+	value, kind := openCredRow(t, path, "pw", "TLS_CERT")
+	if string(value) != "-----END CERT-----\n" || kind != credentials.KindFile {
+		t.Fatalf("file-kind bytes: %q %s", value, kind)
+	}
+	raw, _ := os.ReadFile(path)
+	if !strings.Contains(string(raw), config.EncryptedFileScheme) {
+		t.Fatalf("file rows carry the file scheme:\n%s", raw)
+	}
+}
+
+// Piped stdin is the `op read ... | byre credentials set KEY` shape, with one
+// trailing newline stripped for an env value.
+func TestCredentialsSetPipedStdinStripsOneNewline(t *testing.T) {
+	_, proj := testPaths(t)
+	var errBuf bytes.Buffer
+	passphraseSeam(t, "pw", "pw", "seed")
+	if err := CredentialsSet(ttyStreams(&errBuf), proj, "SEED", false, ""); err != nil {
+		t.Fatal(err)
+	}
+	piped := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("tok-from-pipe\n"), TTY: false}
+	if err := CredentialsSet(piped, proj, "GH_TOKEN", false, ""); err != nil {
 		t.Fatalf("piped set: %v", err)
 	}
-	v := credentials.Open(p.Dir, p.ID)
-	u, _ := v.Unlock("pw")
-	val, oc, _ := u.Decrypt("github")
-	if oc != "" || string(val) != "tok-from-pipe" {
-		t.Fatalf("piped roundtrip: %s %q", oc, val)
+	if v, _ := openCredRow(t, projectConfigPath(t, proj), "pw", "GH_TOKEN"); string(v) != "tok-from-pipe" {
+		t.Fatalf("piped value: %q", v)
 	}
 }
 
-func TestCredentialsInitRefusalsAndMismatch(t *testing.T) {
+func TestCredentialsSetRefusals(t *testing.T) {
 	_, proj := testPaths(t)
 	var errBuf bytes.Buffer
-	// Non-TTY init refuses (the passphrase never rides a pipe).
-	s := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("pw\npw\n"), TTY: false}
-	if err := CredentialsInit(s, proj, false); err == nil || !strings.Contains(err.Error(), "terminal") {
-		t.Fatalf("non-TTY init: %v", err)
+	s := ttyStreams(&errBuf)
+	// The key is held to the env_from_host rules BEFORE anything is prompted.
+	if err := CredentialsSet(s, proj, "not a var", false, ""); err == nil ||
+		!strings.Contains(err.Error(), "not a valid environment variable name") || !strings.Contains(err.Error(), "not a var") {
+		t.Fatalf("bad key: %v", err)
 	}
-	// Mismatched confirm aborts with nothing created.
+	if err := CredentialsSet(s, proj, "BYRE_EGRESS", false, ""); err == nil ||
+		!strings.Contains(err.Error(), "BYRE_ namespace") {
+		t.Fatalf("reserved key: %v", err)
+	}
+	// Minting an identity needs a terminal — a passphrase never rides a pipe.
+	nonTTY := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("v\n"), TTY: false}
+	if err := CredentialsSet(nonTTY, proj, "A", false, ""); err == nil || !strings.Contains(err.Error(), "terminal") {
+		t.Fatalf("non-TTY mint: %v", err)
+	}
+	// Mismatched confirmation and an empty passphrase abort with nothing
+	// written.
 	passphraseSeam(t, "pw", "other")
-	if err := CredentialsInit(ttyStreams(&errBuf), proj, false); err == nil || !strings.Contains(err.Error(), "do not match") {
+	if err := CredentialsSet(s, proj, "A", false, ""); err == nil || !strings.Contains(err.Error(), "do not match") {
 		t.Fatalf("mismatch: %v", err)
 	}
-	// Empty passphrase refused by the empty-passphrase rule.
 	passphraseSeam(t, "")
-	if err := CredentialsInit(ttyStreams(&errBuf), proj, false); err == nil || !strings.Contains(err.Error(), "empty passphrase") {
-		t.Fatalf("empty: %v", err)
+	if err := CredentialsSet(s, proj, "A", false, ""); err == nil || !strings.Contains(err.Error(), "empty passphrase") {
+		t.Fatalf("empty passphrase: %v", err)
 	}
+	// An empty VALUE is refused too — unset is how a row goes away.
+	passphraseSeam(t, "pw", "pw", "")
+	if err := CredentialsSet(s, proj, "A", false, ""); err == nil || !strings.Contains(err.Error(), "empty value") {
+		t.Fatalf("empty value: %v", err)
+	}
+	if _, err := os.Stat(projectConfigPath(t, proj)); err == nil {
+		raw, _ := os.ReadFile(projectConfigPath(t, proj))
+		if strings.Contains(string(raw), "[credentials]") {
+			t.Fatalf("an aborted set must write nothing:\n%s", raw)
+		}
+	}
+}
+
+// An env value must survive the launcher's export byte-exactly, so NUL bytes
+// and the 64 KiB env cap are refused at set, where re-entry is cheap.
+func TestCredentialsSetHoldsEnvValuesToTheirKind(t *testing.T) {
+	_, proj := testPaths(t)
+	var errBuf bytes.Buffer
+	passphraseSeam(t, "pw", "pw", "seed")
+	if err := CredentialsSet(ttyStreams(&errBuf), proj, "SEED", false, ""); err != nil {
+		t.Fatal(err)
+	}
+	nul := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("a\x00b"), TTY: false}
+	if err := CredentialsSet(nul, proj, "A", false, ""); err == nil || !strings.Contains(err.Error(), "NUL") {
+		t.Fatalf("NUL in an env value: %v", err)
+	}
+	big := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader(strings.Repeat("x", credentials.MaxEnvValue+1)), TTY: false}
+	if err := CredentialsSet(big, proj, "A", false, ""); err == nil || !strings.Contains(err.Error(), "cap") {
+		t.Fatalf("oversize env value: %v", err)
+	}
+	// The same bytes are legal as a FILE value, up to the larger ceiling.
+	nul2 := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("a\x00b"), TTY: false}
+	if err := CredentialsSet(nul2, proj, "BLOB", true, ""); err != nil {
+		t.Fatalf("NUL in a file value must be fine: %v", err)
+	}
+}
+
+func TestCredentialsUnsetRemovesTheRowAndItsCiphertext(t *testing.T) {
+	_, proj := testPaths(t)
+	var errBuf bytes.Buffer
+	s := ttyStreams(&errBuf)
+	passphraseSeam(t, "pw", "pw", "v")
+	if err := CredentialsSet(s, proj, "STRIPE_KEY", false, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := CredentialsUnset(s, proj, "STRIPE_KEY", ""); err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+	raw, _ := os.ReadFile(projectConfigPath(t, proj))
+	if strings.Contains(string(raw), "STRIPE_KEY") {
+		t.Fatalf("the row must be gone:\n%s", raw)
+	}
+	// The identity stays: other rows in the file need it.
+	if !strings.Contains(string(raw), "[credentials]") {
+		t.Fatalf("the file's identity must survive an unset:\n%s", raw)
+	}
+	if !strings.Contains(errBuf.String(), "ciphertext went with the row") {
+		t.Fatalf("the discard must be said out loud: %s", errBuf.String())
+	}
+	if err := CredentialsUnset(s, proj, "STRIPE_KEY", ""); err == nil || !strings.Contains(err.Error(), "no STRIPE_KEY row") {
+		t.Fatalf("second unset: %v", err)
+	}
+}
+
+// unset is a credential verb: an ordinary env_from_host source is not its to
+// remove.
+func TestCredentialsUnsetRefusesAPlainSource(t *testing.T) {
+	_, proj := testPaths(t)
+	path := projectConfigPath(t, proj)
 	p, _ := project.Resolve(proj)
-	if credentials.Open(p.Dir, p.ID).Exists() {
-		t.Fatal("aborted init must create nothing")
+	if err := p.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.AtomicWrite(path, "[env_from_host]\nTERM = \"env:TERM\"\n"); err != nil {
+		t.Fatal(err)
+	}
+	var errBuf bytes.Buffer
+	err := CredentialsUnset(ttyStreams(&errBuf), proj, "TERM", "")
+	if err == nil || !strings.Contains(err.Error(), "not a credential") || !strings.Contains(err.Error(), "env:TERM") {
+		t.Fatalf("want a refusal naming the rule and the value: %v", err)
 	}
 }
 
-func TestCredentialsUnset(t *testing.T) {
-	p, proj := testPaths(t)
-	passphraseSeam(t, "pw", "pw", "val")
+// rekey rotates the PASSPHRASE only: the identity is the same, so every value
+// row is byte-identical afterwards — which is what lets drift compare
+// credential rows as plain bytes.
+func TestCredentialsRekeyLeavesValueRowsByteIdentical(t *testing.T) {
+	_, proj := testPaths(t)
 	var errBuf bytes.Buffer
 	s := ttyStreams(&errBuf)
-	if err := CredentialsInit(s, proj, false); err != nil {
+	passphraseSeam(t, "pw", "pw", "v1")
+	if err := CredentialsSet(s, proj, "A", false, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := CredentialsSet(s, proj, "a"); err != nil {
-		t.Fatal(err)
-	}
-	if err := CredentialsUnset(s, proj, "a"); err != nil {
-		t.Fatal(err)
-	}
-	if got := credentials.Open(p.Dir, p.ID).EntryNames(); len(got) != 0 {
-		t.Fatalf("names after unset = %v", got)
-	}
-}
+	path := projectConfigPath(t, proj)
+	before, _ := config.ParseFile(path, false)
 
-func TestCredentialsRekey(t *testing.T) {
-	p, proj := testPaths(t)
-	passphraseSeam(t, "pw", "pw", "v1", "pw", "new", "new")
-	var errBuf bytes.Buffer
-	s := ttyStreams(&errBuf)
-	if err := CredentialsInit(s, proj, false); err != nil {
-		t.Fatal(err)
-	}
-	if err := CredentialsSet(s, proj, "a"); err != nil {
-		t.Fatal(err)
-	}
-	if err := CredentialsRekey(s, proj); err != nil {
+	passphraseSeam(t, "pw", "new", "new")
+	if err := CredentialsRekey(s, proj, ""); err != nil {
 		t.Fatalf("rekey: %v", err)
 	}
-	v := credentials.Open(p.Dir, p.ID)
-	if _, err := v.Unlock("pw"); !errors.Is(err, credentials.ErrBadPassphrase) {
-		t.Fatalf("old passphrase after rekey: %v", err)
+	after, _ := config.ParseFile(path, false)
+	if before.EnvFromHost["A"] != after.EnvFromHost["A"] {
+		t.Fatal("a rekey must leave value rows byte-identical")
 	}
-	u, err := v.Unlock("new")
-	if err != nil {
-		t.Fatal(err)
+	if v, _ := openCredRow(t, path, "new", "A"); string(v) != "v1" {
+		t.Fatalf("value after rekey: %q", v)
 	}
-	if val, oc, _ := u.Decrypt("a"); oc != "" || string(val) != "v1" {
-		t.Fatalf("entries after rekey: %s %q", oc, val)
-	}
-	// The identity-unchanged caveat is said out loud, with the remedy.
-	if !strings.Contains(errBuf.String(), "init --replace") {
-		t.Fatalf("rekey caveat: %s", errBuf.String())
+	raw, _ := os.ReadFile(path)
+	block, _, _ := config.ParseCredentialsBlock(raw)
+	if _, err := credentials.UnwrapIdentity(block.Identity, "pw"); !errors.Is(err, credentials.ErrBadPassphrase) {
+		t.Fatalf("the old passphrase must stop working: %v", err)
 	}
 }
 
-func TestCredentialsDeclareUndeclareList(t *testing.T) {
-	p, proj := testPaths(t)
-	var out, errBuf bytes.Buffer
-	s := Streams{Out: &out, Err: &errBuf, In: strings.NewReader(""), TTY: true}
-	if err := CredentialsDeclare(s, proj, false, "stripe", "env", "STRIPE_KEY"); err != nil {
-		t.Fatalf("declare: %v", err)
-	}
-	// The declaration landed in the project layer via the shared rails.
-	raw, err := os.ReadFile(filepath.Join(p.Dir, config.ProjectConfigName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"[[credentials]]", `name = "stripe"`, `target = "STRIPE_KEY"`} {
-		if !strings.Contains(string(raw), want) {
-			t.Fatalf("project config missing %q:\n%s", want, raw)
-		}
-	}
-	// declare validates shape by the credential rules.
-	if err := CredentialsDeclare(s, proj, false, "bad name", "env", "X"); err == nil || !strings.Contains(err.Error(), "lowercase") {
-		t.Fatalf("declare bad name: %v", err)
-	}
-	if err := CredentialsDeclare(s, proj, false, "a", "env", "BYRE_EGRESS"); err == nil || !strings.Contains(err.Error(), "BYRE_ namespace") {
-		t.Fatalf("declare reserved target: %v", err)
-	}
-	// list shows the declared row unset, then set after a value lands.
-	if err := CredentialsList(s, proj); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), "stripe\tenv → STRIPE_KEY\tunset") {
-		t.Fatalf("list: %s", out.String())
-	}
-	passphraseSeam(t, "pw", "pw", "sk")
-	if err := CredentialsInit(s, proj, false); err != nil {
-		t.Fatal(err)
-	}
-	if err := CredentialsSet(s, proj, "stripe"); err != nil {
-		t.Fatal(err)
-	}
-	out.Reset()
-	if err := CredentialsList(s, proj); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), "stripe\tenv → STRIPE_KEY\tset") {
-		t.Fatalf("list after set: %s", out.String())
-	}
-	// undeclare removes the declaration; the stored value stays and lists
-	// as stored-not-declared.
-	if err := CredentialsUndeclare(s, proj, false, "stripe"); err != nil {
-		t.Fatalf("undeclare: %v", err)
-	}
-	out.Reset()
-	if err := CredentialsList(s, proj); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), "stored, not declared") {
-		t.Fatalf("list after undeclare: %s", out.String())
-	}
-}
-
-func TestCredentialsSetFileKindKeepsTrailingNewline(t *testing.T) {
-	// A declared FILE value is arbitrary bytes: the env-entry newline
-	// courtesy must not mutate a PEM's final newline on the pipe path.
-	p, proj := testPaths(t)
-	var errBuf bytes.Buffer
-	s := ttyStreams(&errBuf)
-	if err := CredentialsDeclare(s, proj, false, "cert", "file", "TLS_CERT"); err != nil {
-		t.Fatal(err)
-	}
-	passphraseSeam(t, "pw", "pw")
-	if err := CredentialsInit(s, proj, false); err != nil {
-		t.Fatal(err)
-	}
-	piped := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("-----END CERT-----\n"), TTY: false}
-	if err := CredentialsSet(piped, proj, "cert"); err != nil {
-		t.Fatal(err)
-	}
-	v := credentials.Open(p.Dir, p.ID)
-	u, _ := v.Unlock("pw")
-	val, oc, _ := u.Decrypt("cert")
-	if oc != "" || string(val) != "-----END CERT-----\n" {
-		t.Fatalf("file-kind bytes: %s %q — the trailing newline must survive", oc, val)
-	}
-}
-
-func TestCredentialsRekeyRefusesReplacedVault(t *testing.T) {
-	// The CLI surface of the vault-level guard: rekey against a vault
-	// replaced after its unlock refuses with nothing written.
+func TestCredentialsRekeyRefusals(t *testing.T) {
 	_, proj := testPaths(t)
-	passphraseSeam(t, "pw", "pw")
+	var errBuf bytes.Buffer
+	// No identity in the file: nothing to rekey.
+	if err := CredentialsRekey(ttyStreams(&errBuf), proj, ""); err == nil ||
+		!strings.Contains(err.Error(), "no credentials identity") {
+		t.Fatalf("rekey without an identity: %v", err)
+	}
+	// A passphrase never rides a pipe.
+	nonTTY := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("pw\n"), TTY: false}
+	if err := CredentialsRekey(nonTTY, proj, ""); err == nil || !strings.Contains(err.Error(), "terminal") {
+		t.Fatalf("non-TTY rekey: %v", err)
+	}
+}
+
+// The compare-and-swap: a write planned against one state of the file must
+// not land on another. The race it closes is a `set` encrypting to recipient
+// R while a concurrent identity replacement lands R2 — both writes
+// "succeed", and the row is permanently undecryptable.
+func TestCredentialWritesCompareAndSwap(t *testing.T) {
+	_, proj := testPaths(t)
 	var errBuf bytes.Buffer
 	s := ttyStreams(&errBuf)
-	if err := CredentialsInit(s, proj, false); err != nil {
+	passphraseSeam(t, "pw", "pw", "v1")
+	if err := CredentialsSet(s, proj, "A", false, ""); err != nil {
 		t.Fatal(err)
 	}
-	// Simulate the race window with the seam: the replace lands at the
-	// NEW-passphrase prompt — AFTER rekey's unlock succeeded against the
-	// old vault, so the under-lock write is exactly what the guard must
-	// refuse (a replace before the unlock would just be a bad passphrase,
-	// which never reaches the guard).
+	path := projectConfigPath(t, proj)
+	beforeRaw, _ := os.ReadFile(path)
+
+	// The second writer lands while the first is still at its value prompt —
+	// after the first read the file and captured its recipient.
 	old := readPassphrase
 	t.Cleanup(func() { readPassphrase = old })
-	calls := 0
+	landed := false
 	readPassphrase = func(w io.Writer, prompt string) (string, error) {
-		calls++
-		if calls == 2 { // unlock done; replace before the write
-			p2, _ := project.Resolve(proj)
-			if err := credentials.Open(p2.Dir, p2.ID).Replace("other"); err != nil {
-				t.Errorf("replace: %v", err)
+		if !landed {
+			landed = true
+			// A whole new identity, exactly the state that makes the first
+			// writer's blob undecryptable if its write is allowed to land.
+			wrapped, recipient, err := credentials.NewIdentity("other")
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, _ := os.ReadFile(path)
+			cfg, _ := config.Parse(raw)
+			_ = cfg
+			replaced := strings.Replace(string(raw), string(mustBlockIdentity(t, raw)), b64Of(wrapped), 1)
+			replaced = strings.Replace(replaced, mustBlockRecipient(t, raw), recipient, 1)
+			if err := config.AtomicWrite(path, replaced); err != nil {
+				t.Fatal(err)
 			}
 		}
-		if calls == 1 {
-			return "pw", nil
-		}
-		return "rotated", nil
+		return "v2", nil
 	}
-	err := CredentialsRekey(s, proj)
-	if !errors.Is(err, credentials.ErrVaultChanged) {
-		t.Fatalf("rekey over a replaced vault: got %v, want ErrVaultChanged", err)
+	err := CredentialsSet(s, proj, "B", false, "")
+	if !errors.Is(err, ErrCredentialFileChanged) {
+		t.Fatalf("a write over a changed file must be refused: %v", err)
 	}
-	p2, _ := project.Resolve(proj)
-	if _, uerr := credentials.Open(p2.Dir, p2.ID).Unlock("other"); uerr != nil {
-		t.Fatalf("replacement vault must be untouched: %v", uerr)
+	afterRaw, _ := os.ReadFile(path)
+	if strings.Contains(string(afterRaw), "\nB = ") {
+		t.Fatal("the refused write must leave nothing behind")
+	}
+	if bytes.Equal(beforeRaw, afterRaw) {
+		t.Fatal("this test needs the second writer to have actually changed the file")
 	}
 }
 
-func TestCredentialsSetRefusesEmptyValue(t *testing.T) {
-	_, proj := testPaths(t)
-	passphraseSeam(t, "pw", "pw", "")
-	var errBuf bytes.Buffer
-	s := ttyStreams(&errBuf)
-	if err := CredentialsInit(s, proj, false); err != nil {
+func mustBlockIdentity(t *testing.T, raw []byte) []byte {
+	t.Helper()
+	b, ok, err := config.ParseCredentialsBlock(raw)
+	if err != nil || !ok {
+		t.Fatalf("block: %v", err)
+	}
+	return []byte(b64Of(b.Identity))
+}
+
+func mustBlockRecipient(t *testing.T, raw []byte) string {
+	t.Helper()
+	b, _, err := config.ParseCredentialsBlock(raw)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := CredentialsSet(s, proj, "a"); err == nil || !strings.Contains(err.Error(), "empty value") {
-		t.Fatalf("empty set: %v", err)
+	return b.Recipient
+}
+
+// --layer writes to the named layer's file, and says what that means BEFORE
+// the value is accepted: layer changes propagate live to every project
+// extending it.
+func TestCredentialsSetLayerDisclosesTheWriteTarget(t *testing.T) {
+	_, proj := testPaths(t)
+	home, err := project.Home()
+	if err != nil {
+		t.Fatal(err)
+	}
+	layerPath := config.LayerPath(home, "acme")
+	if err := hostopen.PlainMkdirAll(filepath.Dir(layerPath), 0o755, hostopen.StoreOwned); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.AtomicWrite(layerPath, "[env]\nA = \"b\"\n"); err != nil {
+		t.Fatal(err)
+	}
+	// One project extending it, so the count is a real one.
+	if err := config.AtomicWrite(projectConfigPath(t, proj), "extends = \"acme\"\n"); err != nil {
+		t.Fatal(err)
+	}
+	var errBuf bytes.Buffer
+	passphraseSeam(t, "pw", "pw", "layer-value")
+	if err := CredentialsSet(ttyStreams(&errBuf), proj, "SHARED", false, "acme"); err != nil {
+		t.Fatalf("layer set: %v", err)
+	}
+	out := errBuf.String()
+	if !strings.Contains(out, "writes to layer acme") || !strings.Contains(out, "used by 1 project") ||
+		!strings.Contains(out, "every project extending it") {
+		t.Fatalf("write-target disclosure: %s", out)
+	}
+	if v, _ := openCredRow(t, layerPath, "pw", "SHARED"); string(v) != "layer-value" {
+		t.Fatalf("layer row: %q", v)
+	}
+	// The project's own config is untouched — a layer write goes to the layer.
+	raw, _ := os.ReadFile(projectConfigPath(t, proj))
+	if strings.Contains(string(raw), "SHARED") {
+		t.Fatalf("the project config must be untouched:\n%s", raw)
+	}
+	if err := CredentialsSet(ttyStreams(&errBuf), proj, "X", false, "nosuch"); err == nil ||
+		!strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("unknown layer: %v", err)
 	}
 }
+
+// list reads the cascade and decrypts nothing: key, kind, source file, and
+// whether the winning row carries a value.
+func TestCredentialsList(t *testing.T) {
+	_, proj := testPaths(t)
+	var out, errBuf bytes.Buffer
+	s := Streams{Out: &out, Err: &errBuf, In: strings.NewReader(""), TTY: true}
+	if err := CredentialsList(s, proj); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "no credentials in this project's cascade") {
+		t.Fatalf("empty list: %s", out.String())
+	}
+
+	passphraseSeam(t, "pw", "pw", "v")
+	if err := CredentialsSet(s, proj, "STRIPE_KEY", false, ""); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := CredentialsList(s, proj); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "STRIPE_KEY\tenv\tproject\tset") {
+		t.Fatalf("list: %s", out.String())
+	}
+	if strings.Contains(out.String(), "\"v\"") {
+		t.Fatal("list must decrypt nothing")
+	}
+
+	// A key a nearer layer disables is declared and does not reach the box —
+	// which is what the unset state is for.
+	raw, _ := os.ReadFile(projectConfigPath(t, proj))
+	if err := config.AtomicWrite(projectConfigPath(t, proj), string(raw)+"\n[env]\nSTRIPE_KEY = \"literal\"\n"); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := CredentialsList(s, proj); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "STRIPE_KEY\tenv\tproject\tunset") {
+		t.Fatalf("overridden row: %s", out.String())
+	}
+}
+
+func b64Of(b []byte) string { return base64.StdEncoding.EncodeToString(b) }

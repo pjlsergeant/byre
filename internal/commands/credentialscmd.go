@@ -1,284 +1,546 @@
 package commands
 
-// The `byre credentials` verbs — CLI shortcuts over the vault
-// (internal/credentials) and the [[credentials]] declarations. The editor's
-// masked staged entry is the north-star path; these are the terminal-native
-// equivalents. The one contract every value path here keeps: a value NEVER
-// arrives as a command-line argument (argv lands in shell history and the
-// process list) — it is read masked from the terminal or piped on stdin.
+// The `byre credentials` verbs — set, unset, rekey, list — over the
+// credential rows in a config file's env_from_host table and that file's own
+// [credentials] identity. The editor's masked entry is the north-star path;
+// these are the terminal-native equivalents.
+//
+// The one contract every value path here keeps: a value NEVER arrives as a
+// command-line argument (argv lands in shell history and the process list) —
+// it is read masked from the terminal or piped on stdin.
+//
+// Every write is compare-and-swap under the project setup lock: the file is
+// re-read after the lock is taken and must be byte-identical to what the
+// operation based its edit on. The race that closes is not hypothetical —
+// `set` reads recipient R, a concurrent identity replacement lands R2, and
+// the R-encrypted blob sitting beside R2 is permanently undecryptable though
+// both writes "succeeded".
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
-	"maps"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
-	"strings"
+	"strconv"
 
+	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/credentials"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
-	"github.com/pjlsergeant/byre/internal/skills"
+	"github.com/pjlsergeant/byre/internal/tomldoc"
 )
 
-// credentialVerbs plugs the [[credentials]] vocabulary into the shared
-// layer-edit lifecycle (nameddecl.go) for declare/undeclare.
-var credentialVerbs = declVerbs[config.CredentialDecl]{
-	kind:   "credential",
-	name:   func(cd config.CredentialDecl) string { return cd.Name },
-	marker: func(name string) config.CredentialDecl { return config.CredentialDecl{Name: name} },
-	list:   func(c *config.Config) *[]config.CredentialDecl { return &c.Credentials },
-	effectiveHas: func(effective config.Config, res skills.Resolved, name string) (bool, error) {
-		for _, cd := range effective.Credentials {
-			if cd.Name == name {
-				return true, nil
-			}
-		}
-		return false, nil
-	},
+// credentialsTable / envFromHostTable are the two tables every verb here
+// edits, as tomldoc addresses them.
+var (
+	credentialsTable = []string{"credentials"}
+	envFromHostTable = []string{config.EnvFromHostTable}
+)
+
+// credTarget is the physical file a verb writes: credential rows and the
+// identity that opens them belong to ONE file, never to the merged cascade.
+type credTarget struct {
+	path     string
+	follow   bool   // the target's trust class (see configui.Save)
+	label    string // "project config", "layer acme"
+	lockFile string
+	prepare  func() error // enrollment, run only when a write lands
+	// disclosure is the cross-project warning a layer target carries, empty
+	// for the project's own config.
+	disclosure string
 }
 
-// CredentialsDeclare implements `byre credentials declare <name> --kind ... --target ...`:
-// add-or-update the declaration in the target layer (the consent surface;
-// no value involved). The next develop's prompt picks it up.
-func CredentialsDeclare(s Streams, projectDir string, global bool, name, kind, target string) error {
-	decl := config.CredentialDecl{Name: name, Kind: kind, Target: target}
-	if err := config.ValidateCredentialDecl(decl); err != nil {
-		return err
-	}
-	return addNamedDecl(s, projectDir, global, credentialVerbs, name, decl)
-}
-
-// CredentialsUndeclare implements `byre credentials undeclare <name>`
-// (closure-smart, like every named-declaration remove). The stored VALUE is
-// untouched — `byre credentials unset` discards it.
-func CredentialsUndeclare(s Streams, projectDir string, global bool, name string) error {
-	if err := credentials.ValidateName(name); err != nil {
-		return err
-	}
-	return removeNamedDecl(s, projectDir, global, credentialVerbs, name)
-}
-
-// credProjectVault resolves and bootstraps the project store and returns
-// its vault handle plus paths (the lock file lives in the store).
-func credProjectVault(projectDir string) (*credentials.Vault, project.Paths, error) {
+// credentialTarget resolves --layer (or its absence) to the file a verb
+// writes. A layer target carries the write-target disclosure: layer changes
+// propagate live (ADR 0035), so the cross-project effect must be
+// unmistakable BEFORE a value is accepted.
+func credentialTarget(projectDir, layer string) (credTarget, error) {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
-		return nil, project.Paths{}, err
+		return credTarget{}, err
 	}
-	if err := paths.Bootstrap(); err != nil {
-		return nil, project.Paths{}, err
+	if layer == "" {
+		return credTarget{
+			path:     filepath.Join(paths.Dir, config.ProjectConfigName),
+			follow:   false, // the store project dir is what --self-edit mounts
+			label:    "project config",
+			lockFile: paths.LockFile,
+			prepare:  paths.Bootstrap,
+		}, nil
 	}
-	return credentials.Open(paths.Dir, paths.ID), paths, nil
+	if err := config.ValidateLayerName(layer); err != nil {
+		return credTarget{}, err
+	}
+	path := config.LayerPath(paths.Home, layer)
+	if ok, err := hostopen.ExistsNoFollow(path); err != nil || !ok {
+		return credTarget{}, fmt.Errorf("layer %s does not exist (create it: byre layer new %s)", layer, layer)
+	}
+	return credTarget{
+		// follow=true: a named layer is host-owned (never inside a box
+		// mount), so a dotfiles symlink there is the user's own arrangement.
+		path:       path,
+		follow:     true,
+		label:      "layer " + layer,
+		lockFile:   paths.LockFile,
+		disclosure: layerWriteDisclosure(paths.Home, layer, path),
+	}, nil
 }
 
-// CredentialsInit implements `byre credentials init [--replace]`: create the
-// project vault under a fresh passphrase (masked, confirmed; TTY-only — a
-// passphrase never rides argv or a pipe). --replace is the explicit
-// discard-and-recreate, which is also the remedy after a suspected identity
-// leak (rekey rotates the passphrase, not the identity).
-func CredentialsInit(s Streams, projectDir string, replace bool) error {
-	if !s.TTY {
-		return errors.New("credentials init needs a terminal for the masked passphrase prompt")
+// layerWriteDisclosure states what writing to a layer means: every project
+// extending it takes the new value on its next launch. The count DEGRADES —
+// an unreadable store costs the number, never the warning.
+func layerWriteDisclosure(home, layer, path string) string {
+	n, ok := layerProjectUsers(home, layer)
+	if !ok {
+		return fmt.Sprintf("writes to layer %s (%s) — every project extending it takes this value; byre could not count them", layer, path)
 	}
-	v, paths, err := credProjectVault(projectDir)
-	if err != nil {
-		return err
-	}
-	if v.Exists() && !replace {
-		return credentials.ErrVaultExists
-	}
-	pw, err := readPassphrase(s.Err, "new vault passphrase: ")
-	if err != nil {
-		return err
-	}
-	if pw == "" {
-		return errors.New(credentials.EmptyPassphraseWorthless + " — aborted (nothing created)")
-	}
-	confirm, err := readPassphrase(s.Err, "confirm passphrase: ")
-	if err != nil {
-		return err
-	}
-	if pw != confirm {
-		return errors.New("passphrases do not match — aborted (nothing created)")
-	}
-	if err := withSetupLock(s.Err, paths.LockFile, func() error {
-		if replace {
-			return v.Replace(pw)
-		}
-		return v.Create(pw)
-	}); err != nil {
-		return err
-	}
-	verb := "created"
-	if replace {
-		verb = "replaced"
-	}
-	fmt.Fprintf(s.Err, "byre: credentials vault %s. Values are age-encrypted at rest; the passphrase unlocks them per launch.\n", verb)
-	return nil
+	return fmt.Sprintf("writes to layer %s (%s), used by %d %s — this changes the value for every project extending it",
+		layer, path, n, credPlural("project", n))
 }
 
-// CredentialsSet implements `byre credentials set <name>`: stage a value
-// into the vault — masked prompt on a TTY, or the whole of stdin when
-// piped (`op read ... | byre credentials set stripe`). Never argv. A cold
-// write: no passphrase needed (the value encrypts to the vault recipient).
-func CredentialsSet(s Streams, projectDir string, name string) error {
-	if err := credentials.ValidateName(name); err != nil {
-		return err
+// credPlural is the count-agreeing noun these messages need.
+func credPlural(noun string, n int) string {
+	if n == 1 {
+		return noun
 	}
-	v, paths, err := credProjectVault(projectDir)
+	return noun + "s"
+}
+
+// layerProjectUsers counts the stored projects whose extends chain reaches
+// layer. ok=false when the store cannot be walked — the caller says so
+// rather than printing a number it did not establish.
+func layerProjectUsers(home, layer string) (int, bool) {
+	entries, err := hostopen.PlainReadDir(filepath.Join(home, "projects"), hostopen.StoreOwned)
 	if err != nil {
-		return err
-	}
-	var value []byte
-	if s.TTY {
-		pw, err := readPassphrase(s.Err, fmt.Sprintf("value for %s (input hidden): ", name))
-		if err != nil {
-			return err
+		if errors.Is(err, fs.ErrNotExist) {
+			return 0, true // no projects stored yet
 		}
-		value = []byte(pw)
-	} else {
-		// Piped: the value is stdin whole, bounded a byte over the cap so an
-		// oversize pipe is refused rather than silently truncated.
-		b, err := io.ReadAll(io.LimitReader(s.In, credentials.MaxValue+1))
-		if err != nil {
-			return err
-		}
-		value = b
+		return 0, false
 	}
-	// The declared kind, when the name is declared, so env constraints catch
-	// at save (where re-entry is cheap) rather than at launch.
-	kind := ""
-	if cfg, err := config.Load(projectDir); err == nil {
-		for _, d := range cfg.Credentials {
-			if d.Name == name {
-				kind = d.Kind
+	cat, _ := builtins.LoadCatalogRaw(home)
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		cfg, err := config.ParseFile(filepath.Join(home, "projects", e.Name(), config.ProjectConfigName), false)
+		if err != nil {
+			continue // a project byre cannot read extends nothing it can name
+		}
+		chain, err := config.LoadExtendsChain(home, cat, cfg.Extends)
+		if err != nil {
+			continue
+		}
+		for _, nl := range chain {
+			if nl.Name == layer {
+				n++
+				break
 			}
 		}
 	}
-	// The entry-path courtesy: one trailing newline stripped (echo without
-	// -n, an editor's final newline) — for env-kind and undeclared names,
-	// where a stray newline corrupts the exported token byte-exactly. A
-	// declared FILE value is arbitrary bytes and stays untouched: a PEM's
-	// final newline is part of the file.
-	if kind != "file" {
-		value = credentials.StripTrailingNewline(value)
-	}
-	if len(value) == 0 {
-		return errors.New("refusing to store an empty value (unset removes a value)")
-	}
-	if err := withSetupLock(s.Err, paths.LockFile, func() error {
-		return v.Set(name, value, kind)
-	}); err != nil {
-		return err
-	}
-	fmt.Fprintf(s.Err, "byre: credential %s set (%d bytes, encrypted at rest).\n", name, len(value))
-	if kind == "" {
-		fmt.Fprintf(s.Err, "byre: %s is not declared yet — declare it to deliver it: byre credentials declare %s --kind env --target %s\n", name, name, strings.ToUpper(strings.ReplaceAll(name, "-", "_")))
-	}
-	return nil
+	return n, true
 }
 
-// CredentialsUnset implements `byre credentials unset <name>`: discard the
-// stored value (the declaration, if any, stays — undeclare removes that).
-func CredentialsUnset(s Streams, projectDir string, name string) error {
-	if err := credentials.ValidateName(name); err != nil {
+// credFile is one target's content as an operation read it: the bytes the
+// compare-and-swap holds the write to, and the file's own identity block.
+type credFile struct {
+	raw      []byte
+	readErr  error
+	cfg      config.Config
+	block    config.CredentialsBlock
+	hasBlock bool
+}
+
+// readCredTarget reads the target file, its layer, and its [credentials]
+// block. A file that does not exist yet is an empty one — the first `set`
+// creates it.
+func readCredTarget(t credTarget) (credFile, error) {
+	raw, err := hostopen.ReadFileBounded(t.path, t.follow, config.MaxConfigBytes)
+	if err != nil && !os.IsNotExist(err) {
+		return credFile{}, err
+	}
+	f := credFile{raw: raw, readErr: err}
+	if err != nil {
+		return f, nil
+	}
+	if f.cfg, err = config.Parse(raw); err != nil {
+		return credFile{}, fmt.Errorf("%s (%s): %w", t.label, t.path, err)
+	}
+	f.block, f.hasBlock, err = config.ParseCredentialsBlock(raw)
+	if err != nil {
+		return credFile{}, fmt.Errorf("%s (%s): %w", t.label, t.path, err)
+	}
+	return f, nil
+}
+
+// ErrCredentialFileChanged is the compare-and-swap refusal: the file moved
+// between the read this operation planned against and the write.
+var ErrCredentialFileChanged = errors.New("the config file changed while this command was working — nothing was written; run the command again against the current file")
+
+// writeCredTarget applies mutate to the target under the setup lock,
+// compare-and-swapping against the bytes the caller read. The mutation is
+// re-parsed before it lands: a write that would leave the file unopenable —
+// or its identity unreadable — is refused with the file untouched.
+func writeCredTarget(s Streams, t credTarget, base credFile, mutate func(*tomldoc.Doc) error) error {
+	return withSetupLock(s.Err, t.lockFile, func() error {
+		now, err := hostopen.ReadFileBounded(t.path, t.follow, config.MaxConfigBytes)
+		if !sameCredFileState(now, err, base.raw, base.readErr) {
+			return ErrCredentialFileChanged
+		}
+		src := now
+		if err != nil {
+			src = []byte(credentialsFileHeader)
+		}
+		doc, derr := tomldoc.Load(src)
+		if derr != nil {
+			return fmt.Errorf("%s (%s): %w", t.label, t.path, derr)
+		}
+		if err := mutate(doc); err != nil {
+			return err
+		}
+		out := doc.Bytes()
+		cfg, perr := config.Parse(out)
+		if perr != nil {
+			return fmt.Errorf("%s (%s): the edit would leave a file byre cannot read (%w) — nothing was written", t.label, t.path, perr)
+		}
+		if verr := cfg.ValidateLayer(); verr != nil {
+			return fmt.Errorf("%s (%s): %w — nothing was written", t.label, t.path, verr)
+		}
+		if _, _, berr := config.ParseCredentialsBlock(out); berr != nil {
+			return fmt.Errorf("%s (%s): %w — nothing was written", t.label, t.path, berr)
+		}
+		if t.prepare != nil {
+			if perr := t.prepare(); perr != nil {
+				return perr
+			}
+		}
+		return config.AtomicWrite(t.path, string(out))
+	})
+}
+
+// credentialsFileHeader fronts a config file `byre credentials` creates —
+// the same one-line ownership note `byre config` writes.
+const credentialsFileHeader = "# Managed by `byre config`.\n\n"
+
+// sameCredFileState compares two (bytes, error) reads of one path. Absent on
+// both sides counts as unchanged; any read failure other than absence is
+// drift, because byre cannot establish the file is what it was.
+func sameCredFileState(a []byte, aErr error, b []byte, bErr error) bool {
+	switch {
+	case aErr == nil && bErr == nil:
+		return bytes.Equal(a, b)
+	case os.IsNotExist(aErr) && os.IsNotExist(bErr):
+		return true
+	default:
+		return false
+	}
+}
+
+// CredentialsSet implements `byre credentials set KEY [--file] [--layer]`:
+// encrypt a value to the target file's recipient and write the row. The
+// value is masked from the terminal or piped on stdin, never argv.
+//
+// The first set on a file with no [credentials] block mints that file's
+// identity, prompting for the passphrase that wraps it. Every later set is a
+// COLD write: values encrypt to the cleartext recipient, so setting one
+// never asks for a passphrase.
+func CredentialsSet(s Streams, projectDir, key string, fileKind bool, layer string) error {
+	if err := config.ValidateEnvFromHostKey(key); err != nil {
 		return err
 	}
-	v, paths, err := credProjectVault(projectDir)
+	kind := credentials.KindEnv
+	if fileKind {
+		kind = credentials.KindFile
+	}
+	t, err := credentialTarget(projectDir, layer)
 	if err != nil {
 		return err
 	}
-	if !v.Exists() {
-		return credentials.ErrNoVault
+	f, err := readCredTarget(t)
+	if err != nil {
+		return err
 	}
-	if err := withSetupLock(s.Err, paths.LockFile, func() error {
-		return v.Unset(name)
+	// The disclosure lands BEFORE the value is accepted: a user typing a
+	// production key into a shared layer must know that is what they are
+	// doing while they can still stop.
+	if t.disclosure != "" {
+		fmt.Fprintf(s.Err, "byre: %s\n", t.disclosure)
+	}
+
+	var newIdentity []byte
+	block := f.block
+	if !f.hasBlock {
+		wrapped, recipient, err := mintCredentialIdentity(s, t)
+		if err != nil {
+			return err
+		}
+		newIdentity = wrapped
+		block = config.CredentialsBlock{Identity: wrapped, Recipient: recipient}
+	}
+
+	value, err := readCredentialValue(s, key, kind)
+	if err != nil {
+		return err
+	}
+	if len(value) == 0 {
+		return errors.New("refusing to store an empty value (byre credentials unset removes a row)")
+	}
+	if err := credentials.ValidateValue(value, kind); err != nil {
+		return fmt.Errorf("credential %s: %w", key, err)
+	}
+	blob, err := credentials.EncryptValue(block.Recipient, key, kind, value)
+	if err != nil {
+		return err
+	}
+	row, err := config.FormatEncryptedRow(kind, blob)
+	if err != nil {
+		return err
+	}
+
+	if err := writeCredTarget(s, t, f, func(doc *tomldoc.Doc) error {
+		if newIdentity != nil {
+			if err := setCredentialsBlock(doc, newIdentity, block.Recipient); err != nil {
+				return err
+			}
+		}
+		return doc.SetKey(envFromHostTable, key, strconv.Quote(row))
 	}); err != nil {
 		return err
 	}
-	fmt.Fprintf(s.Err, "byre: credential %s unset.\n", name)
+	fmt.Fprintf(s.Err, "byre: credential %s set in the %s (%s): %d bytes, encrypted to that file's recipient.\n",
+		key, t.label, t.path, len(value))
+	if newIdentity != nil {
+		fmt.Fprintf(s.Err, "byre: minted this file's credentials identity — that passphrase opens every credential in %s, and byre asks for it at develop.\n", t.path)
+	}
+	fmt.Fprintln(s.Err, "byre: applies on the next develop.")
 	return nil
 }
 
-// CredentialsRekey implements `byre credentials rekey`: re-wrap the
-// identity under a new passphrase (single-file replace). It rotates the
-// PASSPHRASE, not the identity — after a suspected identity leak the
-// remedy is `init --replace` (a new vault), and this says so.
-func CredentialsRekey(s Streams, projectDir string) error {
+// mintCredentialIdentity creates the file's identity: a fresh X25519 key
+// wrapped under a passphrase confirmed twice. TTY-only — a passphrase never
+// rides argv or a pipe.
+func mintCredentialIdentity(s Streams, t credTarget) ([]byte, string, error) {
+	if !s.TTY {
+		return nil, "", fmt.Errorf("%s (%s) has no [credentials] block yet, and creating one needs a terminal for the masked passphrase prompt", t.label, t.path)
+	}
+	fmt.Fprintf(s.Err, "byre: %s (%s) holds no credentials yet — choose the passphrase that will open its credentials.\n", t.label, t.path)
+	pw, err := readNewPassphrase(s, "new passphrase for "+t.label+": ", "confirm passphrase: ")
+	if err != nil {
+		return nil, "", err
+	}
+	return credentials.NewIdentity(pw)
+}
+
+// readNewPassphrase reads a new passphrase twice and holds it to the two
+// rules a new one has: not empty, and matching its confirmation.
+func readNewPassphrase(s Streams, prompt, confirmPrompt string) (string, error) {
+	pw, err := readPassphrase(s.Err, prompt)
+	if err != nil {
+		return "", err
+	}
+	if pw == "" {
+		return "", errors.New(credentials.EmptyPassphraseWorthless + " — aborted (nothing written)")
+	}
+	confirm, err := readPassphrase(s.Err, confirmPrompt)
+	if err != nil {
+		return "", err
+	}
+	if pw != confirm {
+		return "", errors.New("passphrases do not match — aborted (nothing written)")
+	}
+	return pw, nil
+}
+
+// readCredentialValue takes the value from the terminal (masked) or from
+// stdin whole when piped, bounded a byte over the per-value cap so an
+// oversize pipe is refused rather than silently truncated.
+func readCredentialValue(s Streams, key string, kind credentials.Kind) ([]byte, error) {
+	if s.TTY {
+		v, err := readPassphrase(s.Err, fmt.Sprintf("value for %s (input hidden): ", key))
+		return []byte(v), err
+	}
+	b, err := io.ReadAll(io.LimitReader(s.In, credentials.MaxValue+1))
+	if err != nil {
+		return nil, err
+	}
+	// The typed-or-piped courtesy, env-kind only: one trailing newline
+	// stripped (echo without -n, an editor's final newline), where a stray
+	// newline corrupts the exported token byte-exactly. A file value is
+	// arbitrary bytes and stays untouched — a PEM's final newline is part of
+	// the file.
+	if kind == credentials.KindEnv {
+		b = credentials.StripTrailingNewline(b)
+	}
+	return b, nil
+}
+
+// setCredentialsBlock writes the file's identity and recipient, creating the
+// [credentials] table when it is not there.
+func setCredentialsBlock(doc *tomldoc.Doc, wrapped []byte, recipient string) error {
+	if err := doc.SetKey(credentialsTable, "identity", strconv.Quote(base64.StdEncoding.EncodeToString(wrapped))); err != nil {
+		return err
+	}
+	return doc.SetKey(credentialsTable, "recipient", strconv.Quote(recipient))
+}
+
+// CredentialsUnset implements `byre credentials unset KEY [--layer]`:
+// remove the row. The ciphertext goes with it — there is no separate store
+// keeping a value the config no longer names.
+func CredentialsUnset(s Streams, projectDir, key, layer string) error {
+	if err := config.ValidateEnvFromHostKey(key); err != nil {
+		return err
+	}
+	t, err := credentialTarget(projectDir, layer)
+	if err != nil {
+		return err
+	}
+	f, err := readCredTarget(t)
+	if err != nil {
+		return err
+	}
+	src, present := f.cfg.EnvFromHost[key]
+	if !present {
+		return fmt.Errorf("%s (%s) has no %s row to remove", t.label, t.path, key)
+	}
+	// A row that NAMES a scheme and carries an unusable payload is still this
+	// key's credential, and removing it is exactly the repair — so only a
+	// clean non-credential source is refused here.
+	if _, isCred, perr := config.ParseEncryptedRow(key, src); !isCred && perr == nil {
+		return fmt.Errorf("%s (%s): %s is a %q source, not a credential — edit it in `byre config`", t.label, t.path, key, src)
+	}
+	if err := writeCredTarget(s, t, f, func(doc *tomldoc.Doc) error {
+		return doc.RemoveKey(envFromHostTable, key)
+	}); err != nil {
+		return err
+	}
+	fmt.Fprintf(s.Err, "byre: credential %s removed from the %s (%s) — its ciphertext went with the row; there is no copy anywhere else.\n", key, t.label, t.path)
+	fmt.Fprintln(s.Err, "byre: applies on the next develop.")
+	return nil
+}
+
+// CredentialsRekey implements `byre credentials rekey [--layer]`: re-wrap
+// ONE file's identity under a new passphrase. The identity itself does not
+// rotate, so every value row stays byte-identical — which is what keeps drift
+// comparing credentials as plain bytes.
+func CredentialsRekey(s Streams, projectDir, layer string) error {
 	if !s.TTY {
 		return errors.New("credentials rekey needs a terminal for the masked passphrase prompts")
 	}
-	v, paths, err := credProjectVault(projectDir)
+	t, err := credentialTarget(projectDir, layer)
 	if err != nil {
 		return err
 	}
-	pw, err := readPassphrase(s.Err, "current passphrase: ")
+	f, err := readCredTarget(t)
 	if err != nil {
 		return err
 	}
-	u, err := v.Unlock(pw)
+	if !f.hasBlock {
+		return fmt.Errorf("%s (%s) holds no credentials identity — nothing to rekey", t.label, t.path)
+	}
+	if t.disclosure != "" {
+		fmt.Fprintf(s.Err, "byre: %s\n", t.disclosure)
+	}
+	old, err := readPassphrase(s.Err, "current passphrase for "+t.label+": ")
 	if err != nil {
 		return err
 	}
-	newPw, err := readPassphrase(s.Err, "new passphrase: ")
+	id, err := credentials.UnwrapIdentity(f.block.Identity, old)
 	if err != nil {
 		return err
 	}
-	if newPw == "" {
-		return errors.New(credentials.EmptyPassphraseWorthless + " — aborted (nothing changed)")
-	}
-	confirm, err := readPassphrase(s.Err, "confirm new passphrase: ")
+	newPw, err := readNewPassphrase(s, "new passphrase: ", "confirm new passphrase: ")
 	if err != nil {
 		return err
 	}
-	if newPw != confirm {
-		return errors.New("passphrases do not match — aborted (nothing changed)")
+	wrapped, err := id.Rewrap(newPw)
+	if err != nil {
+		return err
 	}
-	if err := withSetupLock(s.Err, paths.LockFile, func() error {
-		return u.Rekey(newPw)
+	if err := writeCredTarget(s, t, f, func(doc *tomldoc.Doc) error {
+		return setCredentialsBlock(doc, wrapped, id.Recipient())
 	}); err != nil {
 		return err
 	}
-	fmt.Fprintln(s.Err, "byre: passphrase rotated. (The vault identity is unchanged — after a suspected leak of the vault files themselves, recreate with: byre credentials init --replace)")
+	fmt.Fprintf(s.Err, "byre: passphrase rotated for the %s (%s). The identity is unchanged, so every value row is untouched — after a suspected leak of the file itself, re-set the values under a new identity.\n", t.label, t.path)
 	return nil
 }
 
-// CredentialsList implements `byre credentials list`: the declared set with
-// kind, target, and value-state, plus stored values no declaration names.
-// Values render nowhere.
+// CredentialsList implements `byre credentials list`: the cascade's
+// credential rows with kind, source file, and whether the winning row
+// carries a value. Nothing is decrypted, so this never prompts.
 func CredentialsList(s Streams, projectDir string) error {
-	paths, err := project.Resolve(projectDir)
+	files, err := config.CascadeFiles(projectDir)
 	if err != nil {
 		return err
 	}
-	v := credentials.Open(paths.Dir, paths.ID)
-	cfg, cfgErr := config.Load(projectDir)
-	if cfgErr != nil {
-		fmt.Fprintf(s.Err, "byre: config unreadable (%v) — showing the vault side only.\n", cfgErr)
+	groups, gerr := config.EncryptedRows(files)
+	if gerr != nil {
+		// A broken row is worth saying here, where the user is looking at the
+		// set: it stops the next develop, and this is where they see why.
+		fmt.Fprintf(s.Err, "byre: %v\n", gerr)
 	}
-	stored := map[string]bool{}
-	for _, n := range v.EntryNames() {
-		stored[n] = true
-	}
-	if len(cfg.Credentials) == 0 && len(stored) == 0 {
-		fmt.Fprintln(s.Out, "no credentials declared or stored.")
-		if !v.Exists() {
-			fmt.Fprintln(s.Out, "start: byre credentials init && byre credentials declare <name> --kind env --target VAR && byre credentials set <name>")
+	rows := 0
+	for _, g := range groups {
+		for _, r := range g.Rows {
+			fmt.Fprintf(s.Out, "%s\t%s\t%s\t%s\n", r.Key, r.Kind, credentialDisplay(g.Label), credentials.ValueState(true))
+			rows++
 		}
-		return nil
 	}
-	for _, d := range cfg.Credentials {
-		fmt.Fprintf(s.Out, "%s\t%s → %s\t%s\n", d.Name, d.Kind, d.Target, credentials.ValueState(stored[d.Name]))
-		delete(stored, d.Name)
+	// A key some file sets encrypted that the cascade does not deliver: a
+	// nearer layer emptied it, replaced it with another source, or an [env]
+	// literal took it. Declared and not reaching the box is exactly what a
+	// list must say out loud.
+	for _, d := range disabledCredentialRows(files, groups) {
+		fmt.Fprintf(s.Out, "%s\t%s\t%s\t%s\n", d.key, d.kind, d.source, credentials.ValueState(false))
+		rows++
 	}
-	// The leftover map IS the stored-not-declared tail: one directory
-	// listing feeds both loops.
-	for _, n := range slices.Sorted(maps.Keys(stored)) {
-		fmt.Fprintf(s.Out, "%s\t(stored, not declared — declare it to deliver it)\n", n)
-	}
-	if !v.Exists() && len(cfg.Credentials) > 0 {
-		fmt.Fprintln(s.Out, "no vault exists yet — create one: byre credentials init")
+	if rows == 0 {
+		fmt.Fprintln(s.Out, "no credentials in this project's cascade.")
+		fmt.Fprintln(s.Out, "start: byre credentials set STRIPE_KEY")
 	}
 	return nil
+}
+
+// disabledCredentialRow is a credential a file declares that the cascade
+// does not deliver.
+type disabledCredentialRow struct{ key, kind, source string }
+
+func disabledCredentialRows(files []config.CascadeFile, live []config.CredentialFile) []disabledCredentialRow {
+	delivered := map[string]bool{}
+	for _, g := range live {
+		for _, r := range g.Rows {
+			delivered[r.Key] = true
+		}
+	}
+	seen := map[string]bool{}
+	var out []disabledCredentialRow
+	for _, f := range files {
+		for _, k := range sortedEnvKeys(f.Cfg.EnvFromHost) {
+			if delivered[k] || seen[k] {
+				continue
+			}
+			row, ok, err := config.ParseEncryptedRow(k, f.Cfg.EnvFromHost[k])
+			if err != nil || !ok {
+				continue
+			}
+			seen[k] = true
+			out = append(out, disabledCredentialRow{key: k, kind: string(row.Kind), source: credentialDisplay(f.Label)})
+		}
+	}
+	return out
+}
+
+func sortedEnvKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
 }

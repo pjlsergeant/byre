@@ -80,8 +80,6 @@ var fieldInfos = map[fieldID]fieldInfo{
 	fSharedAuth:      {label: "Shared creds"},
 	fSources: {label: "Package sources", kind: kindList, item: "Package source", noun: "hint", readOnly: true,
 		explain: "read-only — where a named package installs from; `byre preset apply` writes it"},
-	fCredentials: {label: "Credentials", kind: kindList, item: "Credential", noun: "credential",
-		explain: "vault-backed values — masked entry, staged until ^s; values render nowhere"},
 }
 
 // fieldLabel is the display name (not the raw TOML key); the underlying key

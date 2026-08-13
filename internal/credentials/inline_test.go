@@ -1,11 +1,20 @@
 package credentials
 
 import (
+	"filippo.io/age"
+
 	"bytes"
 	"errors"
 	"strings"
 	"testing"
 )
+
+func init() {
+	// Production's pinned scrypt cost is a deliberate unlock cost at the
+	// prompt and pure drag in a suite that mints an identity per test; the
+	// wrap/unwrap path is identical at any work factor.
+	SetWorkFactorForTesting(10)
+}
 
 // newInline mints an identity and returns it unwrapped plus its recipient.
 func newInline(t *testing.T, passphrase string) (*Identity, string, []byte) {
@@ -238,4 +247,27 @@ func TestInlineRekeyLeavesValueBlobsByteIdentical(t *testing.T) {
 	if oc != "" || derr != nil || string(got) != "sk-live" {
 		t.Fatalf("value after rekey: outcome=%s err=%v value=%q", oc, derr, got)
 	}
+}
+
+// forgeEntry encrypts an arbitrary payload to a recipient — how a test mints
+// what an attacker holding the public half could: the key/kind stamp is an
+// accident guard, not integrity, and these tests say so by exercising it.
+func forgeEntry(t *testing.T, recipient string, payload []byte) []byte {
+	t.Helper()
+	rcp, err := age.ParseX25519Recipient(recipient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	w, err := age.Encrypt(&buf, rcp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }

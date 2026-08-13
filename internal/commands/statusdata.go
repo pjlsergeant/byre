@@ -83,10 +83,10 @@ type statusData struct {
 	Instructions         []statusDataContext `json:"instructions"`
 	InstructionsDelivery string              `json:"instructions_delivery,omitempty"`
 
-	// Credentials is the declared set with value-state; credential_unlock is
-	// the running box's LAUNCH-TIME unlock outcome from its record. Neither
-	// is a live-state claim — byre does not probe the box. Values never
-	// appear anywhere in this document.
+	// Credentials is the cascade's winning credential rows with their
+	// provenance; credential_unlock is the running box's LAUNCH-TIME unlock
+	// outcome from its record. Neither is a live-state claim — byre does not
+	// probe the box. Values never appear anywhere in this document.
 	Credentials      []statusDataCredential `json:"credentials,omitempty"`
 	CredentialUnlock string                 `json:"credential_unlock,omitempty"`
 
@@ -253,11 +253,12 @@ type statusDataContext struct {
 }
 
 type statusDataCredential struct {
-	Name   string `json:"name"`
+	// Key is the config key the value is delivered under; Source is the
+	// cascade file that contributed the row. Nothing here decrypts, so
+	// there is no value-state to report: a row IS the value.
+	Key    string `json:"key"`
 	Kind   string `json:"kind"`
-	Target string `json:"target"`
-	// Set is the vault value-state (an entries-dir fact, never a decrypt).
-	Set bool `json:"set"`
+	Source string `json:"source"`
 }
 
 type statusDataHostEnv struct {
@@ -429,10 +430,12 @@ func statusDataOf(s statusInfo) statusData {
 		d.InstructionsDelivery = contextDeliveryLine(s).Full
 	}
 
-	for _, cd := range s.Credentials {
-		d.Credentials = append(d.Credentials, statusDataCredential{
-			Name: cd.Name, Kind: cd.Kind, Target: cd.Target, Set: s.CredentialStates[cd.Name],
-		})
+	for _, g := range s.Credentials {
+		for _, r := range g.Rows {
+			d.Credentials = append(d.Credentials, statusDataCredential{
+				Key: r.Key, Kind: string(r.Kind), Source: g.Label,
+			})
+		}
 	}
 	d.CredentialUnlock = s.CredentialUnlock
 

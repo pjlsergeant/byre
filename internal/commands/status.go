@@ -12,7 +12,6 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
-	"github.com/pjlsergeant/byre/internal/credentials"
 	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/packages"
@@ -78,15 +77,13 @@ type statusInfo struct {
 	// Contexts is the resolved [[context]] declaration set.
 	AgentContext string
 	Contexts     []config.ContextDecl
-	// Credentials is the declared credential set (config-only vocabulary);
-	// CredentialStates is per-name value-state (set/unset) from the vault's
-	// entries dir; CredentialVault whether a vault exists at all.
-	// CredentialUnlock is the RUNNING box's launch-time unlock outcome, read
-	// off its own launch record — a launch fact, never live in-box state
-	// (the design does not probe the box; there is no live-state field).
-	Credentials      []config.CredentialDecl
-	CredentialStates map[string]bool // name -> a value is stored
-	CredentialVault  bool
+	// Credentials is the cascade's winning credential rows, grouped by the
+	// file that contributed each — key, kind, and provenance, never a value
+	// (nothing here decrypts). CredentialUnlock is the RUNNING box's
+	// launch-time unlock outcome, read off its own launch record — a launch
+	// fact, never live in-box state (the design does not probe the box;
+	// there is no live-state field).
+	Credentials      []config.CredentialFile
 	CredentialUnlock string
 	// Containments are skill-declared containment holes (warranty disclaimer).
 	// Multi-declarer: all shown; other status rows stay unqualified.
@@ -238,16 +235,11 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 	// Standing instructions are config-only (no skill union): the resolved
 	// set IS the declared set.
 	info.Contexts = cfg.Contexts
-	// Credentials: the declared set plus the vault's value-state (a dir
-	// listing, never a decrypt — values render nowhere on this page).
-	info.Credentials = cfg.Credentials
-	if len(cfg.Credentials) > 0 {
-		vault := credentials.Open(paths.Dir, paths.ID)
-		info.CredentialVault = vault.Exists()
-		info.CredentialStates = map[string]bool{}
-		for _, n := range vault.EntryNames() {
-			info.CredentialStates[n] = true
-		}
+	// Credential rows: the cascade as FILES, since a row belongs to the file
+	// that contributed it. A cascade byre cannot read degrades to no rows —
+	// the launch says so loudly, and a read-only page does not fail over it.
+	if files, ferr := config.CascadeFiles(projectDir); ferr == nil {
+		info.Credentials, _ = config.EncryptedRows(files)
 	}
 	info.EnvProvided = providedEnv(cfg, info.HostEnv)
 	info.EnvKeys = slices.Sorted(maps.Keys(cfg.Env))
@@ -871,24 +863,23 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 		row("", ctxDelivery.Full)
 	}
 
-	// Project credentials: the declared set with kind, target, and
-	// value-state — plus the running box's launch-time unlock outcome.
-	// Values render nowhere; there is no live-state field (byre does not
+	// Credential rows: key, kind, and the file that contributed each — plus
+	// the running box's launch-time unlock outcome. Values render nowhere,
+	// nothing here decrypts, and there is no live-state field (byre does not
 	// probe the box).
-	if len(s.Credentials) > 0 {
-		for i, cd := range s.Credentials {
+	firstCred := true
+	for _, g := range s.Credentials {
+		for _, r := range g.Rows {
 			label := "Credentials"
-			if i > 0 {
+			if !firstCred {
 				label = ""
 			}
-			row(label, fmt.Sprintf("%s  %s → %s  (%s)", cd.Name, cd.Kind, cd.Target, credentials.ValueState(s.CredentialStates[cd.Name])))
+			firstCred = false
+			row(label, fmt.Sprintf("%s  %s  (from %s)", r.Key, r.Kind, credentialDisplay(g.Label)))
 		}
-		if !s.CredentialVault {
-			row("", "no vault — create one: byre credentials init")
-		}
-		if s.CredentialUnlock != "" {
-			row("", "this box launched: "+credentialUnlockLine(s.CredentialUnlock))
-		}
+	}
+	if !firstCred && s.CredentialUnlock != "" {
+		row("", "this box launched: "+credentialUnlockLine(s.CredentialUnlock))
 	}
 
 	// Host-value passthrough (env_from_host, ADR 0026): the one deliberate

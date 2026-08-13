@@ -329,7 +329,6 @@ func TestReconcileCoversEveryField(t *testing.T) {
 		"mcp":             {MCPs: []config.MCP{{Name: "github", Command: []string{"gh-mcp", "stdio"}, Env: []string{"GITHUB_TOKEN"}}}},
 		"claude_skills":   {ClaudeSkills: []config.ClaudeSkill{{Name: "tdd-loop", Path: "~/cs/tdd-loop"}}},
 		"context":         {Contexts: []config.ContextDecl{{Name: "rules", Text: "Line one.\nLine two.\n"}}},
-		"credentials":     {Credentials: []config.CredentialDecl{{Name: "stripe", Kind: "env", Target: "STRIPE_API_KEY"}}},
 		"dockerfile_pre":  {DockerfilePre: []string{"RUN echo pre"}},
 		"dockerfile_post": {DockerfilePost: []string{"RUN echo post"}},
 		"run_args":        {RunArgs: []string{"--cpus=2"}},

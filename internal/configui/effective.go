@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
-	"github.com/pjlsergeant/byre/internal/credentials"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -93,8 +92,6 @@ func (m model) fieldRows(f fieldID) []listRow {
 		return m.claudeSkillRows()
 	case fContext:
 		return m.contextRows()
-	case fCredentials:
-		return m.credentialRows()
 	}
 	return nil
 }
@@ -349,80 +346,6 @@ func (m model) contextRows() []listRow {
 		skillDecls:  func(sk string) []declRowItem { return nil },
 		lowerHas:    func(c config.Config, rawName string) bool { return hasContextName(c.Contexts, rawName) },
 	})
-}
-
-func credentialDeclName(cd config.CredentialDecl) string { return cd.Name }
-
-// credentialDeclLine renders one declaration: name, kind, target. Values
-// render NOWHERE in the editor by design — the value-state cell is the
-// only thing the screen says about them.
-func credentialDeclLine(cd config.CredentialDecl) string {
-	if config.IsRemoval(cd.Name) {
-		return cd.Name
-	}
-	return cd.Name + " — " + cd.Kind + " → $" + cd.Target
-}
-
-func hasCredentialName(cds []config.CredentialDecl, name string) bool {
-	for _, cd := range cds {
-		if cd.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
-// credentialVals flattens a declaration for the override editor's prefill.
-func credentialVals(cd config.CredentialDecl) []string {
-	return []string{cd.Name, cd.Kind, cd.Target}
-}
-
-// credValueState is the per-name value-state cell: staged (typed this
-// session, written at ^s) beats set/unset (the vault's entries dir). Only
-// meaningful where a vault can exist (the project editor).
-func (m model) credValueState(name string) string {
-	if m.stagedCredValues[name] != nil {
-		return "staged"
-	}
-	return credentials.ValueState(m.credStoredNames[name])
-}
-
-// credentialRows builds the Credentials screen's effective view — the shared
-// genus state machine over [[credentials]] declarations. Config-only
-// vocabulary (like [[context]]): no skill home, so the skill arm is empty.
-// Every row carries the value-state cell in the project editor; the VALUE
-// itself renders nowhere, ever.
-func (m model) credentialRows() []listRow {
-	line := func(cd config.CredentialDecl) string {
-		s := credentialDeclLine(cd)
-		if m.credVault == nil || config.IsRemoval(cd.Name) {
-			return s
-		}
-		return s + "  (" + m.credValueState(cd.Name) + ")"
-	}
-	lowerCfg := m.lowerNow()
-	return m.namedDeclRows(namedDeclField{
-		local:       declRowItems(m.credentials, credentialDeclName, line),
-		lower:       declRowItems(lowerCfg.Credentials, credentialDeclName, line),
-		lowerVals:   func(i int) []string { return credentialVals(lowerCfg.Credentials[i]) },
-		lowerClosed: lowerCfg.CredentialsClosed,
-		skillDecls:  func(sk string) []declRowItem { return nil },
-		lowerHas:    func(c config.Config, rawName string) bool { return hasCredentialName(c.Credentials, rawName) },
-	})
-}
-
-// credentialsNow is the effective declared credential set — the cascade
-// merge of the inherited layers and this session's WORKING declarations
-// (m.credentials, markers included — the exposure tally must move with the
-// edits like every other segment, not with the open-time file). Config-only
-// vocabulary, no skill arm; Merge is the one owner of the rules.
-func (m model) credentialsNow() []config.CredentialDecl {
-	lower := m.lowerNow()
-	merged := config.Merge(
-		config.Config{Credentials: lower.Credentials, CredentialsClosed: lower.CredentialsClosed},
-		config.Config{Credentials: m.credentials},
-	)
-	return merged.Credentials
 }
 
 func hasMCPName(ms []config.MCP, name string) bool {
@@ -1385,7 +1308,6 @@ func (m model) exposureNow() config.Exposure {
 		envKeys[k] = true
 	}
 	e.Env = len(envKeys)
-	e.Credentials = len(m.credentialsNow())
 	e.Posture = m.postureNow()
 	// A skill holding byre's own network knobs degrades the posture claim here
 	// exactly as it does on status and at launch: this line is the same claim,

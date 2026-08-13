@@ -5,7 +5,6 @@ package configui
 
 import (
 	"fmt"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -17,7 +16,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/pjlsergeant/byre/internal/config"
-	"github.com/pjlsergeant/byre/internal/credentials"
 	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/hostopen"
@@ -84,7 +82,6 @@ const (
 	fSeedPrefs       // tri-state: seed_prefs (on / off / inherit), ADR 0045
 	fSources         // read-only view of [sources] acquisition hints
 	fSharedAuth      // read-only view of [defaults].shared_auth (the picker writes it)
-	fCredentials     // [[credentials]] declarations + masked staged value entry (project editor)
 	// fVolumeData is the ENGINE side of volumes: what is on disk right now and
 	// the ad-hoc clear. Separate from fVolumes because they answer different
 	// questions with different blast radii -- one edits a declaration in this
@@ -161,7 +158,6 @@ const (
 	modeVolumes
 	modeText
 	modeSkills
-	modeCredPass // inline vault creation: masked new-passphrase + confirm at ^s
 )
 
 type kvItem struct{ Key, Value string }
@@ -229,29 +225,6 @@ type model struct {
 	mcps         []config.MCP         // [[mcp]] declarations incl. `!name` closure markers
 	claudeSkills []config.ClaudeSkill // [[claude_skills]] declarations incl. `!name` closure markers
 	contexts     []config.ContextDecl // [[context]] declarations incl. `!name` closure markers
-	// credentials is the [[credentials]] declaration list (incl. `!name`
-	// closure markers). stagedCredValues holds values typed into the masked
-	// item field, name -> bytes, STAGED until ^s (quit discards them —
-	// ADR 0057's staging rule); they exist only in this process's
-	// memory and render nowhere. credStoredNames is the vault's value-state
-	// at open (refreshed after each flush); credVault is non-nil only for
-	// the project editor (the vault is project-scoped — the global and layer
-	// editors edit declarations only). credStagedGen counts staging edits so
-	// dirty() flips without a value ever entering the signature string.
-	credentials      []config.CredentialDecl
-	stagedCredValues map[string][]byte
-	credStoredNames  map[string]bool
-	credVault        *credentials.Vault
-	credStagedGen    int
-	// credPassInputs back the inline vault-creation modal (modeCredPass):
-	// a vault-less project's first ^s with staged values asks for the new
-	// passphrase right there. credPassErr renders under the inputs;
-	// credPassphrase carries the confirmed answer into the save that
-	// triggered the modal (one-shot: cleared by the flush either way).
-	credPassInputs [2]textinput.Model
-	credPassFocus  int
-	credPassErr    string
-	credPassphrase string
 
 	// itemProse is the [[context]] item editor's inline-text draft, edited
 	// via the $EDITOR handoff; prosePath is the temp file while $EDITOR has
@@ -425,7 +398,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 	// MCP servers sit in BUILD, not GRANTS: declarations are wiring, like
 	// packages (ADR 0033) — their CARRIED egress/env show in the grant rows.
 	sections := []section{
-		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEgress, fEnv, fCredentials}},
+		{"GRANTS — what this box can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
 		{"BUILD — how the box is made", []fieldID{fBase, fTemplate, fAgent, fEngine, fSeedPrefs, fApt, fSkills, fSkillFiles, fSources, fMCP, fClaudeSkills, fContext}},
 	}
 	switch target {
@@ -436,7 +409,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		// section says what they actually do (the global editor
 		// presented inert favourites as live machine-wide config).
 		sections = []section{
-			{"GRANTS — what every box can reach (defaults for all projects)", []fieldID{fMounts, fPorts, fEgress, fEnv, fCredentials}},
+			{"GRANTS — what every box can reach (defaults for all projects)", []fieldID{fMounts, fPorts, fEgress, fEnv}},
 			{"ONBOARDING FAVOURITES — pre-selected in the first-run picker; applies nothing to any box", []fieldID{fTemplate, fAgent}},
 			{"BUILD — defaults for how boxes are made", []fieldID{fBase, fEngine, fSeedPrefs, fApt, fSkills, fSkillFiles, fSources, fMCP, fClaudeSkills, fContext}},
 			// worktree_base is a global/host preference; only the --global editor
@@ -452,7 +425,7 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		// A layer carries the full vocabulary EXCEPT template (shape selection
 		// has one owner, the project config) — same form, no template picker.
 		sections = []section{
-			{"GRANTS — what boxes built on this layer can reach", []fieldID{fMounts, fPorts, fEgress, fEnv, fCredentials}},
+			{"GRANTS — what boxes built on this layer can reach", []fieldID{fMounts, fPorts, fEgress, fEnv}},
 			{"BUILD — what this layer adds to boxes", []fieldID{fBase, fAgent, fEngine, fSeedPrefs, fApt, fSkills, fSkillFiles, fSources, fMCP, fClaudeSkills, fContext}},
 		}
 	}
@@ -489,19 +462,6 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 		openErr:      openErr,
 		saveBase:     openRaw, // drift baseline starts at open, then tracks
 		saveBaseErr:  openErr,
-	}
-	if target == TargetProject {
-		// The vault lives in the project store beside the file this editor
-		// edits (~/.byre/projects/<id>/), so the store dir and the project
-		// id both fall out of the file path. Value-state is an entries-dir
-		// listing, never a decrypt; only the project editor gets a vault
-		// surface (values are project-scoped — global/layer declare only).
-		store := filepath.Dir(filePath)
-		m.credVault = credentials.Open(store, filepath.Base(store))
-		m.credStoredNames = map[string]bool{}
-		for _, n := range m.credVault.EntryNames() {
-			m.credStoredNames[n] = true
-		}
 	}
 	return m.loadConfig(cfg)
 }
@@ -561,14 +521,6 @@ func (m model) loadConfig(cfg config.Config) model {
 	m.mcps = append([]config.MCP{}, cfg.MCPs...)
 	m.claudeSkills = append([]config.ClaudeSkill{}, cfg.ClaudeSkills...)
 	m.contexts = append([]config.ContextDecl{}, cfg.Contexts...)
-	m.credentials = append([]config.CredentialDecl{}, cfg.Credentials...)
-	// A (re)load discards staged values: this runs at open (nothing staged
-	// yet) and after an $EDITOR round-trip, which the ^e gate only allows
-	// from a CLEAN state — so nothing staged can be lost here either.
-	m.stagedCredValues = map[string][]byte{}
-	if m.credStoredNames == nil {
-		m.credStoredNames = map[string]bool{}
-	}
 	m.skills = append([]string{}, cfg.Skills...)
 	m.runArgs = strings.Join(cfg.RunArgs, "\n")
 	m.dfPre = strings.Join(cfg.DockerfilePre, "\n")
@@ -672,8 +624,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateText(msg)
 		case modeSkills:
 			return m.updateSkills(msg)
-		case modeCredPass:
-			return m.updateCredPass(msg)
 		default:
 			return m.updateForm(msg)
 		}
@@ -933,8 +883,6 @@ func (m model) View() string {
 		v = m.viewText()
 	case modeSkills:
 		v = m.viewSkills()
-	case modeCredPass:
-		v = m.viewCredPass()
 	default:
 		v = m.viewForm()
 	}
