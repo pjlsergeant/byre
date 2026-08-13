@@ -241,33 +241,57 @@ if [ -n "${BYRE_CRED_EXPECT:-}" ]; then
   fi
   # The manifest is byre-authored, one "KEY kind" line per delivered value:
   # the identifier a value travels under IS its config key, so there is no
-  # second name to map. These checks keep a corrupt line from exporting
-  # under something the config grammar never allowed.
+  # second name to map. A line this loop cannot honor is a CORRUPT DELIVERY,
+  # never a row to drop: exporting the rest would run the agent with a subset
+  # of the credentials the config declared -- the same silently-underequipped
+  # box the wait above refuses -- so every rejection exits, same direction as
+  # the launch gate.
+  #
+  # The message names the manifest LINE and nothing from it. A manifest that
+  # is not byre's is a manifest whose bytes may BE a credential, and echoing
+  # the offending key or kind is how the value this gate protects reaches the
+  # terminal.
+  cred_fail() {
+    echo "byre: credentials: the delivered manifest is not one byre wrote (line $1: $2) — refusing to launch on a partial credential set (failing closed)." >&2
+    echo "byre: (re-run \`byre develop\` to deliver them again. To launch deliberately without: \`byre develop --credentials=skip\`.)" >&2
+    exit 1
+  }
+  cred_lineno=0
+  cred_exported=0
   while read -r cred_key cred_kind; do
+    cred_lineno=$((cred_lineno + 1))
     [ -n "$cred_key" ] || continue
     if ! [[ "$cred_key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || [[ "$cred_key" == BYRE_* ]]; then
-      echo "byre: credential ${cred_key}: skipping malformed export key." >&2
-      continue
+      cred_fail "$cred_lineno" "the export key is not a variable name byre would have written"
     fi
     cred_file="$CRED_DIR/credentials/$cred_key"
+    # A value file that is missing or is not a regular file means the
+    # delivery for this row did not land; there is nothing to export and no
+    # honest way to continue.
+    [ -f "$cred_file" ] || cred_fail "$cred_lineno" "its value never landed on the session tmpfs"
     case "$cred_kind" in
     env)
-      if [ -f "$cred_file" ]; then
-        # Byte-exact: read to EOF (env values are NUL-free by rule);
-        # $(cat) would strip trailing newlines the value may carry.
-        cred_val=""
-        IFS= read -rd '' cred_val <"$cred_file" || true
-        export -- "$cred_key=$cred_val"
-        cred_val=""
-      fi
+      # Byte-exact: read to EOF (env values are NUL-free by rule);
+      # $(cat) would strip trailing newlines the value may carry.
+      cred_val=""
+      IFS= read -rd '' cred_val <"$cred_file" || true
+      export -- "$cred_key=$cred_val"
+      cred_val=""
       ;;
     file)
-      if [ -f "$cred_file" ]; then
-        export -- "$cred_key=$cred_file"
-      fi
+      export -- "$cred_key=$cred_file"
+      ;;
+    *)
+      cred_fail "$cred_lineno" "the delivery kind is neither env nor file"
       ;;
     esac
+    cred_exported=$((cred_exported + 1))
   done <"$CRED_DIR/manifest"
+  # BYRE_CRED_EXPECT is only set when byre scheduled a non-empty set, so a
+  # manifest that named nothing is the same corrupt delivery as a bad line.
+  if [ "$cred_exported" -eq 0 ]; then
+    cred_fail 0 "it named no credentials at all"
+  fi
 fi
 
 # Agent command: explicit run args > recorded agent command > login shell.

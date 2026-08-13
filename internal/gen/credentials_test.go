@@ -274,21 +274,41 @@ func TestLauncherCredExportWinsEnvdCollision(t *testing.T) {
 	}
 }
 
-func TestLauncherSkipsMalformedManifestTargets(t *testing.T) {
-	dir := t.TempDir()
-	deliverTree(t, dir,
-		"BYRE_EGRESS env\nnot-a-var env\nGOOD_ONE env\n",
-		map[string][]byte{"BYRE_EGRESS": []byte("x"), "not-a-var": []byte("y"), "GOOD_ONE": []byte("z")})
-	code, out := runLauncherCreds(t, dir, true, "5",
-		`printf '%s|%s' "${BYRE_EGRESS:-safe}" "$GOOD_ONE"`)
-	if code != 0 {
-		t.Fatalf("exit %d: %s", code, out)
-	}
-	if !strings.HasSuffix(out, "safe|z") {
-		t.Fatalf("agent saw %q, want reserved/malformed skipped and the good row exported", out)
-	}
-	if c := strings.Count(out, "skipping malformed export key"); c != 2 {
-		t.Fatalf("want 2 skip notices, got %d in %q", c, out)
+// A manifest line the launcher cannot honor is a corrupt delivery, not a row
+// to drop: dropping it would run the agent on a SUBSET of the declared
+// credentials, which is the fail-open the wait above exists to prevent. Every
+// arm exits, the agent never runs, and the message names the manifest LINE
+// without echoing a byte of it — a manifest that is not byre's may itself be
+// a credential's plaintext.
+func TestLauncherManifestRejectionsFailClosed(t *testing.T) {
+	secret := "sk-live-do-not-echo"
+	for _, tc := range []struct {
+		name     string
+		manifest string
+		values   map[string][]byte
+		line     string
+	}{
+		{"reserved key", "BYRE_EGRESS env\n", map[string][]byte{"BYRE_EGRESS": []byte(secret)}, "line 1"},
+		{"malformed key", "GOOD env\n" + secret + " env\n", map[string][]byte{"GOOD": []byte("z")}, "line 2"},
+		{"unknown kind", "GOOD_ONE " + secret + "\n", map[string][]byte{"GOOD_ONE": []byte("z")}, "line 1"},
+		{"value never landed", "GOOD_ONE env\n", nil, "line 1"},
+		{"empty manifest", "", nil, "line 0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			deliverTree(t, dir, tc.manifest, tc.values)
+			code, out := runLauncherCreds(t, dir, true, "5", `printf 'ran:%s' "${GOOD_ONE:-unset}"`)
+			if code == 0 || strings.Contains(out, "ran:") {
+				t.Fatalf("the agent must never run on a corrupt manifest: exit %d out %q", code, out)
+			}
+			if !strings.Contains(out, tc.line) || !strings.Contains(out, "failing closed") ||
+				!strings.Contains(out, "--credentials=skip") {
+				t.Fatalf("the refusal must name the line and the remedy: %q", out)
+			}
+			if strings.Contains(out, secret) {
+				t.Fatalf("the refusal echoed manifest content: %q", out)
+			}
+		})
 	}
 }
 
