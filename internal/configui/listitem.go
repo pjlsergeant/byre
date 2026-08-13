@@ -500,12 +500,18 @@ func (m model) startItem(idx int) model {
 		// cannot deliver. That is not repair; `byre credentials unset` is.
 		// An editor with no credential write path at all (--global) refuses
 		// every credential row for the same reason it offers no credential
-		// kinds: nothing here can write one.
-		if idx >= 0 && m.itemHostEnv {
+		// kinds: nothing here can write one. It says THAT, and names no verb:
+		// no credentials verb targets default.config, so `credentials set`
+		// would write a shadowing row in another file rather than repair this
+		// one. Damaged-row repair there is a hand edit, or removing the row.
+		if idx >= 0 && m.itemHostEnv && config.IsCredentialSource(m.hostEnv[idx].Value) {
 			src := m.hostEnv[idx].Value
 			key := m.hostEnv[idx].Key
-			_, usable, perr := config.ParseEncryptedRow(key, src)
-			if config.IsCredentialSource(src) && (!usable || perr != nil || !m.canWriteCredentials()) {
+			if !m.canWriteCredentials() {
+				m.status = key + " is a credential — " + credentialNoWritePathNote + "; to repair this row, edit the file by hand or remove the row"
+				return m
+			}
+			if _, usable, perr := config.ParseEncryptedRow(key, src); !usable || perr != nil {
 				m.status = key + " is a credential — change it with `byre credentials set " + key + "` (this screen would write over the ciphertext)"
 				return m
 			}

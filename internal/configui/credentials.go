@@ -118,7 +118,16 @@ type pendingCredential struct {
 const credentialWriteNote = "enter encrypts and writes this value now (the rest of the screen still saves with ^s)"
 
 // canWriteCredentials reports whether this editor has a credential write path.
+// In production that is false for exactly one target: --global, whose
+// default.config no credentials verb can name.
 func (m model) canWriteCredentials() bool { return m.creds != nil }
+
+// credentialNoWritePathNote is what an editor with no credential write path
+// says about a credential row — the notes and the row's own refusal both. It
+// names no CLI verb ON PURPOSE: `byre credentials set` cannot target this
+// file, so naming it would send a user to a command that writes a SHADOWING
+// row in another file instead of repairing the one they are looking at.
+const credentialNoWritePathNote = "nothing here can write a credential to this file — set credentials in a project config or a layer"
 
 // commitCredentialRow is the credential arm of commitEnvRow: hold the key to
 // the same rules a save would, decide what an empty Value means for this row,
@@ -286,7 +295,7 @@ func (m model) envItemNotes() []string {
 		return nil
 	}
 	if !m.canWriteCredentials() {
-		return []string{"⚠ nothing here can write a credential to this file — set credentials in a project config or a layer"}
+		return []string{"⚠ " + credentialNoWritePathNote}
 	}
 	var notes []string
 	if d := m.creds.Disclosure(); d != "" {

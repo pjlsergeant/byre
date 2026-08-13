@@ -823,7 +823,8 @@ func TestErrLineKeepsDeliberateNewlinesAndStripsControls(t *testing.T) {
 // have, and the value-state cell speaks `byre credentials list`'s word. This
 // pins the RENDER; the editing half moved to credentials_test.go when the
 // editor grew its own write path (an editor with none — the --global one, and
-// this fixture — still refuses the row and names the CLI).
+// this fixture — still refuses the row, and must not name a CLI verb that
+// cannot target its file).
 func TestEnvScreenRendersACredentialRowAndRefusesItWithNoWritePath(t *testing.T) {
 	credentials.SetWorkFactorForTesting(10)
 	_, recipient, err := credentials.NewIdentity("pw")
@@ -852,12 +853,19 @@ func TestEnvScreenRendersACredentialRowAndRefusesItWithNoWritePath(t *testing.T)
 	if strings.Contains(line, "host ") || len(line) > 60 {
 		t.Fatalf("the row must not claim a host source nor carry the blob: %q", line)
 	}
+	m.target = TargetGlobal // the one target production leaves without a writer
 	m = openHostEnvRow(t, m, "STRIPE_KEY")
 	if m.mode == modeItem {
 		t.Fatal("a credential row must not open the picker editor where nothing can write one")
 	}
-	if !strings.Contains(m.status, "byre credentials set STRIPE_KEY") {
-		t.Fatalf("the refusal must name the surface that can change it: %q", m.status)
+	// The remedy must be one this user can actually carry out: NO credentials
+	// verb targets default.config, so naming `byre credentials set` here would
+	// send them to a command that writes a shadowing row in another file.
+	if !strings.Contains(m.status, credentialNoWritePathNote) {
+		t.Fatalf("the refusal must say nothing here can write one: %q", m.status)
+	}
+	if strings.Contains(m.status, "byre credentials") {
+		t.Fatalf("the refusal named a command that cannot target this file: %q", m.status)
 	}
 	// The value survives a save of everything else on the screen.
 	if got := m.assemble().EnvFromHost["STRIPE_KEY"]; got != row {
