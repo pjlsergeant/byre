@@ -365,6 +365,12 @@ func installForKind(s Streams, kind packages.Kind, uri, digest string) error {
 // does not have); against an existing byre.config the review shows the diff.
 func renderPresetReview(s Streams, paths project.Paths, preset config.Config, content []byte, missing []missingRef, verb string, store []byte, hasStore bool) {
 	cfg, grants := effectiveReview(paths, preset)
+	// The credential annotation is a DIFF, so it cannot come off the resolved
+	// proposal the rest of the summary is built from: what a reader needs is
+	// which values and which identity moved, and both sides' raw bytes are the
+	// only place that is legible. A missing store is the first apply -- every
+	// credential in the preset is new, which is exactly what the lines say.
+	grants = sortGrantLines(append(grants, credentialReviewLines(store, content)...))
 	dataf(s.Err, "\n%s preset -- the box this composes:\n", verb)
 	// Every rendered field below can carry preset-controlled bytes: the funnel
 	// renders them as data so hostile run_args/mount paths/skill names cannot
@@ -385,7 +391,7 @@ func renderPresetReview(s Streams, paths project.Paths, preset config.Config, co
 		// funnel keeps the highlight: this is the one report line in the
 		// package that is MEANT to carry an escape sequence.
 		line := packages.EscapeTerminal(g.Text)
-		if (g.Containment || g.CrossProject) && s.TTY {
+		if (g.Containment || g.CrossProject || g.Credential) && s.TTY {
 			line = "\x1b[1;33m" + line + "\x1b[0m"
 		}
 		dataf(s.Err, "  ⚠ %s\n", escaped(line))

@@ -69,21 +69,24 @@ func shadowGrantLines(cfg config.Config, res skills.Resolved) []grantLine {
 	return out
 }
 
-// sortGrantLines puts containment holes first, then cross-project reach, then
-// the rest -- stable within each class so enable order is preserved.
+// sortGrantLines puts containment holes first, then credential changes, then
+// cross-project reach, then the rest -- stable within each class so enable
+// order is preserved.
 func sortGrantLines(in []grantLine) []grantLine {
-	var contain, cross, rest []grantLine
+	var contain, cred, cross, rest []grantLine
 	for _, g := range in {
 		switch {
 		case g.Containment:
 			contain = append(contain, g)
+		case g.Credential:
+			cred = append(cred, g)
 		case g.CrossProject:
 			cross = append(cross, g)
 		default:
 			rest = append(rest, g)
 		}
 	}
-	return append(append(contain, cross...), rest...)
+	return append(append(append(contain, cred...), cross...), rest...)
 }
 
 // skillGrantSummary lists the runtime grants the enabled skills contribute, so
@@ -136,12 +139,17 @@ func skillGrantSummary(res skills.Resolved) []grantLine {
 
 // grantLine is one ⚠ row of the grant review. Containment marks the
 // loudest class (host-wide hole); CrossProject marks reach beyond this box
-// (machine-scoped volumes). Both render emphasized; containment sorts above
-// cross-project so a docker-host-class grant can't hide below shared volumes.
+// (machine-scoped volumes); Credential marks a change to a credential value or
+// to the identity that opens one. All three render emphasized; containment
+// sorts above cross-project so a docker-host-class grant can't hide below
+// shared volumes, and credential lines sort between them -- narrower than a
+// host-wide hole, but a value the user goes on USING, so it must not sit below
+// a shared volume they can already see.
 type grantLine struct {
 	Text         string
 	Containment  bool
 	CrossProject bool
+	Credential   bool
 }
 
 func plainGrants(texts ...string) []grantLine {
@@ -290,6 +298,149 @@ func extraHostEnv(m map[string]string) []string {
 		// RenderSource, not the raw value: an encrypted row's payload is a
 		// wall of base64 that would bury the rest of this consent gate.
 		out[i] = k + " <- " + config.RenderSource(m[k])
+	}
+	return out
+}
+
+// credentialRejectAdvice is the second half of every value-change line. A
+// credential value is the one thing in this review a reader CANNOT check by
+// looking: the ciphertext elides, and byre cannot tell a rotation the user
+// performed from a value swapped in by whatever wrote the file. So the line
+// asks the only question that distinguishes them.
+const credentialRejectAdvice = " — if you didn't rotate this credential, reject"
+
+// credentialReviewLines is the preset gate's credential annotation: what
+// changes about this file's credentials between the version in the store and
+// the version being applied.
+//
+// It exists because the ordinary review cannot show it. Value legibility was
+// never a credential row's job — the ciphertext elides everywhere — so a
+// swapped blob and a rotation look identical in the diff, and the file-local
+// [credentials] block does not reach Config at all (Parse drops it
+// deliberately), so an identity replacement is invisible in the grant summary.
+// The repo is agent-writable and apply is the reviewed bridge into the trusted
+// store, so this is where a minted, swapped, transplanted or replayed value
+// gets named. It does not GATE: the review is legibility at the consent gate,
+// the way byre answers everything (P1/P2).
+//
+// Judged over both files' RAW bytes, and over EITHER side being a credential:
+// replacing an encrypted row with a plaintext scheme (or with an [env]
+// literal, which takes the key out of env_from_host entirely) changes the same
+// delivered value, and a classifier that only looked at the new side would
+// wave it through.
+func credentialReviewLines(store, content []byte) []grantLine {
+	before, beforeErr := readCredentialView(store)
+	after, afterErr := readCredentialView(content)
+	if beforeErr != nil || afterErr != nil {
+		// Degrade, never guess: an unreadable side means byre cannot say
+		// whether a credential moved, and silence would read as "nothing did".
+		err := afterErr
+		if err == nil {
+			err = beforeErr
+		}
+		return []grantLine{{Text: "could not compare this file's credentials (" + err.Error() + ") — credential changes are NOT shown below", Credential: true}}
+	}
+	var out []grantLine
+	for _, key := range slices.Sorted(maps.Keys(unionKeys(before.sources, after.sources))) {
+		old, hadOld := before.sources[key]
+		nw, hadNew := after.sources[key]
+		if !config.IsCredentialSource(old) && !config.IsCredentialSource(nw) {
+			continue
+		}
+		switch {
+		case hadOld && hadNew && old != nw:
+			out = append(out, grantLine{Text: fmt.Sprintf("%s: credential value changed (%s -> %s)%s",
+				key, before.render(key), after.render(key), credentialRejectAdvice), Credential: true})
+		case !hadOld && hadNew:
+			// Quieter: a key that was not here is a new declaration, and the
+			// grant summary already lists it as a row. Say what appeared.
+			out = append(out, grantLine{Text: fmt.Sprintf("%s: credential row appeared (%s)", key, after.render(key)), Credential: true})
+		case hadOld && !hadNew:
+			out = append(out, grantLine{Text: fmt.Sprintf("%s: credential row vanished (was %s) — its value is gone from this file", key, before.render(key)), Credential: true})
+		}
+	}
+	return append(out, credentialBlockLine(before.block, before.hasBlock, after.block, after.hasBlock)...)
+}
+
+// credentialBlockLine names a change to the file-local [credentials] block.
+// The block is what OPENS this file's rows and what future `set`s encrypt to,
+// so replacing it is a stronger move than changing any one value: every value
+// set afterward answers to the incoming identity's passphrase, not the user's.
+func credentialBlockLine(before config.CredentialsBlock, hadBefore bool, after config.CredentialsBlock, hasAfter bool) []grantLine {
+	same := string(before.Identity) == string(after.Identity) && before.Recipient == after.Recipient
+	switch {
+	case hadBefore && hasAfter && !same:
+		return []grantLine{{Text: "this preset replaces the file's credentials identity — its rows open under ITS passphrase, and values you set afterward would encrypt to ITS recipient; if you didn't do this, reject", Credential: true}}
+	case !hadBefore && hasAfter:
+		return []grantLine{{Text: "this preset brings its own credentials identity — its rows open under ITS passphrase, and values you set afterward would encrypt to ITS recipient; if you didn't do this, reject", Credential: true}}
+	case hadBefore && !hasAfter:
+		return []grantLine{{Text: "this preset removes the file's credentials identity — nothing here can open a credential row afterward; if you didn't do this, reject", Credential: true}}
+	}
+	return nil
+}
+
+// fileCredentialView is one physical config file's credential-relevant
+// content: what value each env key carries, and the block that opens the
+// encrypted ones.
+type fileCredentialView struct {
+	// sources maps env key -> its env_from_host source, or envLiteralSource for
+	// a key an [env] literal owns. The two tables share a key space (ADR 0026:
+	// a literal takes the key out of env_from_host), so a credential replaced
+	// by a literal has to compare as a CHANGE to that key, not as a row that
+	// vanished next to an unrelated literal that appeared.
+	sources  map[string]string
+	block    config.CredentialsBlock
+	hasBlock bool
+}
+
+// envLiteralSource stands for "an [env] literal owns this key". It is not a
+// value: [env] literals are baked into the image and the review prints env
+// KEYS, never their values (the standing keys-not-values rule), and this side
+// only ever has to compare unequal to a credential row.
+const envLiteralSource = "[env] literal"
+
+func (v fileCredentialView) render(key string) string {
+	src, ok := v.sources[key]
+	if !ok {
+		return "(unset)"
+	}
+	if src == "" {
+		// The ratified per-project disable idiom, which reads as nothing at all
+		// unless it is spelled out.
+		return `"" (disabled)`
+	}
+	return config.RenderSource(src)
+}
+
+func readCredentialView(raw []byte) (fileCredentialView, error) {
+	v := fileCredentialView{sources: map[string]string{}}
+	if len(raw) == 0 {
+		// No file on this side: everything the other side carries is new. Not
+		// an error -- `preset apply` into a project with no config is the
+		// ordinary first-apply.
+		return v, nil
+	}
+	cfg, err := config.Parse(raw)
+	if err != nil {
+		return v, err
+	}
+	maps.Copy(v.sources, cfg.EnvFromHost)
+	for k := range cfg.Env {
+		v.sources[k] = envLiteralSource
+	}
+	if v.block, v.hasBlock, err = config.ParseCredentialsBlock(raw); err != nil {
+		return v, err
+	}
+	return v, nil
+}
+
+func unionKeys(a, b map[string]string) map[string]struct{} {
+	out := make(map[string]struct{}, len(a)+len(b))
+	for k := range a {
+		out[k] = struct{}{}
+	}
+	for k := range b {
+		out[k] = struct{}{}
 	}
 	return out
 }
