@@ -416,6 +416,16 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	if err != nil {
 		return none, err
 	}
+	// The two views of one cascade, compared at the last point before launch.
+	// Skipped when the launch is DELIBERATELY credential-less: --credentials=skip
+	// says so on stderr and in the record, so a disagreement changes nothing it
+	// would have delivered (decryptCredentialsLocked's own under-lock refusal
+	// returns early there for the same reason).
+	if !credSkipped {
+		if err := refuseCredentialViewMismatch(hostEnv, creds.values); err != nil {
+			return none, err
+		}
+	}
 	if len(creds.values) > 0 {
 		params.Tmpfs = append(params.Tmpfs, credTmpfs(creds, ident, r.Engine()))
 		// Set only when a delivery is in flight, and it persists with the

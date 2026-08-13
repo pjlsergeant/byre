@@ -365,6 +365,37 @@ func decryptCredentialsLocked(groups []config.CredentialFile, open unlockedFiles
 	return p, nil
 }
 
+// refuseCredentialViewMismatch cross-checks develop's TWO independent reads of
+// one cascade — the merged config (resolveHostEnv's hostEnvEncrypted rows) and
+// the per-file credential view the unlock and decrypt ran on — at the last
+// point before a container is created.
+//
+// They are read separately (config.Load, then config.CascadeFiles, whose
+// contract lets an unreadable sublayer drop out), so a layer written between
+// them can leave a key in the first and not the second. Nothing downstream
+// would say so: an encrypted row never joins the `-e` export, so no prompt is
+// missed loudly, no manifest entry appears, and if it was the only row the
+// launcher is never even armed to wait — the agent would run without the value
+// and byre would print nothing about it. That silent class is what this
+// closes; the mismatch is transient by construction, so the remedy is to run
+// again.
+func refuseCredentialViewMismatch(hostEnv []hostEnvResult, values map[string][]byte) error {
+	var missing []string
+	for _, r := range hostEnv {
+		if r.State != hostEnvEncrypted {
+			continue
+		}
+		if _, ok := values[r.Key]; !ok {
+			missing = append(missing, r.Key)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("credentials: %s: declared as an encrypted row by the config cascade, and absent from the credential file view this launch unlocked and decrypted — the two reads of the cascade disagree, so a config layer changed between them; nothing was launched, re-run byre develop",
+		strings.Join(missing, ", "))
+}
+
 // credStream frames the deliverable set for the receiver: a version line,
 // the manifest first, values in key order, "done" last. Payloads ride
 // single-line base64 so the receiver parses line-oriented and binary-safe.

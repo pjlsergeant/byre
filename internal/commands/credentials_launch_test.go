@@ -274,6 +274,64 @@ func TestDevelopEmptyPassphraseIsRejectedNotASkip(t *testing.T) {
 	}
 }
 
+// develop reads one cascade TWICE (config.Load for the merged config,
+// config.CascadeFiles for the per-file credential view), and a layer written
+// between the reads can leave a key in the first and not the second. Nothing
+// downstream reports that: an encrypted row never joins the -e export, so the
+// box would launch without the value and byre would say nothing. The
+// disagreement is constructed here directly — racing the two reads would test
+// the scheduler, not the check.
+func TestDevelopRefusesWhenTheTwoCascadeViewsDisagree(t *testing.T) {
+	row, err := config.FormatEncryptedRow(credentials.KindEnv, []byte("ciphertext"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The credential file view carries STRIPE_KEY only; the merged config
+	// carries GHOST_KEY as an encrypted row too.
+	mismatched := func(t *testing.T) (project.Paths, resolved) {
+		p, rv := credFixture(t)
+		rv.cfg.EnvFromHost = map[string]string{"STRIPE_KEY": row, "GHOST_KEY": row}
+		return p, rv
+	}
+
+	p, rv := mismatched(t)
+	passphraseSeam(t, "pw")
+	var errBuf bytes.Buffer
+	f := &fakeRunner{liveSecond: map[string][]string{workdirLabel(p): {"cid"}}}
+	err = develop(f, ttyStreams(&errBuf), p, rv, false, CredentialAsk)
+	if err == nil || !strings.Contains(err.Error(), "GHOST_KEY") ||
+		!strings.Contains(err.Error(), "the two reads of the cascade disagree") {
+		t.Fatalf("want a refusal naming the key and the two views, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "STRIPE_KEY") {
+		t.Fatalf("only the key the views disagree over may be named: %v", err)
+	}
+	if len(f.creates) != 0 {
+		t.Fatalf("a refused launch must create nothing: %v", f.creates)
+	}
+
+	// A deliberate skip is not silent about launching without the values, so
+	// the disagreement changes nothing it would have delivered.
+	p, rv = mismatched(t)
+	f = &fakeRunner{}
+	if err := develop(f, ttyStreams(&errBuf), p, rv, false, CredentialSkip); err != nil {
+		t.Fatalf("--credentials=skip must still launch: %v", err)
+	}
+
+	// The agreeing shape still launches — a check that fired on every config
+	// carrying a credential row would pass the refusal above for free.
+	p, rv = credFixture(t)
+	rv.cfg.EnvFromHost = map[string]string{"STRIPE_KEY": row}
+	passphraseSeam(t, "pw")
+	f = &fakeRunner{liveSecond: map[string][]string{workdirLabel(p): {"cid"}}}
+	if err := develop(f, ttyStreams(&errBuf), p, rv, false, CredentialAsk); err != nil {
+		t.Fatalf("the views agree, so the launch must proceed: %v", err)
+	}
+	if len(f.creates) == 0 {
+		t.Fatal("the agreeing launch created no container")
+	}
+}
+
 // --credentials=skip is the ONE deliberate way to launch without them, and
 // the record says which it was.
 func TestDevelopSkipModeLaunchesWithout(t *testing.T) {
