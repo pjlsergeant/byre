@@ -458,3 +458,42 @@ func TestCredentialsList(t *testing.T) {
 }
 
 func b64Of(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
+
+// The one seam the CLI tests and the launch tests do not meet at: resolve()
+// putting the cascade's credential rows on the view develop reads. Set a
+// credential the ordinary way, then take the ordinary resolution and open the
+// row with the passphrase — which is the whole loop, end to end.
+func TestResolveCarriesTheCascadeCredentialRows(t *testing.T) {
+	paths, proj := testPaths(t)
+	var errBuf bytes.Buffer
+	passphraseSeam(t, "pw", "pw", "sk-live")
+	if err := CredentialsSet(ttyStreams(&errBuf), proj, "STRIPE_KEY", false, ""); err != nil {
+		t.Fatal(err)
+	}
+	rv, err := resolve(paths, proj, io.Discard)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if rv.credErr != nil {
+		t.Fatalf("credErr: %v", rv.credErr)
+	}
+	if len(rv.credFiles) != 1 || len(rv.credFiles[0].Rows) != 1 || rv.credFiles[0].Label != "project" {
+		t.Fatalf("credFiles = %+v", rv.credFiles)
+	}
+	unlocked, err := unlockCredentials(ttyStreamsWith(&errBuf, "pw"), CredentialStdin, rv.credFiles)
+	if err != nil {
+		t.Fatalf("unlock: %v", err)
+	}
+	p, err := decryptCredentialsLocked(rv.credFiles, unlocked, false)
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	if string(p.values["STRIPE_KEY"]) != "sk-live" || p.manifest != "STRIPE_KEY env\n" {
+		t.Fatalf("payload = %q / %q", p.values["STRIPE_KEY"], p.manifest)
+	}
+}
+
+// ttyStreamsWith is ttyStreams with a stdin the stdin-mode unlock can read.
+func ttyStreamsWith(errBuf *bytes.Buffer, stdin string) Streams {
+	return Streams{Out: io.Discard, Err: errBuf, In: strings.NewReader(stdin + "\n"), TTY: false}
+}
