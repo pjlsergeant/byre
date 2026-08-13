@@ -37,6 +37,16 @@ func LayerPath(home, name string) string {
 	return filepath.Join(LayersDir(home), name, LayerConfigName)
 }
 
+// LayerLockPath is the advisory lock beside a layer's config file: the mutex
+// for writers of THIS file, whichever project they came from. A layer is
+// reachable from every project extending it, and those projects' setup locks
+// are different files, so a cross-project read-modify-write of a layer is
+// serialized here or nowhere.
+// Callers must ValidateLayerName first — the name becomes a path element.
+func LayerLockPath(home, name string) string {
+	return filepath.Join(LayersDir(home), name, "lock")
+}
+
 // ValidateLayerName checks a layer name against the grammar. It is also the
 // path-traversal gate: every LayerPath caller runs it first, so a name can
 // never carry a separator or "..".

@@ -9,19 +9,21 @@ package commands
 // command-line argument (argv lands in shell history and the process list) —
 // it is read masked from the terminal or piped on stdin.
 //
-// Every write is compare-and-swap under the project setup lock: the file is
-// re-read after the lock is taken and must be byte-identical to what the
-// operation based its edit on. The race that closes is not hypothetical —
-// `set` reads recipient R, a concurrent identity replacement lands R2, and
-// the R-encrypted blob sitting beside R2 is permanently undecryptable though
-// both writes "succeeded".
+// Every write is compare-and-swap under a lock: the file is re-read after the
+// lock is taken and must be byte-identical to what the operation based its
+// edit on. The race that closes is not hypothetical — `set` reads recipient
+// R, a concurrent identity replacement lands R2, and the R-encrypted blob
+// sitting beside R2 is permanently undecryptable though both writes
+// "succeeded".
 //
-// The COMPARE is the guarantee; the lock is what makes it airtight for the
-// contender that actually exists. Sibling worktree sessions share one project
-// store and one lock, so two of them are fully serialized. A LAYER is shared
-// across projects, whose locks differ — there the compare still refuses the
-// second writer, with the same window the config editor's own layer saves
-// carry (drift-checked, unserialized).
+// The COMPARE is the guarantee; the lock is what makes it exclusive rather
+// than merely detected. The lock a write takes belongs to the FILE it writes,
+// not to the caller: a project config is written under the project setup lock
+// (shared by sibling worktree sessions, which share one store), and a layer
+// file under a lock in the layer's own directory — a layer is reachable from
+// every project that extends it, so a project lock would leave two projects
+// writing one file unserialized, and the loser's edit would be refused after
+// the fact instead of waiting its turn.
 
 import (
 	"bytes"
@@ -91,13 +93,14 @@ func credentialTarget(projectDir, layer string) (credTarget, error) {
 	return credTarget{
 		// follow=true: a named layer is host-owned (never inside a box
 		// mount), so a dotfiles symlink there is the user's own arrangement.
-		// The lock is THIS project's: it serializes this project's own
-		// sessions, and the compare-and-swap answers for a contender from
-		// another project (see the file comment).
+		// The lock is the LAYER's, not this project's: every project
+		// extending the layer writes this same file, and their project locks
+		// differ, so only a lock beside the file itself makes the
+		// compare-and-swap exclusive across them.
 		path:       path,
 		follow:     true,
 		label:      "layer " + layer,
-		lockFile:   paths.LockFile,
+		lockFile:   config.LayerLockPath(paths.Home, layer),
 		disclosure: layerWriteDisclosure(paths.Home, layer, path),
 	}, nil
 }

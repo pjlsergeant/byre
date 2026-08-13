@@ -8,11 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/credentials"
 	"github.com/pjlsergeant/byre/internal/hostopen"
+	"github.com/pjlsergeant/byre/internal/lock"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
@@ -501,6 +504,84 @@ func TestResolveCarriesTheCascadeCredentialRows(t *testing.T) {
 }
 
 // ttyStreamsWith is ttyStreams with a stdin the stdin-mode unlock can read.
+// A layer file is reachable from every project extending it, so the lock a
+// credential write takes belongs to the FILE, not to the caller: two projects
+// writing one layer take the same lock, and neither takes its own.
+func TestLayerCredentialWritesTakeTheLayerLock(t *testing.T) {
+	pA, projA := testPaths(t)
+	projB := t.TempDir()
+	pB, err := project.Resolve(projB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pB.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	layerPath := config.LayerPath(pA.Home, "acme")
+	if err := hostopen.PlainMkdirAll(filepath.Dir(layerPath), 0o755, hostopen.StoreOwned); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.AtomicWrite(layerPath, "[env]\nA = \"b\"\n"); err != nil {
+		t.Fatal(err)
+	}
+
+	tA, err := credentialTarget(projA, "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tB, err := credentialTarget(projB, "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tA.lockFile != tB.lockFile || tA.lockFile != config.LayerLockPath(pA.Home, "acme") {
+		t.Fatalf("two projects writing one layer must share the layer's own lock: %q vs %q", tA.lockFile, tB.lockFile)
+	}
+	if tA.lockFile == pA.LockFile || tB.lockFile == pB.LockFile {
+		t.Fatal("a project setup lock cannot serialize two projects writing one layer")
+	}
+	// A project target keeps the project lock — sibling worktree sessions
+	// share one store, and that is the contender there.
+	own, err := credentialTarget(projA, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if own.lockFile != pA.LockFile {
+		t.Fatalf("project target lock = %q, want the project setup lock", own.lockFile)
+	}
+
+	// And it is a real mutex, not a path: held as the other project would
+	// hold it, this project's write waits instead of racing the compare.
+	holder, err := lock.Acquire(tB.lockFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	passphraseSeam(t, "pw", "pw", "layer-value")
+	var out safeBuffer
+	var wg sync.WaitGroup
+	var done atomic.Bool
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := CredentialsSet(Streams{Out: io.Discard, Err: &out, In: strings.NewReader(""), TTY: true}, projA, "SHARED", false, "acme"); err != nil {
+			t.Errorf("contended layer set: %v", err)
+		}
+		done.Store(true)
+	}()
+	for i := 0; i < 200 && !strings.Contains(out.String(), "waiting"); i++ {
+		sleepMs(10)
+	}
+	if done.Load() {
+		t.Fatal("the write landed while another project held the layer lock")
+	}
+	if err := holder.Release(); err != nil {
+		t.Fatal(err)
+	}
+	wg.Wait()
+	if v, _ := openCredRow(t, layerPath, "pw", "SHARED"); string(v) != "layer-value" {
+		t.Fatalf("value after the lock freed: %q", v)
+	}
+}
+
 // `byre dockerrun` prints what develop would run — and for a project with
 // declared credentials, what develop runs is a box ARMED to fail closed
 // without them. A printed command that omitted the arming would hand the
