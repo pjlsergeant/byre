@@ -175,7 +175,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	var editorRoots hostexec.Roots
 	var vols configui.VolumeAdmin // nil for --global and --layer (no project volumes)
 	var prepare func() error      // deferred store setup, run by the UI before its first write
-	var lockFile string           // the project store's setup lock ("" = no shared contender)
+	var lockFile string           // the lock guarding THIS file ("" = no shared contender)
 	// livePaths is the project whose session liveness qualifies the editor's
 	// exposure headline and its save report. Zero for --global/--layer: those
 	// files belong to no project, so there is no box for them to be about.
@@ -199,6 +199,16 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 		title = "byre layer config  (" + layer + ")"
 		layerDir := filepath.Dir(path)
 		prepare = func() error { return hostopen.PlainMkdirAll(layerDir, 0o755, hostopen.StoreOwned) }
+		// The LAYER's own lock, not any project's: a layer file is reachable
+		// from every project extending it, and `byre credentials set --layer`
+		// compare-and-swaps it under this same lock. Without it an editor save
+		// and a credential write cross — one silently reconciles the other
+		// away, and a credential write that minted the file's identity would
+		// leave the identity and its rows in different generations, which is
+		// exactly what the compare-and-swap exists to prevent.
+		// prepare (the layer dir's MkdirAll) runs before the first write, so
+		// the lock always has a directory to live in.
+		lockFile = config.LayerLockPath(home, layer)
 	default:
 		paths, perr := project.Resolve(projectDir)
 		if perr != nil {
@@ -238,10 +248,12 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	// worktree_base is a host workflow preference edited in the GLOBAL config; the
 	// project editor omits it (showing it there would imply a per-project unset
 	// that the cascade can't honor once a global default exists).
-	// Writes ride the project's setup lock: worktree sessions share one
-	// store, so two editors saving at once is an ordinary shape, not a race
-	// nobody hits. Global and layer targets have no such shared contender and
-	// pass no guard -- the drift check still applies, unserialized.
+	// Writes ride the lock that guards the FILE: the project store's setup
+	// lock (worktree sessions share one store, so two editors saving at once
+	// is an ordinary shape), or the layer's own lock (every project extending
+	// the layer writes that one file, and `byre credentials --layer` takes the
+	// same lock). --global has no shared contender and passes no guard -- the
+	// drift check still applies, unserialized.
 	var guard func(func() error) error
 	if lockFile != "" {
 		guard = func(write func() error) error { return withSetupLock(s.Err, lockFile, write) }

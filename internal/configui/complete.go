@@ -194,10 +194,12 @@ func (m model) save() model {
 	return m
 }
 
-// write runs Save inside whatever lock the caller supplied (the project
-// store's setup lock, for the target that concurrent worktree sessions
-// share). No guard -- the global and layer editors -- writes directly; the
-// drift check still applies, it is just not serialized.
+// write runs Save inside whatever lock the caller supplied — the lock that
+// guards the FILE, whichever editor reached it (the project store's setup
+// lock, shared by concurrent worktree sessions; a named layer's own lock,
+// shared with every project that extends it and with `byre credentials
+// --layer`). No guard -- the global editor -- writes directly; the drift
+// check still applies, it is just not serialized.
 // The new baseline is captured INSIDE the guard, immediately after the write
 // that established it. Re-reading after the lock releases reopens the very
 // hole drift detection closes: another session's write can land in the gap,

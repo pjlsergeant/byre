@@ -44,9 +44,6 @@ func LayerNew(s Streams, name string) error {
 		return fmt.Errorf("layer name %q is reserved (%s); pick another name", name, reason)
 	}
 	path := config.LayerPath(home, name)
-	if _, err := hostopen.PlainStat(path, hostopen.StoreOwned); err == nil {
-		return fmt.Errorf("%s already exists", path)
-	}
 	if err := hostopen.PlainMkdirAll(filepath.Dir(path), 0o755, hostopen.StoreOwned); err != nil {
 		return err
 	}
@@ -62,7 +59,17 @@ func LayerNew(s Streams, name string) error {
 # egress = []
 # [env]
 `, name, name)
-	if err := config.AtomicWrite(path, stub); err != nil {
+	// The layer's own lock — the one every writer of this file takes (`byre
+	// config --layer`, `byre credentials --layer`). Scaffolding is a write
+	// like any other, and unserialized it is the most destructive one: the
+	// exists-check and the write would straddle another writer's landing, and
+	// the stub would then overwrite a layer that just gained a credential row.
+	if err := withSetupLock(s.Err, config.LayerLockPath(home, name), func() error {
+		if _, err := hostopen.PlainStat(path, hostopen.StoreOwned); err == nil {
+			return fmt.Errorf("%s already exists", path)
+		}
+		return config.AtomicWrite(path, stub)
+	}); err != nil {
 		return err
 	}
 	dataf(s.Err, "byre: created %s\n", path)

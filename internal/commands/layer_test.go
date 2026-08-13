@@ -1,12 +1,16 @@
 package commands
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/lock"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
@@ -66,6 +70,50 @@ func TestLayerNewScaffoldsAndGates(t *testing.T) {
 	s4, _, _ := testStreams("", false)
 	if err := LayerNew(s4, "../evil"); err == nil || !strings.Contains(err.Error(), "want lowercase [a-z0-9-]") {
 		t.Errorf("path-shaped layer name must be refused by the name grammar, got: %v", err)
+	}
+}
+
+// Every writer of a layer file takes THAT file's lock, `byre layer new`
+// included. Unserialized, the scaffold's exists-check and its write straddle
+// another writer's landing, and the stub overwrites a layer that just gained
+// a credential row — the lost update the compare-and-swap discipline exists
+// to prevent.
+func TestLayerNewTakesTheLayerLock(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BYRE_HOME", home)
+
+	lockPath := config.LayerLockPath(home, "torn")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	holder, err := lock.Acquire(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var out safeBuffer
+	var wg sync.WaitGroup
+	var done atomic.Bool
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := LayerNew(Streams{Out: io.Discard, Err: &out, In: strings.NewReader("")}, "torn"); err != nil {
+			t.Errorf("contended layer new: %v", err)
+		}
+		done.Store(true)
+	}()
+	for i := 0; i < 200 && !strings.Contains(out.String(), "waiting"); i++ {
+		sleepMs(10)
+	}
+	if done.Load() {
+		t.Fatal("layer new scaffolded while another writer held the layer lock")
+	}
+	if err := holder.Release(); err != nil {
+		t.Fatal(err)
+	}
+	wg.Wait()
+	if _, err := os.ReadFile(config.LayerPath(home, "torn")); err != nil {
+		t.Fatalf("the scaffold must land once the lock frees: %v", err)
 	}
 }
 
