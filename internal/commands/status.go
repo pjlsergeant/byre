@@ -85,6 +85,12 @@ type statusInfo struct {
 	// there is no live-state field).
 	Credentials      []config.CredentialFile
 	CredentialUnlock string
+	// CredentialErr is why the credential rows could not be read at all —
+	// the cascade's file view, or a row within it. It is rendered as its own
+	// qualifier row: an empty Credentials section is how "no credentials
+	// declared" reads, and this page is exactly where a user looks when
+	// develop refused, so the two states cannot share a rendering.
+	CredentialErr string
 	// Containments are skill-declared containment holes (warranty disclaimer).
 	// Multi-declarer: all shown; other status rows stay unqualified.
 	Containments []skills.ContainmentDecl
@@ -236,10 +242,17 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 	// set IS the declared set.
 	info.Contexts = cfg.Contexts
 	// Credential rows: the cascade as FILES, since a row belongs to the file
-	// that contributed it. A cascade byre cannot read degrades to no rows —
-	// the launch says so loudly, and a read-only page does not fail over it.
-	if files, ferr := config.CascadeFiles(projectDir); ferr == nil {
-		info.Credentials, _ = config.EncryptedRows(files)
+	// that contributed it. A read-only page never fails over an unreadable
+	// cascade — it says so on its own row instead: silently dropping the
+	// section renders "byre cannot read your credentials" identically to "you
+	// declared none", on the page a user opens BECAUSE develop refused. Both
+	// errors stop the next launch, so both are worth the row.
+	if files, ferr := config.CascadeFiles(projectDir); ferr != nil {
+		info.CredentialErr = ferr.Error()
+	} else if groups, gerr := config.EncryptedRows(files); gerr != nil {
+		info.CredentialErr = gerr.Error()
+	} else {
+		info.Credentials = groups
 	}
 	info.EnvProvided = providedEnv(cfg, info.HostEnv)
 	info.EnvKeys = slices.Sorted(maps.Keys(cfg.Env))
@@ -870,6 +883,9 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 	// the running box's launch-time unlock outcome. Values render nowhere,
 	// nothing here decrypts, and there is no live-state field (byre does not
 	// probe the box).
+	if s.CredentialErr != "" {
+		row("Credentials", "(unreadable: "+s.CredentialErr+") — the declared rows cannot be listed here, and the next develop stops on the same read")
+	}
 	firstCred := true
 	for _, g := range s.Credentials {
 		for _, r := range g.Rows {

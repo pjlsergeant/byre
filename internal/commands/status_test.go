@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"encoding/base64"
 	"io"
 	"os"
 	"path/filepath"
@@ -927,6 +928,37 @@ func TestStatusDisclosesShadowWhenSkillsUnresolved(t *testing.T) {
 	}
 	if !strings.Contains(got, gen.ByreDir+" ("+shadowFromConfig+")") {
 		t.Errorf("the config shadow must still be disclosed:\n%s", got)
+	}
+}
+
+// A cascade whose credential rows cannot be read has to SAY so. Dropping the
+// section renders "byre cannot read your credentials" exactly like "you
+// declared none" — on the page a user opens BECAUSE develop refused.
+func TestStatusReportsUnreadableCredentialRows(t *testing.T) {
+	p, proj := testPaths(t)
+	// A credential row on the reserved `manifest` key: the reservation is a
+	// CREDENTIAL rule, so config.Load accepts the row and EncryptedRows
+	// refuses it — the same read the next develop stops on.
+	cfgText := "[env_from_host]\n" + config.ReservedCredentialItem + " = \"" +
+		config.EncryptedScheme + base64.StdEncoding.EncodeToString([]byte("ciphertext")) + "\"\n"
+	if err := os.WriteFile(filepath.Join(p.Dir, config.ProjectConfigName), []byte(cfgText), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, out, _ := testStreams("", false)
+	if err := Status(s, proj, StatusOptions{}); err != nil {
+		t.Fatalf("status must still render: %v", err)
+	}
+	got := strings.Join(statusRows(out.String())["Credentials"], "\n")
+	if !strings.Contains(got, "unreadable") || !strings.Contains(got, config.ReservedCredentialItem) {
+		t.Fatalf("the Credentials section must degrade with the reason, not vanish:\n%s", out.String())
+	}
+	// The machine-readable page carries the same fact, for the same reason.
+	s, out, _ = testStreams("", false)
+	if err := Status(s, proj, StatusOptions{Data: true}); err != nil {
+		t.Fatalf("--data must still render: %v", err)
+	}
+	if !strings.Contains(out.String(), "credential_error") {
+		t.Fatalf("--data dropped the credential read failure:\n%s", out.String())
 	}
 }
 

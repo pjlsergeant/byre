@@ -89,6 +89,10 @@ type statusData struct {
 	// probe the box. Values never appear anywhere in this document.
 	Credentials      []statusDataCredential `json:"credentials,omitempty"`
 	CredentialUnlock string                 `json:"credential_unlock,omitempty"`
+	// CredentialError is why the rows could not be read at all. Emitted for
+	// the same reason the page renders its row: without it an unreadable
+	// cascade is a document indistinguishable from one declaring nothing.
+	CredentialError string `json:"credential_error,omitempty"`
 
 	HostEnv []statusDataHostEnv `json:"host_env,omitempty"`
 	EnvKeys []string            `json:"env_keys,omitempty"`
@@ -438,6 +442,7 @@ func statusDataOf(s statusInfo) statusData {
 		}
 	}
 	d.CredentialUnlock = s.CredentialUnlock
+	d.CredentialError = s.CredentialErr
 
 	for _, r := range s.HostEnv {
 		// A DISABLED entry (`KEY = ""` in some layer) is not a channel this
