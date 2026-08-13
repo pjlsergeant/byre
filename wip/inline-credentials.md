@@ -129,11 +129,14 @@ Accepted because: never-shared credentials have no exposure; a foreign
 identity block fails loudly at unlock; the review gate still shows THAT the
 row changed; and strictly more direct legible attacks (run_args,
 egress) already live in the same channel behind the same gate. Mitigations
-shipped: preset review annotates any changed row where EITHER side is
-encrypted ("credential value changed: if you didn't rotate this, reject") —
-either-side so replacing ciphertext with plaintext can't dodge the
-classifier — and the security-model page discloses mint/swap/transplant/
-replay in those words.
+TO SHIP (step 6, not yet built): preset review annotates any changed row
+where EITHER side is encrypted ("credential value changed: if you didn't
+rotate this, reject") — either-side so replacing ciphertext with plaintext
+can't dodge the classifier — AND any change to a file's [credentials]
+block itself (identity/recipient appearing, changing, or vanishing), which
+is otherwise invisible because Parse deliberately drops the file-local
+table; and the security-model page discloses mint/swap/transplant/replay
+in those words.
 
 ## Display
 
