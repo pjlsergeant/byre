@@ -413,10 +413,15 @@ type Config struct {
 	// grammar is a CLOSED scheme set: "git:<config-key>" (read via
 	// `git config --get` on the host at launch), "env:<HOST_VAR>" (the host
 	// env var, absent = sets nothing), "tz:" (the host timezone — TZ env var
-	// if set, else the IANA name from the /etc/localtime symlink), or ""
+	// if set, else the IANA name from the /etc/localtime symlink),
+	// "encrypted:" / "encrypted-file:" (a credential — an age blob the
+	// physical file's own [credentials] identity opens, delivered over the
+	// credential channel as an env var or a tmpfs file, never as -e), or ""
 	// (disables the key — how a layer drops a lower layer's entry). Anything
-	// else is a validation error; a literal value belongs in [env], never
-	// here — env_from_host entries are grants, literals are config. byre
+	// else is a validation error; a PLAINTEXT literal belongs in [env], never
+	// here — an ordinary row is a grant asking for a host value, and an
+	// encrypted row is a value the config itself carries under encryption,
+	// the one row here that asks the host for nothing. byre
 	// ships CoreEnvFromHost on by default (host git identity so box commits
 	// are attributed to the developer, plus TERM and TZ so the box renders
 	// and timestamps like the terminal it runs in); an explicit [env] KEY in

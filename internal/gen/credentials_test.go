@@ -230,8 +230,11 @@ func TestLauncherRestartWithoutRedeliveryRefuses(t *testing.T) {
 }
 
 func TestLauncherNoExpectNoWait(t *testing.T) {
-	// Without the flag the launcher must not wait at all — declined,
-	// non-TTY, and empty-vault launches cost nothing.
+	// Without the flag the launcher must not wait at all — a launch under
+	// --credentials=skip, and a config with no credential rows at all, cost
+	// nothing. (Every OTHER shape sets the flag: credentials are blocking, so
+	// a declared row byre could not deliver stops the launch host-side rather
+	// than reaching a launcher that shrugs.)
 	dir := t.TempDir()
 	code, out := runLauncherCreds(t, dir, false, "60", `printf ok`)
 	if code != 0 || !strings.Contains(out, "ok") {
