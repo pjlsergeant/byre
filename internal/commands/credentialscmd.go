@@ -39,6 +39,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/configui"
 	"github.com/pjlsergeant/byre/internal/credentials"
 	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
@@ -78,21 +79,34 @@ func credentialTarget(projectDir, layer string) (credTarget, error) {
 		return credTarget{}, err
 	}
 	if layer == "" {
-		return credTarget{
-			path:     filepath.Join(paths.Dir, config.ProjectConfigName),
-			follow:   false, // the store project dir is what --self-edit mounts
-			label:    "project config",
-			lockFile: paths.LockFile,
-			prepare:  paths.Bootstrap,
-		}, nil
+		return projectCredTarget(paths), nil
 	}
 	if err := config.ValidateLayerName(layer); err != nil {
 		return credTarget{}, err
 	}
-	path := config.LayerPath(paths.Home, layer)
-	if ok, err := hostopen.ExistsNoFollow(path); err != nil || !ok {
+	if ok, err := hostopen.ExistsNoFollow(config.LayerPath(paths.Home, layer)); err != nil || !ok {
 		return credTarget{}, fmt.Errorf("layer %s does not exist (create it: byre layer new %s)", layer, layer)
 	}
+	return layerCredTarget(paths.Home, layer), nil
+}
+
+// projectCredTarget and layerCredTarget are the two write targets themselves,
+// separate from the --layer resolution above because the editor reaches them
+// from what IT knows: a layer editor has a home and a layer name and no
+// resolvable project at all, and re-deriving the target from a project would
+// refuse to open the credential path for exactly the file it is editing.
+func projectCredTarget(paths project.Paths) credTarget {
+	return credTarget{
+		path:     filepath.Join(paths.Dir, config.ProjectConfigName),
+		follow:   false, // the store project dir is what --self-edit mounts
+		label:    "project config",
+		lockFile: paths.LockFile,
+		prepare:  paths.Bootstrap,
+	}
+}
+
+func layerCredTarget(home, layer string) credTarget {
+	path := config.LayerPath(home, layer)
 	return credTarget{
 		// follow=true: a named layer is host-owned (never inside a box
 		// mount), so a dotfiles symlink there is the user's own arrangement.
@@ -103,9 +117,60 @@ func credentialTarget(projectDir, layer string) (credTarget, error) {
 		path:       path,
 		follow:     true,
 		label:      "layer " + layer,
-		lockFile:   config.LayerLockPath(paths.Home, layer),
-		disclosure: layerWriteDisclosure(paths.Home, layer, path),
-	}, nil
+		lockFile:   config.LayerLockPath(home, layer),
+		disclosure: layerWriteDisclosure(home, layer, path),
+	}
+}
+
+// credentialAdmin is the editor's configui.CredentialAdmin: the credential
+// write path, aimed at the file `byre config` has open. Same target, same
+// disclosure, same compare-and-swap under the same lock as the CLI verb — the
+// editor supplies the masked value and the passphrase, and owns nothing else.
+type credentialAdmin struct {
+	s Streams
+	t credTarget
+}
+
+var _ configui.CredentialAdmin = (*credentialAdmin)(nil)
+
+func (a *credentialAdmin) Disclosure() string { return a.t.disclosure }
+
+func (a *credentialAdmin) HasIdentity() (bool, error) {
+	f, err := readCredTarget(a.t)
+	if err != nil {
+		return false, err
+	}
+	return f.hasBlock, nil
+}
+
+// Set encrypts one value and writes its row. The file is re-read HERE, per
+// set: those bytes are what the compare-and-swap holds the write to, so a
+// snapshot taken when the editor opened would base a write on a file that has
+// since moved.
+func (a *credentialAdmin) Set(key string, kind credentials.Kind, value []byte, passphrase string) (string, error) {
+	if err := config.ValidateEnvFromHostKey(key); err != nil {
+		return "", err
+	}
+	if err := config.ValidateCredentialKey(key); err != nil {
+		return "", err
+	}
+	f, err := readCredTarget(a.t)
+	if err != nil {
+		return "", err
+	}
+	block, newIdentity := f.block, []byte(nil)
+	if !f.hasBlock {
+		if passphrase == "" {
+			return "", errors.New(credentials.EmptyPassphraseWorthless)
+		}
+		wrapped, recipient, err := credentials.NewIdentity(passphrase)
+		if err != nil {
+			return "", err
+		}
+		newIdentity = wrapped
+		block = config.CredentialsBlock{Identity: wrapped, Recipient: recipient}
+	}
+	return writeCredentialRow(a.s, a.t, f, key, kind, value, block, newIdentity)
 }
 
 // layerWriteDisclosure states what writing to a layer means: every project

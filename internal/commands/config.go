@@ -181,6 +181,12 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	// files belong to no project, so there is no box for them to be about.
 	var livePaths project.Paths
 	var liveProject bool
+	// creds is the editor's credential write path, and it exists for exactly
+	// the files a credentials verb targets: a project config and a named
+	// layer. default.config gets none — `byre credentials` has no --global
+	// either, and an Env screen that offered the kinds there would offer a
+	// door nothing can open.
+	var creds configui.CredentialAdmin
 	switch target {
 	case configui.TargetGlobal:
 		path = filepath.Join(home, "default.config")
@@ -209,6 +215,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 		// prepare (the layer dir's MkdirAll) runs before the first write, so
 		// the lock always has a directory to live in.
 		lockFile = config.LayerLockPath(home, layer)
+		creds = &credentialAdmin{s: s, t: layerCredTarget(home, layer)}
 	default:
 		paths, perr := project.Resolve(projectDir)
 		if perr != nil {
@@ -236,6 +243,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 		livePaths, liveProject = paths, true
 		path = filepath.Join(paths.Dir, config.ProjectConfigName)
 		title = "byre project config  (" + paths.ID + ")"
+		creds = &credentialAdmin{s: s, t: projectCredTarget(paths)}
 		vols = newVolumeAdmin(s.Err, paths, projectDir, prepare) // nil if the engine/config won't resolve
 	}
 
@@ -268,7 +276,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	if liveProject && boxRunningForEdit(livePaths, cur) {
 		liveNote = EditorLiveBoxNote
 	}
-	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inh, vols, nil, target, prepare, guard, editorRoots, liveNote)
+	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inh, vols, creds, target, prepare, guard, editorRoots, liveNote)
 	if err != nil {
 		return err
 	}

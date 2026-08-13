@@ -745,3 +745,158 @@ func TestDockerRunWithoutCredentialsStaysQuiet(t *testing.T) {
 func ttyStreamsWith(errBuf *bytes.Buffer, stdin string) Streams {
 	return Streams{Out: io.Discard, Err: errBuf, In: strings.NewReader(stdin + "\n"), TTY: false}
 }
+
+// ---- the editor's write path (configui.CredentialAdmin) --------------------
+
+// The editor sets credentials through the SAME path the verb does: one file,
+// one identity minted on the first value, every later value encrypted to the
+// recipient that identity left in the clear (which is why the editor's second
+// credential never asks for a passphrase again).
+func TestEditorAdminMintsOnceAndWritesDecryptableRows(t *testing.T) {
+	credentials.SetWorkFactorForTesting(10)
+	p, _ := testPaths(t)
+	var errBuf bytes.Buffer
+	a := &credentialAdmin{s: ttyStreams(&errBuf), t: projectCredTarget(p)}
+
+	if has, err := a.HasIdentity(); err != nil || has {
+		t.Fatalf("a fresh project config already claims an identity: %v %v", has, err)
+	}
+	row, err := a.Set("STRIPE_KEY", credentials.KindEnv, []byte("sk-live-1"), "pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(p.Dir, config.ProjectConfigName)
+	value, kind := openCredRow(t, path, "pw", "STRIPE_KEY")
+	if string(value) != "sk-live-1" || kind != credentials.KindEnv {
+		t.Fatalf("round trip: %q %s", value, kind)
+	}
+	// The row handed back is the row in the file: the editor puts it in its
+	// working state, and a later whole-file save must write the same bytes.
+	cfg, err := config.ParseFile(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EnvFromHost["STRIPE_KEY"] != row {
+		t.Fatalf("returned row %q, file has %q", row, cfg.EnvFromHost["STRIPE_KEY"])
+	}
+
+	// The second value needs no passphrase, and does not re-mint: the identity
+	// (and therefore every row already written under it) is untouched.
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if has, err := a.HasIdentity(); err != nil || !has {
+		t.Fatalf("HasIdentity after the mint = %v %v", has, err)
+	}
+	if _, err := a.Set("TLS_CERT", credentials.KindFile, []byte("-----BEGIN-----\n"), ""); err != nil {
+		t.Fatalf("second set: %v", err)
+	}
+	if v, k := openCredRow(t, path, "pw", "TLS_CERT"); string(v) != "-----BEGIN-----\n" || k != credentials.KindFile {
+		t.Fatalf("second round trip: %q %s", v, k)
+	}
+	if v, _ := openCredRow(t, path, "pw", "STRIPE_KEY"); string(v) != "sk-live-1" {
+		t.Fatalf("the first value moved: %q", v)
+	}
+	beforeBlock, _, err := config.ParseCredentialsBlock(before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterBlock, _, err := config.ParseCredentialsBlock(after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(beforeBlock.Identity, afterBlock.Identity) || beforeBlock.Recipient != afterBlock.Recipient {
+		t.Fatal("the second value re-minted the file's identity")
+	}
+}
+
+// Minting is what the passphrase is FOR, so an empty one is refused in the
+// shared words rather than producing an identity that protects nothing.
+func TestEditorAdminRefusesAnEmptyPassphraseWhenMinting(t *testing.T) {
+	credentials.SetWorkFactorForTesting(10)
+	p, _ := testPaths(t)
+	var errBuf bytes.Buffer
+	a := &credentialAdmin{s: ttyStreams(&errBuf), t: projectCredTarget(p)}
+	_, err := a.Set("STRIPE_KEY", credentials.KindEnv, []byte("sk-live-1"), "")
+	if err == nil || !strings.Contains(err.Error(), credentials.EmptyPassphraseWorthless) {
+		t.Fatalf("err = %v, want the empty-passphrase refusal", err)
+	}
+	if _, serr := os.Stat(filepath.Join(p.Dir, config.ProjectConfigName)); serr == nil {
+		t.Fatal("a refused mint still wrote the config file")
+	}
+}
+
+// The reserved key is refused by the editor's path too — the manifest travels
+// to the box under that name, and a credential cannot.
+func TestEditorAdminRefusesTheReservedKey(t *testing.T) {
+	credentials.SetWorkFactorForTesting(10)
+	p, _ := testPaths(t)
+	var errBuf bytes.Buffer
+	a := &credentialAdmin{s: ttyStreams(&errBuf), t: projectCredTarget(p)}
+	if _, err := a.Set(config.ReservedCredentialItem, credentials.KindEnv, []byte("x"), "pw"); err == nil ||
+		!strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("err = %v, want the reserved-key rule", err)
+	}
+}
+
+// A layer edit writes a file every project extending it reads, so the editor's
+// admin carries the same disclosure the CLI prints — and takes the LAYER's
+// lock, not the caller's, so an editor save and any other writer of that file
+// serialize instead of racing the compare-and-swap.
+func TestEditorAdminOnALayerDisclosesAndTakesTheLayerLock(t *testing.T) {
+	credentials.SetWorkFactorForTesting(10)
+	p, _ := testPaths(t)
+	layerPath := config.LayerPath(p.Home, "acme")
+	if err := hostopen.PlainMkdirAll(filepath.Dir(layerPath), 0o755, hostopen.StoreOwned); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.AtomicWrite(layerPath, "[env]\nA = \"b\"\n"); err != nil {
+		t.Fatal(err)
+	}
+	target := layerCredTarget(p.Home, "acme")
+	var out safeBuffer // written by the waiting set, read here
+	a := &credentialAdmin{s: Streams{Out: io.Discard, Err: &out, In: strings.NewReader(""), TTY: true}, t: target}
+
+	d := a.Disclosure()
+	if !strings.Contains(d, "layer acme") || !strings.Contains(d, "every project extending it") {
+		t.Fatalf("disclosure = %q", d)
+	}
+	if target.lockFile != config.LayerLockPath(p.Home, "acme") || target.lockFile == p.LockFile {
+		t.Fatalf("layer write takes %q, want the layer's own lock", target.lockFile)
+	}
+
+	// Held as another writer of that file would hold it: the editor's set
+	// waits its turn rather than racing.
+	holder, err := lock.Acquire(target.lockFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var done atomic.Bool
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if _, serr := a.Set("SHARED", credentials.KindEnv, []byte("layer-value"), "pw"); serr != nil {
+			t.Errorf("contended layer set: %v", serr)
+		}
+		done.Store(true)
+	}()
+	for i := 0; i < 200 && !strings.Contains(out.String(), "waiting"); i++ {
+		sleepMs(10)
+	}
+	if done.Load() {
+		t.Fatal("the editor's layer write did not wait for the layer lock")
+	}
+	if err := holder.Release(); err != nil {
+		t.Fatal(err)
+	}
+	wg.Wait()
+	if v, _ := openCredRow(t, layerPath, "pw", "SHARED"); string(v) != "layer-value" {
+		t.Fatalf("round trip: %q", v)
+	}
+}
