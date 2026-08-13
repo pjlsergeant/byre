@@ -842,8 +842,47 @@ func TestEditorAdminRefusesWhenTheIdentityVanishedUnderTheForm(t *testing.T) {
 	if strings.Contains(err.Error(), credentials.EmptyPassphraseWorthless) {
 		t.Fatalf("err = %v — the empty-passphrase refusal describes a decision nobody made here", err)
 	}
+	if strings.Contains(err.Error(), "gained a credentials identity") {
+		t.Fatalf("err = %v — that is the other direction's message", err)
+	}
 	if _, serr := os.Stat(filepath.Join(p.Dir, config.ProjectConfigName)); serr == nil {
 		t.Fatal("a refused write still wrote the config file")
+	}
+}
+
+// The other direction of the same race: accept said the file had NO identity,
+// the modal took a new passphrase, and a block appeared before the write.
+// Encrypting to the block that is there would succeed — and leave the user
+// holding a passphrase that opens nothing, since the value would answer to the
+// file's own. Refused, and named as what happened.
+func TestEditorAdminRefusesWhenAnIdentityAppearedUnderTheForm(t *testing.T) {
+	credentials.SetWorkFactorForTesting(10)
+	p, _ := testPaths(t)
+	var errBuf bytes.Buffer
+	a := &credentialAdmin{s: ttyStreams(&errBuf), t: projectCredTarget(p)}
+	// The identity the OTHER session landed while the modal was up.
+	if _, err := a.Set(configui.CredentialWrite{Key: "FIRST", Kind: credentials.KindEnv, Value: []byte("one"), Passphrase: "theirs"}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(p.Dir, config.ProjectConfigName)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = a.Set(configui.CredentialWrite{Key: "STRIPE_KEY", Kind: credentials.KindEnv, Value: []byte("sk-live-1"), Passphrase: "mine"})
+	if err == nil || !strings.Contains(err.Error(), "gained a credentials identity while the form was open") {
+		t.Fatalf("err = %v, want the identity-appeared rule", err)
+	}
+	if strings.Contains(err.Error(), "had a credentials identity when this value was accepted") {
+		t.Fatalf("err = %v — that is the other direction's message", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("a refused write still changed the file")
 	}
 }
 

@@ -160,20 +160,36 @@ func (a *credentialAdmin) Set(w configui.CredentialWrite) (configui.CredentialRe
 	if err := config.ValidateCredentialKey(w.Key); err != nil {
 		return configui.CredentialResult{}, err
 	}
+	// The RESIDUAL this re-read accepts, disclosed rather than closed: a
+	// foreign write that landed BEFORE the accept is what the compare-and-swap
+	// bases on, and its bytes come back as the editor's new baseline — so the
+	// next ^s reconciles over that change without a drift prompt. It is the
+	// same exposure any concurrent edit to an open editor session carries, and
+	// closing it would mean holding the write to the editor's stale view and
+	// refusing every credential set on a file somebody else touched.
 	f, err := readCredTarget(a.t)
 	if err != nil {
 		return configui.CredentialResult{}, err
 	}
+	// The identity question is answered TWICE — at accept (which decides
+	// whether the modal opens) and here, against the file as it is now. When
+	// the two answers disagree, the write is refused: each direction leaves the
+	// user believing something false about which passphrase opens this value.
 	block, newIdentity := f.block, []byte(nil)
-	if !f.hasBlock {
-		if w.Passphrase == "" {
-			// The editor asked HasIdentity at accept and was told yes, so it
-			// collected no passphrase; the block is gone now. Name that, rather
-			// than the empty-passphrase refusal — nobody chose an empty
-			// passphrase here, and being told one is worthless explains nothing
-			// about what happened.
-			return configui.CredentialResult{}, fmt.Errorf("%s (%s) had a credentials identity when this value was accepted and has none now — nothing was written; close the form, re-open the row, and enter the value again", a.t.label, a.t.path)
-		}
+	switch {
+	case !f.hasBlock && w.Passphrase == "":
+		// Accept said the file had an identity, so no passphrase was collected;
+		// the block is gone now. Named as itself, not as the empty-passphrase
+		// refusal — nobody chose an empty passphrase here, and being told one
+		// is worthless explains nothing about what happened.
+		return configui.CredentialResult{}, fmt.Errorf("%s (%s) had a credentials identity when this value was accepted and has none now — nothing was written; close the form, re-open the row, and enter the value again", a.t.label, a.t.path)
+	case f.hasBlock && w.Passphrase != "":
+		// The other direction: a passphrase was chosen for an identity this
+		// write would have minted, and the file has one already. Encrypting to
+		// it would succeed and leave the user holding a passphrase that opens
+		// nothing — the value would answer to the file's own.
+		return configui.CredentialResult{}, fmt.Errorf("%s (%s) gained a credentials identity while the form was open — the passphrase you chose was not used and nothing was written; close the form, re-open the row, and enter the value again (no new passphrase will be asked)", a.t.label, a.t.path)
+	case !f.hasBlock:
 		wrapped, recipient, err := credentials.NewIdentity(w.Passphrase)
 		if err != nil {
 			return configui.CredentialResult{}, err
