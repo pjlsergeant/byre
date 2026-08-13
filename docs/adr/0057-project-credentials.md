@@ -133,8 +133,10 @@ same stance the vault design took toward its own store, arrived at again.
    one deliberate way to launch without them; `stdin` reads passphrase lines,
    each tried against every still-locked identity in order and each counting
    as an attempt against the root-most file still locked, under that same
-   three-attempt bound. What the unlock consented to is what the decrypt
-   delivers: the row set the plan line counted, no more and no less.
+   three-attempt bound. What the unlock consented to bounds what the decrypt
+   delivers: never a row beyond the set the plan line counted — a row removed
+   under the lock simply drops out and less is delivered, since the consent
+   is an upper bound, not a promise of presence.
 4. Delivery: decrypt under the setup lock, stream framed base64 over container
    stdin to the baked receiver, land on the per-session tmpfs. Never `docker
    -e`, never an image layer, volume, or writable layer. The export map rides
