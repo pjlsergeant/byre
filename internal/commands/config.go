@@ -268,7 +268,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	if liveProject && boxRunningForEdit(livePaths, cur) {
 		liveNote = EditorLiveBoxNote
 	}
-	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inh, vols, target, prepare, guard, editorRoots, liveNote)
+	saved, err := configui.Run(title, path, cur, templates, agents, skillOpts, skillDescs, inh, vols, nil, target, prepare, guard, editorRoots, liveNote)
 	if err != nil {
 		return err
 	}

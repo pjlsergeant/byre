@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/credentials"
 )
 
 // hostenv.go is the env_from_host widget's vocabulary: the closed scheme set
@@ -26,19 +27,53 @@ import (
 // which is what Delete means on every other list field (drop this layer's
 // entry, re-inherit the one below) -- a second spelling of it in the picker
 // would be a concept the screen does not need.
+// The two credential kinds come LAST, and deliberately so: the editor that
+// cannot write them (--global, whose file no credentials verb targets either)
+// offers the first five and nothing else, and an option list that only ever
+// SHRINKS from the tail keeps every other scheme's index meaning one thing.
 const (
 	schemeValue = iota
 	schemeGit
 	schemeEnv
 	schemeTZ
 	schemeDisabled
+	schemeCredEnv
+	schemeCredFile
 )
 
-var hostEnvSchemes = []string{"value", "git:", "env:", "tz:", "disabled"}
+// The picker's words, in picker order. The credential options are spelled in
+// user terms rather than as the schemes they write: "encrypted:" says how the
+// row is stored, and the question this screen asks is what the box gets.
+var hostEnvSchemes = []string{"value", "git:", "env:", "tz:", "disabled", "credential (env value)", "credential (file)"}
+
+// hostEnvPickerOpts is the option set for one editor: every scheme, or the
+// non-credential five where nothing can write a credential to this file.
+func hostEnvPickerOpts(canWriteCredentials bool) []string {
+	if canWriteCredentials {
+		return hostEnvSchemes
+	}
+	return hostEnvSchemes[:schemeCredEnv]
+}
 
 // isPassthrough reports whether a scheme writes env_from_host rather than an
 // [env] literal.
 func isPassthrough(scheme int) bool { return scheme != schemeValue }
+
+// isCredentialScheme reports whether a scheme's value is an encrypted row.
+// Such a row is never encoded from the form's input (see hostEnvSource): its
+// source is the ciphertext the write path returns.
+func isCredentialScheme(scheme int) bool {
+	return scheme == schemeCredEnv || scheme == schemeCredFile
+}
+
+// credentialKind maps a credential scheme onto the kind the value is encrypted
+// and delivered as.
+func credentialKind(scheme int) credentials.Kind {
+	if scheme == schemeCredFile {
+		return credentials.KindFile
+	}
+	return credentials.KindEnv
+}
 
 // hostEnvArgLabel is the second input's label for a scheme. Deliberately
 // SHORT and near-uniform in width: the label column is sized from the longest
@@ -54,6 +89,11 @@ func hostEnvArgLabel(scheme int) string {
 		return "git config key"
 	case schemeEnv:
 		return "host variable"
+	case schemeCredEnv, schemeCredFile:
+		// "Value", like an [env] literal's: the difference is that this one is
+		// masked and encrypted on the way to the file, which the notes and the
+		// bullets say without spending label width on it.
+		return "Value"
 	}
 	return "(no argument)"
 }
@@ -72,6 +112,10 @@ func hostEnvArgHint(scheme int) string {
 		return "the host's timezone"
 	case schemeDisabled:
 		return "the key is passed through to nothing"
+	case schemeCredEnv:
+		return "typed hidden, encrypted into this file"
+	case schemeCredFile:
+		return "typed hidden — the box gets a file, the key holds its path"
 	}
 	return "the value comes from the cascade"
 }
@@ -84,6 +128,13 @@ func hostEnvScheme(src string) (int, string) {
 	switch {
 	case src == "":
 		return schemeDisabled, ""
+	// A credential decodes to its KIND and an empty argument: the stored value
+	// is a ciphertext this editor never shows and never re-encodes, so the
+	// form opens with the Value field empty and "empty means unchanged".
+	case strings.HasPrefix(src, config.EncryptedFileScheme):
+		return schemeCredFile, ""
+	case strings.HasPrefix(src, config.EncryptedScheme):
+		return schemeCredEnv, ""
 	//nolint:gocritic // the ordered switch reads as the grammar it decodes
 	case src == "tz:":
 		return schemeTZ, ""
@@ -99,6 +150,10 @@ func hostEnvScheme(src string) (int, string) {
 }
 
 // hostEnvSource encodes a picker selection back into a stored source.
+//
+// A credential scheme never reaches here: its row is the ciphertext the write
+// path returns, and encoding one from the form's input would put the typed
+// value into the file in the clear. commitEnvRow branches before this call.
 func hostEnvSource(scheme int, arg string) string {
 	arg = strings.TrimSpace(arg)
 	switch scheme {
@@ -126,7 +181,14 @@ func hostEnvLine(key, src string) string {
 		return key + " <- disabled"
 	}
 	if config.IsCredentialSource(src) {
-		return key + " <- credential " + config.RenderSource(src)
+		// The value-state cell, in `byre credentials list`'s own vocabulary
+		// (credentials.ValueState, so a third word cannot land here alone): a
+		// credential row carries a value by construction, and the elided
+		// scheme alone left "is there anything in it" unanswered. What
+		// happens to that value in the cascade -- an [env] literal beating it,
+		// a nearer "" switching it off -- is the row ANNOTATION's job on this
+		// screen, exactly as it is for every other passthrough.
+		return key + " <- credential " + config.RenderSource(src) + " — " + credentials.ValueState(true)
 	}
 	return key + " <- host " + src
 }

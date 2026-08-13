@@ -1,0 +1,583 @@
+package configui
+
+import (
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/credentials"
+)
+
+// fakeCredAdmin stands in for the commands-side write path (whose locking and
+// compare-and-swap are tested there, against real files). It does the real
+// CRYPTO — mint an identity under the passphrase the modal handed over,
+// encrypt to that identity's recipient — so a test can open the row again the
+// way a launch does and prove the editor passed the right key, kind, value and
+// passphrase through.
+type fakeCredAdmin struct {
+	disclosure string
+	identity   []byte // nil until the first Set mints one
+	recipient  string
+	passphrase string // as handed to the mint
+	rows       map[string]string
+	sets       int
+	mints      int
+	err        error // the write path's refusal, when the test wants one
+}
+
+func newFakeCredAdmin() *fakeCredAdmin {
+	return &fakeCredAdmin{rows: map[string]string{}}
+}
+
+func (f *fakeCredAdmin) Disclosure() string            { return f.disclosure }
+func (f *fakeCredAdmin) HasIdentity() (bool, error)    { return f.identity != nil, nil }
+func (f *fakeCredAdmin) mintedUnder() string           { return f.passphrase }
+func (f *fakeCredAdmin) row(key string) (string, bool) { r, ok := f.rows[key]; return r, ok }
+
+func (f *fakeCredAdmin) Set(key string, kind credentials.Kind, value []byte, passphrase string) (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	if err := credentials.ValidateValue(value, kind); err != nil {
+		return "", err
+	}
+	if f.identity == nil {
+		wrapped, recipient, err := credentials.NewIdentity(passphrase)
+		if err != nil {
+			return "", err
+		}
+		f.identity, f.recipient, f.passphrase = wrapped, recipient, passphrase
+		f.mints++
+	}
+	blob, err := credentials.EncryptValue(f.recipient, key, kind, value)
+	if err != nil {
+		return "", err
+	}
+	row, err := config.FormatEncryptedRow(kind, blob)
+	if err != nil {
+		return "", err
+	}
+	f.sets++
+	f.rows[key] = row
+	return row, nil
+}
+
+// open decrypts a row the editor wrote, the way a launch does.
+func (f *fakeCredAdmin) open(t *testing.T, key string, passphrase string) []byte {
+	t.Helper()
+	row, ok := f.rows[key]
+	if !ok {
+		t.Fatalf("no row was written for %s", key)
+	}
+	parsed, isCred, err := config.ParseEncryptedRow(key, row)
+	if err != nil || !isCred {
+		t.Fatalf("row %q is not a credential row: %v", row, err)
+	}
+	id, err := credentials.UnwrapIdentity(f.identity, passphrase)
+	if err != nil {
+		t.Fatalf("unwrap under %q: %v", passphrase, err)
+	}
+	value, outcome, err := id.DecryptValue(parsed.Key, parsed.Kind, parsed.Blob)
+	if err != nil {
+		t.Fatalf("decrypt %s: %s %v", key, outcome, err)
+	}
+	return value
+}
+
+// credModel is the Env screen with a credential write path attached, on a real
+// (empty) file so the write's re-baselining has something to read.
+func credModel(t *testing.T, admin CredentialAdmin, local map[string]string) model {
+	t.Helper()
+	credentials.SetWorkFactorForTesting(10)
+	path := filepath.Join(t.TempDir(), "byre.config")
+	// The rows go in the FILE, not just the config value: newModel re-parses
+	// the bytes it reads at open (one read for state and drift baseline
+	// alike), so a fixture that only passed a Config would open empty.
+	raw := "# Managed by `byre config`.\n"
+	if len(local) > 0 {
+		raw += "\n[env_from_host]\n"
+		for k, v := range local {
+			raw += k + " = " + strconv.Quote(v) + "\n"
+		}
+	}
+	if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newModel("t", path, config.Config{EnvFromHost: local}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
+	m.creds = admin
+	m.listField = fEnv
+	return m
+}
+
+// addCredential opens the add editor on a credential kind with key and value
+// typed in, exactly as the keystrokes leave it.
+func addCredential(m model, scheme int, key, value string) model {
+	m.itemHostEnv = false
+	m = m.startItem(-1)
+	m.itemMode = scheme
+	m = m.syncHostEnvLabel()
+	m.inputs[0].SetValue(key)
+	m.inputs[1].SetValue(value)
+	return m
+}
+
+// The picker is where a credential is REACHABLE from at all: without the two
+// kinds on it, the editor can show credential rows and never author one, and
+// "expert vocabulary, hand-edit it" is not an answer byre gives (P0).
+func TestEnvPickerOffersTheCredentialKinds(t *testing.T) {
+	m := credModel(t, newFakeCredAdmin(), nil)
+	m.itemHostEnv = false
+	m = m.startItem(-1)
+	joined := strings.Join(m.itemModeOpts, " ")
+	if !strings.Contains(joined, "credential") {
+		t.Fatalf("the Source picker offers %v — no credential kind", m.itemModeOpts)
+	}
+	if got := m.itemModeOpts[schemeCredEnv]; !strings.Contains(got, "env") {
+		t.Errorf("the env-kind option reads %q; it must say what the box gets", got)
+	}
+	if got := m.itemModeOpts[schemeCredFile]; !strings.Contains(got, "file") {
+		t.Errorf("the file-kind option reads %q; it must say what the box gets", got)
+	}
+	// And where nothing can write one, the option is absent rather than
+	// present-and-refusing: an editor whose file no credentials verb targets
+	// (--global) must not offer a door that only ever closes.
+	none := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetGlobal)
+	none.listField = fEnv
+	none = none.startItem(-1)
+	if strings.Contains(strings.Join(none.itemModeOpts, " "), "credential") {
+		t.Fatalf("an editor with no write path offers %v", none.itemModeOpts)
+	}
+}
+
+// The value is typed hidden and stays hidden: not in the form, not in the row,
+// not in the status line the write leaves behind.
+func TestCredentialValueIsNeverRendered(t *testing.T) {
+	const secret = "sk-live-verysecret"
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	m := credModel(t, admin, nil)
+	m = addCredential(m, schemeCredEnv, "STRIPE_KEY", secret)
+	if v := m.viewItem(); strings.Contains(v, secret) {
+		t.Fatalf("the form rendered the value:\n%s", v)
+	} else if !strings.Contains(v, "•") {
+		t.Fatalf("the value box is not masked:\n%s", v)
+	}
+	done := m.commitItem()
+	if done.itemErr != "" {
+		t.Fatalf("the write was refused: %s", done.itemErr)
+	}
+	for name, s := range map[string]string{
+		"status": done.status,
+		"list":   done.viewList(),
+		"row":    hostEnvLine("STRIPE_KEY", done.hostEnv[0].Value),
+	} {
+		if strings.Contains(s, secret) {
+			t.Fatalf("the %s carries the plaintext: %q", name, s)
+		}
+	}
+	// The row that landed is the ciphertext, and it says the row holds a value
+	// in `byre credentials list`'s own word.
+	if !config.IsCredentialSource(done.hostEnv[0].Value) {
+		t.Fatalf("the row is %q, want a credential row", done.hostEnv[0].Value)
+	}
+	if line := hostEnvLine("STRIPE_KEY", done.hostEnv[0].Value); !strings.Contains(line, credentials.ValueState(true)) {
+		t.Fatalf("row line %q does not carry the value state", line)
+	}
+}
+
+// mintFor gives a fake admin a file that ALREADY has an identity.
+func mintFor(t *testing.T, passphrase string) ([]byte, string) {
+	t.Helper()
+	credentials.SetWorkFactorForTesting(10)
+	wrapped, recipient, err := credentials.NewIdentity(passphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return wrapped, recipient
+}
+
+// A file's FIRST credential mints its identity, so the modal asks for the
+// passphrase that will wrap it — twice — and only then does anything get
+// written. The row it writes is a real one: it decrypts under that passphrase.
+func TestFirstCredentialAsksForThePassphraseAndWritesADecryptableRow(t *testing.T) {
+	admin := newFakeCredAdmin()
+	m := credModel(t, admin, nil)
+	m = addCredential(m, schemeCredEnv, "STRIPE_KEY", "sk-live-1")
+
+	m = m.commitItem()
+	if m.mode != modeCredPass {
+		t.Fatalf("mode = %v, want the passphrase modal before a file's first credential", m.mode)
+	}
+	if admin.sets != 0 {
+		t.Fatal("something was written before the passphrase was chosen")
+	}
+	if v := m.viewCredPass(); !strings.Contains(v, "passphrase") || !strings.Contains(strings.ToLower(v), "no recovery") {
+		t.Fatalf("the modal must say what the passphrase protects and what forgetting it costs:\n%s", v)
+	}
+
+	// An empty passphrase is worthless, and the modal says so in the shared
+	// words rather than accepting it.
+	m = typeCredPass(t, m, "", "")
+	if m.credPassErr != credentials.EmptyPassphraseWorthless {
+		t.Fatalf("credPassErr = %q, want the shared refusal", m.credPassErr)
+	}
+	// A mismatch is caught before anything is written, too.
+	m = typeCredPass(t, m, "hunter2", "hunter3")
+	if m.credPassErr == "" || admin.sets != 0 {
+		t.Fatalf("a mismatched confirmation wrote something (err=%q sets=%d)", m.credPassErr, admin.sets)
+	}
+
+	m = typeCredPass(t, m, "hunter2", "hunter2")
+	if m.mode != modeList {
+		t.Fatalf("mode = %v after the passphrase was confirmed, want back at the list", m.mode)
+	}
+	if admin.mints != 1 || admin.sets != 1 {
+		t.Fatalf("mints=%d sets=%d, want exactly one of each", admin.mints, admin.sets)
+	}
+	if admin.mintedUnder() != "hunter2" {
+		t.Fatalf("the identity was minted under %q", admin.mintedUnder())
+	}
+	if got := admin.open(t, "STRIPE_KEY", "hunter2"); string(got) != "sk-live-1" {
+		t.Fatalf("round trip: %q", got)
+	}
+	if row, _ := admin.row("STRIPE_KEY"); m.hostEnv[0].Value != row {
+		t.Fatalf("working state carries %q, the file has %q", m.hostEnv[0].Value, row)
+	}
+}
+
+// typeCredPass fills the modal's two boxes and confirms, driving it through
+// Update the way the keys do.
+func typeCredPass(t *testing.T, m model, pw, confirm string) model {
+	t.Helper()
+	if m.mode != modeCredPass {
+		t.Fatalf("mode = %v, want the passphrase modal", m.mode)
+	}
+	m.credPassInputs[0].SetValue(pw)
+	m.credPassInputs[1].SetValue(confirm)
+	m.credPassFocus = 1
+	next, _ := m.updateCredPass(tea.KeyMsg{Type: tea.KeyEnter})
+	return next.(model)
+}
+
+// The SECOND credential in a file encrypts to the recipient the block already
+// carries: no modal, no second passphrase, no new identity. (That is the whole
+// point of wrapping only the identity — setting a value never prompts.)
+func TestSecondCredentialReusesTheFilesIdentity(t *testing.T) {
+	admin := newFakeCredAdmin()
+	m := credModel(t, admin, nil)
+	m = typeCredPass(t, addCredential(m, schemeCredEnv, "FIRST", "one").commitItem(), "pw", "pw")
+
+	m = addCredential(m, schemeCredFile, "SECOND", "two").commitItem()
+	if m.mode == modeCredPass {
+		t.Fatal("the second credential asked for a passphrase again")
+	}
+	if m.itemErr != "" {
+		t.Fatalf("the second write was refused: %s", m.itemErr)
+	}
+	if admin.mints != 1 || admin.sets != 2 {
+		t.Fatalf("mints=%d sets=%d, want one identity and two values", admin.mints, admin.sets)
+	}
+	if got := admin.open(t, "SECOND", "pw"); string(got) != "two" {
+		t.Fatalf("round trip: %q", got)
+	}
+	// The kind rides the scheme, so the file row states what the box gets.
+	if row, _ := admin.row("SECOND"); !strings.HasPrefix(row, config.EncryptedFileScheme) {
+		t.Fatalf("the file-kind row is %q", row)
+	}
+}
+
+// Opening an existing credential row shows its KIND and an empty value box.
+// Leaving the box empty keeps the stored value: it is not readable from here,
+// so demanding it be retyped would be asking for a secret the editor could
+// never have shown.
+func TestEditingACredentialRowKeepsTheValueWhenTheBoxIsLeftEmpty(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	row := encryptedRow(t, admin.recipient, "STRIPE_KEY", credentials.KindEnv, "sk-live-1")
+	m := credModel(t, admin, map[string]string{"STRIPE_KEY": row})
+
+	m = openHostEnvRow(t, m, "STRIPE_KEY")
+	if m.mode != modeItem {
+		t.Fatalf("a well-formed credential row must open the form; status: %q", m.status)
+	}
+	if m.itemMode != schemeCredEnv {
+		t.Fatalf("the picker opened on %d, want the row's own kind", m.itemMode)
+	}
+	if v := m.inputs[1].Value(); v != "" {
+		t.Fatalf("the value box opened holding %q; the stored value is never shown", v)
+	}
+	if v := m.viewItem(); !strings.Contains(v, "empty to keep it") {
+		t.Fatalf("the form must say what an empty box means:\n%s", v)
+	}
+
+	done := m.commitItem()
+	if done.itemErr != "" {
+		t.Fatalf("accepting an unchanged credential was refused: %s", done.itemErr)
+	}
+	if admin.sets != 0 {
+		t.Fatal("an unchanged credential was re-encrypted and rewritten")
+	}
+	if got := done.assemble().EnvFromHost["STRIPE_KEY"]; got != row {
+		t.Fatalf("the ciphertext must round-trip untouched: %q", got)
+	}
+}
+
+// Re-entering a value REPLACES the stored one, under the same key.
+func TestReenteringACredentialValueReplacesIt(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	row := encryptedRow(t, admin.recipient, "STRIPE_KEY", credentials.KindEnv, "sk-live-1")
+	m := credModel(t, admin, map[string]string{"STRIPE_KEY": row})
+	m = openHostEnvRow(t, m, "STRIPE_KEY")
+	m.inputs[1].SetValue("sk-live-2")
+
+	done := m.commitItem()
+	if done.itemErr != "" {
+		t.Fatalf("replacing a value was refused: %s", done.itemErr)
+	}
+	if done.mode == modeCredPass {
+		t.Fatal("replacing a value in a file that has an identity asked for a passphrase")
+	}
+	if got := admin.open(t, "STRIPE_KEY", "pw"); string(got) != "sk-live-2" {
+		t.Fatalf("round trip: %q", got)
+	}
+	if got := done.assemble().EnvFromHost["STRIPE_KEY"]; got == row {
+		t.Fatal("the working state still carries the old ciphertext")
+	}
+}
+
+// The two edits a credential row cannot take without a value: its key (the
+// payload is stamped with it) and its kind (stamped too). Both refuse by
+// NAMING the rule, and neither writes.
+func TestCredentialRowRefusesARenameAndAKindChangeWithoutAValue(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	row := encryptedRow(t, admin.recipient, "STRIPE_KEY", credentials.KindEnv, "sk-live-1")
+
+	rename := openHostEnvRow(t, credModel(t, admin, map[string]string{"STRIPE_KEY": row}), "STRIPE_KEY")
+	rename.inputs[0].SetValue("OTHER_KEY")
+	if got := rename.commitItem(); !strings.Contains(got.itemErr, "bound to its key") {
+		t.Fatalf("itemErr = %q, want the key-binding rule", got.itemErr)
+	}
+
+	kind := openHostEnvRow(t, credModel(t, admin, map[string]string{"STRIPE_KEY": row}), "STRIPE_KEY")
+	kind.itemMode = schemeCredFile
+	if got := kind.commitItem(); !strings.Contains(got.itemErr, "re-encrypts") {
+		t.Fatalf("itemErr = %q, want the kind-change rule", got.itemErr)
+	}
+	if admin.sets != 0 {
+		t.Fatal("a refused edit still wrote")
+	}
+}
+
+// Switching a credential row to another source is an UNSET of that row: the
+// ciphertext leaves with it, and byre keeps no copy. The editor says so
+// instead of quietly dropping a value nothing can bring back.
+func TestSwitchingAwayFromACredentialSaysTheCiphertextGoes(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	row := encryptedRow(t, admin.recipient, "STRIPE_KEY", credentials.KindEnv, "sk-live-1")
+	m := credModel(t, admin, map[string]string{"STRIPE_KEY": row})
+	m = openHostEnvRow(t, m, "STRIPE_KEY")
+	m.itemMode = schemeEnv
+	m = m.syncHostEnvLabel()
+	if v := m.viewItem(); !strings.Contains(v, "ciphertext goes with the row") {
+		t.Fatalf("the form must say what leaving the credential kind costs:\n%s", v)
+	}
+	m.inputs[1].SetValue("STRIPE_KEY")
+
+	done := m.commitItem()
+	if done.itemErr != "" {
+		t.Fatalf("switching source was refused: %s", done.itemErr)
+	}
+	if got := done.assemble().EnvFromHost["STRIPE_KEY"]; got != "env:STRIPE_KEY" {
+		t.Fatalf("EnvFromHost[STRIPE_KEY] = %q, want the new source", got)
+	}
+	if !strings.Contains(done.status, "ciphertext") {
+		t.Fatalf("status = %q, want the loss stated", done.status)
+	}
+	if admin.sets != 0 {
+		t.Fatal("leaving the credential kind wrote through the credential path")
+	}
+}
+
+// The write path's refusals are the editor's refusals: an oversize env value
+// comes back as the rule and the size, at the form, with the value nowhere in
+// it. (The caps themselves are credentials.ValidateValue's — this pins that
+// the editor surfaces them legibly rather than restating them.)
+func TestCredentialCapRefusalIsSurfacedAtTheForm(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	m := credModel(t, admin, nil)
+	big := strings.Repeat("A", credentials.MaxEnvValue+1)
+	m = addCredential(m, schemeCredEnv, "BIG", big)
+
+	done := m.commitItem()
+	if done.itemErr == "" {
+		t.Fatal("an oversize env value was accepted")
+	}
+	if !strings.Contains(done.itemErr, "cap") || !strings.Contains(done.itemErr, "65537") {
+		t.Fatalf("itemErr = %q, want the rule and the offending size", done.itemErr)
+	}
+	if strings.Contains(done.itemErr, big) {
+		t.Fatal("the refusal echoed the value")
+	}
+	if done.mode != modeItem {
+		t.Fatalf("mode = %v, want the form still open with its error", done.mode)
+	}
+	// The caps are the kind's, and the form states them where the value is
+	// typed rather than only in the refusal.
+	if v := done.viewItem(); !strings.Contains(v, "64 KiB") {
+		t.Fatalf("the form does not name the env-kind cap:\n%s", v)
+	}
+	if fileNote := credentialKindNote(schemeCredFile); !strings.Contains(fileNote, "256 KiB") {
+		t.Fatalf("the file-kind note = %q, want the 256 KiB ceiling", fileNote)
+	}
+}
+
+// A layer file reaches every project extending it, so the editor states that
+// BEFORE the value is accepted — in the form and again in the modal, which is
+// the last screen before a first write.
+func TestLayerWriteTargetIsDisclosedBeforeTheValueIsAccepted(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.disclosure = "writes to layer acme (/x/layer.config), used by 3 projects — this changes the value for every project extending it"
+	m := credModel(t, admin, nil)
+	m = addCredential(m, schemeCredEnv, "STRIPE_KEY", "sk-live-1")
+	if v := m.viewItem(); !strings.Contains(v, "layer acme") || !strings.Contains(v, "3 projects") {
+		t.Fatalf("the form does not disclose the write target:\n%s", v)
+	}
+	m = m.commitItem()
+	if v := m.viewCredPass(); !strings.Contains(v, "layer acme") {
+		t.Fatalf("the passphrase modal does not disclose the write target:\n%s", v)
+	}
+	if admin.sets != 0 {
+		t.Fatal("the value was written before the disclosure could stop it")
+	}
+}
+
+// esc out of the modal writes NOTHING — no identity, no row — and lands back
+// in the form with the value still in its (masked) box.
+func TestEscapingThePassphraseModalWritesNothing(t *testing.T) {
+	admin := newFakeCredAdmin()
+	m := credModel(t, admin, nil)
+	m = addCredential(m, schemeCredEnv, "STRIPE_KEY", "sk-live-1").commitItem()
+	back, _ := m.updateCredPass(tea.KeyMsg{Type: tea.KeyEsc})
+	got := back.(model)
+	if got.mode != modeItem {
+		t.Fatalf("mode = %v, want the form back", got.mode)
+	}
+	if admin.sets != 0 || admin.mints != 0 {
+		t.Fatalf("esc wrote: sets=%d mints=%d", admin.sets, admin.mints)
+	}
+	if got.credPending != nil {
+		t.Fatal("the pending value survived the cancel")
+	}
+	if len(got.hostEnv) != 0 {
+		t.Fatalf("hostEnv = %+v, want nothing added", got.hostEnv)
+	}
+}
+
+// The write lands on disk on accept, so a buffer that was CLEAN stays clean:
+// quitting after setting a credential must not claim unsaved changes, and the
+// next ^s must not see the editor's own write as another session's drift.
+func TestACleanBufferStaysCleanAfterACredentialWrite(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	m := credModel(t, admin, nil)
+	if m.dirty() {
+		t.Fatal("the fixture opened dirty")
+	}
+	done := addCredential(m, schemeCredEnv, "STRIPE_KEY", "sk-live-1").commitItem()
+	if done.itemErr != "" {
+		t.Fatalf("the write was refused: %s", done.itemErr)
+	}
+	if done.dirty() {
+		t.Fatal("a credential write left the buffer looking unsaved, though it is on disk")
+	}
+	// And the row is in the assembled config, so a later save writes the same
+	// value back instead of reconciling it away.
+	if got := done.assemble().EnvFromHost["STRIPE_KEY"]; !config.IsCredentialSource(got) {
+		t.Fatalf("EnvFromHost[STRIPE_KEY] = %q", got)
+	}
+}
+
+// Crossing the credential boundary CLEARS the value box: a literal typed in
+// the open must not become an encrypted value through a picker move, and a
+// value typed hidden must not appear the moment the picker leaves.
+func TestCrossingTheCredentialBoundaryClearsTheValueBox(t *testing.T) {
+	m := credModel(t, newFakeCredAdmin(), nil)
+	m.itemHostEnv = false
+	m = m.startItem(-1) // opens on `value`
+	m.inputs[1].SetValue("plaintext-literal")
+	m.itemMode = schemeCredEnv
+	m = m.syncHostEnvLabel()
+	if got := m.inputs[1].Value(); got != "" {
+		t.Fatalf("the literal survived into the credential box: %q", got)
+	}
+	m.inputs[1].SetValue("sk-live-1")
+	m.itemMode = schemeValue
+	m = m.syncHostEnvLabel()
+	if got := m.inputs[1].Value(); got != "" {
+		t.Fatalf("a hidden value became a visible literal: %q", got)
+	}
+}
+
+// encryptedRow is a stored credential row for a fixture.
+func encryptedRow(t *testing.T, recipient, key string, kind credentials.Kind, value string) string {
+	t.Helper()
+	blob, err := credentials.EncryptValue(recipient, key, kind, []byte(value))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := config.FormatEncryptedRow(kind, blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return row
+}
+
+// A credential a LOWER layer sets is overridden here the way every other
+// inherited passthrough is: the override door opens the form on that row's
+// kind with an empty value box, and the value typed there is written to THIS
+// file — never to the layer the row came from.
+func TestOverridingAnInheritedCredentialWritesToThisFile(t *testing.T) {
+	lower := newFakeCredAdmin()
+	lower.identity, lower.recipient = mintFor(t, "layer-pw")
+	inheritedRow := encryptedRow(t, lower.recipient, "STRIPE_KEY", credentials.KindEnv, "layer-value")
+
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	m := credModel(t, admin, nil)
+	m.inh = Inherited{HasLower: true, Default: config.Config{EnvFromHost: map[string]string{"STRIPE_KEY": inheritedRow}}}
+
+	m = openHostEnvRow(t, m, "STRIPE_KEY") // an inherited row opens the override door
+	if m.mode != modeItem {
+		t.Fatalf("the override door did not open the form; status: %q", m.status)
+	}
+	if m.itemMode != schemeCredEnv {
+		t.Fatalf("the override opened on scheme %d, want the inherited row's kind", m.itemMode)
+	}
+	if v := m.inputs[1].Value(); v != "" {
+		t.Fatalf("the override prefilled the value box with %q — a ciphertext is not a value to re-encode", v)
+	}
+	m.inputs[1].SetValue("project-value")
+
+	done := m.commitItem()
+	if done.itemErr != "" {
+		t.Fatalf("the override was refused: %s", done.itemErr)
+	}
+	if got := admin.open(t, "STRIPE_KEY", "pw"); string(got) != "project-value" {
+		t.Fatalf("round trip: %q", got)
+	}
+	if lower.sets != 0 {
+		t.Fatal("the override wrote through the lower layer's path")
+	}
+	if got := done.assemble().EnvFromHost["STRIPE_KEY"]; got == inheritedRow {
+		t.Fatal("this file pinned the layer's own ciphertext instead of its new value")
+	}
+}

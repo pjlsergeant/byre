@@ -39,8 +39,12 @@ import (
 // liveNote (empty = none) qualifies the exposure headline when the caller
 // found a box already running for this project: the headline's NEXT-LAUNCH
 // semantics are unchanged, and the note labels them.
-func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, target Target, prepare func() error, guard func(func() error) error, roots hostexec.Roots, liveNote string) (bool, error) {
+// creds (nil = none) is the credential write path for this file: the Env
+// screen's credential kinds appear only where one exists, and every value
+// typed there rides it -- the editor encrypts nothing itself.
+func Run(title, filePath string, cfg config.Config, templates, agents, skillOpts []string, skillDescs map[string]string, inh Inherited, vols VolumeAdmin, creds CredentialAdmin, target Target, prepare func() error, guard func(func() error) error, roots hostexec.Roots, liveNote string) (bool, error) {
 	m := newModel(title, filePath, cfg, templates, agents, skillOpts, skillDescs, inh, vols, target)
+	m.creds = creds
 	m.prepare = prepare
 	m.guard = guard
 	m.editorRoots = roots
@@ -158,6 +162,7 @@ const (
 	modeVolumes
 	modeText
 	modeSkills
+	modeCredPass // the per-file passphrase modal, before a file's first credential
 )
 
 type kvItem struct{ Key, Value string }
@@ -180,9 +185,12 @@ type model struct {
 	// (the editor edits one layer; effect is cascade-wide).
 	inh Inherited
 
-	vols     VolumeAdmin // nil = no Volumes section
-	sections []section   // rendered groups (Grants / Build / Advanced)
-	order    []fieldID   // flattened focus order across all sections
+	vols VolumeAdmin // nil = no Volumes section
+	// creds is the credential write path for THIS file (nil = none, and the
+	// Source picker then omits the credential kinds).
+	creds    CredentialAdmin
+	sections []section // rendered groups (Grants / Build / Advanced)
+	order    []fieldID // flattened focus order across all sections
 
 	ti        textinput.Model // base image editor
 	wtBase    textinput.Model // worktree base-path editor (fWorktreeBase)
@@ -314,6 +322,19 @@ type model struct {
 	itemMode2Label string
 	editIndex      int // -1 = adding a new item
 	itemErr        string
+
+	// modeCredPass (the passphrase that wraps this file's credential identity)
+	credPassInputs [2]textinput.Model
+	credPassFocus  int
+	credPassErr    string
+	// credPending is the accepted value waiting on that passphrase; nil
+	// whenever the modal is not the reason the editor is here.
+	credPending *pendingCredential
+	// credHasIdentity/credProbeErr are probeCredentialIdentity's answer for
+	// the open item editor: whether this file's [credentials] block exists,
+	// or why byre could not tell.
+	credHasIdentity bool
+	credProbeErr    string
 
 	width       int
 	height      int
@@ -624,6 +645,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateText(msg)
 		case modeSkills:
 			return m.updateSkills(msg)
+		case modeCredPass:
+			return m.updateCredPass(msg)
 		default:
 			return m.updateForm(msg)
 		}
@@ -635,6 +658,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ta, cmd = m.ta.Update(msg)
 	case m.mode == modeItem && len(m.inputs) > 0 && m.itemFocus < len(m.inputs):
 		m.inputs[m.itemFocus], cmd = m.inputs[m.itemFocus].Update(msg)
+	case m.mode == modeCredPass:
+		m.credPassInputs[m.credPassFocus], cmd = m.credPassInputs[m.credPassFocus].Update(msg)
 	case m.mode == modeForm:
 		if in := m.focusedInput(); in != nil {
 			*in, cmd = in.Update(msg)
@@ -883,6 +908,8 @@ func (m model) View() string {
 		v = m.viewText()
 	case modeSkills:
 		v = m.viewSkills()
+	case modeCredPass:
+		v = m.viewCredPass()
 	default:
 		v = m.viewForm()
 	}

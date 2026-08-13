@@ -474,20 +474,26 @@ func (m model) startItem(idx int) model {
 	m.itemMode2Label = ""
 	m.itemVolume = nil
 	if m.listField == fEnv {
-		// A credential row has no picker answer: its source is a ciphertext
-		// bound to the file's own identity, and the picker's closed scheme
-		// set would decode it as `disabled` and write "" over the value on
-		// the way out. Refuse to open it rather than destroy it; the CLI is
-		// the surface that can re-encrypt.
+		// A WELL-FORMED credential row opens into the form like any other
+		// passthrough: the picker carries its kind, the Value box is masked
+		// and empty (empty means unchanged), and accepting a new value rides
+		// the same write path `byre credentials set` rides.
 		//
-		// IsCredentialSource, not a successful ParseEncryptedRow: a DAMAGED
-		// row (bad base64) or one on the reserved `manifest` key is still a
-		// credential row -- it is what the list renders it as -- and it is
-		// the row that most needs protecting from a picker that would write
-		// "" over it. `byre credentials unset` is the repair.
+		// A row that names a credential scheme and CANNOT be used -- damaged
+		// base64, or the reserved `manifest` key -- still refuses. Opening it
+		// would offer to re-encrypt over a row whose problem is not the value:
+		// the picker's other schemes would write "" or a host source over the
+		// ciphertext, and a new value would write a good row on a key that
+		// cannot deliver. That is not repair; `byre credentials unset` is.
+		// An editor with no credential write path at all (--global) refuses
+		// every credential row for the same reason it offers no credential
+		// kinds: nothing here can write one.
 		if idx >= 0 && m.itemHostEnv {
-			if config.IsCredentialSource(m.hostEnv[idx].Value) {
-				m.status = m.hostEnv[idx].Key + " is a credential — change it with `byre credentials set " + m.hostEnv[idx].Key + "` (this screen would write over the ciphertext)"
+			src := m.hostEnv[idx].Value
+			key := m.hostEnv[idx].Key
+			_, usable, perr := config.ParseEncryptedRow(key, src)
+			if config.IsCredentialSource(src) && (!usable || perr != nil || !m.canWriteCredentials()) {
+				m.status = key + " is a credential — change it with `byre credentials set " + key + "` (this screen would write over the ciphertext)"
 				return m
 			}
 		}
@@ -507,13 +513,15 @@ func (m model) startItem(idx int) model {
 			}
 		}
 		m.itemHasMode = true
-		m.itemModeOpts = hostEnvSchemes
+		m.itemModeOpts = hostEnvPickerOpts(m.canWriteCredentials())
 		m.itemModeLabel = "Source"
 		m.itemModeFirst = true
 		m.inputLabels = []string{"Key", hostEnvArgLabel(m.itemMode)}
 		argIn := newInput(arg)
 		argIn.Placeholder = hostEnvArgHint(m.itemMode)
 		m.inputs = []textinput.Model{newInput(key), argIn}
+		m.maskCredentialInput()
+		m.probeCredentialIdentity()
 		// Focus the KEY, not the picker: `value` is the common answer, so the
 		// old flow (type key, tab, type value, enter) must not grow a step.
 		m.focusItem(1)
@@ -1885,6 +1893,9 @@ func nameNotes(raw string, valid func(string) bool) []string {
 // itemNotes are the dim guidance lines under the editor — the form explains
 // itself instead of failing at commit (Pete's review of the first form).
 func (m model) itemNotes() []string {
+	if m.listField == fEnv {
+		return m.envItemNotes()
+	}
 	if m.listField == fClaudeSkills {
 		notes := nameNotes(m.inputs[0].Value(), config.ValidClaudeSkillName)
 		if n := claudeSkillDirNote(m.inputs[0].Value(), m.inputs[1].Value()); n != "" {
@@ -1999,6 +2010,18 @@ func (m model) commitEnvRow(orig model) model {
 		}
 	}
 
+	// A credential value is not a source this form can encode: it is encrypted
+	// and written by the credential path, on accept. That path does its own
+	// buffer surgery (after the write lands), so it branches before the moves
+	// below.
+	if isCredentialScheme(m.itemMode) {
+		return m.commitCredentialRow(orig, key, moving)
+	}
+	// Leaving a credential kind is an UNSET of that row, and the ciphertext is
+	// the only copy of the value: say so as it happens, since the row is about
+	// to become an ordinary source with nothing to undo it.
+	leavingCredential := m.itemHostEnv && m.editIndex >= 0 && config.IsCredentialSource(m.hostEnv[m.editIndex].Value)
+
 	if moving {
 		if m.itemHostEnv {
 			m.hostEnv = append(append([]kvItem{}, m.hostEnv[:m.editIndex]...), m.hostEnv[m.editIndex+1:]...)
@@ -2020,6 +2043,9 @@ func (m model) commitEnvRow(orig model) model {
 	}
 	m.itemErr = ""
 	m.mode = modeList
+	if leavingCredential {
+		m.status = key + " — " + credentialUnsetNote + "; ^s writes it"
+	}
 	return m
 }
 
@@ -2031,8 +2057,32 @@ func (m model) syncHostEnvLabel() model {
 	if m.listField == fEnv && len(m.inputLabels) == 2 && len(m.inputs) == 2 {
 		m.inputLabels = []string{m.inputLabels[0], hostEnvArgLabel(m.itemMode)}
 		m.inputs[1].Placeholder = hostEnvArgHint(m.itemMode)
+		m.maskCredentialInput()
 	}
 	return m
+}
+
+// maskCredentialInput keeps the value box's echo matching the selected scheme,
+// and CLEARS the box whenever the selection crosses the credential boundary: a
+// literal typed in the open must not become an encrypted value through a
+// picker move, and a value typed hidden must not appear in the box the moment
+// the picker leaves the credential kinds. The echo mode is itself the record
+// of which side the box was on.
+func (m *model) maskCredentialInput() {
+	if m.listField != fEnv || len(m.inputs) != 2 {
+		return
+	}
+	want := isCredentialScheme(m.itemMode)
+	if was := m.inputs[1].EchoMode == textinput.EchoPassword; want == was {
+		return
+	}
+	m.inputs[1].SetValue("")
+	if want {
+		m.inputs[1].EchoMode = textinput.EchoPassword
+		m.inputs[1].EchoCharacter = '•'
+		return
+	}
+	m.inputs[1].EchoMode = textinput.EchoNormal
 }
 
 // readOnlyFieldNote answers a keypress a read-only screen cannot honor, with

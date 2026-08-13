@@ -818,12 +818,13 @@ func TestErrLineKeepsDeliberateNewlinesAndStripsControls(t *testing.T) {
 	}
 }
 
-// A credential row shares the Env screen with the passthroughs, and the
-// picker's closed scheme set has no answer for it: decoding a ciphertext as
-// `disabled` and saving would write "" over the value. The row opens into a
-// refusal that names the surface which CAN change it, and the file is
-// untouched.
-func TestEnvScreenRefusesToEditACredentialRow(t *testing.T) {
+// A credential row shares the Env screen with the passthroughs, and it reads
+// as what it is: the payload elides, "host" would name a source it does not
+// have, and the value-state cell speaks `byre credentials list`'s word. This
+// pins the RENDER; the editing half moved to credentials_test.go when the
+// editor grew its own write path (an editor with none — the --global one, and
+// this fixture — still refuses the row and names the CLI).
+func TestEnvScreenRendersACredentialRowAndRefusesItWithNoWritePath(t *testing.T) {
 	credentials.SetWorkFactorForTesting(10)
 	_, recipient, err := credentials.NewIdentity("pw")
 	if err != nil {
@@ -845,12 +846,15 @@ func TestEnvScreenRefusesToEditACredentialRow(t *testing.T) {
 	if !strings.Contains(line, "credential") || !strings.Contains(line, config.EncryptedScheme+"[…]") {
 		t.Fatalf("credential row line = %q", line)
 	}
+	if !strings.Contains(line, credentials.ValueState(true)) {
+		t.Fatalf("the row must say whether it holds a value, in list's own word: %q", line)
+	}
 	if strings.Contains(line, "host ") || len(line) > 60 {
 		t.Fatalf("the row must not claim a host source nor carry the blob: %q", line)
 	}
 	m = openHostEnvRow(t, m, "STRIPE_KEY")
 	if m.mode == modeItem {
-		t.Fatal("a credential row must not open the picker editor")
+		t.Fatal("a credential row must not open the picker editor where nothing can write one")
 	}
 	if !strings.Contains(m.status, "byre credentials set STRIPE_KEY") {
 		t.Fatalf("the refusal must name the surface that can change it: %q", m.status)
@@ -905,6 +909,12 @@ func TestCredentialTallyExcludesAnEnvShadowedRowLikeTheLaunch(t *testing.T) {
 // into the picker that writes "" over a ciphertext and counted as env. One
 // predicate, config.IsCredentialSource, answers "is this a credential row"
 // for every surface; `byre credentials unset` is still the repair.
+//
+// The boundary MOVED when the editor grew a write path (phase C): a
+// well-formed credential row now opens into the masked form. These rows do
+// not, and the model here is given that write path on purpose, so the refusal
+// is pinned on their DAMAGE and not on a missing writer. Opening them would
+// offer to re-encrypt over a row whose problem is not the value.
 func TestEnvScreenTreatsUnparsableCredentialRowsAsCredentials(t *testing.T) {
 	for _, tc := range []struct{ name, key, row string }{
 		{"reserved key", config.ReservedCredentialItem, config.EncryptedScheme + "AAAA"},
@@ -918,6 +928,7 @@ func TestEnvScreenTreatsUnparsableCredentialRowsAsCredentials(t *testing.T) {
 				t.Fatalf("premise gone: %q now parses as a credential row", tc.row)
 			}
 			m := hostEnvModel(t, map[string]string{tc.key: tc.row})
+			m.creds = newFakeCredAdmin()
 			if line := hostEnvLine(tc.key, tc.row); !strings.Contains(line, "credential") {
 				t.Fatalf("the row must still read as a credential: %q", line)
 			}
@@ -938,4 +949,16 @@ func TestEnvScreenTreatsUnparsableCredentialRowsAsCredentials(t *testing.T) {
 			}
 		})
 	}
+	// The control the boundary needs: the SAME screen, the same write path, a
+	// row that parses — that one opens, or "damaged rows refuse" would pass on
+	// an editor that refuses every credential row.
+	t.Run("well-formed row opens", func(t *testing.T) {
+		admin := newFakeCredAdmin()
+		admin.identity, admin.recipient = mintFor(t, "pw")
+		row := encryptedRow(t, admin.recipient, "STRIPE_KEY", credentials.KindEnv, "sk-live-1")
+		m := credModel(t, admin, map[string]string{"STRIPE_KEY": row})
+		if opened := openHostEnvRow(t, m, "STRIPE_KEY"); opened.mode != modeItem {
+			t.Fatalf("a well-formed credential row must open the form; status: %q", opened.status)
+		}
+	})
 }
