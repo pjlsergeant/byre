@@ -59,7 +59,10 @@ type credTarget struct {
 	follow   bool   // the target's trust class (see configui.Save)
 	label    string // "project config", "layer acme"
 	lockFile string
-	prepare  func() error // enrollment, run only when a write lands
+	// prepare is the store enrollment a write needs (Paths.Bootstrap for the
+	// project target, nothing for a layer). writeCredTarget runs it BEFORE
+	// taking the lock — see the note there.
+	prepare func() error
 	// disclosure is the cross-project warning a layer target carries, empty
 	// for the project's own config.
 	disclosure string
@@ -201,6 +204,22 @@ var ErrCredentialFileChanged = errors.New("the config file changed while this co
 // re-parsed before it lands: a write that would leave the file unopenable —
 // or its identity unreadable — is refused with the file untouched.
 func writeCredTarget(s Streams, t credTarget, base credFile, mutate func(*tomldoc.Doc) error) error {
+	// Enrollment precedes the LOCK, not just the write: the project lock file
+	// lives in the store directory and is only O_CREATEd there, so on a project
+	// that has never been developed the ACQUISITION fails ENOENT before any
+	// under-lock Bootstrap could run — and `byre credentials set KEY` is the
+	// onramp `list` advertises. The editor already orders it this way
+	// (configui's runPrepare, then the guarded write).
+	//
+	// Bootstrap remains the only creator of the store directory: it makes the
+	// dir and its path record together, which is what keeps a write from
+	// resurrecting a store `byre forget` deleted (the concern AtomicWrite
+	// states). This moves WHEN it runs, not who does it.
+	if t.prepare != nil {
+		if err := t.prepare(); err != nil {
+			return err
+		}
+	}
 	return withSetupLock(s.Err, t.lockFile, func() error {
 		now, err := hostopen.ReadFileBounded(t.path, t.follow, config.MaxConfigBytes)
 		if !sameCredFileState(now, err, base.raw, base.readErr) {
@@ -227,11 +246,6 @@ func writeCredTarget(s Streams, t credTarget, base credFile, mutate func(*tomldo
 		}
 		if _, _, berr := config.ParseCredentialsBlock(out); berr != nil {
 			return fmt.Errorf("%s (%s): %w — nothing was written", t.label, t.path, berr)
-		}
-		if t.prepare != nil {
-			if perr := t.prepare(); perr != nil {
-				return perr
-			}
 		}
 		return config.AtomicWrite(t.path, string(out))
 	})

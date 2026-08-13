@@ -59,6 +59,36 @@ func projectConfigPath(t *testing.T, proj string) string {
 	return filepath.Join(p.Dir, config.ProjectConfigName)
 }
 
+// `byre credentials set` is the onramp `credentials list` advertises, and it
+// is reached on projects byre has never developed: nothing has created the
+// store directory yet. The store enrollment therefore has to precede the SETUP
+// LOCK, whose file is only O_CREATEd inside that directory — under the lock it
+// would never run, and the acquisition would die on a raw ENOENT. Every other
+// test here pre-bootstraps through testPaths, which is why this one resolves
+// the project itself.
+func TestCredentialsSetEnrollsAProjectThatWasNeverDeveloped(t *testing.T) {
+	t.Setenv("BYRE_HOME", t.TempDir())
+	proj := t.TempDir()
+	passphraseSeam(t, "pw", "pw", "sk-live-fresh") // new passphrase, confirm, value
+	var errBuf bytes.Buffer
+	if err := CredentialsSet(ttyStreams(&errBuf), proj, "STRIPE_KEY", false, ""); err != nil {
+		t.Fatalf("set on an un-bootstrapped project: %v", err)
+	}
+	value, _ := openCredRow(t, projectConfigPath(t, proj), "pw", "STRIPE_KEY")
+	if string(value) != "sk-live-fresh" {
+		t.Fatalf("round trip: %q", value)
+	}
+	// Bootstrap, not a bare MkdirAll: the store dir and its path record are
+	// created together, so the project is enrolled and not half-enrolled.
+	p, err := project.Resolve(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recorded, rerr := p.Recorded(); rerr != nil || !recorded {
+		t.Fatalf("the write must leave the project enrolled: recorded=%v err=%v", recorded, rerr)
+	}
+}
+
 // The first set mints the file's identity and writes both the block and the
 // row; the value round-trips through the config file alone — there is no
 // second store.
