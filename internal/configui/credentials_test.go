@@ -808,6 +808,52 @@ func TestAConcurrentWriteAfterACredentialWriteIsStillDrift(t *testing.T) {
 	}
 }
 
+// A file with credential rows and NO identity block: the modal is reached (a
+// value is being set), and it must not announce a file that "holds no
+// credentials yet" over a screen listing them. It proceeds — the rows are
+// already undecryptable and minting worsens nothing — and says what the new
+// passphrase does not do.
+func TestThePassphraseModalTellsTheTruthOverOrphanedRows(t *testing.T) {
+	admin := newFakeCredAdmin() // no identity: the file's block is gone
+	orphan := encryptedRow(t, mintRecipient(t, "gone"), "OLD_KEY", credentials.KindEnv, "unreachable")
+	m := credModel(t, admin, map[string]string{"OLD_KEY": orphan})
+	m.probeCredentialIdentity()
+
+	form := addCredential(m, credKindEnv, "STRIPE_KEY", "sk-live-1")
+	if v := form.viewItem(); !strings.Contains(v, "credential rows have no identity") {
+		t.Fatalf("the form claims the file has no credentials:\n%s", v)
+	}
+	modal := form.commitItem()
+	if modal.mode != modeCredPass {
+		t.Fatalf("mode = %v, want the passphrase modal", modal.mode)
+	}
+	v := modal.viewCredPass()
+	if strings.Contains(v, "holds no credentials yet") {
+		t.Fatalf("the modal denies the rows the screen behind it lists:\n%s", v)
+	}
+	if !strings.Contains(v, "1 credential row whose identity is missing") || !strings.Contains(v, "does NOT open it") {
+		t.Fatalf("the modal does not say what the new passphrase will not open:\n%s", v)
+	}
+	// And it proceeds: the value is written, the orphan is left exactly where
+	// it was for `byre credentials unset` to clear.
+	done := typeCredPass(t, modal, "new-pw", "new-pw")
+	if done.itemErr != "" || admin.sets != 1 {
+		t.Fatalf("minting over orphaned rows was refused: %q sets=%d", done.itemErr, admin.sets)
+	}
+	cfg, _ := fileState(t, admin.path)
+	if cfg.EnvFromHost["OLD_KEY"] != orphan {
+		t.Fatalf("the orphaned row was touched: %q", cfg.EnvFromHost["OLD_KEY"])
+	}
+}
+
+// mintRecipient is an identity nothing in the test keeps: a row encrypted to it
+// is an orphan by construction.
+func mintRecipient(t *testing.T, passphrase string) string {
+	t.Helper()
+	_, recipient := mintFor(t, passphrase)
+	return recipient
+}
+
 // Crossing the credential boundary CLEARS the value box: a literal typed in
 // the open must not become an encrypted value through a picker move, and a
 // value typed hidden must not appear the moment the picker leaves.

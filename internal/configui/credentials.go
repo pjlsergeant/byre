@@ -292,6 +292,10 @@ func (m model) envItemNotes() []string {
 	switch {
 	case m.credProbeErr != "":
 		notes = append(notes, "⚠ "+m.credProbeErr)
+	case !m.credHasIdentity && m.orphanCredentialRows() > 0:
+		// Same falsehood the modal refuses to tell, one screen earlier: rows
+		// are listed and the file has no identity for them.
+		notes = append(notes, "⚠ this file's credential rows have no identity — enter asks for a new passphrase, which will not open them")
 	case !m.credHasIdentity:
 		notes = append(notes, "this file has no credentials yet — enter asks for a new passphrase")
 	}
@@ -327,6 +331,22 @@ func (m *model) probeCredentialIdentity() {
 		return
 	}
 	m.credHasIdentity = has
+}
+
+// orphanCredentialRows counts the credential rows this file carries that
+// NOTHING here can open: asked only where the file has no [credentials] block,
+// which makes every such row an orphan (its identity was deleted, or the row
+// was copied out of the file that owned it). The count comes from the buffer
+// because the buffer is what the screen shows — a modal claiming "no
+// credentials yet" over a list of them is the falsehood this closes.
+func (m model) orphanCredentialRows() int {
+	n := 0
+	for _, kv := range m.hostEnv {
+		if config.IsCredentialSource(kv.Value) {
+			n++
+		}
+	}
+	return n
 }
 
 // credentialUnsetNote is what leaving a credential kind does, said at the
@@ -412,9 +432,20 @@ func (m model) focusCredPass(i int) model {
 func (m model) viewCredPass() string {
 	var b strings.Builder
 	b.WriteString(focusStyle.Render("Choose this file's credentials passphrase") + "\n\n")
-	b.WriteString("This file holds no credentials yet. The passphrase you choose here\n" +
-		"wraps the key that opens every credential in THIS file, and byre asks\n" +
-		"for it when a box that needs one launches.\n\n" +
+	if n := m.orphanCredentialRows(); n > 0 {
+		// NOT "holds no credentials yet": the screen behind this modal lists
+		// those rows. They are orphans — the identity that opened them is gone
+		// — and the passphrase being chosen here does not bring them back.
+		for _, l := range wrapLine("⚠ "+credentials.OrphanRowsWarning(n), m.width) {
+			b.WriteString(warnStyle.Render(l) + "\n")
+		}
+		b.WriteString("\n")
+	} else {
+		b.WriteString("This file holds no credentials yet.\n\n")
+	}
+	b.WriteString("The passphrase you choose here wraps the key that opens every\n" +
+		"credential in THIS file, and byre asks for it when a box that needs\n" +
+		"one launches.\n\n" +
 		"There is no recovery: a forgotten passphrase means unsetting each row\n" +
 		"and setting its value again.\n\n")
 	if d := m.creds.Disclosure(); d != "" {

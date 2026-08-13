@@ -52,6 +52,25 @@ func ValueState(stored bool) string {
 // passphrase: the CLI and the unlock prompt both speak it.
 const EmptyPassphraseWorthless = "an empty passphrase would leave the at-rest encryption worthless"
 
+// OrphanRowsWarning is what a file carrying credential rows with NO
+// [credentials] block is told before a new identity is minted into it. Both
+// surfaces that mint one speak it — the editor's passphrase modal and `byre
+// credentials set` — because both otherwise announce a file that "holds no
+// credentials yet" with the rows sitting right there on the screen behind.
+//
+// Minting is not REFUSED over those rows: they are already undecryptable (the
+// identity that opened them is gone), a fresh identity worsens nothing, and a
+// launch already stops on them. What is owed is the truth — that the
+// passphrase being chosen does not open them, and what does repair them.
+func OrphanRowsWarning(n int) string {
+	rows, them, each := "rows", "them", "each row"
+	if n == 1 {
+		rows, them, each = "row", "it", "that row"
+	}
+	return fmt.Sprintf("this file holds %d credential %s whose identity is missing: the passphrase you choose here does NOT open %s — unset %s and set its value again (byre credentials unset KEY)",
+		n, rows, them, each)
+}
+
 // ErrBadPassphrase is the wrong-passphrase answer, distinguished from a
 // corrupt or oversize identity so a prompt can re-ask (bounded) on a typo but
 // not on a damaged blob.

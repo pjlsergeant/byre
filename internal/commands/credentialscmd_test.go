@@ -999,3 +999,37 @@ func TestEditorAdminRemovesTheRowAKeyChangeReplaces(t *testing.T) {
 		t.Fatalf("round trip: %q", v)
 	}
 }
+
+// A file with credential rows and no [credentials] block: minting proceeds (the
+// rows are already undecryptable, a launch already stops on them, and refusing
+// would send the user on an unset-first errand that buys no safety), but the
+// prompt says what is true — the new passphrase does not open them.
+func TestCredentialsSetWarnsAboutRowsWhoseIdentityIsMissing(t *testing.T) {
+	credentials.SetWorkFactorForTesting(10)
+	p, proj := testPaths(t)
+	path := filepath.Join(p.Dir, config.ProjectConfigName)
+	if err := config.AtomicWrite(path, "[env_from_host]\nORPHAN = \"encrypted:AAAA\"\n"); err != nil {
+		t.Fatal(err)
+	}
+	passphraseSeam(t, "pw", "pw", "sk-live-1")
+	var errBuf bytes.Buffer
+	if err := CredentialsSet(ttyStreams(&errBuf), proj, "STRIPE_KEY", false, ""); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if !strings.Contains(errBuf.String(), credentials.OrphanRowsWarning(1)) {
+		t.Fatalf("the mint said nothing about the orphaned row:\n%s", errBuf.String())
+	}
+	if v, _ := openCredRow(t, path, "pw", "STRIPE_KEY"); string(v) != "sk-live-1" {
+		t.Fatalf("the set was blocked instead of warned: %q", v)
+	}
+	// And a file with an identity says nothing: the warning is about orphans,
+	// not about credentials.
+	errBuf.Reset()
+	passphraseSeam(t, "tok")
+	if err := CredentialsSet(ttyStreams(&errBuf), proj, "GH_TOKEN", false, ""); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errBuf.String(), "whose identity is missing") {
+		t.Fatalf("a file WITH an identity got the orphan warning:\n%s", errBuf.String())
+	}
+}

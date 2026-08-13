@@ -201,6 +201,19 @@ func layerWriteDisclosure(home, layer, path string) string {
 		layer, path, n, credPlural("project", n))
 }
 
+// orphanCredentialRows counts one FILE's credential rows. Asked only where
+// that file has no [credentials] block, which makes every one of them an
+// orphan: nothing on this machine can open it.
+func orphanCredentialRows(envFromHost map[string]string) int {
+	n := 0
+	for _, src := range envFromHost {
+		if config.IsCredentialSource(src) {
+			n++
+		}
+	}
+	return n
+}
+
 // credPlural is the count-agreeing noun these messages need.
 func credPlural(noun string, n int) string {
 	if n == 1 {
@@ -410,6 +423,13 @@ func CredentialsSet(s Streams, projectDir, key string, fileKind bool, layer stri
 	var newIdentity []byte
 	block := f.block
 	if !f.hasBlock {
+		// Rows with no identity to open them: minting is not refused over them
+		// (they are already undecryptable and a launch already stops on them),
+		// but the passphrase about to be chosen does not open them, and a
+		// prompt that said only "holds no credentials yet" would be false.
+		if n := orphanCredentialRows(f.cfg.EnvFromHost); n > 0 {
+			fmt.Fprintf(s.Err, "byre: %s\n", credentials.OrphanRowsWarning(n))
+		}
 		wrapped, recipient, err := mintCredentialIdentity(s, t)
 		if err != nil {
 			return err
@@ -510,7 +530,10 @@ func mintCredentialIdentity(s Streams, t credTarget) ([]byte, string, error) {
 	if !s.TTY {
 		return nil, "", fmt.Errorf("%s (%s) has no [credentials] block yet, and creating one needs a terminal for the masked passphrase prompt", t.label, t.path)
 	}
-	fmt.Fprintf(s.Err, "byre: %s (%s) holds no credentials yet — choose the passphrase that will open its credentials.\n", t.label, t.path)
+	// "no credentials IDENTITY", not "no credentials": a file can carry rows
+	// and no block at all (the orphan warning above), and this line printed
+	// right under that one would contradict it.
+	fmt.Fprintf(s.Err, "byre: %s (%s) has no credentials identity yet — choose the passphrase that will open the credentials it stores.\n", t.label, t.path)
 	pw, err := readNewPassphrase(s, "new passphrase for "+t.label+": ", "confirm passphrase: ")
 	if err != nil {
 		return nil, "", err
