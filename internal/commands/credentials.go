@@ -114,10 +114,23 @@ var readPassphrase = func(w io.Writer, prompt string) (string, error) {
 	return string(b), err
 }
 
-// unlockedFiles maps a cascade file's LABEL to the identity that opens its
-// rows. The label is unique within one cascade, and it is also what every
-// message names, so nothing here has to carry a second key.
-type unlockedFiles map[string]*credentials.Identity
+// unlockedFile is one contributing file's unlock: the identity that opens its
+// rows, and the row set that file carried when its passphrase was asked for.
+//
+// The row set is the CONSENTED set — literally the keys the plan line counted
+// before the prompt — and the decrypt under the lock delivers nothing outside
+// it. Keys, not kinds: a row whose kind changed under the lock is refused
+// anyway by the payload's own key/kind stamp, naming both, so a second check
+// here would only restate it.
+type unlockedFile struct {
+	id   *credentials.Identity
+	rows map[string]bool
+}
+
+// unlockedFiles maps a cascade file's LABEL to its unlock. The label is unique
+// within one cascade, and it is also what every message names, so nothing here
+// has to carry a second key.
+type unlockedFiles map[string]*unlockedFile
 
 // credentialDisplay renders a cascade label the way the plan line and the
 // prompts speak it: "layer:acme" is a config-internal spelling, "layer acme"
@@ -208,12 +221,19 @@ func unlockOneByPrompt(s Streams, g config.CredentialFile, groups []config.Crede
 			fmt.Fprintln(s.Err, "byre: credentials: wrong passphrase — try again.")
 		}
 	}
-	// NOT "rotate it with rekey": rekey opens with a prompt for the CURRENT
-	// passphrase, which is the thing this user has just failed three times.
-	// A lost passphrase makes these values unrecoverable, and the only real
-	// remedy is to replace the identity — which means taking out the rows and
-	// the block that no longer opens them, then setting them again (the same
-	// "re-set the values under a new identity" the rekey notice speaks of).
+	return refuseAfterAttempts(g)
+}
+
+// refuseAfterAttempts is the one owner of the out-of-attempts refusal, spoken
+// by both modes: the bound is the same bound, so the words are the same words.
+//
+// NOT "rotate it with rekey": rekey opens with a prompt for the CURRENT
+// passphrase, which is the thing this user has just failed three times. A lost
+// passphrase makes these values unrecoverable, and the only real remedy is to
+// replace the identity — which means taking out the rows and the block that no
+// longer opens them, then setting them again (the same "re-set the values under
+// a new identity" the rekey notice speaks of).
+func refuseAfterAttempts(g config.CredentialFile) error {
 	return fmt.Errorf("credentials: wrong passphrase for %s after %d attempts — nothing was launched. `byre credentials rekey` cannot help here: it asks for this same passphrase first. If it is lost these values cannot be recovered — take the rows out (byre credentials unset %s), delete that file's [credentials] block, and set them again under a new identity. To launch without these rows: --credentials=skip",
 		credentialAttribution(g), credPassphraseAttempts, g.Rows[0].Key)
 }
@@ -221,22 +241,40 @@ func unlockOneByPrompt(s Streams, g config.CredentialFile, groups []config.Crede
 // unlockFromStdin is the non-interactive mode: passphrase lines, each tried
 // against every still-locked identity in file order. EOF with anything still
 // locked stops the launch — the values were declared and cannot be delivered.
+//
+// The three-attempt bound is the interactive one, accounted the same way: a
+// line is an ATTEMPT against the root-most file still locked when it was read —
+// the file the prompt would have been asking for — and it still tries every
+// other still-locked identity too, so passphrase reuse is unchanged. Without
+// this a piped stream scrypt-tests lines until EOF, which is an unbounded
+// offline guessing loop byre runs on its own user's behalf.
 func unlockFromStdin(s Streams, groups []config.CredentialFile, open unlockedFiles) error {
 	sc := bufio.NewScanner(s.In)
 	// A passphrase is a line; the cap keeps a pathological stream from
 	// growing the buffer without bound.
 	sc.Buffer(make([]byte, 0, 4<<10), 64<<10)
+	attempts := map[string]int{}
 	for sc.Scan() {
 		pw := sc.Text()
 		if pw == "" {
 			fmt.Fprintf(s.Err, "byre: credentials: %s — skipping an empty line.\n", credentials.EmptyPassphraseWorthless)
 			continue
 		}
+		target, ok := firstLocked(groups, open)
+		if !ok {
+			return nil // everything is open; the line has nothing to attempt
+		}
 		if err := tryPassphrase(pw, groups, open); err != nil {
 			return err
 		}
 		if len(open) == len(groups) {
 			return nil
+		}
+		if open[target.Label] == nil {
+			attempts[target.Label]++
+			if attempts[target.Label] >= credPassphraseAttempts {
+				return refuseAfterAttempts(target)
+			}
 		}
 	}
 	if err := sc.Err(); err != nil {
@@ -252,6 +290,17 @@ func unlockFromStdin(s Streams, groups []config.CredentialFile, open unlockedFil
 		len(locked), strings.Join(locked, ", "))
 }
 
+// firstLocked is the file the next passphrase is FOR: root-most still locked,
+// which is the order the interactive prompt walks.
+func firstLocked(groups []config.CredentialFile, open unlockedFiles) (config.CredentialFile, bool) {
+	for _, g := range groups {
+		if open[g.Label] == nil {
+			return g, true
+		}
+	}
+	return config.CredentialFile{}, false
+}
+
 // tryPassphrase attempts pw against every still-locked file. A wrong
 // passphrase is silent (the caller re-asks); anything else — a corrupt or
 // oversize identity blob — stops the launch, because re-asking cannot fix it.
@@ -262,7 +311,9 @@ func tryPassphrase(pw string, groups []config.CredentialFile, open unlockedFiles
 		}
 		id, err := credentials.UnwrapIdentity(g.Block.Identity, pw)
 		if err == nil {
-			open[g.Label] = id
+			// The consented set is recorded HERE, where the identity is, and
+			// from the same pre-lock group the plan line counted.
+			open[g.Label] = &unlockedFile{id: id, rows: rowKeySet(g)}
 			continue
 		}
 		if !errors.Is(err, credentials.ErrBadPassphrase) {
@@ -279,6 +330,15 @@ func credentialAttribution(g config.CredentialFile) string {
 		return credentialDisplay(g.Label)
 	}
 	return credentialDisplay(g.Label) + " (" + g.Path + ")"
+}
+
+// rowKeySet is one file's row keys as a set — what the unlock consented to.
+func rowKeySet(g config.CredentialFile) map[string]bool {
+	keys := make(map[string]bool, len(g.Rows))
+	for _, r := range g.Rows {
+		keys[r.Key] = true
+	}
+	return keys
 }
 
 func rowKeys(g config.CredentialFile) string {
@@ -335,15 +395,23 @@ func decryptCredentialsLocked(groups []config.CredentialFile, open unlockedFiles
 	p.unlock = launchCredentialUnlocked
 	var manifest strings.Builder
 	for _, g := range groups {
-		id := open[g.Label]
-		if id == nil {
+		u := open[g.Label]
+		if u == nil {
 			return credPayload{}, fmt.Errorf("credentials: %s appeared while develop waited for the setup lock, so its passphrase was never asked for — nothing was launched; re-run byre develop", credentialAttribution(g))
 		}
 		if !g.HasBlock {
 			return credPayload{}, fmt.Errorf("credentials: %s lost its [credentials] block while develop waited for the setup lock — nothing was launched", credentialAttribution(g))
 		}
 		for _, row := range g.Rows {
-			value, outcome, err := id.DecryptValue(row.Key, row.Kind, row.Blob)
+			// A file whose passphrase was entered opens every row in it,
+			// including one that landed after the plan line was printed. The
+			// consent that was given was for the rows shown, so a row outside
+			// that set stops the launch exactly as a whole new file does.
+			if !u.rows[row.Key] {
+				return credPayload{}, fmt.Errorf("credentials: %s: %s appeared while develop waited for the setup lock, so it was never in the set this launch was asked to unlock — nothing was launched; re-run byre develop and the plan line will count it",
+					credentialAttribution(g), row.Key)
+			}
+			value, outcome, err := u.id.DecryptValue(row.Key, row.Kind, row.Blob)
 			if err != nil {
 				return credPayload{}, fmt.Errorf("credentials: %s: %s: %w — nothing was launched", credentialAttribution(g), outcome, err)
 			}
@@ -380,26 +448,59 @@ func decryptCredentialsLocked(groups []config.CredentialFile, open unlockedFiles
 // closes; the mismatch is transient by construction, so the remedy is to run
 // again.
 //
-// Deliberately ONE-directional. Merged-has/file-lacks is the silent class
-// above; the transient opposite — a row the file view carries that the merged
-// config no longer declares — is accepted, because it delivers one extra value
-// the user was prompted for and the launch record names, which is loud by
-// construction rather than silent.
-func refuseCredentialViewMismatch(hostEnv []hostEnvResult, values map[string][]byte) error {
-	var missing []string
+// The check is SYMMETRIC: what was consented to is what is delivered, nothing
+// more and nothing less. Merged-has/file-lacks is the silent class above. The
+// opposite direction — a key the file view decrypted that the merged config
+// removed, disabled with "", replaced with another source, or shadowed with an
+// [env] literal — delivers a value the authoritative config no longer
+// declares, and in the shadowed case briefly inverts ADR 0026's precedence
+// inside the box. A kind that differs between the two reads is the same
+// disagreement in a third shape: the box would get a file where the config
+// says variable, or the reverse.
+func refuseCredentialViewMismatch(hostEnv []hostEnvResult, p credPayload) error {
+	declared := map[string]credentials.Kind{}
+	var declaredKeys []string
 	for _, r := range hostEnv {
 		if r.State != hostEnvEncrypted {
 			continue
 		}
-		if _, ok := values[r.Key]; !ok {
-			missing = append(missing, r.Key)
+		// hostEnvEncrypted IS a credential source, so the kind always reads;
+		// a source that somehow does not name a scheme is left to the
+		// delivered-side sweep below rather than assigned a kind it lacks.
+		kind, ok := config.CredentialKindOf(r.Source)
+		if !ok {
+			continue
+		}
+		declared[r.Key] = kind
+		declaredKeys = append(declaredKeys, r.Key)
+	}
+	delivered := map[string]credentials.Kind{}
+	var deliveredKeys []string
+	for _, rec := range p.record {
+		delivered[rec.Key] = credentials.Kind(rec.Kind)
+		deliveredKeys = append(deliveredKeys, rec.Key)
+	}
+	slices.Sort(declaredKeys)
+	slices.Sort(deliveredKeys)
+	var disagreements []string
+	for _, k := range declaredKeys {
+		switch dk, ok := delivered[k]; {
+		case !ok:
+			disagreements = append(disagreements, k+": declared as an encrypted row by the config cascade, and absent from the credential file view this launch unlocked and decrypted")
+		case dk != declared[k]:
+			disagreements = append(disagreements, fmt.Sprintf("%s: kind %s in the config cascade, kind %s in the credential file view this launch unlocked and decrypted", k, declared[k], dk))
 		}
 	}
-	if len(missing) == 0 {
+	for _, k := range deliveredKeys {
+		if _, ok := declared[k]; !ok {
+			disagreements = append(disagreements, k+": decrypted from the credential file view, and no longer declared as an encrypted row by the config cascade")
+		}
+	}
+	if len(disagreements) == 0 {
 		return nil
 	}
-	return fmt.Errorf("credentials: %s: declared as an encrypted row by the config cascade, and absent from the credential file view this launch unlocked and decrypted — the two reads of the cascade disagree, so a config layer changed between them; nothing was launched, re-run byre develop",
-		strings.Join(missing, ", "))
+	return fmt.Errorf("credentials: %s — the two reads of the cascade disagree, so a config layer changed between them; nothing was launched, re-run byre develop",
+		strings.Join(disagreements, "; "))
 }
 
 // credStream frames the deliverable set for the receiver: a version line,

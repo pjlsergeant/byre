@@ -175,6 +175,17 @@ func IsCredentialSource(src string) bool {
 	return ok
 }
 
+// CredentialKindOf reports the kind a credential source names — what the box
+// gets, a variable or a tmpfs file. ok is false for any other source. Total,
+// like IsCredentialSource and unlike ParseEncryptedRow: a row's KIND reads off
+// its scheme whether or not its payload is usable, which is what lets a
+// comparison of two reads of one cascade speak about a damaged row instead of
+// silently dropping it.
+func CredentialKindOf(src string) (credentials.Kind, bool) {
+	kind, _, _, ok := cutEncryptedScheme(src)
+	return kind, ok
+}
+
 // DeliversCredential reports whether a WINNING env_from_host row is a
 // credential the cascade actually delivers: it names a credential scheme, and
 // no explicit [env] literal beats it (ADR 0026 — a literal takes the key out

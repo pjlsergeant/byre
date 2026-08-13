@@ -65,11 +65,24 @@ func sortedKeys(m map[string]string) []string {
 	return out
 }
 
-// credResolved is the resolved view a launch reads: an empty config plus the
-// cascade's credential groups, which is all the launch flow consumes.
+// credResolved is the resolved view a launch reads: the cascade's credential
+// groups, plus the merged env_from_host rows those same groups produce. The
+// two are one cascade read two ways in production, so a fixture that carried
+// only one of them would be a view develop can never actually hold — and the
+// launch's symmetric consent check compares exactly these two.
 func credResolved(groups ...config.CredentialFile) resolved {
 	rv := combine(config.Config{}, skills.Resolved{})
 	rv.credFiles = groups
+	rv.cfg.EnvFromHost = map[string]string{}
+	for _, g := range groups {
+		for _, r := range g.Rows {
+			src, err := config.FormatEncryptedRow(r.Kind, r.Blob)
+			if err != nil {
+				panic(err)
+			}
+			rv.cfg.EnvFromHost[r.Key] = src
+		}
+	}
 	return rv
 }
 
@@ -332,6 +345,151 @@ func TestDevelopRefusesWhenTheTwoCascadeViewsDisagree(t *testing.T) {
 	}
 }
 
+// The OTHER direction of the same rule: what was consented to is what is
+// delivered, nothing MORE either. A key the credential file view decrypted and
+// the merged config no longer declares as an encrypted row would put a value
+// in the box that the authoritative config does not name — and where an [env]
+// literal is what takes the key away, delivering it would briefly invert ADR
+// 0026's precedence inside the box.
+func TestDevelopRefusesADeliveredRowTheMergedConfigNoLongerDeclares(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		bend func(*resolved)
+	}{
+		{"the row is gone from the merged config", func(rv *resolved) {
+			delete(rv.cfg.EnvFromHost, "STRIPE_KEY")
+		}},
+		{"the row is disabled by a nearer layer", func(rv *resolved) {
+			rv.cfg.EnvFromHost["STRIPE_KEY"] = ""
+		}},
+		{"the row is replaced by another source", func(rv *resolved) {
+			rv.cfg.EnvFromHost["STRIPE_KEY"] = "env:STRIPE_KEY"
+		}},
+		{"an [env] literal shadows the row", func(rv *resolved) {
+			rv.cfg.Env = map[string]string{"STRIPE_KEY": "plain"}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, rv := credFixture(t)
+			tc.bend(&rv)
+			passphraseSeam(t, "pw")
+			var errBuf bytes.Buffer
+			f := &fakeRunner{liveSecond: map[string][]string{workdirLabel(p): {"cid"}}}
+			err := develop(f, ttyStreams(&errBuf), p, rv, false, CredentialAsk)
+			if err == nil || !strings.Contains(err.Error(), "STRIPE_KEY") ||
+				!strings.Contains(err.Error(), "no longer declared as an encrypted row") {
+				t.Fatalf("want a refusal naming the key and the direction, got: %v", err)
+			}
+			if len(f.creates) != 0 {
+				t.Fatalf("a refused launch must create nothing: %v", f.creates)
+			}
+		})
+	}
+}
+
+// A third shape of one disagreement: both reads carry the key and they
+// disagree about what the box GETS. The decrypt cannot catch this — the
+// payload's stamp binds the row the FILE view holds, and that half is
+// self-consistent — so the merged view's kind is compared here or nowhere.
+func TestDevelopRefusesWhenTheTwoViewsDisagreeAboutTheKind(t *testing.T) {
+	p, rv := credFixture(t)
+	fileRow, err := config.FormatEncryptedRow(credentials.KindFile, []byte("ciphertext"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rv.cfg.EnvFromHost["STRIPE_KEY"] = fileRow
+	passphraseSeam(t, "pw")
+	var errBuf bytes.Buffer
+	f := &fakeRunner{liveSecond: map[string][]string{workdirLabel(p): {"cid"}}}
+	err = develop(f, ttyStreams(&errBuf), p, rv, false, CredentialAsk)
+	if err == nil || !strings.Contains(err.Error(), "STRIPE_KEY") ||
+		!strings.Contains(err.Error(), "kind file in the config cascade") ||
+		!strings.Contains(err.Error(), "kind env in the credential file view") {
+		t.Fatalf("want a refusal naming the key and both kinds, got: %v", err)
+	}
+	if len(f.creates) != 0 {
+		t.Fatalf("a refused launch must create nothing: %v", f.creates)
+	}
+}
+
+// The under-lock re-read is the authoritative one, and what it finds must be
+// what the user was asked to unlock. A whole FILE that appeared while develop
+// waited for the setup lock has no unlocked identity at all: its passphrase
+// was never asked for, so nothing of it can be delivered.
+func TestDevelopRefusesAFileThatAppearedUnderTheLock(t *testing.T) {
+	p, rv := credFixture(t)
+	consented := rv.credFiles[0]
+	appeared := credGroup(t, "layer:acme", "other-pw", map[string]string{"GHOST_KEY": "g"})
+	rv.reread = func() (resolved, error) {
+		return credResolved(consented, appeared), nil
+	}
+	passphraseSeam(t, "pw") // one prompt: the pre-lock read saw one file
+	var errBuf bytes.Buffer
+	f := &fakeRunner{liveSecond: map[string][]string{workdirLabel(p): {"cid"}}}
+	err := develop(f, ttyStreams(&errBuf), p, rv, false, CredentialAsk)
+	if err == nil || !strings.Contains(err.Error(), "layer acme") ||
+		!strings.Contains(err.Error(), "its passphrase was never asked for") {
+		t.Fatalf("want a refusal naming the file that appeared, got: %v", err)
+	}
+	if len(f.creates) != 0 {
+		t.Fatalf("a refused launch must create nothing: %v", f.creates)
+	}
+}
+
+// The same rule one level down, and the one the whole-file check misses: a ROW
+// that appeared under the lock lands in a file that IS unlocked, so its
+// identity opens it and it would ride along unasked-for. The consented set is
+// the row set the plan line counted, and this row was not in it.
+func TestDevelopRefusesARowThatAppearedUnderTheLock(t *testing.T) {
+	p, rv := credFixture(t)
+	consented := rv.credFiles[0]
+	rv.reread = func() (resolved, error) {
+		return credResolved(withExtraRow(t, consented, "GHOST_KEY", "g")), nil
+	}
+	passphraseSeam(t, "pw")
+	var errBuf bytes.Buffer
+	f := &fakeRunner{liveSecond: map[string][]string{workdirLabel(p): {"cid"}}}
+	err := develop(f, ttyStreams(&errBuf), p, rv, false, CredentialAsk)
+	if err == nil || !strings.Contains(err.Error(), "GHOST_KEY") ||
+		!strings.Contains(err.Error(), "never in the set this launch was asked to unlock") {
+		t.Fatalf("want a refusal naming the row that appeared, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "sk-live") {
+		t.Fatalf("a refusal must never carry a value: %v", err)
+	}
+	if len(f.creates) != 0 {
+		t.Fatalf("a refused launch must create nothing: %v", f.creates)
+	}
+	// The control: the SAME re-read shape with nothing added still launches, or
+	// "a row that appeared refuses" would pass on an under-lock read that
+	// refuses everything.
+	p, rv = credFixture(t)
+	unchanged := rv.credFiles[0]
+	rv.reread = func() (resolved, error) { return credResolved(unchanged), nil }
+	passphraseSeam(t, "pw")
+	f = &fakeRunner{liveSecond: map[string][]string{workdirLabel(p): {"cid"}}}
+	if err := develop(f, ttyStreams(&errBuf), p, rv, false, CredentialAsk); err != nil {
+		t.Fatalf("an unchanged re-read must launch: %v", err)
+	}
+	if len(f.creates) == 0 {
+		t.Fatal("the unchanged launch created no container")
+	}
+}
+
+// withExtraRow adds a row to an existing group, encrypted to the SAME identity
+// — the shape of a row landing in a file whose passphrase is already entered.
+func withExtraRow(t *testing.T, g config.CredentialFile, key, value string) config.CredentialFile {
+	t.Helper()
+	blob, err := credentials.EncryptValue(g.Block.Recipient, key, credentials.KindEnv, []byte(value))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := g
+	out.Rows = append(append([]config.EncryptedRow{}, g.Rows...),
+		config.EncryptedRow{Key: key, Kind: credentials.KindEnv, Blob: blob})
+	return out
+}
+
 // --credentials=skip is the ONE deliberate way to launch without them, and
 // the record says which it was.
 func TestDevelopSkipModeLaunchesWithout(t *testing.T) {
@@ -390,6 +548,50 @@ func TestDevelopStdinMode(t *testing.T) {
 	}
 	if argv := strings.Join(f.creates[0], " "); !strings.Contains(argv, "BYRE_CRED_EXPECT") {
 		t.Fatalf("stdin passphrases must deliver: %s", argv)
+	}
+}
+
+// The interactive bound is the bound in every mode: a piped stream is not a
+// licence to scrypt-test lines until EOF. Each line is an attempt against the
+// root-most file still locked, and the third failure stops the launch with the
+// same refusal the prompt gives.
+func TestDevelopStdinIsBoundedToThreeAttempts(t *testing.T) {
+	p, rv := credFixture(t)
+	var errBuf bytes.Buffer
+	s := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("no1\nno2\nno3\nno4\nno5\n"), TTY: false}
+	f := &fakeRunner{}
+	err := develop(f, s, p, rv, false, CredentialStdin)
+	if err == nil || !strings.Contains(err.Error(), "wrong passphrase for project") ||
+		!strings.Contains(err.Error(), fmt.Sprintf("after %d attempts", credPassphraseAttempts)) {
+		t.Fatalf("want the bounded refusal naming the file and the bound, got: %v", err)
+	}
+	// The stream is not drained: the refusal fires at the bound, not at EOF —
+	// which is the whole point, and the EOF refusal has different words.
+	if strings.Contains(err.Error(), "stdin ended") {
+		t.Fatalf("the bound must fire before EOF: %v", err)
+	}
+	if len(f.creates) != 0 {
+		t.Fatalf("a stopped launch must create nothing: %v", f.creates)
+	}
+}
+
+// Bounding the attempts must not cost the reuse semantics: one line still
+// opens every file that shares the passphrase, and that is one attempt, not
+// one per file.
+func TestDevelopStdinReuseUnlocksSeveralFilesFromOneLine(t *testing.T) {
+	p, _ := testPaths(t)
+	rv := credResolved(
+		credGroup(t, "layer:acme", "same", map[string]string{"A": "1"}),
+		credGroup(t, "project", "same", map[string]string{"B": "2"}),
+	)
+	var errBuf bytes.Buffer
+	s := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("same\n"), TTY: false}
+	f := &fakeRunner{liveSecond: map[string][]string{workdirLabel(p): {"cid"}}}
+	if err := develop(f, s, p, rv, false, CredentialStdin); err != nil {
+		t.Fatalf("one shared passphrase must open both files: %v", err)
+	}
+	if argv := strings.Join(f.creates[0], " "); !strings.Contains(argv, "BYRE_CRED_EXPECT") {
+		t.Fatalf("both files' rows must be delivered: %s", argv)
 	}
 }
 

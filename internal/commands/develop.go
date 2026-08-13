@@ -422,7 +422,7 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	// would have delivered (decryptCredentialsLocked's own under-lock refusal
 	// returns early there for the same reason).
 	if !credSkipped {
-		if err := refuseCredentialViewMismatch(hostEnv, creds.values); err != nil {
+		if err := refuseCredentialViewMismatch(hostEnv, creds); err != nil {
 			return none, err
 		}
 	}
