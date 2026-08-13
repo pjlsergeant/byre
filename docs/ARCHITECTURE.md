@@ -815,7 +815,10 @@ byre dockerrun    Print the exact `docker run` command for this directory --
                   with `dockerfile`, the whole exit (docs/EJECTING.md).
 
 byre ejectfirewall  Print the firewall's outside-the-box step as a standalone
-                  script -- the one thing dockerfile+dockerrun don't carry.
+                  script -- one of the two things dockerfile+dockerrun don't
+                  carry (the other is credential delivery, which needs the
+                  passphrase and so stays `byre develop`'s; both leave the
+                  ejected box gated to fail closed -- docs/EJECTING.md).
 
 byre config       Interactive editor for this project's host-side config
                   (--global for the baseline).

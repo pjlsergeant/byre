@@ -10,11 +10,15 @@ byre dockerrun                 # the exact run command: mounts, env, volumes, po
 Build the one, run the other, and you have byre's box without byre --
 nothing in the image or the run command depends on byre existing.
 
-**The one exception is the firewall.** Its rules are applied from
-*outside* the box at launch (`docs/adr/0010`), so no Dockerfile or run
-command can carry them -- and a firewalled image refuses to start
-without byre's ready signal (it fails closed rather than launching
-unwalled). Two ways out:
+**The exceptions are the two things byre does from OUTSIDE the box at
+launch.** Both make the box fail closed without them, so the printed
+command carries the gate and the run stops at it rather than starting
+subtly wrong.
+
+**The firewall.** Its rules are applied from outside the box at launch
+(`docs/adr/0010`), so no Dockerfile or run command can carry them -- and
+a firewalled image refuses to start without byre's ready signal (it
+fails closed rather than launching unwalled). Two ways out:
 
 ```sh
 byre ejectfirewall > firewall.sh   # the netns helper byre runs, as a script:
@@ -22,3 +26,13 @@ byre ejectfirewall > firewall.sh   # the netns helper byre runs, as a script:
 ```
 
 or disable the firewall skill and regenerate -- bring your own firewall.
+
+**Credentials.** A project that declares credential rows has byre
+decrypt them on the host and stream them into the started box, which no
+run command can do. The printed command carries the gate -- the
+`BYRE_CRED_EXPECT` flag and the `/run/byre` tmpfs the values land on --
+so an ejected box waits and then exits instead of running without the
+values its config declares. There is no eject for the delivery itself:
+it needs the passphrase, and that is `byre develop`. To run without
+them, drop the `-e BYRE_CRED_EXPECT` and the `/run/byre` tmpfs from the
+command.
