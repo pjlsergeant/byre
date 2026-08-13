@@ -175,6 +175,22 @@ func IsCredentialSource(src string) bool {
 	return ok
 }
 
+// DeliversCredential reports whether a WINNING env_from_host row is a
+// credential the cascade actually delivers: it names a credential scheme, and
+// no explicit [env] literal beats it (ADR 0026 — a literal takes the key out
+// of env_from_host entirely, so the box never sees the credential and no
+// passphrase is spent on it).
+//
+// The shadowing rule is spelled ONCE, here, and asked by every surface that
+// counts credentials: EncryptedRows builds the launch set with it, and the
+// editor's exposure tally excludes the same rows — two tallies of one grant
+// that disagreed is exactly what a second spelling produced. envShadowed is
+// the caller's own answer to "does an [env] literal set this key", since each
+// surface holds the cascade in a different shape.
+func DeliversCredential(src string, envShadowed bool) bool {
+	return IsCredentialSource(src) && !envShadowed
+}
+
 // RenderSource is the one eliding renderer every surface that displays an
 // env_from_host source goes through: an ordinary source is short and reads as
 // written, and a credential's ciphertext collapses to its scheme. The scheme
@@ -311,7 +327,7 @@ func EncryptedRows(files []CascadeFile) ([]CredentialFile, error) {
 	for i, f := range files {
 		var rows []EncryptedRow
 		for _, k := range slices.Sorted(maps.Keys(f.Cfg.EnvFromHost)) {
-			if winner[k] != i || overridden[k] {
+			if winner[k] != i || !DeliversCredential(f.Cfg.EnvFromHost[k], overridden[k]) {
 				continue
 			}
 			row, ok, err := ParseEncryptedRow(k, f.Cfg.EnvFromHost[k])

@@ -225,6 +225,27 @@ func (m model) hostEnvNow() map[string]string {
 	return out
 }
 
+// envLiteralsNow is the effective [env] LITERAL key set: this file's live edit
+// list over everything the cascade below sets. It is the one input the
+// shadowing rule takes (ADR 0026: an [env] literal at any layer takes the key
+// out of env_from_host entirely), so every consumer here -- the dead-row mark
+// on the env screen, the exposure tally's credential segment -- asks it rather
+// than rebuilding the set with its own idea of what counts.
+//
+// A skill's [runtime].env is deliberately NOT in it: the runner writes skill
+// env first and lets addEnvFromHost overwrite it, so a passthrough colliding
+// with a skill key is the LIVE one.
+func (m model) envLiteralsNow() map[string]bool {
+	out := map[string]bool{}
+	for k := range m.lowerNow().Env {
+		out[k] = true
+	}
+	for _, kv := range m.env {
+		out[kv.Key] = true
+	}
+	return out
+}
+
 // lowerSource names the sublayer an inherited entry comes from -- the LATEST
 // contributing layer wins, matching merge order: the extends chain (leafmost
 // first) over the current template's raw layer over the default. has reports

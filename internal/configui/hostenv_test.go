@@ -1,6 +1,7 @@
 package configui
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -857,6 +858,43 @@ func TestEnvScreenRefusesToEditACredentialRow(t *testing.T) {
 	// The value survives a save of everything else on the screen.
 	if got := m.assemble().EnvFromHost["STRIPE_KEY"]; got != row {
 		t.Fatalf("the ciphertext must round-trip untouched: %q", got)
+	}
+}
+
+// An [env] literal takes a key out of env_from_host entirely (ADR 0026), so a
+// credential row it beats reaches no box: EncryptedRows drops it from the
+// launch set, and status and `byre credentials list` exclude it too. The
+// editor's tally counted it anyway — "Credentials 1" on the screen against
+// "credentials 0" at launch, over one key. Both sides now ask
+// config.DeliversCredential, so this pins them together on exactly that shape.
+func TestCredentialTallyExcludesAnEnvShadowedRowLikeTheLaunch(t *testing.T) {
+	row := config.EncryptedScheme + base64.StdEncoding.EncodeToString([]byte("ciphertext"))
+	// The launch side, from its own source of truth: the cascade's winning
+	// credential rows, which is what develop's exposure line counts.
+	launchRows := func(cfg config.Config) int {
+		groups, err := config.EncryptedRows([]config.CascadeFile{{Label: "project", Cfg: cfg}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for _, g := range groups {
+			n += len(g.Rows)
+		}
+		return n
+	}
+	editorRows := func(cfg config.Config) int {
+		return newModel("t", "/tmp/x", cfg, nil, nil, nil, nil, Inherited{}, nil, TargetProject).exposureNow().Credentials
+	}
+
+	shadowed := config.Config{Env: map[string]string{"FOO": "x"}, EnvFromHost: map[string]string{"FOO": row}}
+	if got, want := editorRows(shadowed), launchRows(shadowed); got != want || want != 0 {
+		t.Fatalf("an [env]-shadowed credential: editor counted %d, launch %d, want 0 on both", got, want)
+	}
+	// The control: the same row with no literal beating it is a credential on
+	// both surfaces — a tally that simply stopped counting would pass above.
+	live := config.Config{EnvFromHost: map[string]string{"FOO": row}}
+	if got, want := editorRows(live), launchRows(live); got != want || want != 1 {
+		t.Fatalf("an unshadowed credential: editor counted %d, launch %d, want 1 on both", got, want)
 	}
 }
 

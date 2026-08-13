@@ -805,13 +805,7 @@ func (m model) envRows() []listRow {
 	// exists, and the passthrough winning is what makes it right -- the skill
 	// hardcodes xterm-256color to escape docker's TERM=xterm default, and the
 	// host's real value beats a guess).
-	shadowed := map[string]bool{}
-	for _, kv := range m.env {
-		shadowed[kv.Key] = true
-	}
-	for k := range lowerEnv {
-		shadowed[k] = true
-	}
+	shadowed := m.envLiteralsNow()
 	hostEnv := m.hostEnvNow()
 	for _, k := range slices.Sorted(maps.Keys(hostEnv)) {
 		k := k
@@ -1298,6 +1292,7 @@ func (m model) exposureNow() config.Exposure {
 			envKeys[k] = true
 		}
 	}
+	envLiterals := m.envLiteralsNow()
 	for k, src := range m.hostEnvNow() {
 		// "" is switched off: it reaches no box, so it is not a variable in
 		// one. byre status omits it for the same reason, and these two
@@ -1305,13 +1300,21 @@ func (m model) exposureNow() config.Exposure {
 		if src == "" {
 			continue
 		}
-		// A credential row is counted as a credential, not as env: the launch
-		// tally splits them the same way (an encrypted row never joins the
-		// -e export), and a key counted twice would make the two lines
-		// disagree over one grant. IsCredentialSource, so a damaged or
-		// reserved-key row counts where the list already renders it.
 		if config.IsCredentialSource(src) {
-			e.Credentials++
+			// A credential row is counted as a credential, not as env: the
+			// launch tally splits them the same way (an encrypted row never
+			// joins the -e export), and a key counted twice would make the two
+			// lines disagree over one grant. DeliversCredential, not the bare
+			// scheme test, because a row an [env] literal beats reaches no box
+			// -- EncryptedRows drops it from the launch set, and the tally that
+			// counted it said "Credentials 1" where the launch, status and
+			// `credentials list` all said none. A damaged or reserved-key row
+			// still counts: it is a credential row the list renders.
+			if config.DeliversCredential(src, envLiterals[k]) {
+				e.Credentials++
+			}
+			// Shadowed or not, the key is not env exposure of its own: the
+			// [env] literal that beat it is already counted above.
 			continue
 		}
 		envKeys[k] = true
