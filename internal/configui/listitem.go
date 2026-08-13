@@ -517,6 +517,9 @@ func (m model) startItem(idx int) model {
 			if m.itemHostEnv {
 				key = m.hostEnv[idx].Key
 				m.itemMode, arg = hostEnvScheme(m.hostEnv[idx].Value)
+				// The kind rides its own picker, so an existing credential row
+				// opens SHOWING what the box gets — not just that it is one.
+				m.itemMode2 = credKindSel(m.hostEnv[idx].Value)
 			} else {
 				key, arg = m.env[idx].Key, m.env[idx].Value
 			}
@@ -529,6 +532,7 @@ func (m model) startItem(idx int) model {
 		argIn := newInput(arg)
 		argIn.Placeholder = hostEnvArgHint(m.itemMode)
 		m.inputs = []textinput.Model{newInput(key), argIn}
+		m.syncCredentialKindPicker()
 		m.maskCredentialInput()
 		m.probeCredentialIdentity()
 		// Focus the KEY, not the picker: `value` is the common answer, so the
@@ -1844,8 +1848,15 @@ func (m model) viewItem() string {
 	if m.itemHasMode2 {
 		seg(m.itemMode2Label, m.itemMode2Opts, m.itemMode2, m.onMode2Picker())
 	}
+	// Notes WRAP rather than run off the edge. Static guidance is written to
+	// the 80-column budget (explain_test's rule), but a note can carry a value
+	// byre did not choose -- the credential write-target disclosure names a
+	// layer's path -- and the view's clip would take the end off exactly the
+	// sentence that matters most.
 	for _, note := range m.itemNotes() {
-		b.WriteString(dimStyle.Render("  "+note) + "\n")
+		for _, l := range wrapLine("  "+note, m.width) {
+			b.WriteString(dimStyle.Render(l) + "\n")
+		}
 	}
 	// The stored prose, read-only: the editing path is ^e, but READING the
 	// standing instructions must not require launching a second program
@@ -2074,9 +2085,21 @@ func (m model) syncHostEnvLabel() model {
 	if m.listField == fEnv && len(m.inputLabels) == 2 && len(m.inputs) == 2 {
 		m.inputLabels = []string{m.inputLabels[0], hostEnvArgLabel(m.itemMode)}
 		m.inputs[1].Placeholder = hostEnvArgHint(m.itemMode)
+		m.syncCredentialKindPicker()
 		m.maskCredentialInput()
 	}
 	return m
+}
+
+// syncCredentialKindPicker shows the kind picker for exactly the scheme that
+// has a kind. It appears and disappears as the Source picker moves, and it is
+// always the LAST control, so no other control's index shifts under a focused
+// user when it does. The selection survives a round trip away and back: it is
+// the row's own kind, not a default this form re-picks.
+func (m *model) syncCredentialKindPicker() {
+	m.itemHasMode2 = isCredentialScheme(m.itemMode)
+	m.itemMode2Opts = credKindOpts
+	m.itemMode2Label = "Delivered as"
 }
 
 // maskCredentialInput keeps the value box's echo matching the selected scheme,

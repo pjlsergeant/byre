@@ -75,7 +75,7 @@ type pendingCredential struct {
 
 // credentialWriteNote is what enter does here, stated before the value is
 // typed: this one field does not wait for ^s.
-const credentialWriteNote = "enter encrypts and writes this value to the file straight away (the rest of the screen still saves with ^s)"
+const credentialWriteNote = "enter encrypts and writes this value now (the rest of the screen still saves with ^s)"
 
 // canWriteCredentials reports whether this editor has a credential write path.
 func (m model) canWriteCredentials() bool { return m.creds != nil }
@@ -122,7 +122,7 @@ func (m model) commitCredentialRow(orig model, key string, moving bool) model {
 		return m.commitCredentialUnchanged(orig, was)
 	}
 
-	p := pendingCredential{key: key, kind: credentialKind(m.itemMode), value: value, idx: -1, envIdx: -1}
+	p := pendingCredential{key: key, kind: credentialKind(m.itemMode2), value: value, idx: -1, envIdx: -1}
 	switch {
 	case moving:
 		// Converting an [env] literal: the literal leaves the buffer, the
@@ -157,7 +157,7 @@ func (m model) commitCredentialUnchanged(orig model, was string) model {
 		orig.itemErr = "a credential needs a value — type it (input hidden), or pick another source"
 		return orig
 	}
-	if scheme, _ := hostEnvScheme(was); scheme != m.itemMode {
+	if credKindSel(was) != m.itemMode2 {
 		// env->file (or back) re-encrypts: the payload is stamped with the
 		// kind it was set for, and this editor cannot read the old value to
 		// re-stamp it.
@@ -240,22 +240,22 @@ func (m model) envItemNotes() []string {
 	case m.credProbeErr != "":
 		notes = append(notes, "⚠ "+m.credProbeErr)
 	case !m.credHasIdentity:
-		notes = append(notes, "this file holds no credentials yet — enter asks for the passphrase that will open them")
+		notes = append(notes, "this file has no credentials yet — enter asks for a new passphrase")
 	}
 	if editingCredential {
-		notes = append(notes, "the stored value is never shown: leave Value empty to keep it, type a new one to replace it")
+		notes = append(notes, "the stored value is never shown — empty keeps it, a new one replaces it")
 	}
-	return append(notes, credentialKindNote(m.itemMode))
+	return append(notes, credentialKindNote(m.itemMode2))
 }
 
 // credentialKindNote is what a kind delivers and the cap it carries — the
 // rules the write path enforces (credentials.ValidateValue), stated where the
 // value is typed instead of first in a refusal.
-func credentialKindNote(scheme int) string {
-	if scheme == schemeCredFile {
-		return fmt.Sprintf("file: written to the box's session tmpfs, the key holds its path; up to %d KiB", credentials.MaxValue>>10)
+func credentialKindNote(sel int) string {
+	if sel == credKindFile {
+		return fmt.Sprintf("file: written to the box's session tmpfs, its path in the key; up to %d KiB", credentials.MaxValue>>10)
 	}
-	return fmt.Sprintf("env value: exported as this variable; no NUL bytes, up to %d KiB", credentials.MaxEnvValue>>10)
+	return fmt.Sprintf("env var: exported under this key; no NUL bytes, up to %d KiB", credentials.MaxEnvValue>>10)
 }
 
 // probeCredentialIdentity asks, once per opening of the Env item editor,
@@ -278,7 +278,7 @@ func (m *model) probeCredentialIdentity() {
 
 // credentialUnsetNote is what leaving a credential kind does, said at the
 // moment it is chosen: the row's ciphertext is the only copy of that value.
-const credentialUnsetNote = "this replaces the credential — its ciphertext goes with the row, and byre keeps no copy anywhere else"
+const credentialUnsetNote = "this replaces the credential — the ciphertext goes with the row, and no copy is kept"
 
 // ---- the passphrase modal (modeCredPass) -----------------------------------
 

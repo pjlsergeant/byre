@@ -27,24 +27,36 @@ import (
 // which is what Delete means on every other list field (drop this layer's
 // entry, re-inherit the one below) -- a second spelling of it in the picker
 // would be a concept the screen does not need.
-// The two credential kinds come LAST, and deliberately so: the editor that
-// cannot write them (--global, whose file no credentials verb targets either)
-// offers the first five and nothing else, and an option list that only ever
-// SHRINKS from the tail keeps every other scheme's index meaning one thing.
+// `credential` comes LAST, and deliberately so: the editor that cannot write
+// one (--global, whose file no credentials verb targets either) offers the
+// first five and nothing else, and an option list that only ever SHRINKS from
+// the tail keeps every other scheme's index meaning one thing.
 const (
 	schemeValue = iota
 	schemeGit
 	schemeEnv
 	schemeTZ
 	schemeDisabled
-	schemeCredEnv
-	schemeCredFile
+	schemeCredential
 )
 
-// The picker's words, in picker order. The credential options are spelled in
-// user terms rather than as the schemes they write: "encrypted:" says how the
-// row is stored, and the question this screen asks is what the box gets.
-var hostEnvSchemes = []string{"value", "git:", "env:", "tz:", "disabled", "credential (env value)", "credential (file)"}
+// The picker's words, in picker order. `credential` is spelled in user terms
+// rather than as the scheme it writes: "encrypted:" says how the row is
+// stored, and the question this screen asks is what the box gets.
+var hostEnvSchemes = []string{"value", "git:", "env:", "tz:", "disabled", "credential"}
+
+// The credential KIND is a second picker, not two more options on this one:
+// the segmented picker paints every option on one line, and six schemes plus
+// two spelled-out credential kinds ran past 80 columns -- where the clip would
+// eat the very option a reader had selected. It is also the volumes editor's
+// shape (an entry carrying two independent closed vocabularies gets two
+// controls), and the question really is a second one: what the box gets.
+var credKindOpts = []string{"env var", "file"}
+
+const (
+	credKindEnv = iota
+	credKindFile
+)
 
 // hostEnvPickerOpts is the option set for one editor: every scheme, or the
 // non-credential five where nothing can write a credential to this file.
@@ -52,7 +64,7 @@ func hostEnvPickerOpts(canWriteCredentials bool) []string {
 	if canWriteCredentials {
 		return hostEnvSchemes
 	}
-	return hostEnvSchemes[:schemeCredEnv]
+	return hostEnvSchemes[:schemeCredential]
 }
 
 // isPassthrough reports whether a scheme writes env_from_host rather than an
@@ -62,17 +74,22 @@ func isPassthrough(scheme int) bool { return scheme != schemeValue }
 // isCredentialScheme reports whether a scheme's value is an encrypted row.
 // Such a row is never encoded from the form's input (see hostEnvSource): its
 // source is the ciphertext the write path returns.
-func isCredentialScheme(scheme int) bool {
-	return scheme == schemeCredEnv || scheme == schemeCredFile
-}
+func isCredentialScheme(scheme int) bool { return scheme == schemeCredential }
 
-// credentialKind maps a credential scheme onto the kind the value is encrypted
-// and delivered as.
-func credentialKind(scheme int) credentials.Kind {
-	if scheme == schemeCredFile {
+// credentialKind maps the kind picker onto the kind the value is encrypted
+// and delivered as, and credKindSel maps a stored row back onto the picker.
+func credentialKind(sel int) credentials.Kind {
+	if sel == credKindFile {
 		return credentials.KindFile
 	}
 	return credentials.KindEnv
+}
+
+func credKindSel(src string) int {
+	if strings.HasPrefix(src, config.EncryptedFileScheme) {
+		return credKindFile
+	}
+	return credKindEnv
 }
 
 // hostEnvArgLabel is the second input's label for a scheme. Deliberately
@@ -89,7 +106,7 @@ func hostEnvArgLabel(scheme int) string {
 		return "git config key"
 	case schemeEnv:
 		return "host variable"
-	case schemeCredEnv, schemeCredFile:
+	case schemeCredential:
 		// "Value", like an [env] literal's: the difference is that this one is
 		// masked and encrypted on the way to the file, which the notes and the
 		// bullets say without spending label width on it.
@@ -112,10 +129,8 @@ func hostEnvArgHint(scheme int) string {
 		return "the host's timezone"
 	case schemeDisabled:
 		return "the key is passed through to nothing"
-	case schemeCredEnv:
+	case schemeCredential:
 		return "typed hidden, encrypted into this file"
-	case schemeCredFile:
-		return "typed hidden — the box gets a file, the key holds its path"
 	}
 	return "the value comes from the cascade"
 }
@@ -128,13 +143,12 @@ func hostEnvScheme(src string) (int, string) {
 	switch {
 	case src == "":
 		return schemeDisabled, ""
-	// A credential decodes to its KIND and an empty argument: the stored value
-	// is a ciphertext this editor never shows and never re-encodes, so the
-	// form opens with the Value field empty and "empty means unchanged".
-	case strings.HasPrefix(src, config.EncryptedFileScheme):
-		return schemeCredFile, ""
-	case strings.HasPrefix(src, config.EncryptedScheme):
-		return schemeCredEnv, ""
+	// A credential decodes to the scheme and an EMPTY argument (its kind rides
+	// the second picker, via credKindSel): the stored value is a ciphertext
+	// this editor never shows and never re-encodes, so the form opens with the
+	// Value field empty and "empty means unchanged".
+	case config.IsCredentialSource(src):
+		return schemeCredential, ""
 	//nolint:gocritic // the ordered switch reads as the grammar it decodes
 	case src == "tz:":
 		return schemeTZ, ""

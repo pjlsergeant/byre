@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/credentials"
@@ -114,12 +115,14 @@ func credModel(t *testing.T, admin CredentialAdmin, local map[string]string) mod
 	return m
 }
 
-// addCredential opens the add editor on a credential kind with key and value
-// typed in, exactly as the keystrokes leave it.
-func addCredential(m model, scheme int, key, value string) model {
+// addCredential opens the add editor on the credential scheme, with the kind
+// picker set and the key and value typed in, exactly as the keystrokes leave
+// it.
+func addCredential(m model, kindSel int, key, value string) model {
 	m.itemHostEnv = false
 	m = m.startItem(-1)
-	m.itemMode = scheme
+	m.itemMode = schemeCredential
+	m.itemMode2 = kindSel
 	m = m.syncHostEnvLabel()
 	m.inputs[0].SetValue(key)
 	m.inputs[1].SetValue(value)
@@ -133,15 +136,20 @@ func TestEnvPickerOffersTheCredentialKinds(t *testing.T) {
 	m := credModel(t, newFakeCredAdmin(), nil)
 	m.itemHostEnv = false
 	m = m.startItem(-1)
-	joined := strings.Join(m.itemModeOpts, " ")
-	if !strings.Contains(joined, "credential") {
-		t.Fatalf("the Source picker offers %v — no credential kind", m.itemModeOpts)
+	if got := m.itemModeOpts[schemeCredential]; !strings.Contains(got, "credential") {
+		t.Fatalf("the Source picker offers %v — no credential option", m.itemModeOpts)
 	}
-	if got := m.itemModeOpts[schemeCredEnv]; !strings.Contains(got, "env") {
-		t.Errorf("the env-kind option reads %q; it must say what the box gets", got)
+	// The kind is the SECOND picker, and it appears for exactly that scheme:
+	// what the box gets (a variable, or a file) is its own closed question.
+	m.itemMode = schemeCredential
+	m = m.syncHostEnvLabel()
+	if !m.itemHasMode2 || strings.Join(m.itemMode2Opts, " ") != "env var file" {
+		t.Fatalf("kind picker: has=%v opts=%v", m.itemHasMode2, m.itemMode2Opts)
 	}
-	if got := m.itemModeOpts[schemeCredFile]; !strings.Contains(got, "file") {
-		t.Errorf("the file-kind option reads %q; it must say what the box gets", got)
+	m.itemMode = schemeValue
+	m = m.syncHostEnvLabel()
+	if m.itemHasMode2 {
+		t.Fatal("the kind picker stayed on a scheme that has no kind")
 	}
 	// And where nothing can write one, the option is absent rather than
 	// present-and-refusing: an editor whose file no credentials verb targets
@@ -161,7 +169,7 @@ func TestCredentialValueIsNeverRendered(t *testing.T) {
 	admin := newFakeCredAdmin()
 	admin.identity, admin.recipient = mintFor(t, "pw")
 	m := credModel(t, admin, nil)
-	m = addCredential(m, schemeCredEnv, "STRIPE_KEY", secret)
+	m = addCredential(m, credKindEnv, "STRIPE_KEY", secret)
 	if v := m.viewItem(); strings.Contains(v, secret) {
 		t.Fatalf("the form rendered the value:\n%s", v)
 	} else if !strings.Contains(v, "•") {
@@ -207,7 +215,7 @@ func mintFor(t *testing.T, passphrase string) ([]byte, string) {
 func TestFirstCredentialAsksForThePassphraseAndWritesADecryptableRow(t *testing.T) {
 	admin := newFakeCredAdmin()
 	m := credModel(t, admin, nil)
-	m = addCredential(m, schemeCredEnv, "STRIPE_KEY", "sk-live-1")
+	m = addCredential(m, credKindEnv, "STRIPE_KEY", "sk-live-1")
 
 	m = m.commitItem()
 	if m.mode != modeCredPass {
@@ -270,9 +278,9 @@ func typeCredPass(t *testing.T, m model, pw, confirm string) model {
 func TestSecondCredentialReusesTheFilesIdentity(t *testing.T) {
 	admin := newFakeCredAdmin()
 	m := credModel(t, admin, nil)
-	m = typeCredPass(t, addCredential(m, schemeCredEnv, "FIRST", "one").commitItem(), "pw", "pw")
+	m = typeCredPass(t, addCredential(m, credKindEnv, "FIRST", "one").commitItem(), "pw", "pw")
 
-	m = addCredential(m, schemeCredFile, "SECOND", "two").commitItem()
+	m = addCredential(m, credKindFile, "SECOND", "two").commitItem()
 	if m.mode == modeCredPass {
 		t.Fatal("the second credential asked for a passphrase again")
 	}
@@ -305,13 +313,13 @@ func TestEditingACredentialRowKeepsTheValueWhenTheBoxIsLeftEmpty(t *testing.T) {
 	if m.mode != modeItem {
 		t.Fatalf("a well-formed credential row must open the form; status: %q", m.status)
 	}
-	if m.itemMode != schemeCredEnv {
-		t.Fatalf("the picker opened on %d, want the row's own kind", m.itemMode)
+	if m.itemMode != schemeCredential || m.itemMode2 != credKindEnv {
+		t.Fatalf("the row opened on scheme %d kind %d, want its own", m.itemMode, m.itemMode2)
 	}
 	if v := m.inputs[1].Value(); v != "" {
 		t.Fatalf("the value box opened holding %q; the stored value is never shown", v)
 	}
-	if v := m.viewItem(); !strings.Contains(v, "empty to keep it") {
+	if v := m.viewItem(); !strings.Contains(v, "empty keeps it") {
 		t.Fatalf("the form must say what an empty box means:\n%s", v)
 	}
 
@@ -366,7 +374,7 @@ func TestCredentialRowRefusesARenameAndAKindChangeWithoutAValue(t *testing.T) {
 	}
 
 	kind := openHostEnvRow(t, credModel(t, admin, map[string]string{"STRIPE_KEY": row}), "STRIPE_KEY")
-	kind.itemMode = schemeCredFile
+	kind.itemMode2 = credKindFile
 	if got := kind.commitItem(); !strings.Contains(got.itemErr, "re-encrypts") {
 		t.Fatalf("itemErr = %q, want the kind-change rule", got.itemErr)
 	}
@@ -415,7 +423,7 @@ func TestCredentialCapRefusalIsSurfacedAtTheForm(t *testing.T) {
 	admin.identity, admin.recipient = mintFor(t, "pw")
 	m := credModel(t, admin, nil)
 	big := strings.Repeat("A", credentials.MaxEnvValue+1)
-	m = addCredential(m, schemeCredEnv, "BIG", big)
+	m = addCredential(m, credKindEnv, "BIG", big)
 
 	done := m.commitItem()
 	if done.itemErr == "" {
@@ -435,7 +443,7 @@ func TestCredentialCapRefusalIsSurfacedAtTheForm(t *testing.T) {
 	if v := done.viewItem(); !strings.Contains(v, "64 KiB") {
 		t.Fatalf("the form does not name the env-kind cap:\n%s", v)
 	}
-	if fileNote := credentialKindNote(schemeCredFile); !strings.Contains(fileNote, "256 KiB") {
+	if fileNote := credentialKindNote(credKindFile); !strings.Contains(fileNote, "256 KiB") {
 		t.Fatalf("the file-kind note = %q, want the 256 KiB ceiling", fileNote)
 	}
 }
@@ -447,7 +455,7 @@ func TestLayerWriteTargetIsDisclosedBeforeTheValueIsAccepted(t *testing.T) {
 	admin := newFakeCredAdmin()
 	admin.disclosure = "writes to layer acme (/x/layer.config), used by 3 projects — this changes the value for every project extending it"
 	m := credModel(t, admin, nil)
-	m = addCredential(m, schemeCredEnv, "STRIPE_KEY", "sk-live-1")
+	m = addCredential(m, credKindEnv, "STRIPE_KEY", "sk-live-1")
 	if v := m.viewItem(); !strings.Contains(v, "layer acme") || !strings.Contains(v, "3 projects") {
 		t.Fatalf("the form does not disclose the write target:\n%s", v)
 	}
@@ -465,7 +473,7 @@ func TestLayerWriteTargetIsDisclosedBeforeTheValueIsAccepted(t *testing.T) {
 func TestEscapingThePassphraseModalWritesNothing(t *testing.T) {
 	admin := newFakeCredAdmin()
 	m := credModel(t, admin, nil)
-	m = addCredential(m, schemeCredEnv, "STRIPE_KEY", "sk-live-1").commitItem()
+	m = addCredential(m, credKindEnv, "STRIPE_KEY", "sk-live-1").commitItem()
 	back, _ := m.updateCredPass(tea.KeyMsg{Type: tea.KeyEsc})
 	got := back.(model)
 	if got.mode != modeItem {
@@ -492,7 +500,7 @@ func TestACleanBufferStaysCleanAfterACredentialWrite(t *testing.T) {
 	if m.dirty() {
 		t.Fatal("the fixture opened dirty")
 	}
-	done := addCredential(m, schemeCredEnv, "STRIPE_KEY", "sk-live-1").commitItem()
+	done := addCredential(m, credKindEnv, "STRIPE_KEY", "sk-live-1").commitItem()
 	if done.itemErr != "" {
 		t.Fatalf("the write was refused: %s", done.itemErr)
 	}
@@ -514,7 +522,7 @@ func TestCrossingTheCredentialBoundaryClearsTheValueBox(t *testing.T) {
 	m.itemHostEnv = false
 	m = m.startItem(-1) // opens on `value`
 	m.inputs[1].SetValue("plaintext-literal")
-	m.itemMode = schemeCredEnv
+	m.itemMode = schemeCredential
 	m = m.syncHostEnvLabel()
 	if got := m.inputs[1].Value(); got != "" {
 		t.Fatalf("the literal survived into the credential box: %q", got)
@@ -559,8 +567,8 @@ func TestOverridingAnInheritedCredentialWritesToThisFile(t *testing.T) {
 	if m.mode != modeItem {
 		t.Fatalf("the override door did not open the form; status: %q", m.status)
 	}
-	if m.itemMode != schemeCredEnv {
-		t.Fatalf("the override opened on scheme %d, want the inherited row's kind", m.itemMode)
+	if m.itemMode != schemeCredential || m.itemMode2 != credKindEnv {
+		t.Fatalf("the override opened on scheme %d kind %d, want the inherited row's", m.itemMode, m.itemMode2)
 	}
 	if v := m.inputs[1].Value(); v != "" {
 		t.Fatalf("the override prefilled the value box with %q — a ciphertext is not a value to re-encode", v)
@@ -587,18 +595,42 @@ func TestOverridingAnInheritedCredentialWritesToThisFile(t *testing.T) {
 // prefilled with a ciphertext no form can re-encode.
 func TestCredentialSchemesDecodeToTheirKind(t *testing.T) {
 	for _, tc := range []struct {
-		src    string
-		scheme int
+		src  string
+		kind int
 	}{
-		{config.EncryptedScheme + "AAAA", schemeCredEnv},
-		{config.EncryptedFileScheme + "AAAA", schemeCredFile},
+		{config.EncryptedScheme + "AAAA", credKindEnv},
+		{config.EncryptedFileScheme + "AAAA", credKindFile},
 	} {
 		got, arg := hostEnvScheme(tc.src)
-		if got != tc.scheme {
-			t.Errorf("hostEnvScheme(%q) = %d, want %d", tc.src, got, tc.scheme)
+		if got != schemeCredential {
+			t.Errorf("hostEnvScheme(%q) = %d, want the credential scheme", tc.src, got)
 		}
 		if arg != "" {
 			t.Errorf("hostEnvScheme(%q) handed back %q — the payload is not an argument", tc.src, arg)
+		}
+		if k := credKindSel(tc.src); k != tc.kind {
+			t.Errorf("credKindSel(%q) = %d, want %d", tc.src, k, tc.kind)
+		}
+	}
+}
+
+// The Source picker paints every option on ONE line, and the view clips a line
+// that runs past the terminal — which would eat the very option a reader had
+// selected. That is why the credential KIND is a second picker rather than two
+// more spelled-out options here: 80 columns is a real terminal, and an option
+// nobody can see is not an option. Measured in display cells, on the form as
+// it renders with a credential selected.
+func TestTheCredentialFormFitsAnEightyColumnTerminal(t *testing.T) {
+	admin := newFakeCredAdmin()
+	// The one note byre does not choose the width of: a layer's disclosure
+	// carries that layer's path.
+	admin.disclosure = "writes to layer acme (/home/someone/.byre/layers/acme/layer.config), used by 3 projects — this changes the value for every project extending it"
+	m := credModel(t, admin, nil)
+	m.width = 80
+	m = addCredential(m, credKindFile, "STRIPE_KEY", "sk-live-1")
+	for _, line := range strings.Split(m.viewItem(), "\n") {
+		if w := ansi.StringWidth(line); w > 80 {
+			t.Errorf("a form line is %d cells wide and will be clipped: %q", w, line)
 		}
 	}
 }
