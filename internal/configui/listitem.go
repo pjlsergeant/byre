@@ -338,6 +338,10 @@ func (m model) startOverride(r listRow) model {
 		// have" is one keypress and any change is deliberate.
 		scheme, arg := hostEnvScheme(r.vals[1])
 		next.itemMode = scheme
+		// The kind travels with the scheme: overriding an inherited FILE
+		// credential must open on file, or one keystroke would silently
+		// re-set it as an env var.
+		next.itemMode2 = credKindSel(r.vals[1])
 		next = next.syncHostEnvLabel()
 		next.inputs[0].SetValue(r.vals[0])
 		next.inputs[1].SetValue(arg)

@@ -556,7 +556,9 @@ func encryptedRow(t *testing.T, recipient, key string, kind credentials.Kind, va
 func TestOverridingAnInheritedCredentialWritesToThisFile(t *testing.T) {
 	lower := newFakeCredAdmin()
 	lower.identity, lower.recipient = mintFor(t, "layer-pw")
-	inheritedRow := encryptedRow(t, lower.recipient, "STRIPE_KEY", credentials.KindEnv, "layer-value")
+	// A FILE credential on purpose: the kind has to travel with the row, or
+	// one keystroke re-sets an inherited file credential as an env var.
+	inheritedRow := encryptedRow(t, lower.recipient, "STRIPE_KEY", credentials.KindFile, "layer-value")
 
 	admin := newFakeCredAdmin()
 	admin.identity, admin.recipient = mintFor(t, "pw")
@@ -567,7 +569,7 @@ func TestOverridingAnInheritedCredentialWritesToThisFile(t *testing.T) {
 	if m.mode != modeItem {
 		t.Fatalf("the override door did not open the form; status: %q", m.status)
 	}
-	if m.itemMode != schemeCredential || m.itemMode2 != credKindEnv {
+	if m.itemMode != schemeCredential || m.itemMode2 != credKindFile {
 		t.Fatalf("the override opened on scheme %d kind %d, want the inherited row's", m.itemMode, m.itemMode2)
 	}
 	if v := m.inputs[1].Value(); v != "" {
@@ -581,6 +583,9 @@ func TestOverridingAnInheritedCredentialWritesToThisFile(t *testing.T) {
 	}
 	if got := admin.open(t, "STRIPE_KEY", "pw"); string(got) != "project-value" {
 		t.Fatalf("round trip: %q", got)
+	}
+	if row, _ := admin.row("STRIPE_KEY"); !strings.HasPrefix(row, config.EncryptedFileScheme) {
+		t.Fatalf("the override wrote %q — the inherited row's kind did not travel", config.RenderSource(row))
 	}
 	if lower.sets != 0 {
 		t.Fatal("the override wrote through the lower layer's path")
