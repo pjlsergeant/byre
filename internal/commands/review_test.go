@@ -46,6 +46,28 @@ func TestGrantSummaryListsEnvKeys(t *testing.T) {
 	}
 }
 
+// A credential row belongs in the summary — the reviewer must see THAT the
+// row is there — but its payload does not: an age blob is hundreds of
+// base64 characters, and one of them would push the rest of the consent gate
+// off the screen. The scheme stays visible; the ciphertext elides.
+func TestGrantSummaryElidesCredentialCiphertext(t *testing.T) {
+	blob := strings.Repeat("QUJD", 200) // a plausible base64 wall
+	got := grantTexts(grantSummary(config.Config{EnvFromHost: map[string]string{
+		"STRIPE_KEY": config.EncryptedScheme + blob,
+		"EDITOR":     "env:EDITOR",
+	}}))
+	if !strings.Contains(got, "STRIPE_KEY <- "+config.EncryptedScheme+"[…]") {
+		t.Errorf("the scheme must stay visible: %q", got)
+	}
+	if strings.Contains(got, blob[:64]) {
+		t.Errorf("the payload must never render: %q", got)
+	}
+	// Ordinary sources are short and read as written.
+	if !strings.Contains(got, "EDITOR <- env:EDITOR") {
+		t.Errorf("a plain passthrough is unchanged: %q", got)
+	}
+}
+
 // The summary's charter (nothing smuggled unseen) covers every Grant class
 // it owns: machine-scoped volumes — the shared-credential shape, and the only
 // grant that crosses project scope — plus ports. Egress is the caller's per

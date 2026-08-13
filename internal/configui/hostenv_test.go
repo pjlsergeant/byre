@@ -837,6 +837,16 @@ func TestEnvScreenRefusesToEditACredentialRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := hostEnvModel(t, map[string]string{"STRIPE_KEY": row})
+	// The row says what it is and elides the payload: "host" would name a
+	// source this value does not have, and the ciphertext would push every
+	// other row off the screen.
+	line := hostEnvLine("STRIPE_KEY", row)
+	if !strings.Contains(line, "credential") || !strings.Contains(line, config.EncryptedScheme+"[…]") {
+		t.Fatalf("credential row line = %q", line)
+	}
+	if strings.Contains(line, "host ") || len(line) > 60 {
+		t.Fatalf("the row must not claim a host source nor carry the blob: %q", line)
+	}
 	m = openHostEnvRow(t, m, "STRIPE_KEY")
 	if m.mode == modeItem {
 		t.Fatal("a credential row must not open the picker editor")

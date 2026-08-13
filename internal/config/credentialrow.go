@@ -157,6 +157,27 @@ func validateEncryptedSource(src string) (bool, error) {
 	return true, nil
 }
 
+// IsCredentialSource reports whether an env_from_host source names one of the
+// credential schemes — what a renderer asks before calling a row a host
+// passthrough.
+func IsCredentialSource(src string) bool {
+	_, _, _, ok := cutEncryptedScheme(src)
+	return ok
+}
+
+// RenderSource is the one eliding renderer every surface that displays an
+// env_from_host source goes through: an ordinary source is short and reads as
+// written, and a credential's ciphertext collapses to its scheme. The scheme
+// is the part a reader needs (what this row IS); the payload is a wall of
+// base64 that would bury the rest of a consent gate or an editor row, and
+// showing it buys nobody anything.
+func RenderSource(src string) string {
+	if _, scheme, _, ok := cutEncryptedScheme(src); ok {
+		return scheme + "[…]"
+	}
+	return src
+}
+
 // FormatEncryptedRow spells a ciphertext as the row value a config file
 // carries.
 func FormatEncryptedRow(kind credentials.Kind, blob []byte) (string, error) {

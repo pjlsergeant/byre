@@ -1,6 +1,10 @@
 package configui
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/pjlsergeant/byre/internal/config"
+)
 
 // hostenv.go is the env_from_host widget's vocabulary: the closed scheme set
 // (config.validateHostSource owns the grammar) rendered as a picker.
@@ -111,9 +115,18 @@ func hostEnvSource(scheme int, arg string) string {
 // hostEnvLine renders one passthrough row. The arrow points the way the value
 // travels -- out of the host, into the box -- matching how the row read when
 // it was read-only.
+//
+// A credential row is not a host passthrough and must not read as one: its
+// value comes out of the config file itself, and "host" would name a source
+// it does not have. Its ciphertext elides through config.RenderSource, the
+// same renderer the preset-review gate uses -- a wall of base64 in a list row
+// pushes every other row off the screen.
 func hostEnvLine(key, src string) string {
 	if src == "" {
 		return key + " <- disabled"
+	}
+	if config.IsCredentialSource(src) {
+		return key + " <- credential " + config.RenderSource(src)
 	}
 	return key + " <- host " + src
 }

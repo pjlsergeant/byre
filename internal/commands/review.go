@@ -287,7 +287,9 @@ func extraHostEnv(m map[string]string) []string {
 	sort.Strings(keys)
 	out := make([]string, len(keys))
 	for i, k := range keys {
-		out[i] = k + " <- " + m[k]
+		// RenderSource, not the raw value: an encrypted row's payload is a
+		// wall of base64 that would bury the rest of this consent gate.
+		out[i] = k + " <- " + config.RenderSource(m[k])
 	}
 	return out
 }
