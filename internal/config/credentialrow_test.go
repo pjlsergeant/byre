@@ -205,6 +205,25 @@ func TestParseCredentialsBlockRejections(t *testing.T) {
 	}
 }
 
+// A [credentials] key is file-sourced text, and the type check used to run
+// BEFORE the unknown-key check — so an arbitrary key with a non-string value
+// reached a refusal that echoed it raw and unbounded onto the terminal a
+// develop refusal prints to. Unknown keys are refused first now, which leaves
+// only the two known names for that message.
+func TestParseCredentialsBlockBoundsAnUnknownKeyEcho(t *testing.T) {
+	key := strings.Repeat("x", 100) + "\x1b[31m"
+	_, _, err := ParseCredentialsBlock([]byte(fmt.Sprintf("[credentials]\n%q = 1\n", key)))
+	if err == nil || !strings.Contains(err.Error(), "unknown key") {
+		t.Fatalf("want the unknown-key rule to fire, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), `"`+strings.Repeat("x", 32)+"…\"") {
+		t.Fatalf("the key must be echoed quoted and bounded: %v", err)
+	}
+	if strings.Contains(err.Error(), "must be a string") || strings.Contains(err.Error(), "\x1b") {
+		t.Fatalf("the type refusal must not carry an unknown key, raw: %q", err.Error())
+	}
+}
+
 // credentialCascade builds a two-file cascade in memory: a layer and the
 // project, each with its OWN identity and one encrypted row.
 type credentialCascade struct {

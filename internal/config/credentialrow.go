@@ -262,17 +262,21 @@ func ParseCredentialsBlock(raw []byte) (CredentialsBlock, bool, error) {
 	var b CredentialsBlock
 	var identity string
 	for _, k := range slices.Sorted(maps.Keys(table)) {
+		// The unknown-key check comes FIRST so only the two known names reach
+		// the message below: k is file-sourced text, and the type refusal
+		// echoed it raw and unbounded (a pasted wall, or an ESC, onto the
+		// terminal a develop refusal prints to).
+		if k != "identity" && k != "recipient" {
+			return CredentialsBlock{}, false, fmt.Errorf("credentials: unknown key %q (want identity, recipient)", echo(k))
+		}
 		s, ok := table[k].(string)
 		if !ok {
 			return CredentialsBlock{}, false, fmt.Errorf("credentials: %s must be a string", k)
 		}
-		switch k {
-		case "identity":
+		if k == "identity" {
 			identity = s
-		case "recipient":
+		} else {
 			b.Recipient = s
-		default:
-			return CredentialsBlock{}, false, fmt.Errorf("credentials: unknown key %q (want identity, recipient)", echo(k))
 		}
 	}
 	if identity == "" || b.Recipient == "" {
