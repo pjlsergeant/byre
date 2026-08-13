@@ -50,7 +50,7 @@ func TestDevelopRefusesASiblingHoldingAnExclusiveVolume(t *testing.T) {
 	}
 	s, _, errBuf := testStreams("", false)
 
-	err := develop(f, s, p, combine(cfg, skills.Resolved{}), false)
+	err := develop(f, s, p, combine(cfg, skills.Resolved{}), false, CredentialAsk)
 
 	var exit ExitError
 	if !errors.As(err, &exit) || exit.Code != ExitRefused {
@@ -78,7 +78,7 @@ func TestExclusiveVolumeCheckIsSkippedWithoutADeclaration(t *testing.T) {
 	}
 	s, _, _ := testStreams("", false)
 	shared := config.Config{Volumes: []config.Volume{{Name: "ledger", Role: "state", Target: "/var/lib/ledger"}}}
-	if err := develop(f, s, p, combine(shared, skills.Resolved{}), false); err != nil {
+	if err := develop(f, s, p, combine(shared, skills.Resolved{}), false, CredentialAsk); err != nil {
 		t.Fatalf("a shared volume beside an unknowable sibling must launch: %v", err)
 	}
 }
@@ -95,7 +95,7 @@ func TestExclusiveVolumeAllowsASiblingHoldingSomethingElse(t *testing.T) {
 		labelsByID: map[string]map[string]string{"sibling-box": other},
 	}
 	s, _, _ := testStreams("", false)
-	if err := develop(f, s, p, combine(cfg, skills.Resolved{}), false); err != nil {
+	if err := develop(f, s, p, combine(cfg, skills.Resolved{}), false, CredentialAsk); err != nil {
 		t.Fatalf("a sibling holding a different volume must not block the launch: %v", err)
 	}
 }
@@ -114,7 +114,7 @@ func TestExclusiveVolumeIgnoresThisWorktreesOwnBox(t *testing.T) {
 		labelsByID: map[string]map[string]string{"my-box": mine},
 	}
 	s, _, _ := testStreams("", false)
-	if err := develop(f, s, p, combine(cfg, skills.Resolved{}), false); err != nil {
+	if err := develop(f, s, p, combine(cfg, skills.Resolved{}), false, CredentialAsk); err != nil {
 		t.Fatalf("this worktree's own box must not refuse itself over its own volume: %v", err)
 	}
 }
@@ -237,7 +237,7 @@ func TestExclusiveVolumeRefusesWhatItCannotProve(t *testing.T) {
 			rv.otherEngines = peers
 			rv.declinedEngines = declined
 
-			err := develop(f, s, p, rv, false)
+			err := develop(f, s, p, rv, false, CredentialAsk)
 
 			var exit ExitError
 			if !errors.As(err, &exit) || exit.Code != ExitRefused {
@@ -270,7 +270,7 @@ func TestExclusiveVolumeSeesAHolderOnAnotherEngine(t *testing.T) {
 	rv := combine(cfg, skills.Resolved{})
 	rv.otherEngines = []sessionRunner{podman}
 
-	err := develop(docker, s, p, rv, false)
+	err := develop(docker, s, p, rv, false, CredentialAsk)
 
 	var exit ExitError
 	if !errors.As(err, &exit) || exit.Code != ExitRefused {
@@ -283,7 +283,7 @@ func TestExclusiveVolumeSeesAHolderOnAnotherEngine(t *testing.T) {
 	// load-bearing rather than decorative.
 	rv.otherEngines = nil
 	s2, _, _ := testStreams("", false)
-	if err := develop(docker, s2, p, rv, false); err != nil {
+	if err := develop(docker, s2, p, rv, false, CredentialAsk); err != nil {
 		t.Fatalf("test is not exercising the peer set: %v", err)
 	}
 }
@@ -301,7 +301,7 @@ func TestExclusiveVolumeUncertaintyNamesEveryDeclaration(t *testing.T) {
 	rv.declinedEngines = []declinedEngine{{Engine: "podman", Err: errors.New("resolved out of a box-writable directory")}}
 	s, _, errBuf := testStreams("", false)
 
-	if err := develop(&fakeRunner{}, s, p, rv, false); err == nil {
+	if err := develop(&fakeRunner{}, s, p, rv, false, CredentialAsk); err == nil {
 		t.Fatal("want a refusal")
 	}
 	got := errBuf.String()

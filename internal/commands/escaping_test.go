@@ -666,7 +666,7 @@ func TestExclusiveRefusalEscapesEngineAndLabelValues(t *testing.T) {
 		labelsByID: map[string]map[string]string{"sibling-box": holder},
 	}
 	s, _, errBuf := testStreams("", false)
-	if err := develop(f, s, p, combine(cfg, skills.Resolved{}), false); err == nil {
+	if err := develop(f, s, p, combine(cfg, skills.Resolved{}), false, CredentialAsk); err == nil {
 		t.Fatal("want a refusal")
 	}
 	assertNoESC(t, "exclusive volume refusal (forged workdir label)", errBuf.String())
@@ -684,7 +684,7 @@ func TestExclusiveRefusalEscapesEngineAndLabelValues(t *testing.T) {
 		liveErr: errors.New("podman: " + escCSI + "unexpected daemon reply" + escOSC),
 	}}
 	s2, _, errBuf2 := testStreams("", false)
-	if err := develop(&fakeRunner{}, s2, p2, rv, false); err == nil {
+	if err := develop(&fakeRunner{}, s2, p2, rv, false, CredentialAsk); err == nil {
 		t.Fatal("want a refusal")
 	}
 	assertNoESC(t, "exclusive volume refusal (hostile engine error)", errBuf2.String())

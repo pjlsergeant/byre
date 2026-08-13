@@ -26,41 +26,79 @@ func init() {
 	credentials.SetWorkFactorForTesting(10)
 }
 
-// credFixture: a bootstrapped project whose store holds a vault with one
-// stored value, and a config declaring it (plus one declared-but-unset name).
-func credFixture(t *testing.T) (project.Paths, config.Config) {
+// credGroup builds one contributing cascade file: its own identity under
+// passphrase, and one encrypted row per key.
+func credGroup(t *testing.T, label, passphrase string, rows map[string]string) config.CredentialFile {
+	t.Helper()
+	wrapped, recipient, err := credentials.NewIdentity(passphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := config.CredentialFile{
+		Label:    label,
+		Path:     "/home/u/.byre/" + strings.Replace(label, ":", "-", 1) + ".config",
+		Block:    config.CredentialsBlock{Identity: wrapped, Recipient: recipient},
+		HasBlock: true,
+	}
+	for _, k := range sortedKeys(rows) {
+		blob, err := credentials.EncryptValue(recipient, k, credentials.KindEnv, []byte(rows[k]))
+		if err != nil {
+			t.Fatal(err)
+		}
+		g.Rows = append(g.Rows, config.EncryptedRow{Key: k, Kind: credentials.KindEnv, Blob: blob})
+	}
+	return g
+}
+
+func sortedKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	for i := range out {
+		for j := i + 1; j < len(out); j++ {
+			if out[j] < out[i] {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	return out
+}
+
+// credResolved is the resolved view a launch reads: an empty config plus the
+// cascade's credential groups, which is all the launch flow consumes.
+func credResolved(groups ...config.CredentialFile) resolved {
+	rv := combine(config.Config{}, skills.Resolved{})
+	rv.credFiles = groups
+	return rv
+}
+
+// credFixture: a bootstrapped project and one project-file group holding one
+// env credential.
+func credFixture(t *testing.T) (project.Paths, resolved) {
 	t.Helper()
 	p, _ := testPaths(t)
-	v := credentials.Open(p.Dir, p.ID)
-	if err := v.Create("pw"); err != nil {
-		t.Fatal(err)
-	}
-	if err := v.Set("stripe", []byte("sk-live-123"), "env"); err != nil {
-		t.Fatal(err)
-	}
-	cfg := config.Config{Credentials: []config.CredentialDecl{
-		{Name: "stripe", Kind: "env", Target: "STRIPE_KEY"},
-		{Name: "github", Kind: "env", Target: "GH_TOKEN"},
-	}}
-	return p, cfg
+	return p, credResolved(credGroup(t, "project", "pw", map[string]string{"STRIPE_KEY": "sk-live-123"}))
 }
 
 // passphraseSeam answers the masked prompt with the given lines, recording
-// how often it was asked.
-func passphraseSeam(t *testing.T, answers ...string) *int {
+// how often it was asked and what it was asked for.
+func passphraseSeam(t *testing.T, answers ...string) (*int, *[]string) {
 	t.Helper()
 	old := readPassphrase
 	t.Cleanup(func() { readPassphrase = old })
 	calls := 0
+	var prompts []string
 	readPassphrase = func(w io.Writer, prompt string) (string, error) {
 		if calls >= len(answers) {
 			t.Fatalf("passphrase prompt asked %d times, only %d answers provided", calls+1, len(answers))
 		}
 		a := answers[calls]
 		calls++
+		prompts = append(prompts, prompt)
 		return a, nil
 	}
-	return &calls
+	return &calls, &prompts
 }
 
 func ttyStreams(errBuf *bytes.Buffer) Streams {
@@ -68,7 +106,7 @@ func ttyStreams(errBuf *bytes.Buffer) Streams {
 }
 
 func TestDevelopDeliversCredentials(t *testing.T) {
-	p, cfg := credFixture(t)
+	p, rv := credFixture(t)
 	passphraseSeam(t, "pw")
 	var errBuf bytes.Buffer
 	f := &fakeRunner{
@@ -76,7 +114,7 @@ func TestDevelopDeliversCredentials(t *testing.T) {
 		// the inject's poll sees the box live.
 		liveSecond: map[string][]string{workdirLabel(p): {"cid-live"}},
 	}
-	if err := develop(f, ttyStreams(&errBuf), p, combine(cfg, skills.Resolved{}), false); err != nil {
+	if err := develop(f, ttyStreams(&errBuf), p, rv, false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	argv := strings.Join(f.creates[0], " ")
@@ -86,8 +124,14 @@ func TestDevelopDeliversCredentials(t *testing.T) {
 	if !strings.Contains(argv, "-e BYRE_CRED_EXPECT=1") {
 		t.Fatalf("create argv missing the wait/export flag: %s", argv)
 	}
+	// An encrypted row is delivered ONLY on the tmpfs channel: it must never
+	// also ride the ordinary env_from_host -e export.
+	if strings.Contains(argv, "STRIPE_KEY=") {
+		t.Fatalf("a credential row must never reach the engine argv: %s", argv)
+	}
 	// The inject went to the created container as the dev identity, into the
-	// baked receiver, carrying manifest + value (base64-framed).
+	// baked receiver, carrying manifest + value (base64-framed) under the
+	// CONFIG KEY.
 	inject := ""
 	for _, e := range f.execInputs {
 		if strings.Contains(e, "bounded") {
@@ -97,22 +141,17 @@ func TestDevelopDeliversCredentials(t *testing.T) {
 	if inject == "" || !strings.Contains(inject, "fake-container-id") || !strings.Contains(inject, gen.ReceiverPath) {
 		t.Fatalf("no bounded inject to the receiver recorded: %v", f.execInputs)
 	}
-	if !strings.Contains(inject, "item stripe") || !strings.Contains(inject, base64.StdEncoding.EncodeToString([]byte("sk-live-123"))) {
+	if !strings.Contains(inject, "item STRIPE_KEY") || !strings.Contains(inject, base64.StdEncoding.EncodeToString([]byte("sk-live-123"))) {
 		t.Fatalf("inject stream missing the framed value: %q", inject)
 	}
-	if !strings.Contains(inject, base64.StdEncoding.EncodeToString([]byte("stripe env STRIPE_KEY\n"))) {
+	if !strings.Contains(inject, base64.StdEncoding.EncodeToString([]byte("STRIPE_KEY env\n"))) {
 		t.Fatalf("inject stream missing the manifest frame: %q", inject)
 	}
-	out := errBuf.String()
-	// The declared-but-unset name degrades per name; the set one delivers.
-	if !strings.Contains(out, "github: missing-value") {
-		t.Fatalf("missing-value outcome not reported: %s", out)
-	}
-	if !strings.Contains(out, "credentials: delivered") {
+	if out := errBuf.String(); !strings.Contains(out, "credentials: delivered") {
 		t.Fatalf("delivery not reported: %s", out)
 	}
 	// The launch record carries the launch-time facts: unlock outcome and
-	// per-name decrypt outcomes. Names and outcomes only — never values.
+	// per-row decrypt outcomes. Keys and outcomes only — never values.
 	recs, err := filepath.Glob(filepath.Join(p.Dir, "launches", "*.toml"))
 	if err != nil || len(recs) != 1 {
 		t.Fatalf("launch records: %v %v", recs, err)
@@ -121,7 +160,7 @@ func TestDevelopDeliversCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"credential_unlock = 'unlocked'", "name = 'stripe'", "outcome = 'scheduled'", "outcome = 'missing-value'"} {
+	for _, want := range []string{"credential_unlock = 'unlocked'", "key = 'STRIPE_KEY'", "source = 'project'", "outcome = 'scheduled'"} {
 		if !strings.Contains(string(rec), want) {
 			t.Fatalf("launch record missing %q:\n%s", want, rec)
 		}
@@ -131,21 +170,116 @@ func TestDevelopDeliversCredentials(t *testing.T) {
 	}
 }
 
-func TestDevelopNonTTYSkipsCredentials(t *testing.T) {
-	p, cfg := credFixture(t)
+// The plan line comes first, so a user knows how many passphrases they are
+// about to be asked for and which files they belong to.
+func TestDevelopPlanLineNamesEveryFile(t *testing.T) {
+	p, _ := testPaths(t)
+	rv := credResolved(
+		credGroup(t, "default", "pw", map[string]string{"A": "1", "B": "2"}),
+		credGroup(t, "layer:acme", "pw", map[string]string{"C": "3"}),
+	)
+	passphraseSeam(t, "pw")
 	var errBuf bytes.Buffer
-	s := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader(""), TTY: false}
+	f := &fakeRunner{liveSecond: map[string][]string{workdirLabel(p): {"cid"}}}
+	if err := develop(f, ttyStreams(&errBuf), p, rv, false, CredentialAsk); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errBuf.String(), "unlocking credentials: default (2), layer acme (1)") {
+		t.Fatalf("plan line: %s", errBuf.String())
+	}
+}
+
+// People reuse passphrases across their own files: an entered one is tried on
+// every still-locked identity before anybody is asked a second time.
+func TestDevelopReusesOnePassphraseAcrossFiles(t *testing.T) {
+	p, _ := testPaths(t)
+	rv := credResolved(
+		credGroup(t, "default", "same", map[string]string{"A": "1"}),
+		credGroup(t, "project", "same", map[string]string{"B": "2"}),
+	)
+	calls, prompts := passphraseSeam(t, "same")
+	var errBuf bytes.Buffer
+	f := &fakeRunner{liveSecond: map[string][]string{workdirLabel(p): {"cid"}}}
+	if err := develop(f, ttyStreams(&errBuf), p, rv, false, CredentialAsk); err != nil {
+		t.Fatal(err)
+	}
+	if *calls != 1 {
+		t.Fatalf("prompted %d times for one shared passphrase: %v", *calls, *prompts)
+	}
+	// Root-most first: the one prompt names the file it started with.
+	if !strings.Contains((*prompts)[0], "default") {
+		t.Fatalf("prompts must run root-most first: %q", (*prompts)[0])
+	}
+}
+
+// Distinct passphrases are asked for in merge order, root-most first.
+func TestDevelopPromptsPerFileRootMostFirst(t *testing.T) {
+	p, _ := testPaths(t)
+	rv := credResolved(
+		credGroup(t, "layer:acme", "layer-pw", map[string]string{"A": "1"}),
+		credGroup(t, "project", "proj-pw", map[string]string{"B": "2"}),
+	)
+	_, prompts := passphraseSeam(t, "layer-pw", "proj-pw")
+	var errBuf bytes.Buffer
+	f := &fakeRunner{liveSecond: map[string][]string{workdirLabel(p): {"cid"}}}
+	if err := develop(f, ttyStreams(&errBuf), p, rv, false, CredentialAsk); err != nil {
+		t.Fatal(err)
+	}
+	if len(*prompts) != 2 || !strings.Contains((*prompts)[0], "layer acme") || !strings.Contains((*prompts)[1], "project") {
+		t.Fatalf("prompt order: %v", *prompts)
+	}
+}
+
+// Blocking: a wrong passphrase after its attempts stops the launch. Nothing
+// is created, and the refusal names the file and a remedy.
+func TestDevelopWrongPassphraseStopsTheLaunch(t *testing.T) {
+	p, rv := credFixture(t)
+	calls, _ := passphraseSeam(t, "bad1", "bad2", "bad3")
+	var errBuf bytes.Buffer
 	f := &fakeRunner{}
-	if err := develop(f, s, p, combine(cfg, skills.Resolved{}), false); err != nil {
+	err := develop(f, ttyStreams(&errBuf), p, rv, false, CredentialAsk)
+	if err == nil || !strings.Contains(err.Error(), "wrong passphrase for project") ||
+		!strings.Contains(err.Error(), "--credentials=skip") {
+		t.Fatalf("want a stop naming the file and a remedy, got: %v", err)
+	}
+	if *calls != credPassphraseAttempts {
+		t.Fatalf("attempts = %d, want %d", *calls, credPassphraseAttempts)
+	}
+	if len(f.creates) != 0 {
+		t.Fatalf("a stopped launch must create nothing: %v", f.creates)
+	}
+}
+
+// An empty passphrase is not a skip any more — it is worthless input, said so
+// and re-asked.
+func TestDevelopEmptyPassphraseIsRejectedNotASkip(t *testing.T) {
+	p, rv := credFixture(t)
+	passphraseSeam(t, "", "pw")
+	var errBuf bytes.Buffer
+	f := &fakeRunner{liveSecond: map[string][]string{workdirLabel(p): {"cid"}}}
+	if err := develop(f, ttyStreams(&errBuf), p, rv, false, CredentialAsk); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errBuf.String(), credentials.EmptyPassphraseWorthless) {
+		t.Fatalf("empty-passphrase notice: %s", errBuf.String())
+	}
+	if argv := strings.Join(f.creates[0], " "); !strings.Contains(argv, "BYRE_CRED_EXPECT") {
+		t.Fatalf("the second, real passphrase must still deliver: %s", argv)
+	}
+}
+
+// --credentials=skip is the ONE deliberate way to launch without them, and
+// the record says which it was.
+func TestDevelopSkipModeLaunchesWithout(t *testing.T) {
+	p, rv := credFixture(t)
+	var errBuf bytes.Buffer
+	f := &fakeRunner{}
+	if err := develop(f, ttyStreams(&errBuf), p, rv, false, CredentialSkip); err != nil {
 		t.Fatal(err)
 	}
 	argv := strings.Join(f.creates[0], " ")
 	if strings.Contains(argv, "--tmpfs") || strings.Contains(argv, "BYRE_CRED_EXPECT") {
-		t.Fatalf("non-TTY launch must not arm delivery: %s", argv)
-	}
-	// The stable machine-readable token, and the record's honest word.
-	if !strings.Contains(errBuf.String(), "skipped-nontty") {
-		t.Fatalf("skipped-nontty notice missing: %s", errBuf.String())
+		t.Fatalf("a skipped launch must not arm delivery: %s", argv)
 	}
 	for _, e := range f.execInputs {
 		if strings.Contains(e, "bounded") {
@@ -154,107 +288,134 @@ func TestDevelopNonTTYSkipsCredentials(t *testing.T) {
 	}
 	recs, _ := filepath.Glob(filepath.Join(p.Dir, "launches", "*.toml"))
 	rec, _ := os.ReadFile(recs[0])
-	if !strings.Contains(string(rec), "credential_unlock = 'skipped-nontty'") {
+	if !strings.Contains(string(rec), "credential_unlock = 'skipped-declined'") {
 		t.Fatalf("record unlock word:\n%s", rec)
 	}
 }
 
-func TestDevelopDeclinedUnlockSkips(t *testing.T) {
-	p, cfg := credFixture(t)
-	passphraseSeam(t, "") // Enter = skip
+// No terminal to prompt on is a STOP with the two ways out, not a silent
+// launch without the values.
+func TestDevelopNonTTYStopsWithRemedies(t *testing.T) {
+	p, rv := credFixture(t)
 	var errBuf bytes.Buffer
+	s := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader(""), TTY: false}
 	f := &fakeRunner{}
-	if err := develop(f, ttyStreams(&errBuf), p, combine(cfg, skills.Resolved{}), false); err != nil {
-		t.Fatal(err)
+	err := develop(f, s, p, rv, false, CredentialAsk)
+	if err == nil || !strings.Contains(err.Error(), "no terminal") ||
+		!strings.Contains(err.Error(), "--credentials=stdin") || !strings.Contains(err.Error(), "--credentials=skip") {
+		t.Fatalf("want a stop naming both remedies, got: %v", err)
 	}
-	if argv := strings.Join(f.creates[0], " "); strings.Contains(argv, "BYRE_CRED_EXPECT") {
-		t.Fatalf("declined unlock must not arm delivery: %s", argv)
-	}
-	if !strings.Contains(errBuf.String(), "skipped — launching without") {
-		t.Fatalf("decline notice: %s", errBuf.String())
+	if len(f.creates) != 0 {
+		t.Fatalf("a stopped launch must create nothing: %v", f.creates)
 	}
 }
 
-func TestDevelopWrongPassphraseBoundedRetry(t *testing.T) {
-	p, cfg := credFixture(t)
-	calls := passphraseSeam(t, "bad1", "bad2", "bad3")
+// --credentials=stdin: one passphrase per line, each tried against every
+// still-locked identity in file order.
+func TestDevelopStdinMode(t *testing.T) {
+	p, _ := testPaths(t)
+	rv := credResolved(
+		credGroup(t, "layer:acme", "layer-pw", map[string]string{"A": "1"}),
+		credGroup(t, "project", "proj-pw", map[string]string{"B": "2"}),
+	)
 	var errBuf bytes.Buffer
-	f := &fakeRunner{}
-	if err := develop(f, ttyStreams(&errBuf), p, combine(cfg, skills.Resolved{}), false); err != nil {
-		t.Fatal(err)
-	}
-	if *calls != 3 {
-		t.Fatalf("attempts = %d, want exactly 3 (the bounded re-prompt)", *calls)
-	}
-	out := errBuf.String()
-	if !strings.Contains(out, "wrong passphrase — try again") {
-		t.Fatalf("re-prompt notice missing: %s", out)
-	}
-	if !strings.Contains(out, "unlock failed") || !strings.Contains(out, "launching without credentials") {
-		t.Fatalf("exhausted attempts must degrade to a launch without: %s", out)
-	}
-	if argv := strings.Join(f.creates[0], " "); strings.Contains(argv, "BYRE_CRED_EXPECT") {
-		t.Fatalf("failed unlock must not arm delivery: %s", argv)
-	}
-}
-
-func TestDevelopWrongThenRightPassphrase(t *testing.T) {
-	p, cfg := credFixture(t)
-	passphraseSeam(t, "bad", "pw")
-	var errBuf bytes.Buffer
+	s := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("proj-pw\nlayer-pw\n"), TTY: false}
 	f := &fakeRunner{liveSecond: map[string][]string{workdirLabel(p): {"cid"}}}
-	if err := develop(f, ttyStreams(&errBuf), p, combine(cfg, skills.Resolved{}), false); err != nil {
+	if err := develop(f, s, p, rv, false, CredentialStdin); err != nil {
 		t.Fatal(err)
 	}
 	if argv := strings.Join(f.creates[0], " "); !strings.Contains(argv, "BYRE_CRED_EXPECT") {
-		t.Fatalf("a typo then the right passphrase must still deliver: %s", argv)
+		t.Fatalf("stdin passphrases must deliver: %s", argv)
 	}
 }
 
-func TestDevelopPromptEnumeratesValueStates(t *testing.T) {
-	p, cfg := credFixture(t)
-	passphraseSeam(t, "")
+func TestDevelopStdinEOFWithLockedFilesStops(t *testing.T) {
+	p, rv := credFixture(t)
+	var errBuf bytes.Buffer
+	s := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("nope\n"), TTY: false}
+	f := &fakeRunner{}
+	err := develop(f, s, p, rv, false, CredentialStdin)
+	if err == nil || !strings.Contains(err.Error(), "stdin ended with 1 file(s) still locked") ||
+		!strings.Contains(err.Error(), "project") {
+		t.Fatalf("want a stop naming the still-locked file, got: %v", err)
+	}
+	if len(f.creates) != 0 {
+		t.Fatalf("a stopped launch must create nothing: %v", f.creates)
+	}
+}
+
+// A row copied without the identity that opens it: refused before a single
+// passphrase prompt, and never opened with a neighbouring file's block.
+func TestDevelopRowWithoutABlockStops(t *testing.T) {
+	p, _ := testPaths(t)
+	g := credGroup(t, "project", "pw", map[string]string{"STRIPE_KEY": "v"})
+	g.HasBlock = false
+	g.Block = config.CredentialsBlock{}
 	var errBuf bytes.Buffer
 	f := &fakeRunner{}
-	if err := develop(f, ttyStreams(&errBuf), p, combine(cfg, skills.Resolved{}), false); err != nil {
-		t.Fatal(err)
+	err := develop(f, ttyStreams(&errBuf), p, credResolved(g), false, CredentialAsk)
+	if err == nil || !strings.Contains(err.Error(), "no [credentials] block") ||
+		!strings.Contains(err.Error(), "STRIPE_KEY") {
+		t.Fatalf("want a stop naming the file and the row, got: %v", err)
 	}
-	out := errBuf.String()
-	// The prompt enumerates the declared set with per-name value-state.
-	if !strings.Contains(out, "stripe (env → STRIPE_KEY, set)") || !strings.Contains(out, "github (env → GH_TOKEN, unset)") {
-		t.Fatalf("enumeration line: %s", out)
+	if len(f.creates) != 0 {
+		t.Fatalf("a stopped launch must create nothing: %v", f.creates)
 	}
 }
 
-func TestDevelopNoVaultDegrades(t *testing.T) {
-	p, _ := testPaths(t) // no vault created
-	cfg := config.Config{Credentials: []config.CredentialDecl{{Name: "a", Kind: "env", Target: "A"}}}
+// The payload's key/kind stamp is an accident guard, and it stops the launch
+// rather than delivering the wrong value under the right name.
+func TestDevelopMismatchedBlobStops(t *testing.T) {
+	p, _ := testPaths(t)
+	g := credGroup(t, "project", "pw", map[string]string{"STRIPE_KEY": "v"})
+	// The blob is stamped for STRIPE_KEY; the row now claims another key.
+	g.Rows[0].Key = "GH_TOKEN"
+	passphraseSeam(t, "pw")
 	var errBuf bytes.Buffer
 	f := &fakeRunner{}
-	if err := develop(f, ttyStreams(&errBuf), p, combine(cfg, skills.Resolved{}), false); err != nil {
-		t.Fatal(err)
+	err := develop(f, ttyStreams(&errBuf), p, credResolved(g), false, CredentialAsk)
+	if err == nil || !strings.Contains(err.Error(), string(credentials.OutcomeRowMismatch)) ||
+		!strings.Contains(err.Error(), "GH_TOKEN") {
+		t.Fatalf("want a stop naming the mismatch and the key, got: %v", err)
 	}
-	if !strings.Contains(errBuf.String(), "no vault") || !strings.Contains(errBuf.String(), "byre credentials init") {
-		t.Fatalf("missing-vault notice with the remedy: %s", errBuf.String())
-	}
-	if argv := strings.Join(f.creates[0], " "); strings.Contains(argv, "BYRE_CRED_EXPECT") {
-		t.Fatalf("no vault must not arm delivery: %s", argv)
+	if len(f.creates) != 0 {
+		t.Fatalf("a stopped launch must create nothing: %v", f.creates)
 	}
 }
 
-func TestRunCredentialInjectFailureReportsNotDelivered(t *testing.T) {
-	p, cfg := credFixture(t)
+// A cascade whose credential rows cannot be read at all stops the launch —
+// blocking has no "read what parsed" arm.
+func TestDevelopUnreadableCascadeStops(t *testing.T) {
+	p, _ := testPaths(t)
+	rv := combine(config.Config{}, skills.Resolved{})
+	rv.credErr = fmt.Errorf("layer:acme: env_from_host A: the encrypted value is not valid base64 (!!)")
+	var errBuf bytes.Buffer
+	f := &fakeRunner{}
+	err := develop(f, ttyStreams(&errBuf), p, rv, false, CredentialAsk)
+	if err == nil || !strings.Contains(err.Error(), "not valid base64") {
+		t.Fatalf("want the cascade refusal surfaced, got: %v", err)
+	}
+	if len(f.creates) != 0 {
+		t.Fatalf("a stopped launch must create nothing: %v", f.creates)
+	}
+}
+
+// Delivery that never lands is a failed LAUNCH: byre stops the box (its
+// launcher would fail closed anyway) and reports the real cause.
+func TestInjectFailureStopsTheBoxAndFailsTheLaunch(t *testing.T) {
+	p, rv := credFixture(t)
 	passphraseSeam(t, "pw")
 	var errBuf bytes.Buffer
 	f := &fakeRunner{
 		liveSecond:          map[string][]string{workdirLabel(p): {"cid"}},
 		execInputBoundedErr: fmt.Errorf("exec: container gone"),
 	}
-	if err := develop(f, ttyStreams(&errBuf), p, combine(cfg, skills.Resolved{}), false); err != nil {
-		t.Fatal(err)
+	err := develop(f, ttyStreams(&errBuf), p, rv, false, CredentialAsk)
+	if err == nil || !strings.Contains(err.Error(), "delivery failed") {
+		t.Fatalf("want the launch to fail with the delivery cause, got: %v", err)
 	}
-	if !strings.Contains(errBuf.String(), "not-delivered") {
-		t.Fatalf("inject failure must report not-delivered and never block: %s", errBuf.String())
+	if len(f.stops) == 0 {
+		t.Fatal("a failed delivery must stop the box rather than leave it running credless")
 	}
 }
 
@@ -263,9 +424,9 @@ func TestRunCredentialInjectFailureReportsNotDelivered(t *testing.T) {
 // a plain "delivered" is only claimed when the inject landed inside
 // credLateThreshold, whose measurement OVERESTIMATES time-since-box-start
 // (the goroutine's entry precedes StartAttach) — so the threshold must sit
-// strictly inside the launcher's fail-open wait, and the exec deadline
-// inside the threshold (a max-length successful exec must still be able to
-// earn the plain word).
+// strictly inside the launcher's wait, and the exec deadline inside the
+// threshold (a max-length successful exec must still be able to earn the
+// plain word).
 func TestInjectDeadlineUnderLauncherWait(t *testing.T) {
 	m := regexp.MustCompile(`BYRE_CRED_WAIT:-(\d+)`).FindSubmatch(gen.LauncherScript())
 	if m == nil {
@@ -292,23 +453,38 @@ func TestCredDeliveredLineHonesty(t *testing.T) {
 		t.Fatalf("in-window line = %q", got)
 	}
 	late := credDeliveredLine(credLateThreshold + time.Second)
-	if !strings.Contains(late, "delivered late") || !strings.Contains(late, "may have launched without") {
+	if !strings.Contains(late, "delivered late") || !strings.Contains(late, "failed the launch closed") {
 		t.Fatalf("past-window line must hedge: %q", late)
 	}
 }
 
+// The stream framing is a CONTRACT with credential-receiver.sh: a version
+// line, the manifest first, values in key order, "done" last.
 func TestCredStreamFraming(t *testing.T) {
 	p := credPayload{
-		values:   map[string][]byte{"b": []byte("two"), "a": []byte("one")},
-		manifest: "a env A\nb env B\n",
+		values:   map[string][]byte{"B_KEY": []byte("two"), "A_KEY": []byte("one")},
+		manifest: "A_KEY env\nB_KEY file\n",
 	}
 	got := string(credStream(p))
 	want := "byre-credentials 1\n" +
-		"item manifest\n" + base64.StdEncoding.EncodeToString([]byte("a env A\nb env B\n")) + "\n" +
-		"item a\n" + base64.StdEncoding.EncodeToString([]byte("one")) + "\n" +
-		"item b\n" + base64.StdEncoding.EncodeToString([]byte("two")) + "\n" +
+		"item manifest\n" + base64.StdEncoding.EncodeToString([]byte("A_KEY env\nB_KEY file\n")) + "\n" +
+		"item A_KEY\n" + base64.StdEncoding.EncodeToString([]byte("one")) + "\n" +
+		"item B_KEY\n" + base64.StdEncoding.EncodeToString([]byte("two")) + "\n" +
 		"done\n"
 	if got != want {
 		t.Fatalf("stream:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+func TestParseCredentialMode(t *testing.T) {
+	for in, want := range map[string]CredentialMode{"": CredentialAsk, "ask": CredentialAsk, "skip": CredentialSkip, "stdin": CredentialStdin} {
+		got, err := ParseCredentialMode(in)
+		if err != nil || got != want {
+			t.Fatalf("ParseCredentialMode(%q) = %q, %v", in, got, err)
+		}
+	}
+	if _, err := ParseCredentialMode("maybe"); err == nil || !strings.Contains(err.Error(), "want ask|skip|stdin") ||
+		!strings.Contains(err.Error(), "maybe") {
+		t.Fatalf("want a refusal naming the rule and the value: %v", err)
 	}
 }

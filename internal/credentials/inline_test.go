@@ -87,7 +87,7 @@ func TestInlineKeyBindingMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, oc, derr := id.DecryptValue("GITHUB_TOKEN", KindEnv, blob)
-	if oc != OutcomeEntryMismatch || derr == nil {
+	if oc != OutcomeRowMismatch || derr == nil {
 		t.Fatalf("swapped blob: outcome=%s err=%v", oc, derr)
 	}
 	msg := derr.Error()
@@ -105,7 +105,7 @@ func TestInlineKindBindingMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, oc, derr := id.DecryptValue("TLS_CERT", KindEnv, blob)
-	if oc != OutcomeEntryMismatch || derr == nil {
+	if oc != OutcomeRowMismatch || derr == nil {
 		t.Fatalf("kind swap: outcome=%s err=%v", oc, derr)
 	}
 	msg := derr.Error()
@@ -123,7 +123,7 @@ func TestInlineForeignRecipient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, oc, derr := id.DecryptValue("TOKEN", KindEnv, blob); oc != OutcomeEntryUndecryptable || derr == nil {
+	if _, oc, derr := id.DecryptValue("TOKEN", KindEnv, blob); oc != OutcomeRowUndecryptable || derr == nil {
 		t.Fatalf("foreign recipient: outcome=%s err=%v", oc, derr)
 	}
 }

@@ -191,7 +191,7 @@ func TestDevelopRefusesShadowedEngine(t *testing.T) {
 	planted := stubBin(t, proj, "docker")
 	fakePATH(t, proj)
 
-	err := Develop(discardStreams(), proj, "", "", nil, false)
+	err := Develop(discardStreams(), proj, "", "", nil, false, CredentialAsk)
 	var shadow *hostexec.ShadowError
 	if !errors.As(err, &shadow) {
 		t.Fatalf("err = %v, want *hostexec.ShadowError", err)
@@ -218,7 +218,7 @@ func TestDevelopDisclosesShadowedGitAndContinues(t *testing.T) {
 	// then stops at its first real engine query. What matters is that the
 	// disclosure was printed BEFORE that, and that the declined git did not
 	// end the run itself.
-	err := Develop(s, proj, "", "", nil, false)
+	err := Develop(s, proj, "", "", nil, false, CredentialAsk)
 
 	// CONTINUED, not refused: printing the line and then returning the git
 	// refusal would satisfy the text asserts below while gating a session on

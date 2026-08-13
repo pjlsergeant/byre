@@ -52,6 +52,16 @@ type resolved struct {
 	// directly) means the git-backed probes degrade, which is the same shape
 	// a host with no git already produces.
 	gitExe string
+	// credFiles are the cascade's winning credential rows grouped by the
+	// file that contributed each (root-most first) — the unlock flow's
+	// whole input. It rides the resolved view so the under-lock re-read
+	// refreshes it with everything else: a save that lands while develop
+	// waits for the lock must not deliver the rows it replaced. credErr is
+	// a cascade whose rows cannot be read at all; credentials are blocking,
+	// so a launch surfaces it rather than proceeding without them. nil/nil
+	// in combine() (and thus in unit tests) means no credentials.
+	credFiles []config.CredentialFile
+	credErr   error
 	// reread re-runs the very call that produced this view, so a setup writer
 	// can take its authoritative read INSIDE the setup lock (see refresh).
 	// Set by resolve(); nil in combine() (and thus in unit tests, which drive
@@ -205,6 +215,14 @@ func resolve(paths project.Paths, projectDir string, notices io.Writer) (resolve
 	}
 	rv := combine(cfg, res)
 	rv.cat = cat
+	// The FILE view of the same cascade: credential rows resolve per
+	// contributing file (the [credentials] block is file-local and never
+	// merges), which the merged config cannot answer for.
+	if files, ferr := config.CascadeFiles(projectDir); ferr != nil {
+		rv.credErr = ferr
+	} else {
+		rv.credFiles, rv.credErr = config.EncryptedRows(files)
+	}
 	if err := rv.validate(); err != nil {
 		return resolved{}, err
 	}

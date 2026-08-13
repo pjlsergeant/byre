@@ -1106,7 +1106,7 @@ func (m model) commitItem() model {
 				staged[k] = v
 			}
 			if v := m.inputs[2].Value(); v != "" {
-				if err := credentials.ValidateValue([]byte(v), cd.Kind); err != nil {
+				if err := credentials.ValidateValue([]byte(v), credentials.Kind(cd.Kind)); err != nil {
 					m.itemErr = err.Error()
 					return m
 				}

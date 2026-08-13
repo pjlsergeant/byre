@@ -1,9 +1,10 @@
 package credentials
 
-// Outcome is the small, honest UNLOCK/DECRYPT-time vocabulary (ADR 0057):
-// host-side facts established at the prompt and under the setup lock,
-// reported there and recorded with the launch. The zero value "" means the
-// step succeeded. Deliberately NO quarantine, foreign-vault,
+// Outcome is the small, honest UNLOCK/DECRYPT-time vocabulary: host-side
+// facts established at the prompt and under the setup lock. The zero value
+// "" means the step succeeded. Credentials are BLOCKING, so a failure
+// outcome names the reason a launch STOPPED; only the deliberate skip is
+// ever recorded with a launch. Deliberately NO quarantine, foreign-vault,
 // recipient-mismatch, snapshot-mismatch, or restart-discriminator states —
 // those named adversary conditions that are out of the feature's threat
 // model. Delivery's own words ("delivered", "not-delivered", the late
@@ -13,24 +14,19 @@ package credentials
 type Outcome string
 
 const (
-	// OutcomeSkippedDeclined: the user pressed Enter at the unlock prompt.
+	// OutcomeSkippedDeclined: --credentials=skip, the one deliberate way to
+	// launch without the declared rows.
 	OutcomeSkippedDeclined Outcome = "skipped-declined"
-	// OutcomeSkippedNonTTY: no terminal to prompt on; launch proceeds
-	// without credentials, machine-readably noticed.
-	OutcomeSkippedNonTTY Outcome = "skipped-nontty"
-	// OutcomeUnlockFailed: passphrase attempts exhausted, a passphrase
-	// read that failed on a live terminal, or a corrupt, oversize, or
-	// absent identity.
-	OutcomeUnlockFailed Outcome = "unlock-failed"
-	// OutcomeMissingValue: declared, but the vault holds no entry.
+	// OutcomeMissingValue: the vault holds no entry under this name.
 	OutcomeMissingValue Outcome = "missing-value"
-	// OutcomeEntryUndecryptable: corrupt or oversize ciphertext, or one
+	// OutcomeRowUndecryptable: corrupt or oversize ciphertext, or one
 	// encrypted to a different recipient.
-	OutcomeEntryUndecryptable Outcome = "entry-undecryptable"
-	// OutcomeEntryMismatch: the payload's name or project-id disagrees with
-	// where the file sits — the accident guard (cross-project copy,
-	// wrong-project restore), not an integrity mechanism.
-	OutcomeEntryMismatch Outcome = "entry-mismatch"
+	OutcomeRowUndecryptable Outcome = "row-undecryptable"
+	// OutcomeRowMismatch: the payload's key or kind disagrees with the row
+	// carrying it — the accident guard (a blob swapped between rows,
+	// replayed onto a renamed key, transplanted from another file), not an
+	// integrity mechanism.
+	OutcomeRowMismatch Outcome = "row-mismatch"
 	// OutcomeUnsupportedFormat: a payload this byre does not understand
 	// (a future format version), or a value that does not fit its declared
 	// kind (an env value carrying NUL or over the env cap).

@@ -29,7 +29,7 @@ type app struct {
 	dockerfile    func(s commands.Streams, dir string) error
 	dockerrun     func(s commands.Streams, dir string) error
 	ejectfirewall func(s commands.Streams, dir string) error
-	develop       func(s commands.Streams, dir, tmpl, agent string, sharedAuth *bool, selfEdit bool) error
+	develop       func(s commands.Streams, dir, tmpl, agent string, sharedAuth *bool, selfEdit bool, credMode commands.CredentialMode) error
 	config        func(s commands.Streams, dir string, global bool, layer string) error
 	status        func(s commands.Streams, dir string, opts commands.StatusOptions) error
 	reset         func(s commands.Streams, dir string, force bool) error
@@ -38,7 +38,7 @@ type app struct {
 	deliver       func(s commands.Streams, dir string, opts deliver.Options, paths []string) error
 	grab          func(s commands.Streams, dir string, opts deliver.Options, boxPath, hostPath string) error
 	installApp    func(s commands.Streams, box string) error
-	worktree      func(s commands.Streams, dir, name, path string, selfEdit bool) error
+	worktree      func(s commands.Streams, dir, name, path string, selfEdit bool, credMode commands.CredentialMode) error
 	rebuild       func(s commands.Streams, dir string) error
 	rehome        func(s commands.Streams, dir, oldID string) error
 	// rehomeCandidates is bare `byre rehome`: list stored projects whose
@@ -226,6 +226,7 @@ func developCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	var tmpl, agent string
 	var selfEdit bool
 	var sharedAuth bool
+	var creds string
 	c := &cobra.Command{
 		Use:   "develop",
 		Short: "Set up and run the project box in the foreground.",
@@ -237,13 +238,18 @@ foreground. First run onboards the project (creates its host-side config).`,
 			if cmd.Flags().Changed("shared-auth") {
 				sharedAuthFlag = &sharedAuth
 			}
-			return a.develop(s, dir, tmpl, agent, sharedAuthFlag, selfEdit)
+			mode, err := commands.ParseCredentialMode(creds)
+			if err != nil {
+				return usageError(err.Error())
+			}
+			return a.develop(s, dir, tmpl, agent, sharedAuthFlag, selfEdit, mode)
 		},
 	}
 	c.Flags().StringVar(&tmpl, "template", "", `template for a NEW project's config (first run only; "none" to skip)`)
 	c.Flags().StringVar(&agent, "agent", "", `agent for a NEW project's config (first run only; "none" to skip)`)
 	c.Flags().BoolVar(&sharedAuth, "shared-auth", false, `opt a NEW project's box into the chosen agent's shared credentials without the question (=false declines it; first run only)`)
 	c.Flags().BoolVar(&selfEdit, "self-edit", false, "mount this project's host-side store read-write so the agent can edit its own byre.config — a deliberate grant, applied on the next develop")
+	c.Flags().StringVar(&creds, "credentials", "", `how this launch gets credential passphrases: ask (default, prompts per config file), skip (launch deliberately without them), stdin (one passphrase per line)`)
 	return c
 }
 
@@ -505,6 +511,7 @@ Boxes started by other users are hidden unless --skip-uid-check.`,
 func worktreeCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	var path string
 	var selfEdit bool
+	var creds string
 	c := &cobra.Command{
 		Use:   "worktree <name>",
 		Short: "Create a git worktree and start a parallel session in it.",
@@ -523,11 +530,16 @@ neither set, byre refuses rather than guessing.`,
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.worktree(s, dir, args[0], path, selfEdit)
+			mode, err := commands.ParseCredentialMode(creds)
+			if err != nil {
+				return usageError(err.Error())
+			}
+			return a.worktree(s, dir, args[0], path, selfEdit, mode)
 		},
 	}
 	c.Flags().StringVar(&path, "path", "", "create the worktree at an explicit path")
 	c.Flags().BoolVar(&selfEdit, "self-edit", false, "forward 'develop --self-edit' for the new session")
+	c.Flags().StringVar(&creds, "credentials", "", `forward 'develop --credentials' for the new session: ask|skip|stdin`)
 	return c
 }
 

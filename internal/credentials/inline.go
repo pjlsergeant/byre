@@ -160,11 +160,11 @@ func (i *Identity) DecryptValue(key string, kind Kind, blob []byte) ([]byte, Out
 	}
 	rd, err := age.Decrypt(bytes.NewReader(blob), i.id)
 	if err != nil {
-		return nil, OutcomeEntryUndecryptable, fmt.Errorf("credential %s: corrupt, or encrypted to a different recipient: %v", key, err)
+		return nil, OutcomeRowUndecryptable, fmt.Errorf("credential %s: corrupt, or encrypted to a different recipient: %v", key, err)
 	}
 	payload, err := io.ReadAll(io.LimitReader(rd, int64(valueReadCap)))
 	if err != nil {
-		return nil, OutcomeEntryUndecryptable, fmt.Errorf("credential %s: corrupt, or encrypted to a different recipient: %v", key, err)
+		return nil, OutcomeRowUndecryptable, fmt.Errorf("credential %s: corrupt, or encrypted to a different recipient: %v", key, err)
 	}
 	if len(payload) == valueReadCap {
 		return nil, OutcomeUnsupportedFormat, fmt.Errorf("credential %s: the stored value exceeds the per-value cap of %d bytes", key, MaxValue)
@@ -174,7 +174,7 @@ func (i *Identity) DecryptValue(key string, kind Kind, blob []byte) ([]byte, Out
 		return nil, OutcomeUnsupportedFormat, fmt.Errorf("credential %s: %w", key, err)
 	}
 	if gotKey != key || gotKind != kind {
-		return nil, OutcomeEntryMismatch, fmt.Errorf("credential %s (%s): the stored value is stamped for %s (%s) — a blob copied from another row, a renamed key, or a value restored from history? Not delivering it", key, kind, truncate(gotKey), truncate(string(gotKind)))
+		return nil, OutcomeRowMismatch, fmt.Errorf("credential %s (%s): the stored value is stamped for %s (%s) — a blob copied from another row, a renamed key, or a value restored from history? Not delivering it", key, kind, truncate(gotKey), truncate(string(gotKind)))
 	}
 	if len(value) > MaxValue {
 		return nil, OutcomeUnsupportedFormat, fmt.Errorf("credential %s: the stored value is %d bytes; the per-value cap is %d", key, len(value), MaxValue)

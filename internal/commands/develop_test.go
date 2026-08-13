@@ -44,7 +44,7 @@ func TestDevelopRefusesWhenSessionLive(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{live: liveWorkdir(p, "abcdef0123456789")}
 	s, _, stderr := testStreams("", false)
-	err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), false)
+	err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk)
 	var exitErr ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitRefused {
 		t.Fatalf("expected ExitError{%d}, got %v", ExitRefused, err)
@@ -72,7 +72,7 @@ func TestDevelopRefusesCrossEngineSession(t *testing.T) {
 	rv.otherEngines = []sessionRunner{other}
 	s, _, stderr := testStreams("", false)
 
-	err := develop(f, s, p, rv, false)
+	err := develop(f, s, p, rv, false, CredentialAsk)
 	var exitErr ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitRefused {
 		t.Fatalf("expected ExitError{%d}, got %v", ExitRefused, err)
@@ -106,7 +106,7 @@ func TestDevelopCrossEngineQueryPolicy(t *testing.T) {
 		other := &fakeRunner{engine: runner.Podman, allErr: fmt.Errorf("dial unix: connect: permission denied")}
 		rv := combine(config.Config{}, skills.Resolved{})
 		rv.otherEngines = []sessionRunner{other}
-		err := develop(f, discardStreams(), p, rv, false)
+		err := develop(f, discardStreams(), p, rv, false, CredentialAsk)
 		if err == nil || len(f.creates) != 0 {
 			t.Fatalf("a non-unreachable cross-engine error must abort before create, got err=%v creates=%v", err, f.creates)
 		}
@@ -117,7 +117,7 @@ func TestDevelopCrossEngineQueryPolicy(t *testing.T) {
 		other := &fakeRunner{engine: runner.Podman, allErr: fmt.Errorf("Cannot connect to Podman: connection refused")}
 		rv := combine(config.Config{}, skills.Resolved{})
 		rv.otherEngines = []sessionRunner{other}
-		if err := develop(f, discardStreams(), p, rv, false); err != nil {
+		if err := develop(f, discardStreams(), p, rv, false, CredentialAsk); err != nil {
 			t.Fatalf("an unreachable other engine must not block develop: %v", err)
 		}
 		if len(f.creates) != 1 {
@@ -147,7 +147,7 @@ func TestDevelopEngineRecordScopesCrossEngineCheck(t *testing.T) {
 		rv := combine(config.Config{}, skills.Resolved{})
 		rv.otherEngines = []sessionRunner{other}
 		s, _, stderr := testStreams("", false)
-		if err := develop(&fakeRunner{}, s, p, rv, false); err != nil {
+		if err := develop(&fakeRunner{}, s, p, rv, false, CredentialAsk); err != nil {
 			t.Fatalf("record == configured engine must skip the cross-engine query: %v", err)
 		}
 		if strings.Contains(stderr.String(), "isn't reachable") {
@@ -161,7 +161,7 @@ func TestDevelopEngineRecordScopesCrossEngineCheck(t *testing.T) {
 		other := &fakeRunner{engine: runner.Podman, allContainers: liveWorkdir(p, "podman00")}
 		rv := combine(config.Config{}, skills.Resolved{})
 		rv.otherEngines = []sessionRunner{other}
-		err := develop(&fakeRunner{}, discardStreams(), p, rv, false)
+		err := develop(&fakeRunner{}, discardStreams(), p, rv, false, CredentialAsk)
 		var exitErr ExitError
 		if !errors.As(err, &exitErr) || exitErr.Code != ExitRefused {
 			t.Fatalf("expected ExitError{%d}, got %v", ExitRefused, err)
@@ -178,7 +178,7 @@ func TestDevelopEngineRecordScopesCrossEngineCheck(t *testing.T) {
 		other := &fakeRunner{engine: runner.Podman, allContainers: liveWorkdir(p, "podman00")}
 		rv := combine(config.Config{}, skills.Resolved{})
 		rv.otherEngines = []sessionRunner{other}
-		err := develop(&fakeRunner{}, discardStreams(), p, rv, false)
+		err := develop(&fakeRunner{}, discardStreams(), p, rv, false, CredentialAsk)
 		var exitErr ExitError
 		if !errors.As(err, &exitErr) || exitErr.Code != ExitRefused {
 			t.Fatalf("an invalid record must degrade to the full check, got %v", err)
@@ -187,7 +187,7 @@ func TestDevelopEngineRecordScopesCrossEngineCheck(t *testing.T) {
 
 	t.Run("a successful develop records its engine", func(t *testing.T) {
 		p, _ := testPaths(t)
-		if err := develop(&fakeRunner{}, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false); err != nil {
+		if err := develop(&fakeRunner{}, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk); err != nil {
 			t.Fatal(err)
 		}
 		if got := loadEngineRecord(p); got.last != "docker" || len(got.unresolved) != 0 {
@@ -201,7 +201,7 @@ func TestDevelopEngineRecordScopesCrossEngineCheck(t *testing.T) {
 		rv := combine(config.Config{}, skills.Resolved{})
 		rv.otherEngines = nil // podman gone from PATH
 		s, _, stderr := testStreams("", false)
-		if err := develop(&fakeRunner{}, s, p, rv, false); err != nil {
+		if err := develop(&fakeRunner{}, s, p, rv, false, CredentialAsk); err != nil {
 			t.Fatalf("a vanished recorded engine must not block develop: %v", err)
 		}
 		if !strings.Contains(stderr.String(), "no longer installed") || !strings.Contains(stderr.String(), "podman") {
@@ -227,7 +227,7 @@ func TestDevelopEngineRecordScopesCrossEngineCheck(t *testing.T) {
 			rv := combine(config.Config{}, skills.Resolved{})
 			rv.otherEngines = []sessionRunner{other}
 			s, _, stderr := testStreams("", false)
-			if err := develop(&fakeRunner{}, s, p, rv, false); err != nil {
+			if err := develop(&fakeRunner{}, s, p, rv, false, CredentialAsk); err != nil {
 				t.Fatalf("an unreachable implicated engine must not block develop: %v", err)
 			}
 			return stderr.String()
@@ -262,7 +262,7 @@ func TestDevelopEngineRecordScopesCrossEngineCheck(t *testing.T) {
 		rv := combine(config.Config{}, skills.Resolved{})
 		rv.otherEngines = []sessionRunner{down}
 		s, _, stderr := testStreams("", false)
-		if err := develop(&fakeRunner{}, s, p, rv, false); err != nil {
+		if err := develop(&fakeRunner{}, s, p, rv, false, CredentialAsk); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(stderr.String(), "isn't reachable") {
@@ -274,7 +274,7 @@ func TestDevelopEngineRecordScopesCrossEngineCheck(t *testing.T) {
 		s2, _, stderr2 := testStreams("", false)
 		rv2 := combine(config.Config{}, skills.Resolved{})
 		rv2.otherEngines = []sessionRunner{down}
-		if err := develop(&fakeRunner{}, s2, p, rv2, false); err != nil {
+		if err := develop(&fakeRunner{}, s2, p, rv2, false, CredentialAsk); err != nil {
 			t.Fatal(err)
 		}
 		if strings.Contains(stderr2.String(), "isn't reachable") {
@@ -290,7 +290,7 @@ func TestDevelopBuildsSeedsThenRuns(t *testing.T) {
 		{Name: ".claude", Role: "state", Target: "/home/dev/.claude", Seed: &config.Seed{Host: seedSrc}},
 	}}
 	f := &fakeRunner{}
-	if err := develop(f, discardStreams(), p, combine(cfg, skills.Resolved{}), false); err != nil {
+	if err := develop(f, discardStreams(), p, combine(cfg, skills.Resolved{}), false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	image := imageTag(p.ID, os.Getuid(), os.Getgid())
@@ -349,7 +349,7 @@ func TestDevelopOpensWithExposureLines(t *testing.T) {
 	fw.File.Runtime.Env = map[string]string{"FOO": "skill"} // restates a config key: one var
 	f := &fakeRunner{}
 	s, _, stderr := testStreams("", false)
-	if err := develop(f, s, p, combine(cfg, skills.Resolved{Skills: []skills.Skill{fw}}), false); err != nil {
+	if err := develop(f, s, p, combine(cfg, skills.Resolved{Skills: []skills.Skill{fw}}), false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	out := stderr.String()
@@ -431,7 +431,7 @@ func TestDevelopCreateRaceReportsRefusal(t *testing.T) {
 		createErr:  errors.New("name /byre-x is already in use"),
 		liveSecond: liveWorkdir(p, "cafebabe0000"),
 	}
-	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
+	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk)
 	var exitErr ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitRefused {
 		t.Fatalf("expected ExitError{%d} after losing the create race, got %v", ExitRefused, err)
@@ -446,7 +446,7 @@ func TestDevelopCreateFailureNamesStaleContainer(t *testing.T) {
 	// The create fails but no session is live: a leftover container (a crashed
 	// develop's marker) may hold the name — the error must say how to clear it.
 	f := &fakeRunner{createErr: errors.New("name /byre-x is already in use")}
-	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
+	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk)
 	if err == nil || !strings.Contains(err.Error(), "rm byre-"+p.WorktreeID) {
 		t.Fatalf("expected the stale-container hint, got %v", err)
 	}
@@ -455,7 +455,7 @@ func TestDevelopCreateFailureNamesStaleContainer(t *testing.T) {
 func TestDevelopAgentExitCodePassesThrough(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{runErr: exitError(t, 7)}
-	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
+	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk)
 	var exitErr ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != 7 {
 		t.Fatalf("expected the agent's own exit 7 passed through, got %v", err)
@@ -471,7 +471,7 @@ func TestDevelopAgentReservedBandExitPassesThrough(t *testing.T) {
 	p, _ := testPaths(t)
 	for _, code := range []int{125, 126, 127} {
 		f := &fakeRunner{runErr: exitError(t, code)}
-		err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
+		err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk)
 		var exitErr ExitError
 		if !errors.As(err, &exitErr) || exitErr.Code != code {
 			t.Fatalf("exit %d must pass through as the agent's own status, got %v", code, err)
@@ -486,7 +486,7 @@ func TestDevelopSignalExitDecoded(t *testing.T) {
 	// message must decode the signal instead of the bare "exit status 137"
 	// that reads like a byre bug.
 	f := &fakeRunner{runErr: exitError(t, 137)}
-	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
+	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk)
 	var exitErr ExitError
 	if err == nil || errors.As(err, &exitErr) {
 		t.Fatalf("a killed box must stay an ordinary error, got %v", err)
@@ -499,7 +499,7 @@ func TestDevelopSignalExitDecoded(t *testing.T) {
 	// 128+n is ambiguous for anything but KILL — a process can literally
 	// exit(130) with no signal — so other in-range codes decode TENTATIVELY
 	// with no external-kill diagnosis.
-	err = develop(&fakeRunner{runErr: exitError(t, 130)}, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
+	err = develop(&fakeRunner{runErr: exitError(t, 130)}, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk)
 	if err == nil || errors.As(err, &exitErr) {
 		t.Fatalf("a signal-range exit must stay an ordinary error, got %v", err)
 	}
@@ -508,7 +508,7 @@ func TestDevelopSignalExitDecoded(t *testing.T) {
 	}
 	// Beyond the signal range (128+64, Linux realtime max) it isn't a
 	// signal at all — no decode ("signal 72" for exit 200 would be nonsense).
-	err = develop(&fakeRunner{runErr: exitError(t, 200)}, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
+	err = develop(&fakeRunner{runErr: exitError(t, 200)}, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk)
 	if err == nil || errors.As(err, &exitErr) {
 		t.Fatalf("exit 200 must stay an ordinary error, got %v", err)
 	}
@@ -521,7 +521,7 @@ func TestDevelopSelfEditNotesAndMount(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{}
 	s, _, stderr := testStreams("", false)
-	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), true); err != nil {
+	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), true, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stderr.String(), "self-edit is on") {
@@ -553,7 +553,7 @@ func TestDevelopSelfEditShowsConfigDiffOnExit(t *testing.T) {
 		mustWriteFile(t, cfgPath, []byte("base = \"node:22\"\nrun_args = [\"--privileged\"]\n"), 0o644)
 	}
 	s, _, stderr := testStreams("", false)
-	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), true); err != nil {
+	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), true, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	out := stderr.String()
@@ -572,7 +572,7 @@ func TestDevelopSelfEditShowsConfigDiffOnExit(t *testing.T) {
 		mustWriteFile(t, cfgPath, []byte("base = \"debian:bookworm\"\n"), 0o644)
 	}}
 	s2, _, stderr2 := testStreams("", false)
-	if err := develop(f2, s2, p, combine(config.Config{}, skills.Resolved{}), false); err != nil {
+	if err := develop(f2, s2, p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(stderr2.String(), "the project store changed") {
@@ -600,7 +600,7 @@ func TestDevelopKeepIDPath(t *testing.T) {
 	f := &fakeRunner{engine: "podman", rootless: true, keepID: true,
 		liveSecond: map[string][]string{"byre.run=feedface": {boxID}}}
 	s, _, stderr := testStreams("", false)
-	if err := develop(f, s, p, combine(cfg, res), false); err != nil {
+	if err := develop(f, s, p, combine(cfg, res), false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.netnsInits) != 1 || f.netnsInits[0] != boxID+" /usr/local/bin/byre-firewall userns" {
@@ -637,7 +637,7 @@ func TestDevelopKeepIDPath(t *testing.T) {
 func TestDevelopRefusesUnsupportedRootless(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{engine: "podman", rootless: true}
-	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false)
+	err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk)
 	if err == nil || !strings.Contains(err.Error(), "BYRE_ALLOW_ROOTLESS_PODMAN") {
 		t.Fatalf("expected the rootless refusal, got %v", err)
 	}
@@ -740,7 +740,7 @@ func TestDevelopLaunchesTheConfigSavedUnderTheLock(t *testing.T) {
 	str.Err = notice
 	err = saveDuringLockWait(t, p, notice,
 		func() { writeStoreConfig(t, proj, "") }, // the save: the mount is deleted
-		func() error { return develop(f, str, p, rv, false) })
+		func() error { return develop(f, str, p, rv, false, CredentialAsk) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -766,7 +766,7 @@ func TestDevelopRefusesAnEngineChangedUnderTheLock(t *testing.T) {
 		return combine(config.Config{Engine: "podman"}, skills.Resolved{}), nil
 	}
 	f := &fakeRunner{} // the detected engine: docker
-	err := develop(f, discardStreams(), p, rv, false)
+	err := develop(f, discardStreams(), p, rv, false, CredentialAsk)
 	if err == nil || !strings.Contains(err.Error(), "engine changed") || !strings.Contains(err.Error(), "podman") {
 		t.Fatalf("expected the engine-changed refusal naming podman, got %v", err)
 	}
@@ -784,7 +784,7 @@ func TestDevelopAcceptsAutoEngineUnderTheLock(t *testing.T) {
 		return combine(config.Config{Engine: "auto"}, skills.Resolved{}), nil
 	}
 	f := &fakeRunner{}
-	if err := develop(f, discardStreams(), p, rv, false); err != nil {
+	if err := develop(f, discardStreams(), p, rv, false, CredentialAsk); err != nil {
 		t.Fatalf("`auto` must not be read as an engine switch: %v", err)
 	}
 	if len(f.creates) != 1 {
@@ -872,7 +872,7 @@ func TestDevelopRunsNetnsInitsOnceUp(t *testing.T) {
 	// must target the container id resolved from it.
 	id := "cafef00d1234"
 	f := &fakeRunner{liveSecond: map[string][]string{"byre.run=feedface": {id}}}
-	err := develop(f, discardStreams(), p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false)
+	err := develop(f, discardStreams(), p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false, CredentialAsk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -893,7 +893,7 @@ func TestDevelopNetnsInitSkippedWhenBoxNeverRuns(t *testing.T) {
 	// instantly, or a squatter holds the name — it can't hold the nonce): the
 	// poll must exit via the done channel, not hang or fire the hook.
 	f := &fakeRunner{}
-	err := develop(f, discardStreams(), p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false)
+	err := develop(f, discardStreams(), p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false, CredentialAsk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -915,7 +915,7 @@ func TestDevelopNetnsInitFailureStopsTheBox(t *testing.T) {
 		netnsErr:   errors.New("iptables: boom"),
 	}
 	s, _, stderr := testStreams("", false)
-	if err := develop(f, s, p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false); err != nil {
+	if err := develop(f, s, p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(stderr.String(), "failing closed") {
@@ -940,7 +940,7 @@ func TestDevelopNetnsInitRefusesSharedNamespace(t *testing.T) {
 				netMode:    mode,
 			}
 			s, _, stderr := testStreams("", false)
-			if err := develop(f, s, p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false); err != nil {
+			if err := develop(f, s, p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false, CredentialAsk); err != nil {
 				t.Fatal(err)
 			}
 			if len(f.netnsInits) != 0 {
@@ -968,7 +968,7 @@ func TestDevelopNetnsInitSkipsOnUnknownNetworkMode(t *testing.T) {
 		netModeErr: errors.New("inspect: boom"),
 	}
 	s, _, stderr := testStreams("", false)
-	if err := develop(f, s, p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false); err != nil {
+	if err := develop(f, s, p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.netnsInits) != 0 {
@@ -991,7 +991,7 @@ func TestDevelopWorktreeSaysImageBuildsFromMain(t *testing.T) {
 	p.WorkDir = t.TempDir()
 	f := &fakeRunner{}
 	s, _, stderr := testStreams("", false)
-	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), false); err != nil {
+	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	if msg := stderr.String(); !strings.Contains(msg, "main worktree") || !strings.Contains(msg, p.Canonical) {
@@ -1002,7 +1002,7 @@ func TestDevelopWorktreeSaysImageBuildsFromMain(t *testing.T) {
 func TestDevelopNoNetnsSkillNoHelper(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{liveSecond: liveWorkdir(p, "cafef00d1234")}
-	if err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false); err != nil {
+	if err := develop(f, discardStreams(), p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.netnsInits) != 0 {
@@ -1019,7 +1019,7 @@ func TestDevelopNetnsNoNonceSkipsHooks(t *testing.T) {
 	pinNonce(t, "") // randomness unavailable
 	f := &fakeRunner{}
 	s, _, stderr := testStreams("", false)
-	if err := develop(f, s, p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false); err != nil {
+	if err := develop(f, s, p, combine(config.Config{}, netnsSkill("/usr/local/bin/byre-firewall")), false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.netnsInits) != 0 {
@@ -1119,7 +1119,7 @@ func TestDevelopSelfEditWarnsThatAWorktreeStoreIsTheReposStore(t *testing.T) {
 
 	f := &fakeRunner{}
 	s, _, stderr := testStreams("", false)
-	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), true); err != nil {
+	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), true, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	got := stderr.String()
@@ -1137,7 +1137,7 @@ func TestDevelopSelfEditSharingLineIsWorktreeOnly(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{}
 	s, _, stderr := testStreams("", false)
-	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), true); err != nil {
+	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), true, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(stderr.String(), "REPO's") {

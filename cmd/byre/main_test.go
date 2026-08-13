@@ -19,7 +19,7 @@ func recorderApp(calls map[string]string) app {
 	return app{
 		dockerfile: func(_ commands.Streams, dir string) error { return note("dockerfile", dir) },
 		dockerrun:  func(_ commands.Streams, dir string) error { return note("dockerrun", dir) },
-		develop: func(_ commands.Streams, dir, tmpl, agent string, sharedAuth *bool, selfEdit bool) error {
+		develop: func(_ commands.Streams, dir, tmpl, agent string, sharedAuth *bool, selfEdit bool, _ commands.CredentialMode) error {
 			sa := "unset"
 			if sharedAuth != nil {
 				sa = boolStr(*sharedAuth)
@@ -54,7 +54,7 @@ func recorderApp(calls map[string]string) app {
 				boolStr(opts.SkipUIDCheck), boxPath, hostPath}, " "))
 		},
 		installApp: func(_ commands.Streams, box string) error { return note("install-app", box) },
-		worktree: func(_ commands.Streams, dir, name, path string, selfEdit bool) error {
+		worktree: func(_ commands.Streams, dir, name, path string, selfEdit bool, _ commands.CredentialMode) error {
 			return note("worktree", strings.Join([]string{dir, name, path, boolStr(selfEdit)}, " "))
 		},
 		rebuild:          func(_ commands.Streams, dir string) error { return note("rebuild", dir) },

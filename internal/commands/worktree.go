@@ -29,7 +29,7 @@ import (
 // ("sibling" = beside the repo, or a base dir), with the leaf <repo>-<name>;
 // unset, byre refuses rather than guess. Run from the main worktree or a
 // linked one: identity resolves to the main worktree either way.
-func Worktree(s Streams, projectDir, name, path string, selfEdit bool) error {
+func Worktree(s Streams, projectDir, name, path string, selfEdit bool, credMode CredentialMode) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return fmt.Errorf("a worktree name (the branch) is required: byre worktree <name>")
@@ -119,7 +119,7 @@ func Worktree(s Streams, projectDir, name, path string, selfEdit bool) error {
 	// Hand off to develop in the new worktree. If it fails, the worktree is still
 	// valid — retry with `byre develop` there, or drop it with `git worktree
 	// remove` — so we don't roll back a successful creation on a develop error.
-	return Develop(s, target, "", "", nil, selfEdit)
+	return Develop(s, target, "", "", nil, selfEdit, credMode)
 }
 
 // worktreeCreate is the engine-facing half of Worktree: ensure the project

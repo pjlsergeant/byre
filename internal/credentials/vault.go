@@ -65,12 +65,11 @@ const (
 	// entries, an entry ciphertext the value cap plus age overhead.
 	identityReadCap = 16 << 10
 	indexReadCap    = 256 << 10
-	entryReadCap    = MaxFileValue + (64 << 10)
+	entryReadCap    = MaxValue + (64 << 10)
 
-	// MaxEnvValue caps an env-kind value (headroom under MAX_ARG_STRLEN).
-	// MaxFileValue caps a file-kind value, generously.
-	MaxEnvValue  = 64 << 10
-	MaxFileValue = 4 << 20
+	// MaxEnvValue caps an env-kind value (headroom under MAX_ARG_STRLEN);
+	// MaxValue is the file-kind ceiling.
+	MaxEnvValue = 64 << 10
 
 	// payloadHeader is the entry payload format line. Version bumps make an
 	// old byre report unsupported-format rather than misparse.
@@ -446,15 +445,15 @@ func (u *Unlocked) Decrypt(name string) ([]byte, Outcome, error) {
 			return nil, OutcomeMissingValue, fmt.Errorf("credential %s: no value in the vault", name)
 		}
 		// Oversize, FIFO, unreadable: undecryptable, with the cause.
-		return nil, OutcomeEntryUndecryptable, fmt.Errorf("credential %s: %w", name, err)
+		return nil, OutcomeRowUndecryptable, fmt.Errorf("credential %s: %w", name, err)
 	}
 	rd, err := age.Decrypt(bytes.NewReader(b), u.id)
 	if err != nil {
-		return nil, OutcomeEntryUndecryptable, fmt.Errorf("credential %s: corrupt, oversize, or encrypted to a different recipient: %v", name, err)
+		return nil, OutcomeRowUndecryptable, fmt.Errorf("credential %s: corrupt, oversize, or encrypted to a different recipient: %v", name, err)
 	}
 	payload, err := io.ReadAll(io.LimitReader(rd, entryReadCap))
 	if err != nil {
-		return nil, OutcomeEntryUndecryptable, fmt.Errorf("credential %s: corrupt, oversize, or encrypted to a different recipient: %v", name, err)
+		return nil, OutcomeRowUndecryptable, fmt.Errorf("credential %s: corrupt, oversize, or encrypted to a different recipient: %v", name, err)
 	}
 	gotProject, gotName, value, err := parsePayload(payload)
 	if err != nil {
@@ -464,7 +463,7 @@ func (u *Unlocked) Decrypt(name string) ([]byte, Outcome, error) {
 		// The accident guard: a re-labelled or wrong-project file decrypts
 		// to a mismatched stamp and is skipped loudly rather than silently
 		// delivering the wrong value.
-		return nil, OutcomeEntryMismatch, fmt.Errorf("credential %s: the stored value is stamped %q for project %q — a cross-project copy or wrong-project restore? Not delivering it", name, gotName, gotProject)
+		return nil, OutcomeRowMismatch, fmt.Errorf("credential %s: the stored value is stamped %q for project %q — a cross-project copy or wrong-project restore? Not delivering it", name, gotName, gotProject)
 	}
 	return value, "", nil
 }
@@ -529,7 +528,7 @@ func (v *Vault) Set(name string, value []byte, kind string) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
-	if err := ValidateValue(value, kind); err != nil {
+	if err := ValidateValue(value, Kind(kind)); err != nil {
 		return fmt.Errorf("credential %s: %w", name, err)
 	}
 	idx, err := v.ReadIndex()
@@ -614,22 +613,22 @@ func (v *Vault) EntryNames() []string {
 	return names
 }
 
-// ValidateValue holds a value to its declared kind's constraints: env-kind
-// values are NUL-free and capped at MaxEnvValue (headroom under
-// MAX_ARG_STRLEN); file-kind (and unknown-kind) values are arbitrary bytes
-// capped at MaxFileValue.
-func ValidateValue(value []byte, kind string) error {
-	if kind == "env" {
+// ValidateValue holds a value to its kind's constraints: an env-kind value is
+// NUL-free and capped at MaxEnvValue, because an environment variable cannot
+// carry NUL through the launcher's export and MAX_ARG_STRLEN bounds the rest;
+// a file-kind value is arbitrary bytes up to the per-value ceiling.
+func ValidateValue(value []byte, kind Kind) error {
+	if kind == KindEnv {
 		if bytes.IndexByte(value, 0) >= 0 {
-			return errors.New("an env value cannot contain NUL bytes (use kind = \"file\" for binary content)")
+			return errors.New("an env credential cannot contain NUL bytes (use the encrypted-file: scheme for binary content)")
 		}
 		if len(value) > MaxEnvValue {
-			return fmt.Errorf("env value is %d bytes; the cap is %d (use kind = \"file\" for large content)", len(value), MaxEnvValue)
+			return fmt.Errorf("env credential is %d bytes; the cap is %d (use the encrypted-file: scheme for large content)", len(value), MaxEnvValue)
 		}
 		return nil
 	}
-	if len(value) > MaxFileValue {
-		return fmt.Errorf("value is %d bytes; the cap is %d", len(value), MaxFileValue)
+	if len(value) > MaxValue {
+		return fmt.Errorf("credential is %d bytes; the cap is %d", len(value), MaxValue)
 	}
 	return nil
 }

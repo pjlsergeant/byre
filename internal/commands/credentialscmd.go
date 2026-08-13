@@ -140,7 +140,7 @@ func CredentialsSet(s Streams, projectDir string, name string) error {
 	} else {
 		// Piped: the value is stdin whole, bounded a byte over the cap so an
 		// oversize pipe is refused rather than silently truncated.
-		b, err := io.ReadAll(io.LimitReader(s.In, credentials.MaxFileValue+1))
+		b, err := io.ReadAll(io.LimitReader(s.In, credentials.MaxValue+1))
 		if err != nil {
 			return err
 		}

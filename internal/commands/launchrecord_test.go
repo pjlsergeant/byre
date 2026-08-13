@@ -513,7 +513,7 @@ func TestDevelopWritesTheLaunchRecordAndLabelsTheContainer(t *testing.T) {
 	f := &fakeRunner{}
 	s, _, _ := testStreams("", false)
 	rv := combine(config.Config{Base: "golang:1.26-bookworm"}, skills.Resolved{})
-	if err := develop(f, s, p, rv, false); err != nil {
+	if err := develop(f, s, p, rv, false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.creates) != 1 {
@@ -548,7 +548,7 @@ func TestLaunchLabelSurvivesASpoofingRunArg(t *testing.T) {
 	f := &fakeRunner{}
 	s, _, _ := testStreams("", false)
 	rv := combine(config.Config{RunArgs: []string{"--label", forged}}, skills.Resolved{})
-	if err := develop(f, s, p, rv, false); err != nil {
+	if err := develop(f, s, p, rv, false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	var seen []string
@@ -576,7 +576,7 @@ func TestLaunchRecordDigestFailureIsRecordedNotGuessed(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{imageDigestErr: errors.New("no such image")}
 	s, _, stderr := testStreams("", false)
-	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), false); err != nil {
+	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	var hash string
@@ -609,7 +609,7 @@ func TestLaunchRecordWriteFailureDegradesNeverBlocks(t *testing.T) {
 	}
 	f := &fakeRunner{}
 	s, _, stderr := testStreams("", false)
-	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), false); err != nil {
+	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk); err != nil {
 		t.Fatalf("develop must not fail over its own bookkeeping: %v", err)
 	}
 	if !strings.Contains(stderr.String(), "couldn't write the launch record") {

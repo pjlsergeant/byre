@@ -186,7 +186,7 @@ func TestDecryptCorruptEntry(t *testing.T) {
 	}
 	u, _ := v.Unlock("pw")
 	_, oc, err := u.Decrypt("bad")
-	if oc != OutcomeEntryUndecryptable || err == nil {
+	if oc != OutcomeRowUndecryptable || err == nil {
 		t.Fatalf("corrupt entry: outcome=%s err=%v", oc, err)
 	}
 }
@@ -202,7 +202,7 @@ func TestDecryptOversizeEntryBounded(t *testing.T) {
 	}
 	u, _ := v.Unlock("pw")
 	_, oc, err := u.Decrypt("big")
-	if oc != OutcomeEntryUndecryptable || err == nil {
+	if oc != OutcomeRowUndecryptable || err == nil {
 		t.Fatalf("oversize entry: outcome=%s err=%v", oc, err)
 	}
 }
@@ -232,7 +232,7 @@ func TestDecryptForeignRecipient(t *testing.T) {
 	}
 	u, _ := v.Unlock("pw")
 	_, oc, derr := u.Decrypt("stripe")
-	if oc != OutcomeEntryUndecryptable || derr == nil {
+	if oc != OutcomeRowUndecryptable || derr == nil {
 		t.Fatalf("foreign-recipient entry: outcome=%s err=%v", oc, derr)
 	}
 }
@@ -256,7 +256,7 @@ func TestDecryptCrossProjectMismatch(t *testing.T) {
 		t.Fatalf("Unlock: %v", err)
 	}
 	_, oc, derr := u.Decrypt("stripe")
-	if oc != OutcomeEntryMismatch || derr == nil {
+	if oc != OutcomeRowMismatch || derr == nil {
 		t.Fatalf("cross-project entry: outcome=%s err=%v", oc, derr)
 	}
 }
@@ -273,7 +273,7 @@ func TestDecryptRenamedEntryMismatch(t *testing.T) {
 	}
 	u, _ := v.Unlock("pw")
 	_, oc, err := u.Decrypt("github")
-	if oc != OutcomeEntryMismatch || err == nil {
+	if oc != OutcomeRowMismatch || err == nil {
 		t.Fatalf("re-labelled entry: outcome=%s err=%v", oc, err)
 	}
 }
@@ -388,7 +388,7 @@ func TestSetValidatesEnvValues(t *testing.T) {
 	if err := v.Set("a", []byte("has\x00nul"), "file"); err != nil {
 		t.Fatalf("file kind with NUL: %v", err)
 	}
-	if err := v.Set("b", bytes.Repeat([]byte("x"), MaxFileValue+1), "file"); err == nil || !strings.Contains(err.Error(), "cap") {
+	if err := v.Set("b", bytes.Repeat([]byte("x"), MaxValue+1), "file"); err == nil || !strings.Contains(err.Error(), "cap") {
 		t.Fatalf("oversize file value: %v", err)
 	}
 }

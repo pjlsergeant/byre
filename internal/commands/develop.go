@@ -49,7 +49,8 @@ const ExitRefused = 3
 // selfEdit (--self-edit) bind-mounts this project's host-side store
 // (~/.byre/projects/<id>/, not all of ~/.byre) read-write at selfEditTarget so
 // the agent can edit its own byre.config — a deliberate grant.
-func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAuth *bool, selfEdit bool) error {
+// credMode is --credentials: how this launch gets its passphrases.
+func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAuth *bool, selfEdit bool, credMode CredentialMode) error {
 	if err := requireNonRootHost(s.Err); err != nil {
 		return err
 	}
@@ -114,14 +115,14 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 		// authors under a box-writable root, which is the shadow precondition.
 		dataf(s.Err, "%s\n", disclosure)
 	}
-	return develop(runner.New(eng, engExe), s, paths, rv, selfEdit)
+	return develop(runner.New(eng, engExe), s, paths, rv, selfEdit, credMode)
 }
 
 // develop is the engine-facing core of Develop — the live-session fast path,
 // then build + seed under the setup lock, then the foreground run and its
 // exit-status mapping. Split from Develop (which does the host-side resolution
 // and onboarding) so it can run end-to-end against a fake engine.
-func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEdit bool) error {
+func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEdit bool, credMode CredentialMode) error {
 	// Mode-select (ADR 0032): host identity on rootful engines, the generic
 	// keep-id identity under rootless Podman — or the old refusal where the
 	// engine can't do the mapping. Everything identity-shaped below (image
@@ -177,10 +178,17 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	}
 	// Credential unlock (launch step 1) is deliberately PRE-lock: a prompt
 	// under the setup lock would stall sibling worktrees on a human, and the
-	// scrypt unwrap is the expensive step. The declared set shown is the
-	// pre-lock read's; the decrypt below uses the authoritative under-lock
-	// declarations (the bytes delivered are those present at decrypt time).
-	unlock := promptCredentialUnlock(s, paths, rv.cfg.Credentials)
+	// scrypt unwrap is the expensive step. The groups shown are the pre-lock
+	// read's; the decrypt below runs against the authoritative under-lock
+	// re-read, and a row that appeared in between stops the launch rather
+	// than being delivered unasked-for.
+	if rv.credErr != nil {
+		return fmt.Errorf("credentials: %w", rv.credErr)
+	}
+	unlocked, err := unlockCredentials(s, credMode, rv.credFiles)
+	if err != nil {
+		return err
+	}
 
 	// Setup (generate + build + seed) AND container creation are serialized by
 	// the lock; the interactive session that follows is not (the lock is
@@ -197,7 +205,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	// re-read under the lock has happened (prep.rv is that re-read). prep's
 	// fields are read-only from here.
 	prep, err := setupLocked(s.Err, paths.LockFile, func() (preparedLaunch, error) {
-		return prepareLaunchLocked(r, s, paths, rv, image, selfEdit, ident, unlock)
+		return prepareLaunchLocked(r, s, paths, rv, image, selfEdit, ident, unlocked, credMode == CredentialSkip)
 	})
 	if err != nil {
 		return err
@@ -246,10 +254,13 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	}
 	// Credential delivery (launch step 3) runs concurrently with the
 	// attached session, like the netns hooks: the box's launcher waits
-	// bounded (fail-open) for the sentinel while this execs the framed
-	// stream into the baked receiver. The wait after the session keeps the
+	// bounded for the sentinel while this execs the framed stream into the
+	// baked receiver. A failure STOPS the box, the same fail-closed shape
+	// the netns hooks take — the launcher would exit on the missing
+	// sentinel anyway, and a session left attached to a box that is about
+	// to die reports the wrong cause. The wait after the session keeps the
 	// goroutine from outliving develop (and its s.Err writes).
-	var credWait func()
+	var credWait func() error
 	if len(prep.creds.values) > 0 {
 		done := make(chan struct{})
 		finished := make(chan struct{})
@@ -260,16 +271,23 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		// timestamp taken inside it could postdate the box start and make
 		// the delivered/late measurement underestimate.
 		epoch := time.Now()
+		var injectErr error
 		go func() {
 			defer close(finished)
-			runCredentialInject(r, s.Err, workdirLabel(paths), prep.containerID, ident, stream, epoch, done)
+			if injectErr = runCredentialInject(r, s.Err, workdirLabel(paths), prep.containerID, ident, stream, epoch, done); injectErr != nil {
+				fmt.Fprintf(s.Err, "byre: %v\n", injectErr)
+				stopCredentialsClosed(r, s.Err, prep.containerID)
+			}
 		}()
-		credWait = func() { close(done); <-finished }
+		// Reading injectErr here is ordered by the channel close the
+		// goroutine defers, which happens after the assignment.
+		credWait = func() error { close(done); <-finished; return injectErr }
 	}
 
 	runErr := r.StartAttach(containerName(paths))
+	var credErr error
 	if credWait != nil {
-		credWait()
+		credErr = credWait()
 	}
 	if netnsWait != nil {
 		netnsWait()
@@ -299,6 +317,11 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 			reportSelfEditChanges(s.Err, paths.Dir, store)
 		}
 		reportExit(s.Err, watch, snapshotExit(paths, prep.rv.gitExe))
+	}
+	// A failed delivery is a failed LAUNCH, and its cause outranks the exit
+	// status of an agent byre just stopped out from under.
+	if credErr != nil {
+		return credErr
 	}
 	if runErr != nil {
 		if len(live) > 0 {
@@ -343,7 +366,7 @@ type preparedLaunch struct {
 // container Create and record reaping included, because the created container
 // is the session-ownership marker (never hoist them out). The preparedLaunch
 // is built only on the all-success path.
-func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv resolved, image string, selfEdit bool, ident runner.Identity, unlock *unlockResult) (preparedLaunch, error) {
+func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv resolved, image string, selfEdit bool, ident runner.Identity, unlocked unlockedFiles, credSkipped bool) (preparedLaunch, error) {
 	none := preparedLaunch{}
 	// Re-establish enrollment UNDER the lock before any store/engine mutation.
 	// develop resolved config/skills BEFORE taking the lock, so a concurrent
@@ -383,10 +406,16 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 		return none, err
 	}
 	// Credential decrypt (launch step 2) — under the lock, against the
-	// authoritative declarations. A deliverable set adds the session tmpfs
-	// and arms the launcher's bounded fail-open wait; every other outcome
-	// leaves the launch exactly as it was (no flag, no wait, no tmpfs).
-	creds := decryptCredentialsLocked(s.Err, rv.cfg.Credentials, unlock)
+	// authoritative cascade re-read. A deliverable set adds the session
+	// tmpfs and arms the launcher's bounded fail-CLOSED wait; a failure
+	// here stops the launch, before anything is built.
+	if rv.credErr != nil {
+		return none, fmt.Errorf("credentials: %w", rv.credErr)
+	}
+	creds, err := decryptCredentialsLocked(rv.credFiles, unlocked, credSkipped)
+	if err != nil {
+		return none, err
+	}
 	if len(creds.values) > 0 {
 		params.Tmpfs = append(params.Tmpfs, credTmpfs(creds, ident, r.Engine()))
 		// Set only when a delivery is in flight; persists with the
