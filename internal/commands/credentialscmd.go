@@ -706,6 +706,22 @@ func CredentialsList(s Streams, projectDir string) error {
 		// A broken row is worth saying here, where the user is looking at the
 		// set: it stops the next develop, and this is where they see why.
 		fmt.Fprintf(s.Err, "byre: %v\n", gerr)
+		// And it is the page's QUALIFIER, not a footnote: one unreadable row
+		// takes the whole resolution down (groups is nil), so every delivery
+		// claim computed below it would come off an empty winning set — which
+		// is how every healthy row came to be told it was "replaced by
+		// encrypted:[…]" in its own file, by itself. The rows still render
+		// what the files say; what they no longer carry is a claim this read
+		// cannot make.
+		fmt.Fprintln(s.Out, credentialListUnresolved)
+		declared := declaredCredentialRows(files)
+		for _, d := range declared {
+			fmt.Fprintf(s.Out, "%s\t%s\t%s\t%s\n", d.key, d.kind, d.source, credentials.ValueState(true))
+		}
+		if len(declared) == 0 {
+			fmt.Fprintln(s.Out, "no readable credential rows in this project's cascade.")
+		}
+		return nil
 	}
 	rows := 0
 	for _, g := range groups {
@@ -733,22 +749,26 @@ func CredentialsList(s Streams, projectDir string) error {
 	return nil
 }
 
+// credentialListUnresolved qualifies a listing whose cascade would not
+// resolve. The rows a file declares are still true; which of them the box gets
+// is not knowable until the row named on stderr is repaired.
+const credentialListUnresolved = "a credential row in this cascade cannot be read (above), so what the cascade delivers cannot be resolved — the rows below are what the files declare, without delivery."
+
 // disabledCredentialRow is a credential a file declares that the cascade
-// does not deliver: where its value sits, and what takes it away.
+// does not deliver: where its value sits, and what takes it away. reason is
+// empty on a listing that could not resolve delivery at all.
 type disabledCredentialRow struct{ key, kind, source, reason string }
 
-func disabledCredentialRows(files []config.CascadeFile, live []config.CredentialFile) []disabledCredentialRow {
-	delivered := map[string]bool{}
-	for _, g := range live {
-		for _, r := range g.Rows {
-			delivered[r.Key] = true
-		}
-	}
+// declaredCredentialRows are the credential rows the cascade's FILES carry —
+// key, kind, and the file that declares it — deduped by key, root-most
+// declaration first. It makes no claim about delivery, which is what makes it
+// the honest listing when the resolution that decides delivery failed.
+func declaredCredentialRows(files []config.CascadeFile) []disabledCredentialRow {
 	seen := map[string]bool{}
 	var out []disabledCredentialRow
 	for _, f := range files {
 		for _, k := range sortedEnvKeys(f.Cfg.EnvFromHost) {
-			if delivered[k] || seen[k] {
+			if seen[k] {
 				continue
 			}
 			row, ok, err := config.ParseEncryptedRow(k, f.Cfg.EnvFromHost[k])
@@ -760,9 +780,26 @@ func disabledCredentialRows(files []config.CascadeFile, live []config.Credential
 				key:    k,
 				kind:   string(row.Kind),
 				source: credentialDisplay(f.Label),
-				reason: credentialNotDeliveredReason(files, k),
 			})
 		}
+	}
+	return out
+}
+
+func disabledCredentialRows(files []config.CascadeFile, live []config.CredentialFile) []disabledCredentialRow {
+	delivered := map[string]bool{}
+	for _, g := range live {
+		for _, r := range g.Rows {
+			delivered[r.Key] = true
+		}
+	}
+	var out []disabledCredentialRow
+	for _, d := range declaredCredentialRows(files) {
+		if delivered[d.key] {
+			continue
+		}
+		d.reason = credentialNotDeliveredReason(files, d.key)
+		out = append(out, d)
 	}
 	return out
 }

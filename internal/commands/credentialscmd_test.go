@@ -541,6 +541,54 @@ func TestCredentialsListNamesWhatTakesTheRow(t *testing.T) {
 	}
 }
 
+// One unreadable row takes the WHOLE resolution down (EncryptedRows returns
+// no groups at all), and the not-delivered classification is computed from
+// that empty set — so every healthy row in the cascade was told it had been
+// "replaced by encrypted:[…]" in its own file, by itself. The rows still
+// render; the page says delivery is unknown instead of guessing it wrong.
+func TestCredentialsListDoesNotSlanderHealthyRowsWhenOneIsBroken(t *testing.T) {
+	_, proj := testPaths(t)
+	var out, errBuf bytes.Buffer
+	s := Streams{Out: &out, Err: &errBuf, In: strings.NewReader(""), TTY: true}
+	passphraseSeam(t, "pw", "pw", "v")
+	if err := CredentialsSet(s, proj, "STRIPE_KEY", false, ""); err != nil {
+		t.Fatal(err)
+	}
+	// The broken row rides a LAYER, so the project's healthy row is untouched
+	// by the edit that breaks the read: a credential on the one env key the
+	// delivery stream reserves.
+	layerPath := config.LayerPath(mustHome(t), "acme")
+	if err := hostopen.PlainMkdirAll(filepath.Dir(layerPath), 0o755, hostopen.StoreOwned); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.AtomicWrite(layerPath, "[env_from_host]\n"+config.ReservedCredentialItem+" = \"encrypted:AAAA\"\n"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(projectConfigPath(t, proj))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := config.AtomicWrite(projectConfigPath(t, proj), "extends = \"acme\"\n"+string(raw)); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := CredentialsList(s, proj); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errBuf.String(), config.ReservedCredentialItem+"\" is reserved") {
+		t.Fatalf("the broken row must still be named on stderr: %s", errBuf.String())
+	}
+	if !strings.Contains(out.String(), credentialListUnresolved) {
+		t.Fatalf("the page must carry the qualifier: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "STRIPE_KEY\tenv\tproject\tset") {
+		t.Fatalf("the healthy row must still render: %s", out.String())
+	}
+	if strings.Contains(out.String(), "not delivered") {
+		t.Fatalf("a healthy row must not be told it was replaced by itself: %s", out.String())
+	}
+}
+
 func mustHome(t *testing.T) string {
 	t.Helper()
 	home, err := project.Home()
