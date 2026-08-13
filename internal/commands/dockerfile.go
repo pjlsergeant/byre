@@ -87,6 +87,17 @@ func DockerRun(s Streams, projectDir string) error {
 	if err != nil {
 		return err
 	}
+	// A cascade whose credential rows byre cannot read yields no gate to
+	// print, and the rows are still declared — so a command printed anyway
+	// would launch a box that declares credentials and waits for none. That
+	// is the silent credential-less run this whole gate exists to refuse, and
+	// it would come out of the one command whose entire contract is printing
+	// what develop would run. develop refuses this config outright (its own
+	// credErr check is unconditional — even --credentials=skip does not get
+	// past it), so this refuses too, before any runnable line reaches stdout.
+	if rv.credErr != nil {
+		return fmt.Errorf("credentials: %w — byre prints no run command for this project: the rows are declared, so the command would carry no credential gate and the box would run without the values its config names. Fix the row, or take it out with `byre credentials unset`, then re-run. `byre develop` refuses this config for the same reason", rv.credErr)
+	}
 	roots := boxWritableRoots(paths)
 	engine, ident := resolveEngineIdentity(rv.cfg, roots)
 	image := imageTag(paths.ID, ident.UID, ident.GID)
@@ -124,9 +135,6 @@ func DockerRun(s Streams, projectDir string) error {
 	// over an exec into the box, and nothing outside byre does.
 	if credRows > 0 {
 		fmt.Fprintf(s.Err, "byre: note — this project declares %d credential row(s) byre delivers after launch; started with just this command, the box stops at its credential gate (~20s). Deliver them with `byre develop`, or drop the -e BYRE_CRED_EXPECT and the /run/byre tmpfs to launch deliberately without them.\n", credRows)
-	}
-	if rv.credErr != nil {
-		fmt.Fprintf(s.Err, "byre: note — byre cannot read this project's credential rows (%v), so this command carries no credential gate; `byre develop` refuses the launch outright.\n", rv.credErr)
 	}
 	return nil
 }

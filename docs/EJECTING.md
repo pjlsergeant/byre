@@ -35,4 +35,7 @@ so an ejected box waits and then exits instead of running without the
 values its config declares. There is no eject for the delivery itself:
 it needs the passphrase, and that is `byre develop`. To run without
 them, drop the `-e BYRE_CRED_EXPECT` and the `/run/byre` tmpfs from the
-command.
+command. If byre cannot read a declared row at all (a reserved key, an
+unreadable `[credentials]` identity), `byre dockerrun` prints no command
+and says why: without the gate the line would launch a box that declares
+credentials and waits for none. `byre develop` refuses the same config.

@@ -664,6 +664,42 @@ func TestDockerRunCarriesTheCredentialGate(t *testing.T) {
 	}
 }
 
+// A credential row byre cannot READ arms no gate — and the rows are still
+// declared, so a command printed anyway would launch a box that declares
+// credentials and waits for none. dockerrun refuses instead, the way develop
+// does, rather than handing over a runnable ungated line with a warning
+// beside it.
+func TestDockerRunRefusesUnreadableCredentialRows(t *testing.T) {
+	// The two shapes that reach this gate. A DAMAGED payload is not among
+	// them: env_from_host's own scheme validation refuses it at config load,
+	// so the command never resolves at all — also fail-closed, one stage
+	// earlier.
+	for _, tc := range []struct {
+		name, body, frag string
+	}{
+		{"reserved key", "[env_from_host]\nmanifest = \"encrypted:AAAA\"\n", "reserved"},
+		{"unreadable identity", "[env_from_host]\nA = \"encrypted:AAAA\"\n\n[credentials]\nidentity = \"!!\"\nrecipient = \"age1x\"\n", "identity is not valid base64"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, proj := testPaths(t)
+			if err := config.AtomicWrite(filepath.Join(p.Dir, config.ProjectConfigName), tc.body); err != nil {
+				t.Fatal(err)
+			}
+			s, out, errBuf := testStreams("", false)
+			err := DockerRun(s, proj)
+			if err == nil {
+				t.Fatal("a config whose credential rows byre cannot read must refuse, not print an ungated command")
+			}
+			if !strings.Contains(err.Error(), tc.frag) || !strings.Contains(err.Error(), "byre credentials unset") {
+				t.Fatalf("the refusal must name the broken row and the remedy: %v", err)
+			}
+			if out.String() != "" || strings.Contains(errBuf.String(), "docker run") {
+				t.Fatalf("no runnable command may escape the refusal:\nout=%q\nerr=%q", out.String(), errBuf.String())
+			}
+		})
+	}
+}
+
 // No declared credentials, no gate and no note.
 func TestDockerRunWithoutCredentialsStaysQuiet(t *testing.T) {
 	_, proj := testPaths(t)
