@@ -15,7 +15,7 @@ names, no join key, no involved-set computation, no orphan states, no
 layer-vault scope machinery.
 
 ```toml
-[env]
+[env_from_host]
 STRIPE_KEY = "encrypted:<age blob, base64>"        # delivered as env var
 TLS_CERT   = "encrypted-file:<age blob, base64>"   # delivered as tmpfs file, path in env var
 
@@ -23,6 +23,17 @@ TLS_CERT   = "encrypted-file:<age blob, base64>"   # delivered as tmpfs file, pa
 identity  = "<scrypt-passphrase-wrapped age X25519 identity, base64>"
 recipient = "age1..."   # cleartext public half; lets set encrypt without the passphrase
 ```
+
+The rows live in `env_from_host`, NOT `[env]` — that is where the grilling
+ratified the scheme model, and the mechanics agree: env_from_host is a
+closed scheme set (`git:`/`env:`/`tz:`) gaining two members, its `""`
+disable is already the ratified per-project override idiom, its values are
+runtime-resolved and never baked into the image (an `[env]` row rides the
+Dockerfile ENV bake — ciphertext in the image and a rebuild on every
+re-set), and `[env]` literals stay unrestricted (a literal beginning
+"encrypted:" stays representable). Routing: encrypted rows are excluded
+from the ordinary env_from_host `-e` export and delivered ONLY via the
+tmpfs/stdin channel.
 
 - The `[credentials]` block is FILE-LOCAL: it belongs to the physical file
   and never cascade-merges. A project block never decrypts a layer's rows.
@@ -99,7 +110,11 @@ are not bound to their row, so swap/replay/transplant need no recipient.)
 Per-value plaintext cap 256 KiB. base64+age overhead keeps several such
 values comfortably inside the existing 1 MiB config read bound, so no
 config-infrastructure bound changes. The branch's 4 MiB file-credential cap
-was never released; it just shrinks.
+was never released; it just shrinks. Kind-specific rules survive from the
+vault design (supervisor ruling, phase A follow-up): env-kind values stay
+NUL-free and capped at the existing MaxEnvValue 64 KiB (an env var cannot
+carry NUL through the launcher export); the 256 KiB cap is the file-kind
+ceiling. Enforced at set; the payload's own cap backstops decrypt.
 
 ## Preset bridge residual (disclosed, accepted)
 
