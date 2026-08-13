@@ -330,26 +330,7 @@ func CredentialsSet(s Streams, projectDir, key string, fileKind bool, layer stri
 	if len(value) == 0 {
 		return errors.New("refusing to store an empty value (byre credentials unset removes a row)")
 	}
-	if err := credentials.ValidateValue(value, kind); err != nil {
-		return fmt.Errorf("credential %s: %w", key, err)
-	}
-	blob, err := credentials.EncryptValue(block.Recipient, key, kind, value)
-	if err != nil {
-		return err
-	}
-	row, err := config.FormatEncryptedRow(kind, blob)
-	if err != nil {
-		return err
-	}
-
-	if err := writeCredTarget(s, t, f, func(doc *tomldoc.Doc) error {
-		if newIdentity != nil {
-			if err := setCredentialsBlock(doc, newIdentity, block.Recipient); err != nil {
-				return err
-			}
-		}
-		return doc.SetKey(envFromHostTable, key, strconv.Quote(row))
-	}); err != nil {
+	if _, err := writeCredentialRow(s, t, f, key, kind, value, block, newIdentity); err != nil {
 		return err
 	}
 	fmt.Fprintf(s.Err, "byre: credential %s set in the %s (%s): %d bytes, encrypted to that file's recipient.\n",
@@ -359,6 +340,42 @@ func CredentialsSet(s Streams, projectDir, key string, fileKind bool, layer stri
 	}
 	fmt.Fprintln(s.Err, "byre: applies on the next develop.")
 	return nil
+}
+
+// writeCredentialRow is the value half of `set`, and the ONE owner of it: hold
+// the value to its kind's rules, encrypt it to the FILE's recipient, and
+// compare-and-swap the row in — together with the identity, when this write is
+// the one that mints it (newIdentity nil = the file already had a block).
+// Returns the row source that landed, which the editor puts into its working
+// state so a later whole-file save writes the value back unchanged.
+//
+// Every surface that sets a credential goes through here. A second spelling of
+// encrypt-and-CAS would be a second place for the identity and its rows to end
+// up in different generations — the exact split the compare-and-swap exists to
+// prevent — so the editor calls this rather than reimplementing it.
+func writeCredentialRow(s Streams, t credTarget, f credFile, key string, kind credentials.Kind, value []byte, block config.CredentialsBlock, newIdentity []byte) (string, error) {
+	if err := credentials.ValidateValue(value, kind); err != nil {
+		return "", fmt.Errorf("credential %s: %w", key, err)
+	}
+	blob, err := credentials.EncryptValue(block.Recipient, key, kind, value)
+	if err != nil {
+		return "", err
+	}
+	row, err := config.FormatEncryptedRow(kind, blob)
+	if err != nil {
+		return "", err
+	}
+	if err := writeCredTarget(s, t, f, func(doc *tomldoc.Doc) error {
+		if newIdentity != nil {
+			if err := setCredentialsBlock(doc, newIdentity, block.Recipient); err != nil {
+				return err
+			}
+		}
+		return doc.SetKey(envFromHostTable, key, strconv.Quote(row))
+	}); err != nil {
+		return "", err
+	}
+	return row, nil
 }
 
 // mintCredentialIdentity creates the file's identity: a fresh X25519 key
