@@ -141,11 +141,13 @@ in those words.
 ## Display
 
 Long values elide everywhere config is rendered (`encrypted:[…]`), wanted
-for plaintext API keys anyway. The editor shows credential rows on the Env
+for plaintext API keys anyway. TO SHIP (step 5, phase C — not yet built; at
+HEAD the Env screen renders credential rows elided/read-only and refuses
+the picker, naming the CLI): the editor shows credential rows on the Env
 screen: Source picker gains the encrypted kinds, Value input is masked,
 saving a value through the form is the `set` path (CAS + write-target rules
 apply). First credential in a file prompts to create that file's passphrase
-(the existing vault-creation modal, repurposed per-file). Status shows
+(a per-file passphrase-creation modal). Status shows
 launch-time unlock/delivery outcome only — no live-state field (ruled
 earlier, unchanged).
 
