@@ -825,19 +825,25 @@ func TestEditorAdminMintsOnceAndWritesDecryptableRows(t *testing.T) {
 	}
 }
 
-// Minting is what the passphrase is FOR, so an empty one is refused in the
-// shared words rather than producing an identity that protects nothing.
-func TestEditorAdminRefusesAnEmptyPassphraseWhenMinting(t *testing.T) {
+// A write arriving with no passphrase for a file with no identity is ONE
+// situation: the editor asked HasIdentity at accept, was told yes, and the
+// block went away before the write. The refusal names that, because nobody
+// chose an empty passphrase here and "an empty passphrase is worthless" would
+// describe a decision the user never made.
+func TestEditorAdminRefusesWhenTheIdentityVanishedUnderTheForm(t *testing.T) {
 	credentials.SetWorkFactorForTesting(10)
 	p, _ := testPaths(t)
 	var errBuf bytes.Buffer
 	a := &credentialAdmin{s: ttyStreams(&errBuf), t: projectCredTarget(p)}
 	_, err := a.Set(configui.CredentialWrite{Key: "STRIPE_KEY", Kind: credentials.KindEnv, Value: []byte("sk-live-1")})
-	if err == nil || !strings.Contains(err.Error(), credentials.EmptyPassphraseWorthless) {
-		t.Fatalf("err = %v, want the empty-passphrase refusal", err)
+	if err == nil || !strings.Contains(err.Error(), "had a credentials identity when this value was accepted") {
+		t.Fatalf("err = %v, want the identity-changed rule", err)
+	}
+	if strings.Contains(err.Error(), credentials.EmptyPassphraseWorthless) {
+		t.Fatalf("err = %v — the empty-passphrase refusal describes a decision nobody made here", err)
 	}
 	if _, serr := os.Stat(filepath.Join(p.Dir, config.ProjectConfigName)); serr == nil {
-		t.Fatal("a refused mint still wrote the config file")
+		t.Fatal("a refused write still wrote the config file")
 	}
 }
 

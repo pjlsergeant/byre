@@ -167,7 +167,12 @@ func (a *credentialAdmin) Set(w configui.CredentialWrite) (configui.CredentialRe
 	block, newIdentity := f.block, []byte(nil)
 	if !f.hasBlock {
 		if w.Passphrase == "" {
-			return configui.CredentialResult{}, errors.New(credentials.EmptyPassphraseWorthless)
+			// The editor asked HasIdentity at accept and was told yes, so it
+			// collected no passphrase; the block is gone now. Name that, rather
+			// than the empty-passphrase refusal — nobody chose an empty
+			// passphrase here, and being told one is worthless explains nothing
+			// about what happened.
+			return configui.CredentialResult{}, fmt.Errorf("%s (%s) had a credentials identity when this value was accepted and has none now — nothing was written; close the form, re-open the row, and enter the value again", a.t.label, a.t.path)
 		}
 		wrapped, recipient, err := credentials.NewIdentity(w.Passphrase)
 		if err != nil {
