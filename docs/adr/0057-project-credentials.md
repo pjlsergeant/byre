@@ -120,7 +120,7 @@ same stance the vault design took toward its own store, arrived at again.
    passphrase is spent on it — one rule, `DeliversCredential`, spelled once and
    asked by every surface that counts credentials.
 2. Print the plan line before asking for anything —
-   `Unlocking credentials: default.config (2), layer acme (1), project (3)` —
+   `unlocking credentials: default (2), layer acme (1), project (3)` —
    so a user knows how many passphrases they are about to be asked for. Then
    prompt per contributing file, root-most first. Each entered passphrase is
    first tried against every still-locked identity, because people reuse them;
@@ -131,7 +131,10 @@ same stance the vault design took toward its own store, arrived at again.
    the setup lock — each stops the launch naming the file, the row, and the
    remedy. `--credentials=ask|skip|stdin`: `ask` is the default; `skip` is the
    one deliberate way to launch without them; `stdin` reads passphrase lines,
-   each tried against every still-locked identity in order.
+   each tried against every still-locked identity in order and each counting
+   as an attempt against the root-most file still locked, under that same
+   three-attempt bound. What the unlock consented to is what the decrypt
+   delivers: the row set the plan line counted, no more and no less.
 4. Delivery: decrypt under the setup lock, stream framed base64 over container
    stdin to the baked receiver, land on the per-session tmpfs. Never `docker
    -e`, never an image layer, volume, or writable layer. The export map rides

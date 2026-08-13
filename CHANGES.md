@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+- **A project can now carry its own credentials, encrypted, in its config
+  files.** An `env_from_host` row whose value is `encrypted:` (arrives as an
+  environment variable) or `encrypted-file:` (arrives as a file on the box's
+  session tmpfs, its path in the variable) holds an age ciphertext; a
+  file-local `[credentials]` block holds the identity that opens THAT file's
+  rows, wrapped under a passphrase, beside the cleartext recipient new values
+  encrypt to. Nothing merges across files: a project's identity can never
+  open a layer's row. `byre credentials set|unset|rekey|list` writes and
+  reads them (`set --layer NAME` targets a layer; the first `set` mints the
+  identity; setting an inherited value names the file it writes to and the
+  projects that share it before the value is accepted); the Env screen in
+  `byre config` authors the same rows through the same write path, masked,
+  with the per-file passphrase asked once. Resolution is the ordinary cascade
+  merge — a nearer `KEY = ""` disables, an `[env]` literal still wins — so
+  there is no second set of precedence rules to learn.
+
+  Launching is **fail-closed**: `byre develop` prints what it is about to
+  unlock, asks once per contributing file (a reused passphrase is entered
+  once, root-most first, three attempts), decrypts under the setup lock, and
+  streams the values into the box over container stdin onto a per-session
+  tmpfs — never `-e`, never an image layer or volume. A declared credential
+  that cannot be delivered stops the launch naming the file, the row and the
+  remedy, and the box's own launcher will not start the agent without the
+  values it was promised. `--credentials=ask|skip|stdin` chooses how the
+  passphrases arrive; `skip` is the one deliberate way to launch without
+  them, and it says so on screen and in the launch record. The record carries
+  keys and outcomes, never values.
+
+  `byre preset apply`'s review annotates credential changes at ⚠ weight: a
+  changed row where either side is a credential ("if you didn't rotate this
+  credential, reject"), a row that appeared or vanished, and any change to a
+  file's `[credentials]` identity or recipient — which is otherwise invisible.
+  Ciphertext elides to its scheme everywhere it is shown, and values are
+  never rendered.
+
 - **The already-running refusal now tells you how to get back in — or how to
   clear a dead marker.** Its first remedy is the re-attach command with the
   detach keys pinned (`docker attach --detach-keys=ctrl-p,ctrl-q <id>`), so
