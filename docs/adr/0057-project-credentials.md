@@ -192,7 +192,10 @@ over a single file's raw bytes.
   live (ADR 0035), so the cross-project effect must be unmistakable. Editor
   and CLI both, from one seam.
 - Removing a row removes the ciphertext. There is no undeclare-keeps-the-value
-  state, deliberately.
+  state, deliberately. Removing the *last* row leaves the file's
+  `[credentials]` block in place (ruled 2026-08-14): the identity is the
+  file's, not any row's, and the next `set` reuses it under the passphrase the
+  user already knows instead of minting a new one.
 - `byre credentials set|unset|rekey|list`. There is no `init`: the first `set`
   mints the identity, prompting for a new passphrase. `list` reads config rows
   — key, kind, source file, set/unset. `set --layer <name>` targets a layer
