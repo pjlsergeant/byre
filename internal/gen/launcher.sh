@@ -209,19 +209,24 @@ if [ -d "$ENVD_DIR" ]; then
   done
 fi
 
-# Credential export — the launcher's end of credential delivery
-# (ADR 0057). BYRE_CRED_EXPECT is set at create time
-# ONLY when this launch decrypted a deliverable set and scheduled an inject;
-# it is purely a wait/export protocol flag ("wait bounded for .done, then
-# export from the manifest") — no verification meaning. The wait is bounded
-# and FAIL-OPEN: a delivery that never lands costs at most the bound and the
-# box runs without credentials (the opposite direction from the network
-# gate above, deliberately — no credentials is safe, no wall is not). The
-# tmpfs empties on restart, so a restarted, un-re-unlocked box pays the wait
-# once and proceeds without. Placed AFTER the env.d loop so credential
-# exports win env collisions (ADR 0028 ordering); values export byte-exact,
-# no shell re-evaluation. The env overrides are test seams (gate precedent);
-# a user setting them re-points byre's own delivery, which is theirs to do.
+# Credential export — the launcher's end of credential delivery.
+# BYRE_CRED_EXPECT is set at create time ONLY when this launch decrypted a
+# deliverable set and scheduled an inject; it is purely a wait/export
+# protocol flag ("wait bounded for .done, then export from the manifest") —
+# no verification meaning. The wait is bounded and fails CLOSED, exactly like
+# the launch gate above: a config that declares credentials describes a box
+# whose agent needs them, and launching one that quietly lacks them produces
+# failures nobody can read.
+#
+# That is also the restart refusal, and for the same reason the gate's is:
+# the handshake is stateless, the tmpfs empties on restart, so a restarted,
+# un-re-unlocked box simply times out here and exits instead of running with
+# credentials it no longer has.
+#
+# Placed AFTER the env.d loop so credential exports win env collisions (ADR
+# 0028 ordering); values export byte-exact, no shell re-evaluation. The env
+# overrides are test seams (gate precedent); a user setting them re-points
+# byre's own delivery, which is theirs to do.
 if [ -n "${BYRE_CRED_EXPECT:-}" ]; then
   CRED_DIR="${BYRE_CRED_DIR:-/run/byre}"
   cred_wait="${BYRE_CRED_WAIT:-20}"
@@ -229,37 +234,40 @@ if [ -n "${BYRE_CRED_EXPECT:-}" ]; then
   while [ ! -e "$CRED_DIR/.done" ] && [ "$SECONDS" -lt "$cred_wait" ]; do
     sleep 0.2
   done
-  if [ -e "$CRED_DIR/.done" ] && [ -r "$CRED_DIR/manifest" ]; then
-    while read -r cred_name cred_kind cred_target; do
-      # The manifest is byre-authored; these checks keep a corrupt line from
-      # exporting under a name the declaration grammar never allowed.
-      [ -n "$cred_name" ] || continue
-      if ! [[ "$cred_target" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || [[ "$cred_target" == BYRE_* ]]; then
-        echo "byre: credential ${cred_name}: skipping malformed export target." >&2
-        continue
-      fi
-      cred_file="$CRED_DIR/credentials/$cred_name"
-      case "$cred_kind" in
-      env)
-        if [ -f "$cred_file" ]; then
-          # Byte-exact: read to EOF (values are NUL-free by declaration);
-          # $(cat) would strip trailing newlines the value may carry.
-          cred_val=""
-          IFS= read -rd '' cred_val <"$cred_file" || true
-          export -- "$cred_target=$cred_val"
-          cred_val=""
-        fi
-        ;;
-      file)
-        if [ -f "$cred_file" ]; then
-          export -- "$cred_target=$cred_file"
-        fi
-        ;;
-      esac
-    done <"$CRED_DIR/manifest"
-  else
-    echo "byre: credentials were expected but did not arrive within ${cred_wait}s — launching without them." >&2
+  if [ ! -e "$CRED_DIR/.done" ] || [ ! -r "$CRED_DIR/manifest" ]; then
+    echo "byre: credentials were expected but did not arrive within ${cred_wait}s — refusing to launch without them (failing closed)." >&2
+    echo "byre: (a restarted box never gets them: the session tmpfs empties, and the passphrase is only asked for at \`byre develop\`. Re-run it. To launch deliberately without: \`byre develop --credentials=skip\`.)" >&2
+    exit 1
   fi
+  # The manifest is byre-authored, one "KEY kind" line per delivered value:
+  # the identifier a value travels under IS its config key, so there is no
+  # second name to map. These checks keep a corrupt line from exporting
+  # under something the config grammar never allowed.
+  while read -r cred_key cred_kind; do
+    [ -n "$cred_key" ] || continue
+    if ! [[ "$cred_key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || [[ "$cred_key" == BYRE_* ]]; then
+      echo "byre: credential ${cred_key}: skipping malformed export key." >&2
+      continue
+    fi
+    cred_file="$CRED_DIR/credentials/$cred_key"
+    case "$cred_kind" in
+    env)
+      if [ -f "$cred_file" ]; then
+        # Byte-exact: read to EOF (env values are NUL-free by rule);
+        # $(cat) would strip trailing newlines the value may carry.
+        cred_val=""
+        IFS= read -rd '' cred_val <"$cred_file" || true
+        export -- "$cred_key=$cred_val"
+        cred_val=""
+      fi
+      ;;
+    file)
+      if [ -f "$cred_file" ]; then
+        export -- "$cred_key=$cred_file"
+      fi
+      ;;
+    esac
+  done <"$CRED_DIR/manifest"
 fi
 
 # Agent command: explicit run args > recorded agent command > login shell.

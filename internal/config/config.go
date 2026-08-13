@@ -136,9 +136,8 @@ var (
 	// `FROM <base>`, so anything outside this set (notably whitespace or a newline)
 	// could append a second Dockerfile instruction.
 	imageRefRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@-]*$`)
-	// envKeyRe is a POSIX-shell environment variable name. Keys are emitted as
-	// `ENV <key>=...` unquoted; a space or newline in the key would inject.
-	envKeyRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	// envKeyRe is EnvKeyGrammar compiled — the one owner of the rule.
+	envKeyRe = regexp.MustCompile(EnvKeyGrammar)
 	// packageRe covers real apt and npm package specs — scoped names (@scope/pkg),
 	// version pins (pkg=1.2.3, pkg@1.2.3), and semver-ish markers (~^) — while
 	// excluding whitespace and every shell metacharacter, since apt entries
@@ -1930,6 +1929,14 @@ func validateHostSource(src string) error {
 	}
 	return fmt.Errorf("source %q: supported sources are \"git:<config-key>\", \"env:<HOST_VAR>\", \"tz:\", \"encrypted:<ciphertext>\", \"encrypted-file:<ciphertext>\" (and \"\" to disable); a literal value belongs in [env]", src)
 }
+
+// EnvKeyGrammar is a POSIX-shell environment variable name, exported as the
+// SOURCE string so the credential receiver's bash restatement can be pinned
+// byte-identical by test (the clock-pin pattern) — the rule has to exist in
+// two languages, so a shared compiled regex cannot be the owner, but the
+// spelling can. Keys are emitted as `ENV <key>=...` unquoted; a space or
+// newline in one would inject.
+const EnvKeyGrammar = `^[A-Za-z_][A-Za-z0-9_]*$`
 
 // NoneLabel is how the UIs (onboarding picker, config editor, status and
 // grant-review text) display an empty template/agent choice. OrNone/FromNone

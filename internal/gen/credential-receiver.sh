@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # byre credential receiver — the in-box end of the credential delivery
-# stream (ADR 0057).
+# stream.
 #
 # byre pipes the deliverable set over `engine exec -i` stdin as a framed
 # text stream; this script writes each value under the session tmpfs and a
@@ -10,16 +10,16 @@
 #
 # Stream grammar:
 #   byre-credentials 1
-#   item <name>            name = "manifest" or a credential name
+#   item <name>            name = "manifest" or a credential's CONFIG KEY
 #   <base64, one line>
 #   ...
 #   done
 #
-# A stream that ends without "done" leaves no sentinel: the launcher
-# fail-opens and the box runs without credentials. This is plain transport
-# correctness — the agent is HANDED the delivered values (the contract), so
-# nothing here verifies or polices the box; the name check below only keeps
-# a corrupt frame from writing outside the credentials dir.
+# A stream that ends without "done" leaves no sentinel, and the launcher then
+# fails the launch closed. This is plain transport correctness — the agent is
+# HANDED the delivered values (the contract), so nothing here verifies or
+# polices the box; the name check below only keeps a corrupt frame from
+# writing outside the credentials dir.
 set -euo pipefail
 
 DIR="${BYRE_CRED_DIR:-/run/byre}"
@@ -43,7 +43,7 @@ while IFS= read -r line; do
     IFS= read -r b64 || exit 1
     if [ "$name" = manifest ]; then
       dest="$DIR/manifest"
-    elif [[ "$name" =~ ^[a-z][a-z0-9-]{0,62}$ ]]; then
+    elif [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
       dest="$DIR/credentials/$name"
     else
       echo "byre-credential-receiver: refusing malformed item name" >&2
