@@ -193,16 +193,16 @@ func buildCredentialCascade(t *testing.T) credentialCascade {
 		Label: "layer:acme",
 		Path:  "/home/u/.byre/layers/acme/layer.config",
 		Raw:   []byte(blockTOML(layerWrapped, layerRcp)),
-		Cfg: Config{Env: map[string]string{
+		Cfg: Config{EnvFromHost: map[string]string{
 			"ACME_TOKEN": encRow(t, layerRcp, "ACME_TOKEN", credentials.KindEnv, "acme-secret"),
-			"PLAIN":      "literal",
+			"PLAIN":      "env:PLAIN",
 		}},
 	}
 	proj := CascadeFile{
 		Label: "project",
 		Path:  "/home/u/.byre/projects/p/byre.config",
 		Raw:   []byte(blockTOML(projWrapped, projRcp)),
-		Cfg: Config{Env: map[string]string{
+		Cfg: Config{EnvFromHost: map[string]string{
 			"STRIPE_KEY": encRow(t, projRcp, "STRIPE_KEY", credentials.KindEnv, "sk-live"),
 		}},
 	}
@@ -261,12 +261,12 @@ func TestEncryptedRowsAreFileLocal(t *testing.T) {
 func TestEncryptedRowsFollowTheOrdinaryMerge(t *testing.T) {
 	c := buildCredentialCascade(t)
 	_, projRcp := mintIdentity(t, "proj-pw")
-	// The project overrides the layer's credential: with a literal (the row
-	// stops being a credential at all), and adds its own second credential
+	// The project overrides the layer's credential: with another source (the
+	// row stops being a credential at all), and adds its own second credential
 	// over a key the layer set encrypted.
-	c.files[1].Cfg.Env["ACME_TOKEN"] = "plain-override"
-	c.files[0].Cfg.Env["SHARED"] = encRow(t, projRcp, "SHARED", credentials.KindEnv, "layer-value")
-	c.files[1].Cfg.Env["SHARED"] = encRow(t, projRcp, "SHARED", credentials.KindEnv, "project-value")
+	c.files[1].Cfg.EnvFromHost["ACME_TOKEN"] = "env:ACME_TOKEN"
+	c.files[0].Cfg.EnvFromHost["SHARED"] = encRow(t, projRcp, "SHARED", credentials.KindEnv, "layer-value")
+	c.files[1].Cfg.EnvFromHost["SHARED"] = encRow(t, projRcp, "SHARED", credentials.KindEnv, "project-value")
 
 	groups, err := EncryptedRows(c.files)
 	if err != nil {
@@ -285,14 +285,41 @@ func TestEncryptedRowsFollowTheOrdinaryMerge(t *testing.T) {
 		t.Fatalf("project rows = %v", keys)
 	}
 	// Emptying the row is the idiomatic disable, and leaves no credential.
-	c.files[1].Cfg.Env["SHARED"] = ""
-	c.files[1].Cfg.Env["STRIPE_KEY"] = ""
+	c.files[1].Cfg.EnvFromHost["SHARED"] = ""
+	c.files[1].Cfg.EnvFromHost["STRIPE_KEY"] = ""
 	groups, err = EncryptedRows(c.files)
 	if err != nil {
 		t.Fatalf("EncryptedRows: %v", err)
 	}
 	if len(groups) != 0 {
 		t.Fatalf("emptied rows must leave nothing to unlock: %+v", groups)
+	}
+}
+
+// env_from_host's standing precedence reaches credential rows too: an
+// explicit [env] key wins, so the row is neither delivered nor prompted for.
+func TestEncryptedRowsLoseToAnExplicitEnvLiteral(t *testing.T) {
+	c := buildCredentialCascade(t)
+	c.files[1].Cfg.Env = map[string]string{"ACME_TOKEN": "literal-wins"}
+	groups, err := EncryptedRows(c.files)
+	if err != nil {
+		t.Fatalf("EncryptedRows: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Label != "project" {
+		t.Fatalf("an [env] literal must take the layer's row out: %+v", groups)
+	}
+}
+
+// [env] is NOT a credential table: a literal there beginning "encrypted:" is
+// an ordinary value, unrestricted as it has always been.
+func TestEnvLiteralsAreNeverCredentialRows(t *testing.T) {
+	c := buildCredentialCascade(t)
+	c.files[1].Cfg.Env = map[string]string{"LOOKALIKE": "encrypted:not base64!!"}
+	if _, err := EncryptedRows(c.files); err != nil {
+		t.Fatalf("an [env] literal must not be parsed as a credential row: %v", err)
+	}
+	if err := (Config{Env: map[string]string{"LOOKALIKE": "encrypted:not base64!!"}}).ValidateLayer(); err != nil {
+		t.Fatalf("an [env] literal must not be held to the scheme rules: %v", err)
 	}
 }
 
@@ -312,7 +339,7 @@ func TestEncryptedRowsWithoutABlock(t *testing.T) {
 
 func TestEncryptedRowsRefusalsNameTheFile(t *testing.T) {
 	c := buildCredentialCascade(t)
-	c.files[0].Cfg.Env["ACME_TOKEN"] = "encrypted:not base64!!"
+	c.files[0].Cfg.EnvFromHost["ACME_TOKEN"] = "encrypted:not base64!!"
 	_, err := EncryptedRows(c.files)
 	if err == nil || !strings.Contains(err.Error(), "not valid base64") ||
 		!strings.Contains(err.Error(), "layer:acme") || !strings.Contains(err.Error(), "ACME_TOKEN") {
@@ -340,10 +367,10 @@ func TestEncryptedRowsOverTheRealCascade(t *testing.T) {
 	_, rcp := mintIdentity(t, "pw")
 
 	writeFile(t, filepath.Join(home, "default.config"),
-		"[env]\nDEFAULT_TOKEN = \""+encRow(t, rcp, "DEFAULT_TOKEN", credentials.KindEnv, "d")+"\"\n")
+		"[env_from_host]\nDEFAULT_TOKEN = \""+encRow(t, rcp, "DEFAULT_TOKEN", credentials.KindEnv, "d")+"\"\n")
 	writeLayer(t, home, "acme",
-		"[env]\nACME_TOKEN = \""+encRow(t, rcp, "ACME_TOKEN", credentials.KindFile, "a")+"\"\nPLAIN = \"literal\"\n")
-	writeProjectCfg(t, proj, "extends = \"acme\"\n[env]\nDEFAULT_TOKEN = \"overridden\"\n")
+		"[env_from_host]\nACME_TOKEN = \""+encRow(t, rcp, "ACME_TOKEN", credentials.KindFile, "a")+"\"\nPLAIN = \"env:PLAIN\"\n")
+	writeProjectCfg(t, proj, "extends = \"acme\"\n[env_from_host]\nDEFAULT_TOKEN = \"\"\n")
 
 	files, err := CascadeFiles(proj)
 	if err != nil {
@@ -360,7 +387,7 @@ func TestEncryptedRowsOverTheRealCascade(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncryptedRows: %v", err)
 	}
-	// default's row lost to the project's literal; only the layer contributes.
+	// default's row was disabled by the project; only the layer contributes.
 	if len(groups) != 1 || groups[0].Label != "layer:acme" || len(groups[0].Rows) != 1 {
 		t.Fatalf("groups = %+v", groups)
 	}

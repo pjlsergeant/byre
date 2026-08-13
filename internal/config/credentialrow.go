@@ -1,9 +1,10 @@
 package config
 
-// Credential rows: an env row whose value is an age ciphertext instead of a
-// literal, and the file-local [credentials] block that can decrypt it.
+// Credential rows: an env_from_host row whose source is an age ciphertext
+// instead of a host-value scheme, and the file-local [credentials] block that
+// can decrypt it.
 //
-//	[env]
+//	[env_from_host]
 //	STRIPE_KEY = "encrypted:<base64>"        # delivered as an env var
 //	TLS_CERT   = "encrypted-file:<base64>"   # delivered as a tmpfs file
 //
@@ -11,8 +12,15 @@ package config
 //	identity  = "<passphrase-wrapped age identity, base64>"
 //	recipient = "age1…"                      # the cleartext public half
 //
+// env_from_host, not [env]: it is already a closed scheme set (git:/env:/tz:)
+// gaining two members, its "" disable is already the per-project override
+// idiom, and its values are resolved at RUNTIME — an [env] row rides the
+// Dockerfile ENV bake, which would put ciphertext in the image and force a
+// rebuild on every re-set. [env] literals stay unrestricted, so a literal
+// beginning "encrypted:" is still a literal.
+//
 // Resolution is the ORDINARY cascade merge: the winning row is the value, and
-// a nearer layer overrides or empties it exactly as it would a literal.
+// a nearer layer overrides or empties it exactly as it would any other source.
 //
 // The [credentials] block is FILE-LOCAL and never merges. That is a semantic,
 // so it is enforced structurally: the block is not a Config field at all —
@@ -54,30 +62,71 @@ type EncryptedRow struct {
 	Blob []byte
 }
 
-// ParseEncryptedRow decodes one env row value. ok is false for an ordinary
-// literal (including "", the idiomatic disable) — every other env value is
-// still just a value. An error means the row NAMES a credential scheme and
-// its payload is unusable, which is a stop, not a fallback to literal: a
-// value silently delivered as "encrypted:AAAA" would be a credential leak
-// spelled as a typo.
+// ParseEncryptedRow decodes one row value. ok is false for any other source
+// (including "", the idiomatic disable). An error means the row NAMES a
+// credential scheme and its payload is unusable, which is a stop, not a
+// fallback: a value silently delivered as "encrypted:AAAA" would be a
+// credential leak spelled as a typo.
+//
+// Table-agnostic on purpose — the CALLER decides which table the schemes are
+// legal in, which is how [env] keeps accepting "encrypted:…" as a literal.
 func ParseEncryptedRow(key, value string) (EncryptedRow, bool, error) {
-	var kind credentials.Kind
-	var scheme, payload string
-	if p, ok := strings.CutPrefix(value, EncryptedScheme); ok {
-		kind, scheme, payload = credentials.KindEnv, EncryptedScheme, p
-	} else if p, ok := strings.CutPrefix(value, EncryptedFileScheme); ok {
-		kind, scheme, payload = credentials.KindFile, EncryptedFileScheme, p
-	} else {
+	kind, scheme, payload, ok := cutEncryptedScheme(value)
+	if !ok {
 		return EncryptedRow{}, false, nil
 	}
+	blob, err := decodeEncryptedPayload(scheme, payload)
+	if err != nil {
+		return EncryptedRow{}, false, fmt.Errorf("%s %s: %w", EnvFromHostTable, key, err)
+	}
+	return EncryptedRow{Key: key, Kind: kind, Blob: blob}, true, nil
+}
+
+// EnvFromHostTable is the table credential rows live in, named in every
+// refusal so a user knows which block to edit.
+const EnvFromHostTable = "env_from_host"
+
+// cutEncryptedScheme splits a value on the two credential schemes; the kind
+// rides the scheme, so a row states what it becomes in the box.
+func cutEncryptedScheme(value string) (kind credentials.Kind, scheme, payload string, ok bool) {
+	// encrypted-file: is tested first — "encrypted:" is not a prefix of it,
+	// but keeping the longer scheme first makes that independent of spelling.
+	if p, found := strings.CutPrefix(value, EncryptedFileScheme); found {
+		return credentials.KindFile, EncryptedFileScheme, p, true
+	}
+	if p, found := strings.CutPrefix(value, EncryptedScheme); found {
+		return credentials.KindEnv, EncryptedScheme, p, true
+	}
+	return "", "", "", false
+}
+
+// decodeEncryptedPayload is the RECOGNITION-level check both the row parse
+// and env_from_host's scheme validation share: a payload is present and it is
+// base64. Nothing deeper — a row whose ciphertext is damaged must still let
+// the editor open, save, and repair the file it sits in.
+func decodeEncryptedPayload(scheme, payload string) ([]byte, error) {
 	if payload == "" {
-		return EncryptedRow{}, false, fmt.Errorf("env %s: the %s scheme carries no ciphertext", key, scheme)
+		return nil, fmt.Errorf("the %s scheme carries no ciphertext", scheme)
 	}
 	blob, err := base64.StdEncoding.DecodeString(payload)
 	if err != nil {
-		return EncryptedRow{}, false, fmt.Errorf("env %s: the encrypted value is not valid base64 (%s)", key, echo(payload))
+		return nil, fmt.Errorf("the encrypted value is not valid base64 (%s)", echo(payload))
 	}
-	return EncryptedRow{Key: key, Kind: kind, Blob: blob}, true, nil
+	return blob, nil
+}
+
+// validateEncryptedSource is validateHostSource's arm for the two credential
+// schemes: recognition only (see decodeEncryptedPayload). ok is false when
+// the source names neither scheme, so the caller falls through to git:/env:/tz:.
+func validateEncryptedSource(src string) (bool, error) {
+	_, scheme, payload, ok := cutEncryptedScheme(src)
+	if !ok {
+		return false, nil
+	}
+	if _, err := decodeEncryptedPayload(scheme, payload); err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
 // FormatEncryptedRow spells a ciphertext as the row value a config file
@@ -171,10 +220,17 @@ type CredentialFile struct {
 	Rows []EncryptedRow
 }
 
-// EncryptedRows resolves the cascade's winning encrypted env rows and groups
-// them by the file that contributed each, in merge order (root-most first —
-// the order the unlock prompts in). A key a nearer file overrides with a
-// literal, or empties, is not a credential row and does not appear.
+// EncryptedRows resolves the cascade's winning encrypted env_from_host rows
+// and groups them by the file that contributed each, in merge order
+// (root-most first — the order the unlock prompts in). A key a nearer file
+// overrides with another source, or empties, is not a credential row and does
+// not appear.
+//
+// An explicit [env] key ANYWHERE in the cascade takes the row out too: that
+// is env_from_host's standing precedence (ADR 0026, resolveHostEnv's
+// overridden state), and a credential that quietly beat the literal would
+// invert it — while still costing a passphrase prompt for a value the box
+// never sees.
 //
 // Files carrying no winning encrypted row are absent from the result,
 // including files that carry a [credentials] block: an identity nothing needs
@@ -183,19 +239,23 @@ type CredentialFile struct {
 // has.
 func EncryptedRows(files []CascadeFile) ([]CredentialFile, error) {
 	winner := map[string]int{}
+	overridden := map[string]bool{}
 	for i, f := range files {
-		for k := range f.Cfg.Env {
+		for k := range f.Cfg.EnvFromHost {
 			winner[k] = i
+		}
+		for k := range f.Cfg.Env {
+			overridden[k] = true
 		}
 	}
 	var out []CredentialFile
 	for i, f := range files {
 		var rows []EncryptedRow
-		for _, k := range slices.Sorted(maps.Keys(f.Cfg.Env)) {
-			if winner[k] != i {
+		for _, k := range slices.Sorted(maps.Keys(f.Cfg.EnvFromHost)) {
+			if winner[k] != i || overridden[k] {
 				continue
 			}
-			row, ok, err := ParseEncryptedRow(k, f.Cfg.Env[k])
+			row, ok, err := ParseEncryptedRow(k, f.Cfg.EnvFromHost[k])
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", f.attribution(), err)
 			}

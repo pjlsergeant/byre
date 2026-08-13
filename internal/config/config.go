@@ -1894,12 +1894,21 @@ func ValidateFiles(files map[string]string) error {
 var gitConfigKeyRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*$`)
 
 // validateHostSource checks one env_from_host source against the closed
-// scheme set: "" (disabled), "git:<config-key>", "env:<HOST_VAR>", or "tz:"
-// (no argument). Anything else is an error naming the legal schemes — a
-// literal value belongs in [env], not here (grants vs config).
+// scheme set: "" (disabled), "git:<config-key>", "env:<HOST_VAR>", "tz:" (no
+// argument), or a credential row ("encrypted:" / "encrypted-file:").
+// Anything else is an error naming the legal schemes — a literal value
+// belongs in [env], not here (grants vs config).
+//
+// The credential arm is RECOGNITION only (scheme named, payload present and
+// base64). Whether the ciphertext actually opens is EncryptedRows' question,
+// deliberately: a damaged blob must never make its file unopenable in the
+// editor that has to repair it.
 func validateHostSource(src string) error {
 	if src == "" {
 		return nil // disabled — how a layer drops a lower layer's entry
+	}
+	if isCred, err := validateEncryptedSource(src); isCred {
+		return err
 	}
 	if key, ok := strings.CutPrefix(src, "git:"); ok {
 		if !gitConfigKeyRe.MatchString(key) {
@@ -1919,7 +1928,7 @@ func validateHostSource(src string) error {
 	if strings.HasPrefix(src, "tz:") {
 		return fmt.Errorf("source %q: \"tz:\" takes no argument (it always means the host timezone)", src)
 	}
-	return fmt.Errorf("source %q: supported sources are \"git:<config-key>\", \"env:<HOST_VAR>\", \"tz:\" (and \"\" to disable); a literal value belongs in [env]", src)
+	return fmt.Errorf("source %q: supported sources are \"git:<config-key>\", \"env:<HOST_VAR>\", \"tz:\", \"encrypted:<ciphertext>\", \"encrypted-file:<ciphertext>\" (and \"\" to disable); a literal value belongs in [env]", src)
 }
 
 // NoneLabel is how the UIs (onboarding picker, config editor, status and
