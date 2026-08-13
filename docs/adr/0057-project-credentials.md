@@ -266,7 +266,8 @@ the standing limit of a review gate, not of credentials.
   carries both kinds, the Value input is masked and never echoed, and saving a
   value through the form IS the `set` path — same CAS, same file lock, same
   write-target disclosure, reached through a seam (`configui.CredentialAdmin`)
-  rather than a second spelling. The first credential in a file opens the
+  rather than a second spelling. Rekey is an editor surface too (the Env
+  screen), riding the same seam. The first credential in a file opens the
   per-file passphrase modal. Boundaries taken deliberately: the credential
   kinds appear only where a credentials verb can target the file (project
   config, layer — not `default.config`); a damaged or reserved-key row refuses

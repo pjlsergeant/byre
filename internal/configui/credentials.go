@@ -1,8 +1,9 @@
 package configui
 
 // The Env screen's credential workflow: the seam onto byre's ONE credential
-// write path, the per-file passphrase modal (modeCredPass), and the commit
-// that turns a masked Value into an encrypted row.
+// write path, the per-file passphrase modal (modeCredPass), the rekey modal
+// (modeCredRekey), and the commit that turns a masked Value into an
+// encrypted row.
 //
 // Two things about this screen are unlike every other field here.
 //
@@ -34,7 +35,8 @@ import (
 
 // CredentialAdmin is the editor's route to the credential write path: the same
 // target resolution, write-target disclosure and compare-and-swap that `byre
-// credentials set` uses, over the very file this editor has open.
+// credentials set` and `byre credentials rekey` use, over the very file this
+// editor has open.
 //
 // nil means this editor cannot write credentials -- the --global editor, whose
 // file no credentials verb targets either -- and the Source picker then omits
@@ -46,13 +48,21 @@ type CredentialAdmin interface {
 	// shared layer has to know that while they can still stop.
 	Disclosure() string
 	// HasIdentity reports whether the file already carries a [credentials]
-	// block. False means the next Set MINTS one and needs a passphrase.
+	// block. False means the next Set MINTS one and needs a passphrase, and
+	// that Rekey has nothing to wrap — the Env screen hides the rekey
+	// surface rather than offering one that can only refuse.
 	HasIdentity() (bool, error)
 	// Set applies one accept to the file: encrypt the value, write its row,
 	// remove the rows the accept replaces, and (on a file's first credential)
 	// mint the identity that opens them -- all in ONE compare-and-swap
 	// mutation.
 	Set(CredentialWrite) (CredentialResult, error)
+	// Rekey re-wraps this file's identity under a new passphrase. The
+	// identity itself does not rotate, so every value row stays
+	// byte-identical. The returned File is the bytes as written, under the
+	// lock — the editor's new save baseline, for the same reason Set
+	// returns them.
+	Rekey(current, newPw string) (CredentialResult, error)
 }
 
 // CredentialWrite is one accept's WHOLE change to the file: the value to
@@ -264,6 +274,10 @@ func (m model) writeCredential(p pendingCredential, passphrase string) model {
 	// without ever being in its buffer.
 	m.saveBase, m.saveBaseErr = res.File, nil
 	m.savedOnce = true
+	// A successful Set always leaves the file with an identity (minted or
+	// already there), so the Env list's rekey surface can appear without
+	// another probe.
+	m.credHasIdentity = true
 	if clean {
 		// A buffer that was clean stays clean: the one change it just took is
 		// already on disk, WHOLE (the row and the rows it replaced), and a
@@ -332,11 +346,19 @@ func credentialKindNote(sel int) string {
 	return fmt.Sprintf("env var: exported under this key; no NUL bytes, up to %d KiB", credentials.MaxEnvValue>>10)
 }
 
-// probeCredentialIdentity asks, once per opening of the Env item editor,
-// whether this file already has an identity — the answer the notes need. Once
-// per OPEN and not per frame: the honest answer costs a file read and a parse,
-// and the decision that matters (does this write mint an identity) is taken
-// again, freshly, at accept.
+// canRekey reports whether the Env list should offer the rekey surface: a
+// write path AND a file that already carries an identity. Absent either, the
+// binding and its help are gone rather than present-and-refusing — a file
+// with no identity has nothing to wrap, and --global has no write path.
+func (m model) canRekey() bool {
+	return m.listField == fEnv && m.canWriteCredentials() && m.credHasIdentity
+}
+
+// probeCredentialIdentity asks, once per opening of the Env list or item
+// editor, whether this file already has an identity — the answer the notes
+// and the rekey surface need. Once per OPEN and not per frame: the honest
+// answer costs a file read and a parse, and the decision that matters (does
+// this write mint an identity) is taken again, freshly, at accept.
 func (m *model) probeCredentialIdentity() {
 	m.credHasIdentity, m.credProbeErr = false, ""
 	if !m.canWriteCredentials() {
@@ -480,5 +502,141 @@ func (m model) viewCredPass() string {
 		b.WriteString("\n" + m.errLine(m.credPassErr) + "\n")
 	}
 	b.WriteString("\n" + helpLine("tab", "next", "enter", "create + write", "esc", "cancel (nothing written)"))
+	return b.String()
+}
+
+// ---- the rekey modal (modeCredRekey) ---------------------------------------
+
+// openCredRekey arms the modal with three fresh masked inputs: current
+// passphrase, new, confirm. Separate from the mint modal — different
+// inputs, different stakes.
+func (m model) openCredRekey() model {
+	for i := range m.credRekeyInputs {
+		in := textinput.New()
+		in.EchoMode = textinput.EchoPassword
+		in.EchoCharacter = '•'
+		in.Prompt = ""
+		m.credRekeyInputs[i] = in
+	}
+	m.credRekeyInputs[0].Focus()
+	m.credRekeyFocus = 0
+	m.credRekeyErr = ""
+	m.mode = modeCredRekey
+	m.status = ""
+	m.errMsg = ""
+	return m
+}
+
+func (m model) updateCredRekey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "ctrl+q", "ctrl+c":
+		// Back to the list with nothing written and no passphrase retained.
+		m.clearCredRekeyInputs()
+		m.mode = modeList
+		m.status = "nothing was written — the passphrase is unchanged"
+		return m, nil
+	case "tab", "down":
+		return m.focusCredRekey((m.credRekeyFocus + 1) % 3), nil
+	case "shift+tab", "up":
+		return m.focusCredRekey((m.credRekeyFocus + 2) % 3), nil
+	case "ctrl+s":
+		// ^s saves everywhere else in this editor; here it would write the
+		// file underneath an open decision. Say that instead of swallowing
+		// the keystroke.
+		m.credRekeyErr = "finish this passphrase, or esc to cancel it — ^s saves the rest of the screen after that"
+		return m, nil
+	case "enter":
+		if m.credRekeyFocus < 2 {
+			return m.focusCredRekey(m.credRekeyFocus + 1), nil
+		}
+		current := m.credRekeyInputs[0].Value()
+		newPw := m.credRekeyInputs[1].Value()
+		if newPw == "" {
+			m.credRekeyErr = credentials.EmptyPassphraseWorthless
+			return m, nil
+		}
+		if newPw != m.credRekeyInputs[2].Value() {
+			m.credRekeyErr = "passphrases do not match"
+			return m, nil
+		}
+		return m.writeRekey(current, newPw), nil
+	}
+	var cmd tea.Cmd
+	m.credRekeyInputs[m.credRekeyFocus], cmd = m.credRekeyInputs[m.credRekeyFocus].Update(msg)
+	return m, cmd
+}
+
+func (m model) focusCredRekey(i int) model {
+	m.credRekeyInputs[m.credRekeyFocus].Blur()
+	m.credRekeyFocus = i
+	m.credRekeyInputs[i].Focus()
+	return m
+}
+
+func (m *model) clearCredRekeyInputs() {
+	for i := range m.credRekeyInputs {
+		m.credRekeyInputs[i].SetValue("")
+	}
+}
+
+// writeRekey runs the rekey and folds the result into the working state. A
+// refused write (wrong passphrase, a file that moved) leaves the list
+// untouched; a successful one re-baselines saveBase from the bytes the
+// write itself produced.
+func (m model) writeRekey(current, newPw string) model {
+	// The passphrases leave the inputs with the attempt: success or
+	// refusal, they are not held in a field the view can render.
+	m.clearCredRekeyInputs()
+	res, err := m.creds.Rekey(current, newPw)
+	if err != nil {
+		// The retry starts over — with the inputs cleared, focus anywhere
+		// but the first field would have the user typing a fresh current
+		// passphrase into Confirm.
+		m.credRekeyErr = err.Error()
+		return m.focusCredRekey(0)
+	}
+	clean := !m.dirty()
+	// The file just changed, by this editor's own hand: re-baseline, or
+	// the next ^s sees this write as another session's drift. The bytes
+	// come from the write itself, taken under its lock.
+	m.saveBase, m.saveBaseErr = res.File, nil
+	m.savedOnce = true
+	if clean {
+		// A buffer that was clean stays clean: the [credentials] block is
+		// not part of the buffer's rows, so the sig is unaffected, but the
+		// baseline still has to move or the next ^s sees this write as
+		// drift.
+		m.savedSig = m.sig()
+	}
+	m.credRekeyErr = ""
+	m.errMsg = ""
+	m.mode = modeList
+	m.status = "passphrase rotated in " + packages.DisplayPath(m.filePath) + "; the old one no longer works"
+	return m
+}
+
+func (m model) viewCredRekey() string {
+	var b strings.Builder
+	b.WriteString(focusStyle.Render("Change this file's credentials passphrase") + "\n\n")
+	b.WriteString("This changes the passphrase only. Every credential value row stays\n" +
+		"byte-identical — that is what keeps drift honest. The old passphrase\n" +
+		"stops working.\n\n" +
+		"There is no recovery: a forgotten passphrase means unsetting each row\n" +
+		"and setting its value again.\n\n")
+	if d := m.creds.Disclosure(); d != "" {
+		b.WriteString(warnStyle.Render("⚠ "+d) + "\n\n")
+	}
+	labels := [3]string{"Current passphrase", "New passphrase", "Confirm"}
+	for i, in := range m.credRekeyInputs {
+		cursor := "  "
+		if m.credRekeyFocus == i {
+			cursor = cursorStyle.Render("▸ ")
+		}
+		b.WriteString(cursor + labels[i] + ": " + in.View() + "\n")
+	}
+	if m.credRekeyErr != "" {
+		b.WriteString("\n" + m.errLine(m.credRekeyErr) + "\n")
+	}
+	b.WriteString("\n" + helpLine("tab", "next", "enter", "rekey", "esc", "cancel (nothing written)"))
 	return b.String()
 }

@@ -162,7 +162,8 @@ const (
 	modeVolumes
 	modeText
 	modeSkills
-	modeCredPass // the per-file passphrase modal, before a file's first credential
+	modeCredPass  // the per-file passphrase modal, before a file's first credential
+	modeCredRekey // the passphrase-rotation modal, over a file that already has an identity
 )
 
 type kvItem struct{ Key, Value string }
@@ -330,9 +331,14 @@ type model struct {
 	// credPending is the accepted value waiting on that passphrase; nil
 	// whenever the modal is not the reason the editor is here.
 	credPending *pendingCredential
+	// modeCredRekey (rotate the passphrase on a file that already has an identity)
+	credRekeyInputs [3]textinput.Model
+	credRekeyFocus  int
+	credRekeyErr    string
 	// credHasIdentity/credProbeErr are probeCredentialIdentity's answer for
-	// the open item editor: whether this file's [credentials] block exists,
-	// or why byre could not tell.
+	// the Env screen: whether this file's [credentials] block exists, or why
+	// byre could not tell. The item-editor notes and the list's rekey
+	// surface both read it.
 	credHasIdentity bool
 	credProbeErr    string
 
@@ -647,6 +653,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateSkills(msg)
 		case modeCredPass:
 			return m.updateCredPass(msg)
+		case modeCredRekey:
+			return m.updateCredRekey(msg)
 		default:
 			return m.updateForm(msg)
 		}
@@ -660,6 +668,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.inputs[m.itemFocus], cmd = m.inputs[m.itemFocus].Update(msg)
 	case m.mode == modeCredPass:
 		m.credPassInputs[m.credPassFocus], cmd = m.credPassInputs[m.credPassFocus].Update(msg)
+	case m.mode == modeCredRekey:
+		m.credRekeyInputs[m.credRekeyFocus], cmd = m.credRekeyInputs[m.credRekeyFocus].Update(msg)
 	case m.mode == modeForm:
 		if in := m.focusedInput(); in != nil {
 			*in, cmd = in.Update(msg)
@@ -753,6 +763,9 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = modeList
 			m.status = ""
 			m.errMsg = ""
+			if f == fEnv {
+				m.probeCredentialIdentity()
+			}
 		case f == fVolumeData:
 			return m.openVolumes(), nil
 		case f == fSkills:
@@ -910,6 +923,8 @@ func (m model) View() string {
 		v = m.viewSkills()
 	case modeCredPass:
 		v = m.viewCredPass()
+	case modeCredRekey:
+		v = m.viewCredRekey()
 	default:
 		v = m.viewForm()
 	}

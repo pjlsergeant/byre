@@ -113,6 +113,19 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.listCur < addRow {
 			return m.accelerate(rows[m.listCur], "o")
 		}
+	case "r":
+		// Rekey is an Env-list action, not a row action: it wraps the
+		// file's identity, not a row. Hidden unless this editor can write
+		// credentials AND the file already has an identity — a surface that
+		// can only refuse is a hole, not a door.
+		if m.listField != fEnv || !m.canWriteCredentials() {
+			return m, nil
+		}
+		m.probeCredentialIdentity()
+		if !m.credHasIdentity {
+			return m, nil
+		}
+		return m.openCredRekey(), nil
 	}
 	return m, nil
 }
@@ -1564,8 +1577,20 @@ func (m model) viewList() string {
 	if note := m.subFooterNote(); note != "" {
 		b.WriteString("\n" + note)
 	}
-	b.WriteString("\n" + helpLine("↑/↓", "move", "enter", "actions", "a", "add", "^s", "save", "esc", "back"))
+	b.WriteString("\n" + m.listHelp())
 	return b.String()
+}
+
+// listHelp is the browse-screen footer. Rekey is named only when the
+// binding is live — a help line advertising a key that does nothing is the
+// same hole as a surface that can only refuse.
+func (m model) listHelp() string {
+	pairs := []string{"↑/↓", "move", "enter", "actions", "a", "add"}
+	if m.canRekey() {
+		pairs = append(pairs, "r", "rekey")
+	}
+	pairs = append(pairs, "^s", "save", "esc", "back")
+	return helpLine(pairs...)
 }
 
 // rowAnnotation is the dim provenance tail after a row's value (ADR 0018).

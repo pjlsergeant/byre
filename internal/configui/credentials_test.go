@@ -42,7 +42,9 @@ type fakeCredAdmin struct {
 	rows       map[string]string
 	sets       int
 	mints      int
+	rekeys     int
 	err        error // the write path's refusal, when the test wants one
+	rekeyErr   error // Rekey's refusal, when the test wants one
 	// concurrent runs INSIDE the write's window: after the bytes this write
 	// landed, before the editor takes its baseline. That is exactly where
 	// another session's write used to be adopted as this session's baseline,
@@ -98,6 +100,64 @@ func (f *fakeCredAdmin) Set(w CredentialWrite) (CredentialResult, error) {
 	f.rows[w.Key] = row
 	delete(f.rows, w.RemoveEnvFromHost)
 	return CredentialResult{Row: row, File: after}, nil
+}
+
+func (f *fakeCredAdmin) Rekey(current, newPw string) (CredentialResult, error) {
+	if f.rekeyErr != nil {
+		return CredentialResult{}, f.rekeyErr
+	}
+	if f.identity == nil {
+		return CredentialResult{}, errors.New("holds no credentials identity — nothing to rekey")
+	}
+	if newPw == "" {
+		return CredentialResult{}, errors.New(credentials.EmptyPassphraseWorthless)
+	}
+	id, err := credentials.UnwrapIdentity(f.identity, current)
+	if err != nil {
+		return CredentialResult{}, err
+	}
+	wrapped, err := id.Rewrap(newPw)
+	if err != nil {
+		return CredentialResult{}, err
+	}
+	f.identity, f.passphrase = wrapped, newPw
+	after, err := f.applyRekeyToFile()
+	if err != nil {
+		return CredentialResult{}, err
+	}
+	f.rekeys++
+	return CredentialResult{File: after}, nil
+}
+
+// applyRekeyToFile lands the re-wrapped identity in the file's [credentials]
+// block and hands the resulting bytes back as the caller's new baseline.
+func (f *fakeCredAdmin) applyRekeyToFile() ([]byte, error) {
+	if f.path == "" {
+		return nil, errors.New("fakeCredAdmin has no file to write (credModel sets it)")
+	}
+	raw, err := os.ReadFile(f.path)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := tomldoc.Load(raw)
+	if err != nil {
+		return nil, err
+	}
+	id := base64.StdEncoding.EncodeToString(f.identity)
+	if err := doc.SetKey([]string{"credentials"}, "identity", strconv.Quote(id)); err != nil {
+		return nil, err
+	}
+	if err := doc.SetKey([]string{"credentials"}, "recipient", strconv.Quote(f.recipient)); err != nil {
+		return nil, err
+	}
+	out := doc.Bytes()
+	if err := os.WriteFile(f.path, out, 0o644); err != nil {
+		return nil, err
+	}
+	if f.concurrent != nil {
+		f.concurrent()
+	}
+	return out, nil
 }
 
 // applyToFile lands one write: the identity (on a mint), the removals the
@@ -198,6 +258,7 @@ func credModelWith(t *testing.T, admin CredentialAdmin, env, hostEnv map[string]
 	m := newModel("t", path, config.Config{Env: env, EnvFromHost: hostEnv}, nil, nil, nil, nil, Inherited{}, nil, TargetProject)
 	m.creds = admin
 	m.listField = fEnv
+	m.probeCredentialIdentity()
 	return m
 }
 
@@ -995,6 +1056,262 @@ func TestTheCredentialFormFitsAnEightyColumnTerminal(t *testing.T) {
 		if w := ansi.StringWidth(line); w > 80 {
 			t.Errorf("a form line is %d cells wide and will be clipped: %q", w, line)
 		}
+	}
+}
+
+// Rekey is reachable on the Env list only when this editor can write
+// credentials AND the file already carries an identity. --global has no
+// write path, so the binding is absent, not present-and-refusing. A file
+// with no identity has nothing to wrap, so the same.
+func TestRekeyIsReachableOnlyWithAWritePathAndAnIdentity(t *testing.T) {
+	none := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{}, nil, TargetGlobal)
+	none.listField = fEnv
+	none.probeCredentialIdentity()
+	if none.canRekey() {
+		t.Fatal("the --global editor offered rekey")
+	}
+	if v := none.viewList(); strings.Contains(v, "rekey") {
+		t.Fatalf("the --global list names a rekey surface:\n%s", v)
+	}
+	pressed, _ := none.updateList(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if pressed.(model).mode == modeCredRekey {
+		t.Fatal("r on the --global Env list opened the rekey modal")
+	}
+
+	bare := credModel(t, newFakeCredAdmin(), nil)
+	if bare.canRekey() {
+		t.Fatal("a file with no identity offered rekey")
+	}
+	if v := bare.viewList(); strings.Contains(v, "rekey") {
+		t.Fatalf("a file with no identity names a rekey surface:\n%s", v)
+	}
+	pressed, _ = bare.updateList(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if pressed.(model).mode == modeCredRekey {
+		t.Fatal("r on a file with no identity opened the rekey modal")
+	}
+
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	ready := credModel(t, admin, nil)
+	if !ready.canRekey() {
+		t.Fatal("a writable file with an identity hid the rekey surface")
+	}
+	if v := ready.viewList(); !strings.Contains(v, "rekey") {
+		t.Fatalf("the Env list with an identity does not name rekey:\n%s", v)
+	}
+	opened, _ := ready.updateList(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if opened.(model).mode != modeCredRekey {
+		t.Fatalf("r opened mode %v, want the rekey modal", opened.(model).mode)
+	}
+}
+
+// typeCredRekey fills the modal's three boxes and confirms, driving it
+// through Update the way the keys do.
+func typeCredRekey(t *testing.T, m model, current, newPw, confirm string) model {
+	t.Helper()
+	if m.mode != modeCredRekey {
+		t.Fatalf("mode = %v, want the rekey modal", m.mode)
+	}
+	m.credRekeyInputs[0].SetValue(current)
+	m.credRekeyInputs[1].SetValue(newPw)
+	m.credRekeyInputs[2].SetValue(confirm)
+	m.credRekeyFocus = 2
+	next, _ := m.updateCredRekey(tea.KeyMsg{Type: tea.KeyEnter})
+	return next.(model)
+}
+
+func openRekey(t *testing.T, m model) model {
+	t.Helper()
+	next, _ := m.updateList(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	got := next.(model)
+	if got.mode != modeCredRekey {
+		t.Fatalf("mode = %v, want the rekey modal", got.mode)
+	}
+	return got
+}
+
+// esc out of the rekey modal writes NOTHING and lands back on the list.
+func TestEscapingTheRekeyModalWritesNothing(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	m := openRekey(t, credModel(t, admin, nil))
+	m.credRekeyInputs[0].SetValue("pw")
+	m.credRekeyInputs[1].SetValue("new")
+	m.credRekeyInputs[2].SetValue("new")
+	before, err := os.ReadFile(admin.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, _ := m.updateCredRekey(tea.KeyMsg{Type: tea.KeyEsc})
+	got := back.(model)
+	if got.mode != modeList {
+		t.Fatalf("mode = %v, want the list back", got.mode)
+	}
+	if admin.rekeys != 0 {
+		t.Fatalf("esc wrote: rekeys=%d", admin.rekeys)
+	}
+	after, err := os.ReadFile(admin.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("esc changed the file")
+	}
+	if got.credRekeyInputs[0].Value() != "" || got.credRekeyInputs[1].Value() != "" || got.credRekeyInputs[2].Value() != "" {
+		t.Fatal("esc left a passphrase in an input")
+	}
+}
+
+// An empty new passphrase is worthless, and a mismatched confirmation is
+// caught before anything is written. Both stay in the modal.
+func TestRekeyModalRefusesAnEmptyOrMismatchedNewPassphrase(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	m := openRekey(t, credModel(t, admin, nil))
+
+	empty := typeCredRekey(t, m, "pw", "", "")
+	if empty.credRekeyErr != credentials.EmptyPassphraseWorthless {
+		t.Fatalf("credRekeyErr = %q, want the shared empty-passphrase refusal", empty.credRekeyErr)
+	}
+	if empty.mode != modeCredRekey || admin.rekeys != 0 {
+		t.Fatalf("an empty new passphrase wrote or left the modal (mode=%v rekeys=%d)", empty.mode, admin.rekeys)
+	}
+
+	mismatch := typeCredRekey(t, empty, "pw", "hunter2", "hunter3")
+	if !strings.Contains(mismatch.credRekeyErr, "do not match") {
+		t.Fatalf("credRekeyErr = %q, want the mismatch rule", mismatch.credRekeyErr)
+	}
+	if mismatch.mode != modeCredRekey || admin.rekeys != 0 {
+		t.Fatalf("a mismatched confirmation wrote or left the modal (mode=%v rekeys=%d)", mismatch.mode, admin.rekeys)
+	}
+}
+
+// A wrong current passphrase is re-askable: the modal stays up with the
+// write path's ErrBadPassphrase, and the inputs are cleared.
+func TestRekeyModalShowsAWrongPassphraseAsReaskable(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	row := encryptedRow(t, admin.recipient, "STRIPE_KEY", credentials.KindEnv, "sk-live-1")
+	m := openRekey(t, credModel(t, admin, map[string]string{"STRIPE_KEY": row}))
+
+	got := typeCredRekey(t, m, "nope", "new", "new")
+	if got.mode != modeCredRekey {
+		t.Fatalf("mode = %v, want the modal still up", got.mode)
+	}
+	if got.credRekeyErr != credentials.ErrBadPassphrase.Error() {
+		t.Fatalf("credRekeyErr = %q, want ErrBadPassphrase", got.credRekeyErr)
+	}
+	if admin.rekeys != 0 {
+		t.Fatal("a wrong current passphrase still rekeyed")
+	}
+	if got.credRekeyInputs[0].Value() != "" || got.credRekeyInputs[1].Value() != "" || got.credRekeyInputs[2].Value() != "" {
+		t.Fatal("a refused attempt left a passphrase in an input")
+	}
+	if v := got.viewCredRekey(); strings.Contains(v, "nope") || strings.Contains(v, "new") {
+		t.Fatalf("the modal rendered a passphrase:\n%s", v)
+	}
+}
+
+// A successful rekey re-baselines saveBase from the bytes it wrote, so a
+// follow-up ^s does not see the editor's own write as drift. A clean buffer
+// stays clean. The passphrases are gone from the inputs.
+func TestASuccessfulRekeyRebaselinesAndStaysClean(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	row := encryptedRow(t, admin.recipient, "STRIPE_KEY", credentials.KindEnv, "sk-live-1")
+	admin.rows["STRIPE_KEY"] = row
+	m := credModel(t, admin, map[string]string{"STRIPE_KEY": row})
+	if m.dirty() {
+		t.Fatal("the fixture opened dirty")
+	}
+	openBase := slices.Clone(m.saveBase)
+
+	done := typeCredRekey(t, openRekey(t, m), "pw", "new", "new")
+	if done.mode != modeList {
+		t.Fatalf("mode = %v after a successful rekey, want the list", done.mode)
+	}
+	if done.itemErr != "" || done.credRekeyErr != "" {
+		t.Fatalf("the rekey was refused: item=%q rekey=%q", done.itemErr, done.credRekeyErr)
+	}
+	if admin.rekeys != 1 {
+		t.Fatalf("rekeys=%d, want 1", admin.rekeys)
+	}
+	if done.dirty() {
+		t.Fatal("a rekey left the buffer looking unsaved, though the [credentials] block is not part of the rows")
+	}
+	if bytes.Equal(done.saveBase, openBase) {
+		t.Fatal("the editor did not re-baseline after its own rekey")
+	}
+	onDisk, err := os.ReadFile(admin.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(done.saveBase, onDisk) {
+		t.Fatal("saveBase is not the bytes the rekey wrote")
+	}
+	if !strings.Contains(done.status, "passphrase rotated") || !strings.Contains(done.status, done.filePath) {
+		t.Fatalf("status = %q, want the file named", done.status)
+	}
+	if strings.Contains(done.status, "pw") || strings.Contains(done.status, "new") {
+		t.Fatalf("status carries a passphrase: %q", done.status)
+	}
+	if done.credRekeyInputs[0].Value() != "" || done.credRekeyInputs[1].Value() != "" || done.credRekeyInputs[2].Value() != "" {
+		t.Fatal("a successful rekey left a passphrase in an input")
+	}
+	saved := done.save()
+	if saved.confirmOverwrite || saved.errMsg != "" {
+		t.Fatalf("^s over the editor's own rekey prompted: overwrite=%v err=%q", saved.confirmOverwrite, saved.errMsg)
+	}
+	if got := admin.open(t, "STRIPE_KEY", "new"); string(got) != "sk-live-1" {
+		t.Fatalf("round trip under the new passphrase: %q", got)
+	}
+}
+
+// The rekey modal states the one fact that makes it safe to offer, discloses
+// a layer write target, and treats ^s the way the mint modal does.
+func TestRekeyModalStatesWhatItChangesAndRefusesSave(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	admin.disclosure = "writes to layer acme (/x/layer.config), used by 3 projects — this changes the value for every project extending it"
+	m := openRekey(t, credModel(t, admin, nil))
+	v := m.viewCredRekey()
+	if !strings.Contains(v, "passphrase only") || !strings.Contains(v, "byte-identical") {
+		t.Fatalf("the modal must say the passphrase changes and the value rows do not:\n%s", v)
+	}
+	if !strings.Contains(v, "old passphrase") {
+		t.Fatalf("the modal must say the old passphrase stops working:\n%s", v)
+	}
+	if !strings.Contains(v, "layer acme") {
+		t.Fatalf("the rekey modal does not disclose the write target:\n%s", v)
+	}
+	next, _ := m.updateCredRekey(tea.KeyMsg{Type: tea.KeyCtrlS})
+	got := next.(model)
+	if !strings.Contains(got.credRekeyErr, "^s") {
+		t.Fatalf("credRekeyErr = %q, want the ^s refusal", got.credRekeyErr)
+	}
+	if got.mode != modeCredRekey || admin.rekeys != 0 {
+		t.Fatalf("^s wrote or left the modal (mode=%v rekeys=%d)", got.mode, admin.rekeys)
+	}
+}
+
+// An unwrap that is not a typo is shown as itself, not as a wrong-passphrase
+// re-ask: retrying the same boxes cannot repair a damaged identity.
+func TestRekeyModalShowsANonPassphraseCauseAsItself(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+	admin.rekeyErr = errors.New("credentials identity: unexpected EOF")
+	got := typeCredRekey(t, openRekey(t, credModel(t, admin, nil)), "pw", "new", "new")
+	if !strings.Contains(got.credRekeyErr, "credentials identity") {
+		t.Fatalf("credRekeyErr = %q, want the unwrap cause", got.credRekeyErr)
+	}
+	if strings.Contains(got.credRekeyErr, credentials.ErrBadPassphrase.Error()) {
+		t.Fatalf("a non-passphrase cause wore retryable prose: %q", got.credRekeyErr)
+	}
+	if got.mode != modeCredRekey {
+		t.Fatalf("mode = %v, want the modal still up", got.mode)
+	}
+	if got.credRekeyInputs[0].Value() != "" || got.credRekeyInputs[1].Value() != "" {
+		t.Fatal("a refused attempt left a passphrase in an input")
 	}
 }
 

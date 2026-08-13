@@ -205,6 +205,23 @@ func (a *credentialAdmin) Set(w configui.CredentialWrite) (configui.CredentialRe
 	return configui.CredentialResult{Row: row, File: after}, nil
 }
 
+// Rekey re-wraps this file's identity under a new passphrase. The file is
+// re-read HERE, per call: those bytes are what the compare-and-swap holds
+// the write to. The bytes that mutation wrote come back with it — the
+// editor's save baseline is then its own write and not a re-read taken
+// after the lock let go.
+func (a *credentialAdmin) Rekey(current, newPw string) (configui.CredentialResult, error) {
+	f, err := readCredTarget(a.t)
+	if err != nil {
+		return configui.CredentialResult{}, err
+	}
+	after, err := writeCredentialRekey(a.s, a.t, f, current, newPw)
+	if err != nil {
+		return configui.CredentialResult{}, err
+	}
+	return configui.CredentialResult{File: after}, nil
+}
+
 // layerWriteDisclosure states what writing to a layer means: every project
 // extending it takes the new value on its next launch. The count DEGRADES —
 // an unreadable store costs the number, never the warning.
@@ -649,7 +666,8 @@ func CredentialsUnset(s Streams, projectDir, key, layer string) error {
 // CredentialsRekey implements `byre credentials rekey [--layer]`: re-wrap
 // ONE file's identity under a new passphrase. The identity itself does not
 // rotate, so every value row stays byte-identical — which is what keeps drift
-// comparing credentials as plain bytes.
+// comparing credentials as plain bytes. The write itself is writeCredentialRekey,
+// the same core the editor's Rekey rides.
 func CredentialsRekey(s Streams, projectDir, layer string) error {
 	if !s.TTY {
 		return errors.New("credentials rekey needs a terminal for the masked passphrase prompts")
@@ -672,25 +690,45 @@ func CredentialsRekey(s Streams, projectDir, layer string) error {
 	if err != nil {
 		return err
 	}
-	id, err := credentials.UnwrapIdentity(f.block.Identity, old)
-	if err != nil {
-		return err
-	}
 	newPw, err := readNewPassphrase(s, "new passphrase: ", "confirm new passphrase: ")
 	if err != nil {
 		return err
 	}
-	wrapped, err := id.Rewrap(newPw)
-	if err != nil {
-		return err
-	}
-	if _, err := writeCredTarget(s, t, f, func(doc *tomldoc.Doc) error {
-		return setCredentialsBlock(doc, wrapped, id.Recipient())
-	}); err != nil {
+	if _, err := writeCredentialRekey(s, t, f, old, newPw); err != nil {
 		return err
 	}
 	fmt.Fprintf(s.Err, "byre: passphrase rotated for the %s (%s). The identity is unchanged, so every value row is untouched — after a suspected leak of the file itself, re-set the values under a new identity.\n", t.label, t.path)
 	return nil
+}
+
+// writeCredentialRekey is the encrypt-and-CAS half of `rekey`, and the ONE
+// owner of it: unwrap the file's identity under current, re-wrap it under
+// new, and compare-and-swap the [credentials] block. The identity itself
+// does not rotate, so every value row stays byte-identical. Returns the
+// file bytes the write produced.
+//
+// Every surface that rekeys rides this. A second spelling of unwrap-and-CAS
+// would be a second place for the identity and its rows to end up in
+// different generations — the exact split the compare-and-swap exists to
+// prevent — so the editor calls this rather than reimplementing it.
+func writeCredentialRekey(s Streams, t credTarget, f credFile, current, newPw string) ([]byte, error) {
+	if !f.hasBlock {
+		return nil, fmt.Errorf("%s (%s) holds no credentials identity — nothing to rekey", t.label, t.path)
+	}
+	if newPw == "" {
+		return nil, errors.New(credentials.EmptyPassphraseWorthless)
+	}
+	id, err := credentials.UnwrapIdentity(f.block.Identity, current)
+	if err != nil {
+		return nil, err
+	}
+	wrapped, err := id.Rewrap(newPw)
+	if err != nil {
+		return nil, err
+	}
+	return writeCredTarget(s, t, f, func(doc *tomldoc.Doc) error {
+		return setCredentialsBlock(doc, wrapped, id.Recipient())
+	})
 }
 
 // CredentialsList implements `byre credentials list`: the cascade's

@@ -1130,6 +1130,54 @@ func TestEditorAdminRemovesTheRowAKeyChangeReplaces(t *testing.T) {
 	}
 }
 
+// The editor's Rekey rides the same unwrap-and-CAS as the verb: the new
+// passphrase opens the same rows, the old one is ErrBadPassphrase, and
+// every value row stays byte-identical.
+func TestEditorAdminRekeyRoundTripsAndLeavesValueRowsUntouched(t *testing.T) {
+	credentials.SetWorkFactorForTesting(10)
+	p, _ := testPaths(t)
+	var errBuf bytes.Buffer
+	a := &credentialAdmin{s: ttyStreams(&errBuf), t: projectCredTarget(p)}
+	if _, err := a.Set(configui.CredentialWrite{Key: "STRIPE_KEY", Kind: credentials.KindEnv, Value: []byte("sk-live-1"), Passphrase: "pw"}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(p.Dir, config.ProjectConfigName)
+	before, err := config.ParseFile(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeRow := before.EnvFromHost["STRIPE_KEY"]
+
+	res, err := a.Rekey("pw", "new")
+	if err != nil {
+		t.Fatalf("Rekey: %v", err)
+	}
+	after, err := config.ParseFile(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.EnvFromHost["STRIPE_KEY"] != beforeRow {
+		t.Fatal("a rekey must leave value rows byte-identical")
+	}
+	if v, _ := openCredRow(t, path, "new", "STRIPE_KEY"); string(v) != "sk-live-1" {
+		t.Fatalf("value after rekey under the new passphrase: %q", v)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(res.File, raw) {
+		t.Fatalf("Rekey returned %d bytes, the file holds %d", len(res.File), len(raw))
+	}
+	block, _, err := config.ParseCredentialsBlock(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := credentials.UnwrapIdentity(block.Identity, "pw"); !errors.Is(err, credentials.ErrBadPassphrase) {
+		t.Fatalf("the old passphrase must stop working: %v", err)
+	}
+}
+
 // A file with credential rows and no [credentials] block: minting proceeds (the
 // rows are already undecryptable, a launch already stops on them, and refusing
 // would send the user on an unset-first errand that buys no safety), but the
