@@ -292,6 +292,12 @@ func TestLauncherManifestRejectionsFailClosed(t *testing.T) {
 		{"malformed key", "GOOD env\n" + secret + " env\n", map[string][]byte{"GOOD": []byte("z")}, "line 2"},
 		{"unknown kind", "GOOD_ONE " + secret + "\n", map[string][]byte{"GOOD_ONE": []byte("z")}, "line 1"},
 		{"value never landed", "GOOD_ONE env\n", nil, "line 1"},
+		// A blank line is not a row to skip past: byre's composer writes one
+		// "KEY kind" line per value and never an empty one, so a manifest
+		// carrying one is not byre's -- and continuing would export the rest,
+		// which is the partial credential set every other arm exits over.
+		{"blank line", "GOOD_ONE env\n\nSECOND_KEY env\n",
+			map[string][]byte{"GOOD_ONE": []byte("z"), "SECOND_KEY": []byte("z")}, "line 2"},
 		{"empty manifest", "", nil, "line 0"},
 		// A manifest cut mid-line: `read` ends the loop on the partial
 		// record without failing, so the rows BEFORE it would export and

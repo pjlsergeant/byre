@@ -269,7 +269,10 @@ if [ -n "${BYRE_CRED_EXPECT:-}" ]; then
   cred_exported=0
   while read -r cred_key cred_kind; do
     cred_lineno=$((cred_lineno + 1))
-    [ -n "$cred_key" ] || continue
+    # An empty line is a line byre's composer never writes, which by this
+    # block's own rule makes the delivery corrupt -- and skipping it would
+    # skip it SILENTLY, the one direction every other arm here refuses.
+    [ -n "$cred_key" ] || cred_fail "$cred_lineno" "the line is empty"
     if ! [[ "$cred_key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || [[ "$cred_key" == BYRE_* ]]; then
       cred_fail "$cred_lineno" "the export key is not a variable name byre would have written"
     fi
