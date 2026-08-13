@@ -513,9 +513,13 @@ func CredentialsList(s Streams, projectDir string) error {
 	// A key some file sets encrypted that the cascade does not deliver: a
 	// nearer layer emptied it, replaced it with another source, or an [env]
 	// literal took it. Declared and not reaching the box is exactly what a
-	// list must say out loud.
+	// list must say out loud — and the value-state cell says SET, because it
+	// is: the ciphertext sits in that file, and "unset" would send a user to
+	// re-enter a value they already have instead of to the row that is
+	// beating it.
 	for _, d := range disabledCredentialRows(files, groups) {
-		fmt.Fprintf(s.Out, "%s\t%s\t%s\t%s\n", d.key, d.kind, d.source, credentials.ValueState(false))
+		fmt.Fprintf(s.Out, "%s\t%s\t%s\t%s — not delivered: %s\n",
+			d.key, d.kind, d.source, credentials.ValueState(true), d.reason)
 		rows++
 	}
 	if rows == 0 {
@@ -526,8 +530,8 @@ func CredentialsList(s Streams, projectDir string) error {
 }
 
 // disabledCredentialRow is a credential a file declares that the cascade
-// does not deliver.
-type disabledCredentialRow struct{ key, kind, source string }
+// does not deliver: where its value sits, and what takes it away.
+type disabledCredentialRow struct{ key, kind, source, reason string }
 
 func disabledCredentialRows(files []config.CascadeFile, live []config.CredentialFile) []disabledCredentialRow {
 	delivered := map[string]bool{}
@@ -548,10 +552,41 @@ func disabledCredentialRows(files []config.CascadeFile, live []config.Credential
 				continue
 			}
 			seen[k] = true
-			out = append(out, disabledCredentialRow{key: k, kind: string(row.Kind), source: credentialDisplay(f.Label)})
+			out = append(out, disabledCredentialRow{
+				key:    k,
+				kind:   string(row.Kind),
+				source: credentialDisplay(f.Label),
+				reason: credentialNotDeliveredReason(files, k),
+			})
 		}
 	}
 	return out
+}
+
+// credentialNotDeliveredReason names what beats a declared credential row,
+// searched the way the merge resolves: an explicit [env] literal anywhere
+// takes the key out of env_from_host entirely (ADR 0026), and otherwise the
+// nearest env_from_host row wins — "" being the idiomatic disable.
+func credentialNotDeliveredReason(files []config.CascadeFile, key string) string {
+	for i := len(files) - 1; i >= 0; i-- {
+		if _, ok := files[i].Cfg.Env[key]; ok {
+			return "overridden by an [env] literal in " + credentialDisplay(files[i].Label)
+		}
+	}
+	for i := len(files) - 1; i >= 0; i-- {
+		src, ok := files[i].Cfg.EnvFromHost[key]
+		if !ok {
+			continue
+		}
+		if src == "" {
+			return `disabled by "" in ` + credentialDisplay(files[i].Label)
+		}
+		// RenderSource, so a winning row that is itself an unreadable
+		// credential names its scheme instead of pasting a ciphertext wall
+		// into the listing.
+		return "replaced by " + config.RenderSource(src) + " in " + credentialDisplay(files[i].Label)
+	}
+	return "the cascade does not deliver it"
 }
 
 func sortedEnvKeys(m map[string]string) []string {

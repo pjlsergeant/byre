@@ -452,8 +452,9 @@ func TestCredentialsList(t *testing.T) {
 		t.Fatal("list must decrypt nothing")
 	}
 
-	// A key a nearer layer disables is declared and does not reach the box —
-	// which is what the unset state is for.
+	// A declared row the cascade does not deliver: the value IS set — the
+	// ciphertext sits in that file — so the list says set, and says what is
+	// beating it. "unset" would send the user to re-enter a value they have.
 	raw, _ := os.ReadFile(projectConfigPath(t, proj))
 	if err := config.AtomicWrite(projectConfigPath(t, proj), string(raw)+"\n[env]\nSTRIPE_KEY = \"literal\"\n"); err != nil {
 		t.Fatal(err)
@@ -462,9 +463,60 @@ func TestCredentialsList(t *testing.T) {
 	if err := CredentialsList(s, proj); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "STRIPE_KEY\tenv\tproject\tunset") {
-		t.Fatalf("overridden row: %s", out.String())
+	line := out.String()
+	if !strings.Contains(line, "STRIPE_KEY\tenv\tproject\tset — not delivered:") ||
+		!strings.Contains(line, "[env] literal in project") {
+		t.Fatalf("overridden row must read set, and name what takes it: %s", line)
 	}
+	if strings.Contains(line, "unset") {
+		t.Fatalf("a row whose file carries the value is not unset: %s", line)
+	}
+}
+
+// The other two ways a declared credential fails to arrive, each named.
+func TestCredentialsListNamesWhatTakesTheRow(t *testing.T) {
+	for _, tc := range []struct{ name, tail, want string }{
+		{"disabled", "\n[env_from_host]\nSTRIPE_KEY = \"\"\n", `disabled by "" in project`},
+		{"replaced", "\n[env_from_host]\nSTRIPE_KEY = \"env:STRIPE_KEY\"\n", "replaced by env:STRIPE_KEY in project"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, proj := testPaths(t)
+			var out, errBuf bytes.Buffer
+			s := Streams{Out: &out, Err: &errBuf, In: strings.NewReader(""), TTY: true}
+			passphraseSeam(t, "pw", "pw", "v")
+			// The row is set in a LAYER, so a nearer file can beat it while
+			// the ciphertext stays where it was written.
+			layerPath := config.LayerPath(mustHome(t), "acme")
+			if err := hostopen.PlainMkdirAll(filepath.Dir(layerPath), 0o755, hostopen.StoreOwned); err != nil {
+				t.Fatal(err)
+			}
+			if err := config.AtomicWrite(layerPath, ""); err != nil {
+				t.Fatal(err)
+			}
+			if err := CredentialsSet(s, proj, "STRIPE_KEY", false, "acme"); err != nil {
+				t.Fatal(err)
+			}
+			if err := config.AtomicWrite(projectConfigPath(t, proj), "extends = \"acme\"\n"+tc.tail); err != nil {
+				t.Fatal(err)
+			}
+			out.Reset()
+			if err := CredentialsList(s, proj); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out.String(), "layer acme\tset — not delivered: "+tc.want) {
+				t.Fatalf("want the losing row set in the layer and the reason %q: %s", tc.want, out.String())
+			}
+		})
+	}
+}
+
+func mustHome(t *testing.T) string {
+	t.Helper()
+	home, err := project.Home()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return home
 }
 
 func b64Of(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
