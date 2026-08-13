@@ -141,15 +141,20 @@ in those words.
 ## Display
 
 Long values elide everywhere config is rendered (`encrypted:[…]`), wanted
-for plaintext API keys anyway. TO SHIP (step 5, phase C — not yet built; at
-HEAD the Env screen renders credential rows elided/read-only and refuses
-the picker, naming the CLI): the editor shows credential rows on the Env
-screen: Source picker gains the encrypted kinds, Value input is masked,
-saving a value through the form is the `set` path (CAS + write-target rules
-apply). First credential in a file prompts to create that file's passphrase
-(a per-file passphrase-creation modal). Status shows
-launch-time unlock/delivery outcome only — no live-state field (ruled
-earlier, unchanged).
+for plaintext API keys anyway. SHIPPED (step 5, phase C): the editor shows
+credential rows on the Env screen with the value-state cell `credentials
+list` uses; the Source picker carries the two encrypted kinds, the Value
+input is masked and never echoed, and saving a value through the form IS
+the `set` path — same CAS, same file lock, same write-target disclosure,
+reached through a seam (configui.CredentialAdmin) rather than a second
+spelling. The first credential in a file opens the per-file passphrase
+modal. Boundaries taken deliberately: the credential kinds appear only
+where a credentials verb targets the file (project config, layer — not
+default.config); a damaged or reserved-key row still refuses and names the
+CLI; the value lands on ACCEPT rather than at ^s (the form says so first),
+and a credential row's key cannot be renamed in place, since the payload is
+stamped with the key. Status shows launch-time unlock/delivery outcome only
+— no live-state field (ruled earlier, unchanged).
 
 ## CLI
 
