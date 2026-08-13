@@ -1308,8 +1308,9 @@ func (m model) exposureNow() config.Exposure {
 		// A credential row is counted as a credential, not as env: the launch
 		// tally splits them the same way (an encrypted row never joins the
 		// -e export), and a key counted twice would make the two lines
-		// disagree over one grant.
-		if _, isCred, _ := config.ParseEncryptedRow(k, src); isCred {
+		// disagree over one grant. IsCredentialSource, so a damaged or
+		// reserved-key row counts where the list already renders it.
+		if config.IsCredentialSource(src) {
 			e.Credentials++
 			continue
 		}

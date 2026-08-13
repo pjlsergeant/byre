@@ -51,14 +51,18 @@ func resolveHostEnv(cfg config.Config, gitExe string) []hostEnvResult {
 	out := make([]hostEnvResult, 0, len(keys))
 	for _, k := range keys {
 		r := hostEnvResult{Key: k, Source: cfg.EnvFromHost[k]}
-		_, isCred, _ := config.ParseEncryptedRow(k, r.Source)
+		isCred := config.IsCredentialSource(r.Source)
 		if _, explicit := cfg.Env[k]; r.Source == "" {
 			r.State = hostEnvDisabled
 		} else if explicit {
 			r.State = hostEnvOverridden
 		} else if isCred {
-			// A row whose payload is damaged is still a credential row, and
-			// still not an argv value: the launch refuses it by name.
+			// A row whose payload is damaged -- or one on the reserved
+			// `manifest` key -- is still a credential row, and still not an
+			// argv value: the launch refuses it by name. That is why the test
+			// is IsCredentialSource and not a successful ParseEncryptedRow,
+			// whose ok is false for exactly those rows; through that one this
+			// line said "empty" about a credential.
 			r.State = hostEnvEncrypted
 		} else if v := hostSourceValue(r.Source, gitExe); v != "" {
 			r.Value, r.State = v, hostEnvDelivered

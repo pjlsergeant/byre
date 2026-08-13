@@ -859,3 +859,45 @@ func TestEnvScreenRefusesToEditACredentialRow(t *testing.T) {
 		t.Fatalf("the ciphertext must round-trip untouched: %q", got)
 	}
 }
+
+// The rows that are credentials and DON'T parse: one on the reserved
+// `manifest` key, one with a damaged payload. The list renders both as
+// credentials (scheme prefix), so the picker and the exposure tally must
+// agree — through ParseEncryptedRow's ok they did not, and such a row opened
+// into the picker that writes "" over a ciphertext and counted as env. One
+// predicate, config.IsCredentialSource, answers "is this a credential row"
+// for every surface; `byre credentials unset` is still the repair.
+func TestEnvScreenTreatsUnparsableCredentialRowsAsCredentials(t *testing.T) {
+	for _, tc := range []struct{ name, key, row string }{
+		{"reserved key", config.ReservedCredentialItem, config.EncryptedScheme + "AAAA"},
+		{"damaged payload", "STRIPE_KEY", config.EncryptedScheme + "!!"},
+		{"damaged file payload", "TLS_CERT", config.EncryptedFileScheme + "!!"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// The premise: these are exactly the rows a successful parse
+			// misses. If that stops being true this test is testing nothing.
+			if _, ok, err := config.ParseEncryptedRow(tc.key, tc.row); ok || err == nil {
+				t.Fatalf("premise gone: %q now parses as a credential row", tc.row)
+			}
+			m := hostEnvModel(t, map[string]string{tc.key: tc.row})
+			if line := hostEnvLine(tc.key, tc.row); !strings.Contains(line, "credential") {
+				t.Fatalf("the row must still read as a credential: %q", line)
+			}
+			opened := openHostEnvRow(t, m, tc.key)
+			if opened.mode == modeItem {
+				t.Fatal("a credential row must not open the picker editor, damaged or not")
+			}
+			if !strings.Contains(opened.status, "byre credentials set "+tc.key) {
+				t.Fatalf("the refusal must name the surface that can change it: %q", opened.status)
+			}
+			if got := opened.assemble().EnvFromHost[tc.key]; got != tc.row {
+				t.Fatalf("the row must round-trip untouched: %q", got)
+			}
+			// And it tallies as a credential, not as env: counting one grant
+			// on both lines would make the two disagree.
+			if e := m.exposureNow(); e.Credentials != 1 {
+				t.Fatalf("exposure tally counted %d credential(s), want 1 (env=%d)", e.Credentials, e.Env)
+			}
+		})
+	}
+}

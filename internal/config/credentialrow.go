@@ -158,8 +158,18 @@ func validateEncryptedSource(src string) (bool, error) {
 }
 
 // IsCredentialSource reports whether an env_from_host source names one of the
-// credential schemes — what a renderer asks before calling a row a host
-// passthrough.
+// credential schemes. It is THE predicate for "is this row a credential row",
+// asked by every surface that has to treat one differently: the renderer that
+// must not call it a host passthrough, the editor that must refuse to open it
+// in a picker, the exposure tally that counts it as a credential, and the
+// unset verb that removes it.
+//
+// Deliberately NOT ParseEncryptedRow's ok, which those sites used to ask and
+// which is false for a row that names a scheme and cannot be USED — a damaged
+// payload, or one on the reserved `manifest` key. Such a row is still a
+// credential row: it is what the list shows, it never joins the -e export,
+// and it is the row that most needs the picker kept off it. Ask this to
+// classify; ask ParseEncryptedRow only when you need the ciphertext.
 func IsCredentialSource(src string) bool {
 	_, _, _, ok := cutEncryptedScheme(src)
 	return ok

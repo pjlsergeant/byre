@@ -426,10 +426,12 @@ func CredentialsUnset(s Streams, projectDir, key, layer string) error {
 	if !present {
 		return fmt.Errorf("%s (%s) has no %s row to remove", t.label, t.path, key)
 	}
-	// A row that NAMES a scheme and carries an unusable payload is still this
-	// key's credential, and removing it is exactly the repair — so only a
-	// clean non-credential source is refused here.
-	if _, isCred, perr := config.ParseEncryptedRow(key, src); !isCred && perr == nil {
+	// A row that NAMES a scheme and carries an unusable payload — or sits on
+	// the reserved `manifest` key — is still this key's credential, and
+	// removing it is exactly the repair. IsCredentialSource is the one
+	// predicate every surface asks ("is this row a credential row"), so only
+	// a source naming no scheme at all is refused here.
+	if !config.IsCredentialSource(src) {
 		return fmt.Errorf("%s (%s): %s is a %q source, not a credential — edit it in `byre config`", t.label, t.path, key, src)
 	}
 	if err := writeCredTarget(s, t, f, func(doc *tomldoc.Doc) error {

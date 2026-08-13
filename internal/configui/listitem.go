@@ -479,8 +479,14 @@ func (m model) startItem(idx int) model {
 		// set would decode it as `disabled` and write "" over the value on
 		// the way out. Refuse to open it rather than destroy it; the CLI is
 		// the surface that can re-encrypt.
+		//
+		// IsCredentialSource, not a successful ParseEncryptedRow: a DAMAGED
+		// row (bad base64) or one on the reserved `manifest` key is still a
+		// credential row -- it is what the list renders it as -- and it is
+		// the row that most needs protecting from a picker that would write
+		// "" over it. `byre credentials unset` is the repair.
 		if idx >= 0 && m.itemHostEnv {
-			if _, isCred, _ := config.ParseEncryptedRow(m.hostEnv[idx].Key, m.hostEnv[idx].Value); isCred {
+			if config.IsCredentialSource(m.hostEnv[idx].Value) {
 				m.status = m.hostEnv[idx].Key + " is a credential — change it with `byre credentials set " + m.hostEnv[idx].Key + "` (this screen would write over the ciphertext)"
 				return m
 			}
