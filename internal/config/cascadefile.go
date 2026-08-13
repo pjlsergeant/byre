@@ -74,6 +74,16 @@ func CascadeFiles(projectDir string) ([]CascadeFile, error) {
 	return append(out, CascadeFile{Label: "project", Path: projPath, Raw: projRaw, Cfg: projCfg}), nil
 }
 
+// attribution names a cascade file the way a refusal should: the label a user
+// recognizes, and the path to edit when there is one (a bundled template has
+// none).
+func (f CascadeFile) attribution() string {
+	if f.Path == "" {
+		return f.Label
+	}
+	return f.Label + " (" + f.Path + ")"
+}
+
 // readCascadeFile is loadLayer plus the raw bytes: one bounded, fd-judged
 // read, held to the per-layer rules. A missing file is an empty layer, as
 // everywhere else in the cascade.

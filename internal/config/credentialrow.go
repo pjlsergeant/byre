@@ -178,7 +178,9 @@ type CredentialFile struct {
 //
 // Files carrying no winning encrypted row are absent from the result,
 // including files that carry a [credentials] block: an identity nothing needs
-// is never unlocked and never prompted for.
+// is never unlocked and never prompted for. An OVERRIDDEN row is not read at
+// all — a broken one a nearer file already replaced is not a problem anybody
+// has.
 func EncryptedRows(files []CascadeFile) ([]CredentialFile, error) {
 	winner := map[string]int{}
 	for i, f := range files {
@@ -211,15 +213,6 @@ func EncryptedRows(files []CascadeFile) ([]CredentialFile, error) {
 		out = append(out, CredentialFile{Label: f.Label, Path: f.Path, Block: block, HasBlock: has, Rows: rows})
 	}
 	return out, nil
-}
-
-// attribution names a cascade file the way a refusal should: the label a user
-// recognizes, and the path to edit when there is one.
-func (f CascadeFile) attribution() string {
-	if f.Path == "" {
-		return f.Label
-	}
-	return f.Label + " (" + f.Path + ")"
 }
 
 // echo bounds a rejected value so a pasted wall of ciphertext cannot become
