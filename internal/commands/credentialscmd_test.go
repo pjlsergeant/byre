@@ -455,8 +455,7 @@ func TestCredentialsSetLayerDisclosesTheWriteTarget(t *testing.T) {
 	}
 }
 
-// list reads the cascade and decrypts nothing: key, kind, source file, and
-// whether the winning row carries a value.
+// list reads the cascade and decrypts nothing: key, kind, source file.
 func TestCredentialsList(t *testing.T) {
 	_, proj := testPaths(t)
 	var out, errBuf bytes.Buffer
@@ -589,6 +588,47 @@ func TestCredentialsListDoesNotSlanderHealthyRowsWhenOneIsBroken(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "not delivered") {
 		t.Fatalf("a healthy row must not be told it was replaced by itself: %s", out.String())
+	}
+}
+
+// When two files carry the same key, the listing attributes it to the NEAREST
+// file — the row the merge would pick. Root-most attribution would show the
+// shadowed loser and let the winning row's file hide.
+func TestCredentialsListUnresolvedAttributesTheNearestRow(t *testing.T) {
+	_, proj := testPaths(t)
+	var out, errBuf bytes.Buffer
+	s := Streams{Out: &out, Err: &errBuf, In: strings.NewReader(""), TTY: true}
+	// A healthy GH_TOKEN in a layer, shadowed by the project's own row for
+	// the SAME key; the project's reserved-key row takes resolution down, so
+	// the fallback listing is what renders.
+	layerPath := config.LayerPath(mustHome(t), "acme")
+	if err := hostopen.PlainMkdirAll(filepath.Dir(layerPath), 0o755, hostopen.StoreOwned); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.AtomicWrite(layerPath, ""); err != nil {
+		t.Fatal(err)
+	}
+	passphraseSeam(t, "pw", "pw", "v")
+	if err := CredentialsSet(s, proj, "GH_TOKEN", false, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.AtomicWrite(projectConfigPath(t, proj),
+		"extends = \"acme\"\n[env_from_host]\nGH_TOKEN = \"encrypted:AAAA\"\n"+
+			config.ReservedCredentialItem+" = \"encrypted:AAAA\"\n"); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := CredentialsList(s, proj); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), credentialListUnresolved) {
+		t.Fatalf("the page must carry the qualifier: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "GH_TOKEN\tenv\tproject") {
+		t.Fatalf("the key must attribute to the nearest (broken, winning) row: %s", out.String())
+	}
+	if strings.Contains(out.String(), "GH_TOKEN\tenv\tlayer acme") {
+		t.Fatalf("the shadowed layer row must not stand in for the offender: %s", out.String())
 	}
 }
 

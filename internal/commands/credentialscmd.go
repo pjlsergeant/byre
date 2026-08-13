@@ -694,8 +694,8 @@ func CredentialsRekey(s Streams, projectDir, layer string) error {
 }
 
 // CredentialsList implements `byre credentials list`: the cascade's
-// credential rows with kind, source file, and whether the winning row
-// carries a value. Nothing is decrypted, so this never prompts.
+// credential rows with kind and source file. Nothing is decrypted, so this
+// never prompts.
 func CredentialsList(s Streams, projectDir string) error {
 	files, err := config.CascadeFiles(projectDir)
 	if err != nil {
@@ -759,12 +759,16 @@ const credentialListUnresolved = "a credential row in this cascade cannot be rea
 type disabledCredentialRow struct{ key, kind, source, reason string }
 
 // declaredCredentialRows are the credential rows the cascade's FILES carry —
-// key, kind, and the file that declares it — deduped by key, root-most
-// declaration first. It makes no claim about delivery, which is what makes it
-// the honest listing when the resolution that decides delivery failed.
+// key, kind, and the file that carries it — deduped by key, NEAREST file
+// winning, because later-wins is the merge's own rule: the nearest row is the
+// one resolution would pick, so when two files carry a key it is the nearest
+// row's damage that broke the page, and attributing the key to the root-most
+// file would show the shadowed loser and hide the offender. It makes no claim
+// about delivery, which is what makes it the honest listing when the
+// resolution that decides delivery failed.
 func declaredCredentialRows(files []config.CascadeFile) []disabledCredentialRow {
-	seen := map[string]bool{}
-	var out []disabledCredentialRow
+	winner := map[string]disabledCredentialRow{}
+	var order []string // first-appearance order, so the listing stays stable
 	for _, f := range files {
 		for _, k := range sortedEnvKeys(f.Cfg.EnvFromHost) {
 			src := f.Cfg.EnvFromHost[k]
@@ -772,17 +776,23 @@ func declaredCredentialRows(files []config.CascadeFile) []disabledCredentialRow 
 			// row that made resolution fail — damaged payload, reserved key
 			// — is a row a file declares, and this listing exists BECAUSE
 			// of it; a parse filter would omit exactly the offender.
-			if seen[k] || !config.IsCredentialSource(src) {
+			if !config.IsCredentialSource(src) {
 				continue
 			}
+			if _, ok := winner[k]; !ok {
+				order = append(order, k)
+			}
 			kind, _ := config.CredentialKindOf(src)
-			seen[k] = true
-			out = append(out, disabledCredentialRow{
+			winner[k] = disabledCredentialRow{
 				key:    k,
 				kind:   string(kind),
 				source: credentialDisplay(f.Label),
-			})
+			}
 		}
+	}
+	out := make([]disabledCredentialRow, 0, len(order))
+	for _, k := range order {
+		out = append(out, winner[k])
 	}
 	return out
 }

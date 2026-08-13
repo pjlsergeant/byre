@@ -819,9 +819,8 @@ func TestErrLineKeepsDeliberateNewlinesAndStripsControls(t *testing.T) {
 }
 
 // A credential row shares the Env screen with the passthroughs, and it reads
-// as what it is: the payload elides, "host" would name a source it does not
-// have, and the value-state cell speaks `byre credentials list`'s word. This
-// pins the RENDER; the editing half moved to credentials_test.go when the
+// as what it is: the payload elides, and "host" would name a source it does
+// not have. This pins the RENDER; the editing half moved to credentials_test.go when the
 // editor grew its own write path (an editor with none — the --global one, and
 // this fixture — still refuses the row, and must not name a CLI verb that
 // cannot target its file).
