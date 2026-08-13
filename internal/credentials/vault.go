@@ -360,32 +360,46 @@ func (v *Vault) Unlock(passphrase string) (*Unlocked, error) {
 		}
 		return nil, fmt.Errorf("credentials identity: %w", err)
 	}
+	id, err := unwrapIdentity(b, passphrase)
+	if err != nil {
+		if errors.Is(err, ErrBadPassphrase) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("credentials identity: %w", err)
+	}
+	return &Unlocked{v: v, id: id, wrapped: b}, nil
+}
+
+// unwrapIdentity unwraps a scrypt-wrapped identity blob — the expensive
+// step, shared by the vault's identity file and a config file's own
+// [credentials] block, so both pay the same pinned work factor and answer a
+// typo the same way. ErrBadPassphrase distinguishes a wrong passphrase
+// (re-askable) from a corrupt or oversize blob.
+func unwrapIdentity(wrapped []byte, passphrase string) (*age.X25519Identity, error) {
 	sid, err := age.NewScryptIdentity(passphrase)
 	if err != nil {
 		return nil, err
 	}
 	sid.SetMaxWorkFactor(scryptMaxWorkFactor)
-	rd, err := age.Decrypt(bytes.NewReader(b), sid)
+	rd, err := age.Decrypt(bytes.NewReader(wrapped), sid)
 	if err != nil {
-		var noMatch *age.NoIdentityMatchError
-		if errors.As(err, &noMatch) {
-			return nil, ErrBadPassphrase
-		}
-		return nil, fmt.Errorf("credentials identity: %w", err)
+		return nil, passphraseOrCause(err)
 	}
 	idStr, err := io.ReadAll(io.LimitReader(rd, identityReadCap))
 	if err != nil {
-		var noMatch *age.NoIdentityMatchError
-		if errors.As(err, &noMatch) {
-			return nil, ErrBadPassphrase
-		}
-		return nil, fmt.Errorf("credentials identity: %w", err)
+		return nil, passphraseOrCause(err)
 	}
-	id, err := age.ParseX25519Identity(strings.TrimSpace(string(idStr)))
-	if err != nil {
-		return nil, fmt.Errorf("credentials identity: %w", err)
+	return age.ParseX25519Identity(strings.TrimSpace(string(idStr)))
+}
+
+// passphraseOrCause maps age's no-matching-identity answer to
+// ErrBadPassphrase and passes anything else through as the real cause.
+func passphraseOrCause(err error) error {
+	var noMatch *age.NoIdentityMatchError
+	if errors.As(err, &noMatch) {
+		return ErrBadPassphrase
 	}
-	return &Unlocked{v: v, id: id, wrapped: b}, nil
+	return err
 }
 
 // ErrVaultChanged is Rekey's refusal when the on-disk identity is no longer
