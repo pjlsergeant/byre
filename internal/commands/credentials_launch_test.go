@@ -242,6 +242,12 @@ func TestDevelopWrongPassphraseStopsTheLaunch(t *testing.T) {
 		!strings.Contains(err.Error(), "--credentials=skip") {
 		t.Fatalf("want a stop naming the file and a remedy, got: %v", err)
 	}
+	// The remedy must be one this user can actually run: `rekey` opens by
+	// asking for the passphrase they have just lost.
+	if !strings.Contains(err.Error(), "rekey` cannot help") ||
+		!strings.Contains(err.Error(), "byre credentials unset STRIPE_KEY") {
+		t.Fatalf("the remedy must not point at rekey: %v", err)
+	}
 	if *calls != credPassphraseAttempts {
 		t.Fatalf("attempts = %d, want %d", *calls, credPassphraseAttempts)
 	}

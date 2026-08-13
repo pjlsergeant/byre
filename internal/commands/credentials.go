@@ -208,8 +208,14 @@ func unlockOneByPrompt(s Streams, g config.CredentialFile, groups []config.Crede
 			fmt.Fprintln(s.Err, "byre: credentials: wrong passphrase — try again.")
 		}
 	}
-	return fmt.Errorf("credentials: wrong passphrase for %s after %d attempts — nothing was launched. Rotate it with `byre credentials rekey`, or launch without these rows with --credentials=skip",
-		credentialAttribution(g), credPassphraseAttempts)
+	// NOT "rotate it with rekey": rekey opens with a prompt for the CURRENT
+	// passphrase, which is the thing this user has just failed three times.
+	// A lost passphrase makes these values unrecoverable, and the only real
+	// remedy is to replace the identity — which means taking out the rows and
+	// the block that no longer opens them, then setting them again (the same
+	// "re-set the values under a new identity" the rekey notice speaks of).
+	return fmt.Errorf("credentials: wrong passphrase for %s after %d attempts — nothing was launched. `byre credentials rekey` cannot help here: it asks for this same passphrase first. If it is lost these values cannot be recovered — take the rows out (byre credentials unset %s), delete that file's [credentials] block, and set them again under a new identity. To launch without these rows: --credentials=skip",
+		credentialAttribution(g), credPassphraseAttempts, g.Rows[0].Key)
 }
 
 // unlockFromStdin is the non-interactive mode: passphrase lines, each tried
