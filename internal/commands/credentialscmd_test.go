@@ -154,6 +154,13 @@ func TestCredentialsSetRefusals(t *testing.T) {
 		!strings.Contains(err.Error(), "BYRE_ namespace") {
 		t.Fatalf("reserved key: %v", err)
 	}
+	// The delivery stream's own reserved item name: a legal env var name, so
+	// only this rule keeps a credential off it. Refused before any prompt.
+	if err := CredentialsSet(s, proj, config.ReservedCredentialItem, false, ""); err == nil ||
+		!strings.Contains(err.Error(), "reserved") ||
+		!strings.Contains(err.Error(), config.ReservedCredentialItem) {
+		t.Fatalf("reserved manifest key: %v", err)
+	}
 	// Minting an identity needs a terminal — a passphrase never rides a pipe.
 	nonTTY := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("v\n"), TTY: false}
 	if err := CredentialsSet(nonTTY, proj, "A", false, ""); err == nil || !strings.Contains(err.Error(), "terminal") {

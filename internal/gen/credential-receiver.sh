@@ -10,10 +10,19 @@
 #
 # Stream grammar:
 #   byre-credentials 1
-#   item <name>            name = "manifest" or a credential's CONFIG KEY
+#   item manifest          the export manifest, exactly once, first
+#   <base64, one line>
+#   item <name>            name = a credential's CONFIG KEY
 #   <base64, one line>
 #   ...
 #   done
+#
+# "manifest" is POSITIONAL, not an item name the loop below accepts. A
+# credential's config key is an environment variable name, and "manifest" is a
+# legal one — so an item loop that honoured the name would let a credential's
+# VALUE land on the manifest the launcher parses, delivering nothing and
+# handing the launcher a secret to read as export lines. The frame that may
+# write outside the credentials dir is the first one and only the first one.
 #
 # A stream that ends without "done" leaves no sentinel, and the launcher then
 # fails the launch closed. This is plain transport correctness — the agent is
@@ -32,6 +41,15 @@ if [ "$header" != "byre-credentials 1" ]; then
 fi
 mkdir -p "$DIR/credentials"
 
+# The prologue: the manifest frame, required and consumed here.
+IFS= read -r line || exit 1
+if [ "$line" != "item manifest" ]; then
+  echo "byre-credential-receiver: the stream must open with its manifest frame" >&2
+  exit 1
+fi
+IFS= read -r b64 || exit 1
+printf '%s' "$b64" | base64 -d >"$DIR/manifest"
+
 while IFS= read -r line; do
   case "$line" in
   done)
@@ -40,16 +58,18 @@ while IFS= read -r line; do
     ;;
   "item "*)
     name="${line#item }"
-    IFS= read -r b64 || exit 1
+    # Refused BEFORE the payload line is read, so a refused frame writes
+    # nothing and the manifest already on disk stays byre's.
     if [ "$name" = manifest ]; then
-      dest="$DIR/manifest"
-    elif [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-      dest="$DIR/credentials/$name"
-    else
+      echo "byre-credential-receiver: refusing a second manifest frame" >&2
+      exit 1
+    fi
+    if ! [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
       echo "byre-credential-receiver: refusing malformed item name" >&2
       exit 1
     fi
-    printf '%s' "$b64" | base64 -d >"$dest"
+    IFS= read -r b64 || exit 1
+    printf '%s' "$b64" | base64 -d >"$DIR/credentials/$name"
     ;;
   *)
     echo "byre-credential-receiver: malformed frame" >&2

@@ -264,6 +264,11 @@ func CredentialsSet(s Streams, projectDir, key string, fileKind bool, layer stri
 	if err := config.ValidateEnvFromHostKey(key); err != nil {
 		return err
 	}
+	// Refused before the value prompt, not after the row is written: the key
+	// the delivery stream reserves for its manifest cannot be a credential.
+	if err := config.ValidateCredentialKey(key); err != nil {
+		return err
+	}
 	kind := credentials.KindEnv
 	if fileKind {
 		kind = credentials.KindFile

@@ -91,6 +91,28 @@ func TestParseEncryptedRowRejections(t *testing.T) {
 	}
 }
 
+// "manifest" is a legal environment variable name and the delivery stream's
+// own reserved item name. A credential keyed it is refused at the one gate
+// every reader of a row passes, so neither a `set` nor a hand-written file
+// can put one in front of the receiver.
+func TestParseEncryptedRowRefusesTheReservedManifestKey(t *testing.T) {
+	_, recipient := mintIdentity(t, "pw")
+	row := encRow(t, recipient, ReservedCredentialItem, credentials.KindEnv, "sk-live")
+	_, ok, err := ParseEncryptedRow(ReservedCredentialItem, row)
+	if ok || err == nil || !strings.Contains(err.Error(), "reserved") ||
+		!strings.Contains(err.Error(), ReservedCredentialItem) {
+		t.Fatalf("want a refusal naming the reservation and the key: ok=%v err=%v", ok, err)
+	}
+	// The reservation is a CREDENTIAL rule: an ordinary passthrough may still
+	// be keyed manifest.
+	if _, ok, err := ParseEncryptedRow(ReservedCredentialItem, "env:MANIFEST"); ok || err != nil {
+		t.Fatalf("a non-credential row keyed manifest must pass: ok=%v err=%v", ok, err)
+	}
+	if err := ValidateCredentialKey("MANIFEST"); err != nil {
+		t.Fatalf("the reservation is exact, not case-folded: %v", err)
+	}
+}
+
 func mustRowErr(t *testing.T, key, value string) error {
 	t.Helper()
 	_, _, err := ParseEncryptedRow(key, value)

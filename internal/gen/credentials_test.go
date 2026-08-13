@@ -65,6 +65,7 @@ func TestReceiverWritesValuesAndDoneLast(t *testing.T) {
 func TestReceiverIncompleteStreamLeavesNoSentinel(t *testing.T) {
 	dir := t.TempDir()
 	stream := "byre-credentials 1\n" +
+		"item manifest\n" + b64([]byte("STRIPE_KEY env\n")) + "\n" +
 		"item STRIPE_KEY\n" + b64([]byte("v")) + "\n" // EOF without done
 	code, _ := runReceiver(t, dir, stream)
 	if code == 0 {
@@ -80,9 +81,40 @@ func TestReceiverRefusesUnknownVersionAndBadNames(t *testing.T) {
 	if code, out := runReceiver(t, dir, "byre-credentials 999\n"); code == 0 || !strings.Contains(out, "not a credential stream") {
 		t.Fatalf("unknown version: exit %d out %q", code, out)
 	}
-	bad := "byre-credentials 1\nitem ../escape\n" + b64([]byte("v")) + "\ndone\n"
+	bad := "byre-credentials 1\nitem manifest\n" + b64([]byte("A env\n")) + "\nitem ../escape\n" + b64([]byte("v")) + "\ndone\n"
 	if code, out := runReceiver(t, dir, bad); code == 0 || !strings.Contains(out, "malformed item name") {
 		t.Fatalf("bad name: exit %d out %q", code, out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".done")); !os.IsNotExist(err) {
+		t.Fatal("refused stream must leave no .done")
+	}
+	// The manifest is positional: a stream that opens with a value frame is
+	// not one this receiver will write anything for.
+	noManifest := "byre-credentials 1\nitem A\n" + b64([]byte("v")) + "\ndone\n"
+	if code, out := runReceiver(t, t.TempDir(), noManifest); code == 0 || !strings.Contains(out, "manifest frame") {
+		t.Fatalf("missing manifest prologue: exit %d out %q", code, out)
+	}
+}
+
+// "manifest" is a legal environment variable name, so a credential can be
+// keyed it — and a receiver that honoured the name would write the SECRET
+// over the manifest, deliver nothing, and hand the launcher the secret's own
+// bytes to parse as export lines. Host-side the key is refused outright; this
+// is the receiver's own layer of that.
+func TestReceiverRefusesACredentialKeyedManifest(t *testing.T) {
+	dir := t.TempDir()
+	realManifest := []byte("STRIPE_KEY env\n")
+	stream := "byre-credentials 1\n" +
+		"item manifest\n" + b64(realManifest) + "\n" +
+		"item manifest\n" + b64([]byte("sk-live-secret")) + "\n" +
+		"done\n"
+	code, out := runReceiver(t, dir, stream)
+	if code == 0 {
+		t.Fatalf("a second manifest frame must be refused: %s", out)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "manifest"))
+	if err != nil || !bytes.Equal(got, realManifest) {
+		t.Fatalf("the manifest was clobbered: %v %q", err, got)
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".done")); !os.IsNotExist(err) {
 		t.Fatal("refused stream must leave no .done")

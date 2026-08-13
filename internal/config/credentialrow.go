@@ -62,11 +62,33 @@ type EncryptedRow struct {
 	Blob []byte
 }
 
+// ReservedCredentialItem is the one name the delivery stream reserves: the
+// receiver writes the launcher's export manifest under it. It is also a legal
+// environment variable name, so nothing about the env grammar keeps a
+// credential off it — the reservation has to be stated.
+const ReservedCredentialItem = "manifest"
+
+// ValidateCredentialKey refuses the one env key a credential may not use.
+// Every other env_from_host rule is ValidateEnvFromHostKey's; this is the
+// extra one a CREDENTIAL carries, because a credential value travels to the
+// box under its config key and the manifest travels under this name.
+func ValidateCredentialKey(key string) error {
+	if key == ReservedCredentialItem {
+		return fmt.Errorf("%s %s: %q is reserved — a credential travels to the box under its config key, and byre's own export manifest travels under that name; rename the row (byre credentials unset %s, then set it under another key)",
+			EnvFromHostTable, key, ReservedCredentialItem, key)
+	}
+	return nil
+}
+
 // ParseEncryptedRow decodes one row value. ok is false for any other source
 // (including "", the idiomatic disable). An error means the row NAMES a
 // credential scheme and its payload is unusable, which is a stop, not a
 // fallback: a value silently delivered as "encrypted:AAAA" would be a
 // credential leak spelled as a typo.
+//
+// The reserved-key check lives here because this is the one gate every reader
+// of a credential row passes — the launch-time collection included — so a row
+// hand-written into a file cannot reach the delivery stream either.
 //
 // Table-agnostic on purpose — the CALLER decides which table the schemes are
 // legal in, which is how [env] keeps accepting "encrypted:…" as a literal.
@@ -74,6 +96,9 @@ func ParseEncryptedRow(key, value string) (EncryptedRow, bool, error) {
 	kind, scheme, payload, ok := cutEncryptedScheme(value)
 	if !ok {
 		return EncryptedRow{}, false, nil
+	}
+	if err := ValidateCredentialKey(key); err != nil {
+		return EncryptedRow{}, false, err
 	}
 	blob, err := decodeEncryptedPayload(scheme, payload)
 	if err != nil {
