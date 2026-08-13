@@ -448,6 +448,13 @@ func statusDataOf(s statusInfo) statusData {
 		if r.State == hostEnvDisabled {
 			continue
 		}
+		// An ENCRYPTED row is a credential: the credentials array above
+		// carries it with its provenance, and emitting it here would list
+		// the same channel twice AND put a wall of ciphertext in the Source
+		// field of a document meant to be read.
+		if r.State == hostEnvEncrypted {
+			continue
+		}
 		d.HostEnv = append(d.HostEnv, statusDataHostEnv{
 			Key: r.Key, Source: r.Source, State: hostEnvStateName(r.State),
 		})
@@ -594,6 +601,8 @@ func hostEnvStateName(st hostEnvState) string {
 		return "empty"
 	case hostEnvOverridden:
 		return "overridden"
+	case hostEnvEncrypted:
+		return "encrypted"
 	default:
 		return "disabled"
 	}

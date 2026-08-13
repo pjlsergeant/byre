@@ -474,6 +474,17 @@ func (m model) startItem(idx int) model {
 	m.itemMode2Label = ""
 	m.itemVolume = nil
 	if m.listField == fEnv {
+		// A credential row has no picker answer: its source is a ciphertext
+		// bound to the file's own identity, and the picker's closed scheme
+		// set would decode it as `disabled` and write "" over the value on
+		// the way out. Refuse to open it rather than destroy it; the CLI is
+		// the surface that can re-encrypt.
+		if idx >= 0 && m.itemHostEnv {
+			if _, isCred, _ := config.ParseEncryptedRow(m.hostEnv[idx].Key, m.hostEnv[idx].Value); isCred {
+				m.status = m.hostEnv[idx].Key + " is a credential — change it with `byre credentials set " + m.hostEnv[idx].Key + "` (this screen would write over the ciphertext)"
+				return m
+			}
+		}
 		// One picker for the whole screen: an [env] literal and an
 		// env_from_host passthrough answer the same question ("where does
 		// this variable's value come from"), and asking it once is what makes

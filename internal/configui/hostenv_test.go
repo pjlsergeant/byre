@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/credentials"
 )
 
 func hostEnvModel(t *testing.T, local map[string]string) model {
@@ -813,5 +814,38 @@ func TestErrLineKeepsDeliberateNewlinesAndStripsControls(t *testing.T) {
 	}
 	if strings.Contains(got, "[31m") {
 		t.Errorf("the smuggled SGR must not: %q", got)
+	}
+}
+
+// A credential row shares the Env screen with the passthroughs, and the
+// picker's closed scheme set has no answer for it: decoding a ciphertext as
+// `disabled` and saving would write "" over the value. The row opens into a
+// refusal that names the surface which CAN change it, and the file is
+// untouched.
+func TestEnvScreenRefusesToEditACredentialRow(t *testing.T) {
+	credentials.SetWorkFactorForTesting(10)
+	_, recipient, err := credentials.NewIdentity("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := credentials.EncryptValue(recipient, "STRIPE_KEY", credentials.KindEnv, []byte("sk"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := config.FormatEncryptedRow(credentials.KindEnv, blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := hostEnvModel(t, map[string]string{"STRIPE_KEY": row})
+	m = openHostEnvRow(t, m, "STRIPE_KEY")
+	if m.mode == modeItem {
+		t.Fatal("a credential row must not open the picker editor")
+	}
+	if !strings.Contains(m.status, "byre credentials set STRIPE_KEY") {
+		t.Fatalf("the refusal must name the surface that can change it: %q", m.status)
+	}
+	// The value survives a save of everything else on the screen.
+	if got := m.assemble().EnvFromHost["STRIPE_KEY"]; got != row {
+		t.Fatalf("the ciphertext must round-trip untouched: %q", got)
 	}
 }

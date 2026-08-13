@@ -20,6 +20,11 @@ const (
 	hostEnvOverridden                     // an explicit [env] KEY beats the passthrough (ADR 0026)
 	hostEnvEmpty                          // the host source resolved to nothing -- NOT passed
 	hostEnvDelivered                      // the value below reaches the box
+	// hostEnvEncrypted: a credential row. It reaches the box on the tmpfs
+	// channel after the launch unlock, never on the engine argv, so it must
+	// be excluded from the `-e` export -- and it is NOT "not passed", which
+	// is what an unrecognized source would otherwise read as.
+	hostEnvEncrypted
 )
 
 // hostEnvResult is one entry's resolution: source and outcome together.
@@ -46,10 +51,15 @@ func resolveHostEnv(cfg config.Config, gitExe string) []hostEnvResult {
 	out := make([]hostEnvResult, 0, len(keys))
 	for _, k := range keys {
 		r := hostEnvResult{Key: k, Source: cfg.EnvFromHost[k]}
+		_, isCred, _ := config.ParseEncryptedRow(k, r.Source)
 		if _, explicit := cfg.Env[k]; r.Source == "" {
 			r.State = hostEnvDisabled
 		} else if explicit {
 			r.State = hostEnvOverridden
+		} else if isCred {
+			// A row whose payload is damaged is still a credential row, and
+			// still not an argv value: the launch refuses it by name.
+			r.State = hostEnvEncrypted
 		} else if v := hostSourceValue(r.Source, gitExe); v != "" {
 			r.Value, r.State = v, hostEnvDelivered
 		} else {
@@ -87,10 +97,12 @@ func providedEnv(cfg config.Config, hostEnv []hostEnvResult) map[string]bool {
 	return provided
 }
 
-// hostSourceValue reads one env_from_host source on the host. Unknown schemes
-// read as empty — validation already refused them at config load; this is
-// a total function here so a scheme reaching this point through a path
-// that skipped validation sets nothing rather than panicking.
+// hostSourceValue reads one env_from_host source on the host. Credential
+// schemes are not read here at all (they resolve at the launch unlock, on
+// their own channel), and an unknown scheme reads as empty — validation
+// already refused it at config load; this is a total function so a scheme
+// reaching this point through a path that skipped validation sets nothing
+// rather than panicking.
 func hostSourceValue(src, gitExe string) string {
 	if key, ok := strings.CutPrefix(src, "git:"); ok {
 		return gitConfig(gitExe, key)

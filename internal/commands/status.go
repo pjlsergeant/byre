@@ -478,8 +478,11 @@ func anyDigestDropped(cat *packages.Catalog, names []string) bool {
 
 // hostEnvRow renders the live env_from_host entries with their OUTCOME --
 // the row reads from the same resolution the runtime applied, so it can
-// only describe what actually crossed. Disabled entries are omitted;
-// configured-but-undelivered ones say so instead of posing as grants.
+// only describe what actually crossed. Disabled entries are omitted, and so
+// are ENCRYPTED ones: a credential row crosses on its own channel and has
+// its own rows above, keyed and attributed, where its source is not a wall
+// of ciphertext. Configured-but-undelivered entries say so instead of
+// posing as grants.
 func hostEnvRow(hostEnv []hostEnvResult) string {
 	var parts []string
 	for _, r := range hostEnv {

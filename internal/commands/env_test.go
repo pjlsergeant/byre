@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/credentials"
 )
 
 // resolveHostEnv precedence (ADR 0026), now carried as explicit outcomes:
@@ -89,5 +90,51 @@ func TestExtraHostEnvSkipsCoreDefaults(t *testing.T) {
 	got := extraHostEnv(m)
 	if len(got) != 1 || got[0] != "EDITOR_NAME <- git:user.name" {
 		t.Fatalf("extraHostEnv = %v", got)
+	}
+}
+
+// A credential row is env_from_host's fifth outcome: it reaches the box on
+// the tmpfs channel after the launch unlock, so it must never join the `-e`
+// export — and it is not "NOT passed" either, which is what an unrecognized
+// source would otherwise read as.
+func TestResolveHostEnvExcludesCredentialRows(t *testing.T) {
+	credentials.SetWorkFactorForTesting(10)
+	_, recipient, err := credentials.NewIdentity("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := credentials.EncryptValue(recipient, "STRIPE_KEY", credentials.KindEnv, []byte("sk"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := config.FormatEncryptedRow(credentials.KindEnv, blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{EnvFromHost: map[string]string{"STRIPE_KEY": row, "TERM": "env:TERM"}}
+	t.Setenv("TERM", "xterm")
+	got := resolveHostEnv(cfg, "")
+	states := map[string]hostEnvState{}
+	for _, r := range got {
+		states[r.Key] = r.State
+	}
+	if states["STRIPE_KEY"] != hostEnvEncrypted {
+		t.Fatalf("credential row state = %v, want encrypted", states["STRIPE_KEY"])
+	}
+	env := map[string]string{}
+	addEnvFromHost(env, got)
+	if _, leaked := env["STRIPE_KEY"]; leaked {
+		t.Fatal("a credential row must never reach the engine's -e export")
+	}
+	if env["TERM"] != "xterm" {
+		t.Fatalf("ordinary sources still deliver: %v", env)
+	}
+	// A damaged payload is still a credential row, not an argv value: the
+	// launch refuses it by name, and nothing here quietly passes it through.
+	cfg.EnvFromHost["STRIPE_KEY"] = "encrypted:AAAA"
+	for _, r := range resolveHostEnv(cfg, "") {
+		if r.Key == "STRIPE_KEY" && r.State != hostEnvEncrypted {
+			t.Fatalf("damaged credential row state = %v", r.State)
+		}
 	}
 }
