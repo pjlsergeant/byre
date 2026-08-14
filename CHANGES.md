@@ -1,6 +1,15 @@
 # Changes
 
-## Unreleased
+## v1.7.0 — 2026-08-14
+
+- **Several configuration and package-store edge cases now fail or render
+  correctly.** The config editor accepts egress closures such as `!host`,
+  preserves an inherited mount's read/write mode when disabling it, and no
+  longer counts disabled mounts as effective grants. MCP URLs refuse ports
+  outside 1–65535 during validation; shared-auth preference changes compare
+  their actual agent keys before deciding nothing changed; and package
+  snapshots fail closed when a non-directory occupies the expected digest
+  path.
 
 - **Path-shaped terminal pastes require confirmation before byre opens host
   files.** The no-argument deliver beat names every inferred drag path and
