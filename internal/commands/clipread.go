@@ -192,7 +192,7 @@ func readClipboard(cb clipBackend, now func() time.Time, warn io.Writer) ([]deli
 	stamp := now().Format("20060102-150405")
 	var firstErr error
 	degrade := func(what string, err error) {
-		fmt.Fprintf(warn, "byre: clipboard %s read failed (%v); trying the next representation\n", what, err)
+		dataf(warn, "byre: clipboard %s read failed (%v); trying the next representation\n", what, err)
 		if firstErr == nil {
 			firstErr = err
 		}

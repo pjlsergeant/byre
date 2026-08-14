@@ -162,7 +162,7 @@ func TestReadClipboardFetchErrorFallsThrough(t *testing.T) {
 			if typ == "text/plain" {
 				return []byte("survivor"), nil
 			}
-			return nil, fmt.Errorf("tool exploded")
+			return nil, fmt.Errorf("tool \x1b[31mexploded")
 		},
 	}
 	var warn strings.Builder
@@ -172,6 +172,9 @@ func TestReadClipboardFetchErrorFallsThrough(t *testing.T) {
 	}
 	if !strings.Contains(warn.String(), "trying the next representation") {
 		t.Fatalf("no degrade note: %q", warn.String())
+	}
+	if strings.Contains(warn.String(), "\x1b[31m") || !strings.Contains(warn.String(), "tool exploded") {
+		t.Fatalf("clipboard helper error was not escaped: %q", warn.String())
 	}
 }
 
