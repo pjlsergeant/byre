@@ -246,7 +246,13 @@ type model struct {
 	// and shadowing a machine-scoped volume would silently rescope it to this
 	// project. nil for a plain add.
 	itemVolume *config.Volume
-	skills     []string // enabled skill names (multi-select)
+	// itemMount is the same ride-along for mounts: the inherited declaration
+	// being shadowed. The mode picker collapses disabled+ro/rw into one
+	// "disabled" option in vals, so without the base entry the commit path
+	// cannot restore the underlying ro/rw and would write Mode "ro" for every
+	// override that lands disabled. nil for a plain add.
+	itemMount *config.Mount
+	skills    []string // enabled skill names (multi-select)
 
 	// Freeform raw-tier working state (edited as text blocks).
 	runArgs string // one arg per line

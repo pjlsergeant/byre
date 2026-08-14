@@ -368,6 +368,36 @@ func TestListSummariesCountEffectiveState(t *testing.T) {
 	}
 }
 
+// Disabled mounts grant nothing, so the field summary (what the box actually
+// gets) must not count them — local or inherited.
+func TestListSummariesSkipDisabledMounts(t *testing.T) {
+	m := effectiveModel()
+	// Baseline from the fixture: 1 inherited + 1 skill = 2 effective.
+	baseEff, _, _, _ := rowCounts(m.fieldRows(fMounts))
+	if baseEff != 2 {
+		t.Fatalf("fixture mounts baseline: got %d, want 2", baseEff)
+	}
+
+	// A disabled local mount is shown but not effective.
+	m.mounts = []config.Mount{{Host: "/h/off", Target: "/off", Mode: "rw", Disabled: true}}
+	if eff, _, _, _ := rowCounts(m.fieldRows(fMounts)); eff != baseEff {
+		t.Errorf("disabled local mount counted as effective: got %d, want baseline %d", eff, baseEff)
+	}
+	// An enabled local mount adds one.
+	m.mounts = []config.Mount{{Host: "/h/on", Target: "/on", Mode: "rw"}}
+	if eff, _, _, _ := rowCounts(m.fieldRows(fMounts)); eff != baseEff+1 {
+		t.Errorf("enabled local mount must count: got %d, want %d", eff, baseEff+1)
+	}
+
+	// A disabled inherited mount drops out of the tally (the fixture's
+	// default /home/dev/src becomes a non-grant).
+	m.mounts = nil
+	m.inh.Default.Mounts[0].Disabled = true
+	if eff, inh, _, _ := rowCounts(m.fieldRows(fMounts)); eff != 1 || inh != 0 {
+		t.Errorf("disabled inherited mount must not count: eff=%d inh=%d, want 1 (skill only)", eff, inh)
+	}
+}
+
 func TestViewListAnnotations(t *testing.T) {
 	m := effectiveModel()
 	m.listField = fApt
@@ -718,13 +748,80 @@ func TestEgressItemEditorValidates(t *testing.T) {
 	m = m.startItem(-1)
 	m.inputs[0].SetValue("bad host")
 	m = m.commitItem()
-	if m.itemErr == "" || len(m.egress) != 0 {
-		t.Fatalf("malformed egress entry should be rejected: err=%q egress=%v", m.itemErr, m.egress)
+	if m.itemErr == "" || !strings.Contains(m.itemErr, "not a valid host") || len(m.egress) != 0 {
+		t.Fatalf("malformed egress entry should be refused by host rule: err=%q egress=%v", m.itemErr, m.egress)
 	}
 	m.inputs[0].SetValue("internal:8443")
 	m = m.commitItem()
 	if m.itemErr != "" || len(m.egress) != 1 || m.egress[0] != "internal:8443" {
 		t.Fatalf("valid egress entry should commit: err=%q egress=%v", m.itemErr, m.egress)
+	}
+}
+
+// Under open-denylist an unmatched closure is this file's live row (Edit+
+// Delete). Commit must accept the layer grammar: CutRemoval then ParseEgress
+// on the name, store the raw entry with '!' intact — same path ValidateLayer
+// runs, so the editor cannot drift from what a layer will accept.
+func TestEgressClosureEditAndAdd(t *testing.T) {
+	m := effectiveModel()
+	m.inh.Skills["firewall-open"] = SkillRuntime{Posture: "open-denylist"}
+	m.skills = append(m.skills, "firewall-open")
+	m.egress = []string{"!statsig.example.com"}
+	m.listField = fEgress
+
+	r := rowByText(t, m.fieldRows(fEgress), "!statsig.example.com")
+	if r.kind != rowLocal || r.idx != 0 {
+		t.Fatalf("unmatched open-denylist closure should be rowLocal idx 0: %+v", r)
+	}
+	var acts []rowAct
+	for _, c := range m.rowChoices(fEgress, r) {
+		acts = append(acts, c.act)
+	}
+	if !reflect.DeepEqual(acts, []rowAct{actEdit, actDelete}) {
+		t.Fatalf("rowLocal closure menu acts = %v, want Edit+Delete", acts)
+	}
+
+	// Edit: prefill is the raw entry; commit unchanged succeeds and preserves '!'.
+	m = m.startItem(r.idx)
+	if got := m.inputs[0].Value(); got != "!statsig.example.com" {
+		t.Fatalf("edit prefill = %q, want raw closure", got)
+	}
+	m = m.commitItem()
+	if m.itemErr != "" {
+		t.Fatalf("commit of unchanged closure should succeed: %q", m.itemErr)
+	}
+	if len(m.egress) != 1 || m.egress[0] != "!statsig.example.com" {
+		t.Fatalf("unchanged commit should keep raw entry: %v", m.egress)
+	}
+
+	// Edit to a different closure: stored entry keeps the marker.
+	m = m.startItem(0)
+	m.inputs[0].SetValue("!other.example.com")
+	m = m.commitItem()
+	if m.itemErr != "" || len(m.egress) != 1 || m.egress[0] != "!other.example.com" {
+		t.Fatalf("edited closure should commit with '!': err=%q egress=%v", m.itemErr, m.egress)
+	}
+
+	// Add path: a typed closure is authorable (the only UI path to close an
+	// undeclared host under open-denylist).
+	m = m.startItem(-1)
+	m.inputs[0].SetValue("!blocked.example.com")
+	m = m.commitItem()
+	if m.itemErr != "" || len(m.egress) != 2 || m.egress[1] != "!blocked.example.com" {
+		t.Fatalf("add of typed closure should commit: err=%q egress=%v", m.itemErr, m.egress)
+	}
+
+	// Malformed closure name: host rule. Bare '!' is not a closure (CutRemoval
+	// requires an identity) so ParseEgress sees "!" — same refusal as the
+	// layer validator, fragment "not a valid host".
+	m = m.startItem(-1)
+	m.inputs[0].SetValue("!bad host")
+	if got := m.commitItem(); got.itemErr == "" || !strings.Contains(got.itemErr, "not a valid host") {
+		t.Fatalf("malformed closure should name host rule: %q", got.itemErr)
+	}
+	m.inputs[0].SetValue("!")
+	if got := m.commitItem(); got.itemErr == "" || !strings.Contains(got.itemErr, "not a valid host") {
+		t.Fatalf("bare '!' should be refused by host rule: %q", got.itemErr)
 	}
 }
 

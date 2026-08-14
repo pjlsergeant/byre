@@ -1381,9 +1381,11 @@ func (m model) exposureNow() config.Exposure {
 // state.
 func rowCounts(rows []listRow) (effective, inherited, fromSkills, offered int) {
 	for _, r := range rows {
-		// Effectiveness is the closed field's, not the kind's: a skill row a
-		// lower layer closed renders (attributed) but tallies as no grant.
-		if r.closed {
+		// Effectiveness is the closed/disabled field's, not the kind's: a
+		// skill row a lower layer closed, or a mount/passthrough switched
+		// off, renders (attributed) but tallies as no grant — the summary
+		// is "what the box actually gets".
+		if r.closed || r.disabled {
 			continue
 		}
 		switch r.kind {
@@ -1396,15 +1398,11 @@ func rowCounts(rows []listRow) (effective, inherited, fromSkills, offered int) {
 			effective++
 			fromSkills++
 		case rowHostEnv:
-			// A switched-off passthrough grants nothing, so it is shown but
-			// never counted. Otherwise it is effective env, and inherited
-			// only when this file did not set it -- idx >= 0 is the same
-			// discriminator the row's own "(set here)" annotation uses, and
-			// counting a local pin as inherited made the summary read
-			// "6 vars (6 inherited)" with one of them set here.
-			if r.disabled {
-				break
-			}
+			// Effective env, and inherited only when this file did not set
+			// it -- idx >= 0 is the same discriminator the row's own
+			// "(set here)" annotation uses, and counting a local pin as
+			// inherited made the summary read "6 vars (6 inherited)" with
+			// one of them set here.
 			effective++
 			if r.idx < 0 {
 				inherited++

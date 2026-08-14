@@ -245,3 +245,72 @@ func TestLandSnapshotRejectsMalformedDigest(t *testing.T) {
 		t.Fatalf("rejected land must leave the store untouched, found %d entries", len(ents))
 	}
 }
+
+// A regular file (or a symlink) at the digest path is not a snapshot:
+// treating Lstat success as "already present" would flip the index onto a
+// snapshot that isn't there. Fail closed — do not rewrite, do not flip the
+// index. Lstat (not Stat) so a link to a directory is refused too.
+func TestLandSnapshotRejectsNonDirectoryAtDigestPath(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(packagesDir(home), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := testSnapshot("pete/tool", "1.0.0")
+	// Pre-place a regular file where the snapshot directory should be.
+	if err := os.WriteFile(SnapshotDir(home, s.Digest), []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := WithStoreLock(home, func() error { return LandSnapshot(home, s) })
+	if err == nil || !strings.Contains(err.Error(), "non-directory") {
+		t.Fatalf("want non-directory refusal, got %v", err)
+	}
+	// Index must not have flipped: the package is not installed.
+	idx, rerr := ReadIndex(home)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if _, ok := idx[s.ID]; ok {
+		t.Fatalf("index must stay unflipped after non-directory refusal: %+v", idx)
+	}
+	// Victim file unchanged (fail closed, no remove-and-rewrite).
+	body, rerr := os.ReadFile(SnapshotDir(home, s.Digest))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if string(body) != "not a dir" {
+		t.Fatalf("refused land must leave the non-directory untouched, got %q", body)
+	}
+}
+
+// Sibling of the regular-file case: a symlink at the digest path must not
+// pass as a landed directory just because Stat would follow it and IsDir
+// would succeed for a link to any directory.
+func TestLandSnapshotRejectsSymlinkAtDigestPath(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(packagesDir(home), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := testSnapshot("pete/tool", "1.0.0")
+	elsewhere := filepath.Join(home, "elsewhere")
+	if err := os.MkdirAll(elsewhere, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, SnapshotDir(home, s.Digest)); err != nil {
+		t.Fatal(err)
+	}
+	err := WithStoreLock(home, func() error { return LandSnapshot(home, s) })
+	if err == nil || !strings.Contains(err.Error(), "non-directory") {
+		t.Fatalf("want non-directory refusal for symlink, got %v", err)
+	}
+	idx, rerr := ReadIndex(home)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if _, ok := idx[s.ID]; ok {
+		t.Fatalf("index must stay unflipped after symlink refusal: %+v", idx)
+	}
+	fi, lerr := os.Lstat(SnapshotDir(home, s.Digest))
+	if lerr != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("refused land must leave the symlink untouched: fi=%v err=%v", fi, lerr)
+	}
+}

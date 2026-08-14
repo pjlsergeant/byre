@@ -136,6 +136,75 @@ func TestMountItemDisablePreservesMode(t *testing.T) {
 	}
 }
 
+// Overriding an inherited mount opens the ADD editor, so the underlying
+// ro/rw the mode picker collapsed to "disabled" in vals has nothing to be
+// read from unless the inherited declaration rides along. Without that,
+// shadowing a disabled rw mount (or disabling an enabled rw override) wrote
+// Mode "ro", and re-enabling later bound read-only where the layer said rw.
+func TestMountOverrideCarriesModeWhenDisabled(t *testing.T) {
+	inh := Inherited{
+		HasLower: true,
+		Default: config.Config{Mounts: []config.Mount{
+			{Host: "/h/rw-off", Target: "/rw-off", Mode: "rw", Disabled: true},
+			{Host: "/h/rw-on", Target: "/rw-on", Mode: "rw"},
+		}},
+	}
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, inh, nil, TargetProject)
+	m.listField = fMounts
+
+	// 1. Override an inherited disabled rw mount → local entry keeps Mode "rw".
+	off := rowByText(t, m.fieldRows(fMounts), mountLine(inh.Default.Mounts[0]))
+	if off.kind != rowInherited || !off.disabled {
+		t.Fatalf("expected a disabled inherited row: %+v", off)
+	}
+	next := m.startOverride(off)
+	if next.itemMode != 2 {
+		t.Fatalf("override of a disabled mount should open on disabled, got %d", next.itemMode)
+	}
+	next = next.commitItem()
+	if next.itemErr != "" {
+		t.Fatalf("commit: %s", next.itemErr)
+	}
+	got := next.assemble().Mounts
+	if len(got) != 1 {
+		t.Fatalf("the override must be this layer's only entry: %+v", got)
+	}
+	if !got[0].Disabled || got[0].Mode != "rw" {
+		t.Errorf("override of disabled rw must write Mode rw + Disabled: %+v", got[0])
+	}
+
+	// 2. Override an inherited enabled rw mount, switch picker to disabled.
+	on := rowByText(t, m.fieldRows(fMounts), mountLine(inh.Default.Mounts[1]))
+	if on.kind != rowInherited || on.disabled {
+		t.Fatalf("expected an enabled inherited row: %+v", on)
+	}
+	sn := m.startOverride(on)
+	if sn.itemMode != 1 {
+		t.Fatalf("override of enabled rw should open on rw, got %d", sn.itemMode)
+	}
+	sn.itemMode = 2
+	sn = sn.commitItem()
+	if sn.itemErr != "" {
+		t.Fatalf("commit: %s", sn.itemErr)
+	}
+	if v := sn.assemble().Mounts[0]; !v.Disabled || v.Mode != "rw" {
+		t.Errorf("disabling an rw override must keep Mode rw: %+v", v)
+	}
+
+	// 3. Plain add of a disabled mount (no inherited base) still writes "ro".
+	add := m.startItem(-1)
+	add.inputs[0].SetValue("/h/new")
+	add.inputs[1].SetValue("/new")
+	add.itemMode = 2
+	add = add.commitItem()
+	if add.itemErr != "" {
+		t.Fatalf("commit: %s", add.itemErr)
+	}
+	if v := add.assemble().Mounts[0]; !v.Disabled || v.Mode != "ro" {
+		t.Errorf("a new disabled mount must default Mode to ro: %+v", v)
+	}
+}
+
 // Re-enabling: the editor opens on the disabled state, and picking rw clears
 // the bool while keeping the mode.
 func TestMountItemReenable(t *testing.T) {

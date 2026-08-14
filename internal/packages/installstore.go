@@ -210,8 +210,21 @@ func LandSnapshot(home string, s Snapshot) error {
 	}
 	final := SnapshotDir(home, s.Digest)
 	needWrite := false
-	switch _, err := hostopen.PlainStat(final, hostopen.StoreOwned); {
+	// Lstat, not Stat: a symlink at the digest path must not count as a
+	// landed snapshot (Stat would follow it and IsDir would pass for a
+	// link to any directory, flipping the index onto unverified contents).
+	switch fi, err := hostopen.PlainLstat(final, hostopen.StoreOwned); {
 	case err == nil:
+		// A present path is only "already landed" when it is a real directory.
+		// A regular file, symlink, or anything else at the digest path is
+		// corruption or tampering — fail closed rather than treat it as
+		// content-addressed presence (which would flip the index onto a
+		// snapshot that isn't there) or silently remove-and-rewrite (which
+		// would hide the tampering). Repair only rewrites real snapshot
+		// directories.
+		if !fi.IsDir() {
+			return fmt.Errorf("snapshot path %s: a non-directory occupies the snapshot location", final)
+		}
 		// Same digest already on disk: content-addressed, nothing to write --
 		// unless the caller is repairing a snapshot it knows is broken, in
 		// which case the stale dir is removed and rewritten in full. (A crash

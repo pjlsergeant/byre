@@ -369,6 +369,10 @@ func (m model) startOverride(r listRow) model {
 		next.inputs[0].SetValue(r.vals[0])
 		next.inputs[1].SetValue(r.vals[1])
 	case fMounts:
+		// vals: host, target, mode — but mode is "disabled" when the inherited
+		// entry is off, so the underlying ro/rw is gone from vals. The
+		// declaration rides along the way itemVolume does for scope/seed:
+		// commitItem restores Mode from this base when the picker is disabled.
 		next.inputs[0].SetValue(r.vals[0])
 		next.inputs[1].SetValue(r.vals[1])
 		switch r.vals[2] {
@@ -376,6 +380,13 @@ func (m model) startOverride(r listRow) model {
 			next.itemMode = 1
 		case "disabled":
 			next.itemMode = 2
+		}
+		for _, mt := range m.lowerNow().Mounts {
+			if mt.Target == r.ident {
+				mt := mt
+				next.itemMount = &mt
+				break
+			}
 		}
 	case fVolumes:
 		// vals: name, target, role, sharing (volumeVals). The inherited
@@ -503,6 +514,7 @@ func (m model) startItem(idx int) model {
 	m.itemMode2Opts = nil
 	m.itemMode2Label = ""
 	m.itemVolume = nil
+	m.itemMount = nil
 	if m.listField == fEnv {
 		// A WELL-FORMED credential row opens into the form like any other
 		// passthrough: the picker carries its kind, the Value box is masked
@@ -1031,7 +1043,7 @@ func longestCommonPrefix(ss []string) string {
 // still open, not at save time. Any failure keeps the editor open with a
 // message. (Composition rule: never restate a config rule here — config owns
 // the shapes, and a pre-check may only call what its validators call, like
-// fEgress's ParseEgress.)
+// fEgress's CutRemoval+ParseEgress — the same path validateScalarsLayer uses.)
 func (m model) commitItem() model {
 	orig := m
 	if m.listField == fEnv {
@@ -1046,8 +1058,16 @@ func (m model) commitItem() model {
 		}
 		m.apt = putAt(m.apt, m.editIndex, pkg)
 	case fEgress:
+		// Layer grammar accepts a leading '!' (validateScalarsLayer strips it
+		// with CutRemoval and holds the name to ParseEgress). Call the same
+		// path so the editor cannot drift from what a layer will accept; the
+		// raw entry — marker intact — is what the slice stores either way.
 		entry := strings.TrimSpace(m.inputs[0].Value())
-		if _, _, err := config.ParseEgress(entry); err != nil {
+		check := entry
+		if n, ok := config.CutRemoval(entry); ok {
+			check = n
+		}
+		if _, _, err := config.ParseEgress(check); err != nil {
 			m.itemErr = err.Error()
 			return m
 		}
@@ -1154,9 +1174,13 @@ func (m model) commitItem() model {
 		case 2:
 			mt.Disabled = true
 			// Keep the entry's stored ro/rw while it's off, so flipping it back
-			// on restores the mode instead of resetting to ro.
-			if m.editIndex >= 0 {
-				mt.Mode = m.mounts[m.editIndex].Mode
+			// on restores the mode instead of resetting to ro. Same for an
+			// override: mountBase is the inherited declaration being shadowed.
+			if base := m.mountBase(); base != nil {
+				mt.Mode = base.Mode
+				if mt.Mode == "" {
+					mt.Mode = "ro"
+				}
 			}
 		}
 		m.mounts = putAt(m.mounts, m.editIndex, mt)
@@ -1230,6 +1254,17 @@ func (m model) volumeBase() *config.Volume {
 		return &m.volumes[m.editIndex]
 	}
 	return m.itemVolume
+}
+
+// mountBase is the declaration whose mode the open mount editor must carry
+// when the picker is disabled: the entry being EDITED, or -- for an override
+// -- the inherited declaration being shadowed. nil for a plain add, which
+// has no prior mode (the commit path defaults disabled adds to "ro").
+func (m model) mountBase() *config.Mount {
+	if m.editIndex >= 0 && m.editIndex < len(m.mounts) {
+		return &m.mounts[m.editIndex]
+	}
+	return m.itemMount
 }
 
 // putAt appends v when idx < 0 else replaces the element at idx — always into

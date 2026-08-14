@@ -280,7 +280,7 @@ func TestOpencodeMCPLaunchWrapperEmptySet(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("bash", filepath.Join("skills", "opencode", "opencode-mcp-launch.sh"), "--auto")
-	cmd.Env = append(os.Environ(), "BYRE_MCP_CONFIG="+mcpPath, "BYRE_AGENT_CONTEXT="+ctxPath, "BYRE_SESSION_CONTEXT=", "PATH="+dir+":"+os.Getenv("PATH"))
+	cmd.Env = append(os.Environ(), "BYRE_MCP_CONFIG="+mcpPath, "BYRE_AGENT_CONTEXT="+ctxPath, "BYRE_SESSION_CONTEXT=", "PATH="+dir+":"+os.Getenv("PATH"), "OPENCODE_CONFIG_CONTENT=")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("wrapper failed on the empty set: %v\n%s", err, out)
 	}

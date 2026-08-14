@@ -126,7 +126,11 @@ func (s SharedAuthPref) Equal(o SharedAuthPref) bool {
 		}
 	}
 	for k, v := range s.Pick {
-		if o.Pick[k] != v {
+		// Comma-ok: a missing key must not compare equal to an empty value.
+		// With equal lengths, {codex:""} vs {claude:"x"} would otherwise pass
+		// because o.Pick[k] reads as "" for the absent key.
+		ov, ok := o.Pick[k]
+		if !ok || ov != v {
 			return false
 		}
 	}
