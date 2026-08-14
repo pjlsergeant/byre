@@ -114,7 +114,8 @@ each verified on a real Mac:
   pasteboard — so blind discard-and-read-pasteboard delivered stale
   clipboard content (observed). The paste's text is classified:
   mirrors the pasteboard → a real paste, full priority read; parses as
-  existing absolute host path(s) → a drag, deliver those files; else
+  existing absolute host path(s) → a possible drag, name the paths and ask
+  before opening and delivering those files; else
   literal pasted text.
 - **Ctrl-V is the headline gesture.** With an image-only clipboard,
   macOS Terminal sends nothing on Cmd-V (no text representation → no

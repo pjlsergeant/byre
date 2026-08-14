@@ -764,14 +764,38 @@ func streamInExec(stdin io.Reader, name string, args ...string) error {
 // backs Runner.ExecInput, whose callers (grab, the deliver transports) run
 // children over an agent-controlled tree, so the error text must never become
 // an unbounded buffer the box can grow to OOM host byre. New() also routes the
-// plain capture seam here, so every captured engine call gets the cap. Only
-// stderr is capped; stdout is the payload and stays whole.
+// plain capture seam here, so every captured engine call gets the cap. Payload
+// output uses streamOutExec/ExecOutput instead; captured stdout is always a
+// control reply (an id, mode, path, label, or similar small answer).
 func captureInExec(stdin io.Reader, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Stdin = stdin
+	// Match the bounded capture sibling: an engine client may spawn helpers
+	// that inherit stdout. Killing only the direct child on overflow leaves
+	// Wait blocked on those writers, turning the memory bound into a hang.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.WaitDelay = waitDelay
 	stderr := &capBuffer{max: 64 << 10}
 	cmd.Stderr = stderr
-	out, err := cmd.Output()
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+	out, rerr := io.ReadAll(io.LimitReader(pipe, captureBoundedMax+1))
+	over := len(out) > captureBoundedMax
+	if over {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	err = cmd.Wait()
+	if over {
+		return "", fmt.Errorf("%s: output exceeds %d bytes", name, captureBoundedMax)
+	}
+	if rerr != nil {
+		return string(out), rerr
+	}
 	if err != nil {
 		// Surface the child's stderr — otherwise failures are just "exit status 1".
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {

@@ -64,7 +64,8 @@ comes back on your clipboard, ready to Cmd-V into the agent prompt.
 With no arguments byre reads your *clipboard* -- so screenshot,
 `byre deliver`, Ctrl-V, done (Ctrl-V, not Cmd-V, for images -- the
 terminal won't paste an image any other way). Dragging a file from
-Finder onto the deliver window delivers that file; whole directories
+Finder onto the deliver window names the host path and asks before opening
+and delivering it; whole directories
 arrive intact; `byre deliver --install-app` adds a Dock-droppable
 app and a Finder "Deliver to Byre" Quick Action on macOS. Works from
 any directory -- it finds your running box. The full surface, including

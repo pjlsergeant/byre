@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Path-shaped terminal pastes require confirmation before byre opens host
+  files.** The no-argument deliver beat names every inferred drag path and
+  asks first; if clipboard comparison fails it treats the paste as literal
+  text instead. Container control replies are now bounded while captured, so
+  a box cannot grow host memory without limit through a forged reply.
+
 - **A project can now carry its own credentials, encrypted, in its config
   files.** An `env_from_host` row whose value is `encrypted:` (arrives as an
   environment variable) or `encrypted-file:` (arrives as a file on the box's

@@ -94,12 +94,13 @@ func TestImportFromPasteDragDeliversTheFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	cb := backend([]string{"text/plain"}, map[string][]byte{"text/plain": []byte("stale old clipboard")})
-	s, _, errw := testStreams("", true)
+	s, _, errw := testStreams("y\n", true)
 	sources, err := importFromPaste(s, &cb, []byte(real+" "), "stamp")
 	if err != nil || len(sources) != 1 || sources[0].Path != real {
 		t.Fatalf("sources = %+v err = %v", sources, err)
 	}
-	if !strings.Contains(errw.String(), "paste received") || !strings.Contains(errw.String(), "dragged file") {
+	if !strings.Contains(errw.String(), "paste received") || !strings.Contains(errw.String(), real) ||
+		!strings.Contains(errw.String(), "confirmed host file") {
 		t.Fatalf("no immediate feedback: %q", errw.String())
 	}
 }
@@ -111,7 +112,7 @@ func TestImportFromPasteDragWithEscapedSpaces(t *testing.T) {
 		t.Fatal(err)
 	}
 	cb := backend([]string{"text/plain"}, map[string][]byte{"text/plain": []byte("unrelated")})
-	s, _, _ := testStreams("", true)
+	s, _, _ := testStreams("y\n", true)
 	escaped := strings.ReplaceAll(real, " ", `\ `)
 	sources, err := importFromPaste(s, &cb, []byte(escaped), "stamp")
 	if err != nil || len(sources) != 1 || sources[0].Path != real {
@@ -144,6 +145,38 @@ func TestImportFromPastePlainTextStaysText(t *testing.T) {
 	if err != nil || len(sources) != 1 || sources[0].Kind != "pasted text" ||
 		string(sources[0].Data) != "hello world, not a path" {
 		t.Fatalf("sources = %+v err = %v", sources, err)
+	}
+}
+
+func TestImportFromPasteFetchErrorStaysLiteralText(t *testing.T) {
+	real := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(real, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cb := backend(nil, nil) // text/plain fetch fails
+	s, _, errw := testStreams("y\n", true)
+	sources, err := importFromPaste(s, &cb, []byte(real), "stamp")
+	if err != nil || len(sources) != 1 || sources[0].Path != "" || sources[0].Kind != "pasted text" {
+		t.Fatalf("fetch-error paste = %+v err = %v", sources, err)
+	}
+	if !strings.Contains(errw.String(), "literal text") {
+		t.Fatalf("fetch-error explanation missing: %q", errw.String())
+	}
+}
+
+func TestImportFromPastePathNeedsConfirmation(t *testing.T) {
+	real := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(real, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cb := backend([]string{"text/plain"}, map[string][]byte{"text/plain": []byte("other selection")})
+	s, _, errw := testStreams("n\n", true)
+	sources, err := importFromPaste(s, &cb, []byte(real), "stamp")
+	if err != nil || len(sources) != 1 || sources[0].Path != "" || sources[0].Kind != "pasted text" {
+		t.Fatalf("declined path paste = %+v err = %v", sources, err)
+	}
+	if !strings.Contains(errw.String(), real) || !strings.Contains(errw.String(), "not delivered") {
+		t.Fatalf("confirmation did not name and decline host path: %q", errw.String())
 	}
 }
 

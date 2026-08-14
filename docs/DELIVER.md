@@ -55,8 +55,8 @@ your clipboard actually holds), text as `clipboard-<timestamp>.txt`.
 Cmd-V works too for text and copied files (for an image-only clipboard
 the terminal sends nothing on Cmd-V -- which is why the prompt steers
 you to Ctrl-V when it sees an image). You can also **drag a file from
-Finder onto the window**: the dragged file itself is delivered. The
-confirmation tells you what shipped -- kind and size, never the
+Finder onto the window**: byre names every host path and asks before opening
+and delivering it. The delivery confirmation tells you what shipped -- kind and size, never the
 content:
 
 ```

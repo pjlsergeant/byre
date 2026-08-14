@@ -11,6 +11,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/deliver"
 	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/hostopen"
+	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
@@ -157,7 +158,8 @@ func deliverSources(s Streams, opts deliver.Options, paths []string, reader *cli
 //
 //   - mirrors the pasteboard's text → a real Cmd-V: do the full priority
 //     read (a Finder copy's file refs beat its text representation);
-//   - parses as existing absolute host path(s) → a drag: deliver the FILES;
+//   - parses as existing absolute host path(s) → a possible drag: name every
+//     host path and deliver the files only after explicit confirmation;
 //   - anything else → literal pasted content.
 //
 // Every branch says immediately what was received — the beat must never
@@ -169,15 +171,44 @@ func importFromPaste(s Streams, reader *clipBackend, text []byte, stamp string) 
 		fmt.Fprintln(s.Err, "byre: empty paste — reading the clipboard instead…")
 		return readClipboard(*reader, time.Now, s.Err)
 	}
-	if pb, err := reader.fetch("text/plain"); err == nil && strings.TrimSpace(string(pb)) == trimmed {
+	pb, fetchErr := reader.fetch("text/plain")
+	if fetchErr != nil {
+		// A failed mirror read establishes nothing about how the paste arrived.
+		// In particular it is not evidence that path-shaped text was a terminal
+		// file drag, so never turn it into authority to open a host file.
+		fmt.Fprintf(s.Err, "byre: could not compare the paste with the clipboard (%v) — delivering it as literal text\n", fetchErr)
+		return []deliver.Source{{Data: text, Name: "clipboard-" + stamp + ".txt", Kind: "pasted text"}}, nil
+	}
+	if strings.TrimSpace(string(pb)) == trimmed {
 		fmt.Fprintln(s.Err, "byre: reading the clipboard…")
 		return readClipboard(*reader, time.Now, s.Err)
 	}
 	if paths := draggedPaths(trimmed); len(paths) > 0 {
-		fmt.Fprintf(s.Err, "byre: delivering the dragged %s\n", plural(len(paths), "file", "files"))
+		promptOut := deliverPromptWriter(s)
+		fmt.Fprintf(promptOut, "byre: the paste looks like %s on this host:\n", plural(len(paths), "a file", "files"))
+		for _, p := range paths {
+			fmt.Fprintf(promptOut, "  - %s\n", packages.EscapeTerminal(p))
+		}
+		if !confirmed(promptOut, s.In, "Deliver these host files? [y/N] ") {
+			fmt.Fprintln(s.Err, "byre: not delivered; treating the paste as literal text instead.")
+			return []deliver.Source{{Data: text, Name: "clipboard-" + stamp + ".txt", Kind: "pasted text"}}, nil
+		}
+		fmt.Fprintf(s.Err, "byre: delivering the confirmed %s\n", plural(len(paths), "host file", "host files"))
 		return deliver.PathSources(paths), nil
 	}
 	return []deliver.Source{{Data: text, Name: "clipboard-" + stamp + ".txt", Kind: "pasted text"}}, nil
+}
+
+// deliverPromptWriter keeps the post-beat confirmation on the terminal even
+// when stderr is redirected. runPasteBeat has the same rule for its Bubble Tea
+// renderer: stdin is the controlling tty and is field-verified writable.
+func deliverPromptWriter(s Streams) io.Writer {
+	if f, ok := s.In.(*os.File); ok && isTTY(f) {
+		if errFile, ok := s.Err.(*os.File); !ok || !isTTY(errFile) {
+			return io.MultiWriter(s.Err, f)
+		}
+	}
+	return s.Err
 }
 
 // draggedPaths recognizes a terminal drag: absolute path(s), shell-escaped

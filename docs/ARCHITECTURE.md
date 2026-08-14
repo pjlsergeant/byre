@@ -919,7 +919,8 @@ xclip, or OSC 52 through SSH); the no-arg clipboard import waits for a
 paste gesture on a TTY and classifies the captured paste -- text
 mirroring the pasteboard is a real paste (read the pasteboard
 out-of-band: file references → image → text), existing absolute host
-paths are a drag onto the window (delivered as files), anything else
+paths are a possible drag onto the window (named and delivered only after
+confirmation), anything else
 is literal pasted text; graphical launches (no TTY, GUI present)
 also report via OS notification. Every degraded nicety states itself
 on stderr. Mechanics in `internal/deliver`; decisions in ADR 0021 and

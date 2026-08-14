@@ -7,7 +7,7 @@ package tuitest
 // field bug's whole decision tree, previously unit-only:
 //
 //   paste mirrors the pasteboard → a real Cmd-V: full clipboard read;
-//   paste is an existing absolute path → a drag: deliver the FILE;
+//   paste is an existing absolute path → a possible drag: confirm the FILE;
 //   anything else → literal pasted text.
 //
 // Every test ends in the loud no-engine error (PATH resolves no docker), so
@@ -73,7 +73,9 @@ func TestIntegrationTUILiveBeatDragDeliversFile(t *testing.T) {
 
 	s.WaitFor("text on the clipboard") // the LIVE beat, seeing the fake pasteboard
 	s.Paste(drag)
-	s.WaitFor("delivering the dragged file")
+	s.WaitFor("Deliver these host files?")
+	s.Keys("y", "Enter")
+	s.WaitFor("delivering the confirmed host file")
 	s.WaitFor("no container engine")
 	if st := s.WaitForExit(); st == 0 {
 		t.Fatalf("engine-less delivery should exit nonzero\n%s", s.CaptureNow())

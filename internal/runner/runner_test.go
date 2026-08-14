@@ -312,6 +312,30 @@ func TestCaptureBoundedCapsOutput(t *testing.T) {
 	}
 }
 
+func TestCaptureInExecCapsOutput(t *testing.T) {
+	testtools.NeedTool(t, "yes")
+	_, err := captureInExec(nil, "yes", strings.Repeat("x", 4096))
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("unbounded captured output must fail, not fill memory: %v", err)
+	}
+}
+
+func TestCaptureInExecOverflowKillsTheWholeGroup(t *testing.T) {
+	testtools.NeedTool(t, "sh")
+	start := time.Now()
+	// The background child inherits stdout and would hold Wait open after the
+	// direct shell died. Overflow must kill the whole group and return without
+	// waiting for that child.
+	_, err := captureInExec(nil, "sh", "-c",
+		"(sleep 30) & yes x | head -c $((9 * 1024 * 1024))")
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("overflow with descendant error = %v", err)
+	}
+	if elapsed := time.Since(start); elapsed >= waitDelay {
+		t.Fatalf("overflow waited %s: a descendant kept the capture pipes open", elapsed)
+	}
+}
+
 // The deadline must reach the whole process GROUP. An engine client spawns
 // local helpers of its own (credential, transport), and killing the direct
 // child leaves them running -- WaitDelay unwedges byre, but the descendants
