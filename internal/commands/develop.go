@@ -91,15 +91,15 @@ func developCommand(s Streams, projectDir, flagTemplate, flagAgent string, flagS
 	// its questions and write: reset/forget then refuse as "setup in progress",
 	// and a forget that won before this lock cancels onboarding instead of
 	// letting it recreate byre.config in a recordless store.
-	if err := withSetupLock(s.Err, paths.LockFile, func() error {
+	if _, err := setupLockedProject(s.Err, paths, func() (struct{}, error) {
 		if err := requireRecorded(paths); err != nil {
-			if !mayEnroll {
-				return wrapForgottenWorktreeHandoff(projectDir, err)
-			}
-			return err
+			return struct{}{}, err
 		}
-		return onboardIfNeeded(s, projectDir, paths, flagTemplate, flagAgent, flagSharedAuth)
+		return struct{}{}, onboardIfNeeded(s, projectDir, paths, flagTemplate, flagAgent, flagSharedAuth)
 	}); err != nil {
+		if !mayEnroll {
+			return wrapForgottenWorktreeHandoff(projectDir, err)
+		}
 		return err
 	}
 	// Validate bind sources before any build/seed side effects: a comma would

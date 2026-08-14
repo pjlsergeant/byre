@@ -776,6 +776,24 @@ func TestWorktreeDevelopHandoffDoesNotReenrollAForgottenProject(t *testing.T) {
 	}
 }
 
+func TestWorktreeDevelopHandoffNamesAStoreForgottenWhileWaiting(t *testing.T) {
+	p, proj := testPaths(t)
+	s := discardStreams()
+	notice := lockWaitWriter(s.Err)
+	s.Err = notice
+	err := saveDuringLockWait(t, p, notice,
+		func() {
+			if err := os.RemoveAll(p.Dir); err != nil {
+				t.Fatal(err)
+			}
+		},
+		func() error { return developCommand(s, proj, "", "", nil, false, CredentialAsk, false) })
+	if err == nil || !strings.Contains(err.Error(), "automatic session was cancelled") ||
+		!strings.Contains(err.Error(), "`byre develop`") {
+		t.Fatalf("deleted-store handoff error = %v", err)
+	}
+}
+
 // The engine is the one thing the post-lock read cannot honor -- the runner,
 // the identity mode and the image tag are already fixed by the pre-lock
 // detection -- so a save that names a DIFFERENT engine is refused by name

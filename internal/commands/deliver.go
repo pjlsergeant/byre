@@ -176,7 +176,7 @@ func importFromPaste(s Streams, reader *clipBackend, text []byte, stamp string) 
 		// A failed mirror read establishes nothing about how the paste arrived.
 		// In particular it is not evidence that path-shaped text was a terminal
 		// file drag, so never turn it into authority to open a host file.
-		fmt.Fprintf(s.Err, "byre: could not compare the paste with the clipboard (%v) — delivering it as literal text\n", fetchErr)
+		fmt.Fprintf(s.Err, "byre: could not compare the paste with the clipboard (%s) — delivering it as literal text\n", packages.EscapeTerminal(fetchErr.Error()))
 		return []deliver.Source{{Data: text, Name: "clipboard-" + stamp + ".txt", Kind: "pasted text"}}, nil
 	}
 	if strings.TrimSpace(string(pb)) == trimmed {

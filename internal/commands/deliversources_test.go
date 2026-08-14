@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -161,6 +162,20 @@ func TestImportFromPasteFetchErrorStaysLiteralText(t *testing.T) {
 	}
 	if !strings.Contains(errw.String(), "literal text") {
 		t.Fatalf("fetch-error explanation missing: %q", errw.String())
+	}
+}
+
+func TestImportFromPasteEscapesClipboardFetchError(t *testing.T) {
+	cb := clipBackend{
+		fetch: func(string) ([]byte, error) { return nil, errors.New("broken \x1b[31mclipboard") },
+	}
+	s, _, errw := testStreams("", true)
+	_, err := importFromPaste(s, &cb, []byte("literal"), "stamp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errw.String(), "\x1b[31m") || !strings.Contains(errw.String(), "broken clipboard") {
+		t.Fatalf("clipboard helper error was not escaped: %q", errw.String())
 	}
 }
 
