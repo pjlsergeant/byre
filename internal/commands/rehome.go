@@ -73,6 +73,12 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 	// (forget's store removal has the same shape).
 	removeOldStore := false
 	if err := withTwoSetupLocks(s.Err, paths.LockFile, oldLock, func() error {
+		// Only the destination is required to remain enrolled. The old id is
+		// allowed to be a recordless rehome candidate; the new id was Bootstrapped
+		// before these locks and must not be resurrected if forget won meanwhile.
+		if err := requireRecorded(paths); err != nil {
+			return err
+		}
 		multi := len(engines) > 1
 		// Both ids' sessions block a migration, on every installed engine; a
 		// pre-start marker on either id (a develop between create and start) is

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	projectlock "github.com/pjlsergeant/byre/internal/lock"
 )
 
 func TestForgetRemovesHostStateLeavesProjectTree(t *testing.T) {
@@ -90,6 +92,24 @@ func TestForgetRefusesLive(t *testing.T) {
 	}
 	if _, err := os.Stat(p.Dir); err != nil {
 		t.Errorf("projects dir must be kept when refusing: %v", err)
+	}
+}
+
+func TestForgetRefusesWhileSetupIsInProgress(t *testing.T) {
+	p, _ := testPaths(t)
+	held, err := projectlock.Acquire(p.LockFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Release()
+	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}}
+	s, _, _ := testStreams("", false)
+	err = forget(s, p, engines(f), true)
+	if err == nil || !strings.Contains(err.Error(), "wait for it to finish") || !strings.Contains(err.Error(), "byre forget") {
+		t.Fatalf("setup-contention error = %v", err)
+	}
+	if len(f.removed) != 0 {
+		t.Fatalf("forget removed volumes while setup held the lock: %v", f.removed)
 	}
 }
 

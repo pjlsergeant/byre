@@ -36,9 +36,6 @@ func Forget(s Streams, projectDir string, force bool) error {
 		fmt.Fprintln(s.Err, "byre: this project has never been developed here — nothing to forget.")
 		return nil
 	}
-	if err := paths.Bootstrap(); err != nil { // re-ensures dir+lock shape for the lock below
-		return err
-	}
 	engines, err := lifecycleEngines(boxWritableRoots(paths))
 	if err != nil {
 		return err
@@ -112,7 +109,7 @@ func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) 
 	// so state created since the preview is also removed); the projects dir
 	// holds the lock file, so remove it after the lock is released.
 	var failed []string
-	if err := withSetupLock(s.Err, paths.LockFile, func() error {
+	if err := withDestructiveSetupLock(paths.LockFile, "forget", func() error {
 		for _, r := range engines {
 			// Abort on a session that started since the prompt, and dissolve any
 			// pre-start ownership marker before touching volumes.

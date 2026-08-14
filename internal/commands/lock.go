@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/pjlsergeant/byre/internal/lock"
 	"github.com/pjlsergeant/byre/internal/project"
@@ -18,11 +19,10 @@ import (
 // NOT re-Bootstrap: recreating the record would convert forget's cancellation
 // into resurrection and could race a colliding claimant.
 //
-// Applied to the two image BUILDERS (develop, rebuild). The other setup-lock
-// writers are consciously deferred: forget/reset are the teardown side (they do
-// the clearing), and rehome/worktree/preset/config have create/retire semantics
-// where a plain "must already be recorded" check is not obviously correct --
-// they want the per-command analysis the tombstone design below implies.
+// Applied to setup writers that Bootstrap before taking the lock: develop,
+// rebuild, worktree image preparation, preset apply, and rehome's NEW-id side.
+// Forget/reset are the teardown side and config writes have their own
+// compare-and-swap semantics.
 //
 // Residual (consciously deferred): re-checking Recorded() does not preserve the
 // collision fence across an id-hash-collision window -- if `forget` left `path`
@@ -34,9 +34,15 @@ func requireRecorded(paths project.Paths) error {
 		return err // id collision or an unreadable record -- fail loudly
 	}
 	if !recorded {
-		return fmt.Errorf("the project store was cleared while waiting for the setup lock (a concurrent `byre forget`?) — re-run the command")
+		return projectClearedError{}
 	}
 	return nil
+}
+
+type projectClearedError struct{}
+
+func (projectClearedError) Error() string {
+	return "the project store was cleared while waiting for the setup lock (a concurrent `byre forget`?) — re-run the command"
 }
 
 // acquireNoisy takes the setup lock, telling the user (on w — stderr) when it
@@ -74,11 +80,60 @@ func setupLocked[T any](w io.Writer, path string, fn func() (T, error)) (T, erro
 	return v, nil
 }
 
+// setupLockedProject is the project-recorded sibling used after pre-lock human
+// work. If forget removed the whole store, acquiring its lock fails before
+// requireRecorded can produce the typed cancellation; normalize that one
+// acquisition failure without relabeling ENOENT returned by fn itself.
+func setupLockedProject[T any](w io.Writer, paths project.Paths, fn func() (T, error)) (T, error) {
+	var zero T
+	lk, err := acquireNoisy(w, paths.LockFile)
+	if os.IsNotExist(err) {
+		return zero, projectClearedError{}
+	}
+	if err != nil {
+		return zero, err
+	}
+	v, ferr := fn()
+	if err := errors.Join(ferr, lk.Release()); err != nil {
+		return zero, err
+	}
+	return v, nil
+}
+
 // withSetupLock runs fn while holding the per-project setup lock, surfacing both
 // fn's error and any unlock error. w gets the waiting note if the lock is held.
 func withSetupLock(w io.Writer, path string, fn func() error) error {
 	_, err := setupLocked(w, path, func() (struct{}, error) { return struct{}{}, fn() })
 	return err
+}
+
+// withDestructiveSetupLock is reset/forget's fail-fast setup lock. Destructive
+// work must never queue behind an active setup and then erase what that command
+// just created; the user can safely retry after the named operation finishes.
+func withDestructiveSetupLock(path, verb string, fn func() error) error {
+	return withPreparedDestructiveSetupLock(path, "run `byre "+verb+"` again", nil, fn)
+}
+
+// withPreparedDestructiveSetupLock is the editor-volume sibling. An editor on
+// a never-enrolled project has no lock path yet, so its deliberate first
+// mutation may Bootstrap under this helper; an existing store is always tried
+// first, ensuring prepare cannot recreate enrollment before a contention
+// refusal.
+func withPreparedDestructiveSetupLock(path, retry string, prepare func() error, fn func() error) error {
+	lk, ok, err := lock.TryAcquire(path)
+	if os.IsNotExist(err) && prepare != nil {
+		if err := prepare(); err != nil {
+			return err
+		}
+		lk, ok, err = lock.TryAcquire(path)
+	}
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("another byre setup operation is in progress for this project — wait for it to finish, then %s", retry)
+	}
+	return errors.Join(fn(), lk.Release())
 }
 
 // withTwoSetupLocks holds two setup locks (acquired in a stable order to avoid

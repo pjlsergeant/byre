@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/configui"
+	projectlock "github.com/pjlsergeant/byre/internal/lock"
 )
 
 func TestProjectVolumesDisambiguatesByLongestID(t *testing.T) {
@@ -140,6 +141,24 @@ func TestVolumeAdminListsAndClearsPerEngine(t *testing.T) {
 	}
 	if len(docker.removed) != 0 {
 		t.Fatalf("clearing one engine's row must not touch the other: %v", docker.removed)
+	}
+}
+
+func TestVolumeAdminClearRefusesWhileSetupIsInProgress(t *testing.T) {
+	p, dir := testPaths(t)
+	held, err := projectlock.Acquire(p.LockFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Release()
+	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}}
+	a := &volumeAdmin{rs: []engineRunner{f}, paths: p, projectDir: dir}
+	err = a.Clear(configui.VolumeStatus{Name: "cache", Exists: true})
+	if err == nil || !strings.Contains(err.Error(), "wait for it to finish") {
+		t.Fatalf("setup-contention error = %v", err)
+	}
+	if len(f.removed) != 0 {
+		t.Fatalf("volume clear waited and removed setup state: %v", f.removed)
 	}
 }
 

@@ -13,7 +13,8 @@ import (
 // Reset implements `byre reset`: wipe ALL of this project's named volumes (only
 // volumes — not the image), across EVERY installed engine — the volumes may
 // live in an engine the config no longer names. It names what dies first,
-// refuses while a session is live, and serializes with the setup lock. force
+// refuses while a session is live or setup is active, and takes the setup lock
+// without waiting. force
 // skips the confirmation prompt.
 func Reset(s Streams, projectDir string, force bool) error {
 	paths, err := project.Resolve(projectDir)
@@ -31,9 +32,6 @@ func Reset(s Streams, projectDir string, force bool) error {
 	if skip {
 		fmt.Fprintln(s.Err, "byre: this project has never been developed here — nothing to reset.")
 		return nil
-	}
-	if err := paths.Bootstrap(); err != nil {
-		return err
 	}
 	engines, err := lifecycleEngines(boxWritableRoots(paths))
 	if err != nil {
@@ -140,7 +138,7 @@ func reset(s Streams, paths project.Paths, engines []engineRunner, force bool) e
 	}
 
 	// Serialize with develop's setup so we don't race a concurrent build/seed.
-	return withSetupLock(s.Err, paths.LockFile, func() error {
+	return withDestructiveSetupLock(paths.LockFile, "reset", func() error {
 		var failed []string
 		volsTotal := 0
 		for _, r := range engines {

@@ -51,6 +51,13 @@ const ExitRefused = 3
 // the agent can edit its own byre.config — a deliberate grant.
 // credMode is --credentials: how this launch gets its passphrases.
 func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAuth *bool, selfEdit bool, credMode CredentialMode) error {
+	return developCommand(s, projectDir, flagTemplate, flagAgent, flagSharedAuth, selfEdit, credMode, true)
+}
+
+// develop carries one enrollment distinction: a direct `byre develop` may
+// create/re-enroll the project, while the automatic handoff from `byre
+// worktree` must not undo a forget that won during worktree creation.
+func developCommand(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAuth *bool, selfEdit bool, credMode CredentialMode, mayEnroll bool) error {
 	if err := requireNonRootHost(s.Err); err != nil {
 		return err
 	}
@@ -58,8 +65,12 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 	if err != nil {
 		return err
 	}
-	if err := paths.Bootstrap(); err != nil {
-		return err
+	if mayEnroll {
+		if err := paths.Bootstrap(); err != nil {
+			return err
+		}
+	} else if err := requireRecorded(paths); err != nil {
+		return wrapForgottenWorktreeHandoff(projectDir, err)
 	}
 	// Store-ensure (bundled mirror + LEGACY notices) rides every develop so an
 	// upgraded byre surfaces them with no separate update step.
@@ -76,9 +87,19 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 	if note := presetNote(projectDir, paths); note != "" {
 		fmt.Fprintf(s.Err, "byre: %s\n", note)
 	}
-	// First-run onboarding: with no host-side config, pick (or apply flags / fall
-	// back to the cascade on non-TTY) and write the store's byre.config.
-	if err := onboardIfNeeded(s, projectDir, paths, flagTemplate, flagAgent, flagSharedAuth); err != nil {
+	// First-run onboarding is a setup mutation too. Hold the setup lock through
+	// its questions and write: reset/forget then refuse as "setup in progress",
+	// and a forget that won before this lock cancels onboarding instead of
+	// letting it recreate byre.config in a recordless store.
+	if err := withSetupLock(s.Err, paths.LockFile, func() error {
+		if err := requireRecorded(paths); err != nil {
+			if !mayEnroll {
+				return wrapForgottenWorktreeHandoff(projectDir, err)
+			}
+			return err
+		}
+		return onboardIfNeeded(s, projectDir, paths, flagTemplate, flagAgent, flagSharedAuth)
+	}); err != nil {
 		return err
 	}
 	// Validate bind sources before any build/seed side effects: a comma would
@@ -115,7 +136,26 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 		// authors under a box-writable root, which is the shadow precondition.
 		dataf(s.Err, "%s\n", disclosure)
 	}
-	return develop(runner.New(eng, engExe), s, paths, rv, selfEdit, credMode)
+	derr := develop(runner.New(eng, engExe), s, paths, rv, selfEdit, credMode)
+	if derr != nil && !mayEnroll {
+		// The engine-facing core takes the setup lock again after credential
+		// prompts. If forget won during that human wait, replace its generic
+		// "re-run the command" with the worktree-specific recovery.
+		return wrapForgottenWorktreeHandoff(projectDir, derr)
+	}
+	return derr
+}
+
+func forgottenWorktreeHandoff(projectDir string, err error) error {
+	return fmt.Errorf("the project was forgotten while creating the worktree — the worktree remains at %s, but its automatic session was cancelled. To use it, run `byre develop` there: %w", projectDir, err)
+}
+
+func wrapForgottenWorktreeHandoff(projectDir string, err error) error {
+	var cleared projectClearedError
+	if errors.As(err, &cleared) {
+		return forgottenWorktreeHandoff(projectDir, err)
+	}
+	return err
 }
 
 // develop is the engine-facing core of Develop — the live-session fast path,
@@ -204,7 +244,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	// handed is the pre-lock read, stale by contract once the authoritative
 	// re-read under the lock has happened (prep.rv is that re-read). prep's
 	// fields are read-only from here.
-	prep, err := setupLocked(s.Err, paths.LockFile, func() (preparedLaunch, error) {
+	prep, err := setupLockedProject(s.Err, paths, func() (preparedLaunch, error) {
 		return prepareLaunchLocked(r, s, paths, rv, image, selfEdit, ident, unlocked, credMode == CredentialSkip)
 	})
 	if err != nil {

@@ -42,6 +42,33 @@ func TestRequireRecorded(t *testing.T) {
 	}
 }
 
+func TestSetupLockedProjectNormalizesADeletedStore(t *testing.T) {
+	paths, _ := testPaths(t)
+	if err := os.RemoveAll(paths.Dir); err != nil {
+		t.Fatal(err)
+	}
+	ran := false
+	_, err := setupLockedProject(io.Discard, paths, func() (struct{}, error) {
+		ran = true
+		return struct{}{}, nil
+	})
+	var cleared projectClearedError
+	if !errors.As(err, &cleared) || ran {
+		t.Fatalf("deleted-store acquire = %v, ran=%v", err, ran)
+	}
+}
+
+func TestWorktreeForgetWrapOnlyWrapsClearedStore(t *testing.T) {
+	ordinary := errors.New("record unreadable")
+	if got := wrapForgottenWorktreeHandoff("/worktree", ordinary); !errors.Is(got, ordinary) || got.Error() != ordinary.Error() {
+		t.Fatalf("ordinary record error was relabeled: %v", got)
+	}
+	got := wrapForgottenWorktreeHandoff("/worktree", projectClearedError{})
+	if !strings.Contains(got.Error(), "automatic session was cancelled") {
+		t.Fatalf("cleared store lost worktree recovery: %v", got)
+	}
+}
+
 // TestWithSetupLockNotesWhenWaiting pins the contended-lock UX: a second
 // invocation says it's waiting instead of hanging silently; an uncontended one
 // says nothing.

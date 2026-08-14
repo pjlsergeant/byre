@@ -51,6 +51,22 @@ func TestRehomeRefusesLive(t *testing.T) {
 	}
 }
 
+func TestRehomeRefusesAForgottenDestination(t *testing.T) {
+	p, _ := testPaths(t)
+	if err := os.Remove(p.PathRecord); err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeRunner{vols: map[string]bool{"byre-oldid-cache": true}}
+	s, _, _ := testStreams("", false)
+	err := rehome(s, p, "oldid", engines(f), 1000, 1000)
+	if err == nil || !strings.Contains(err.Error(), "cleared") {
+		t.Fatalf("forgotten destination error = %v", err)
+	}
+	if len(f.created) != 0 || len(f.migrated) != 0 {
+		t.Fatalf("rehome wrote into forgotten destination: created=%v migrated=%v", f.created, f.migrated)
+	}
+}
+
 func TestRehomeConflictAborts(t *testing.T) {
 	p, _ := testPaths(t)
 	dst := "byre-" + p.ID + "-cache"

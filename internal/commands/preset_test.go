@@ -589,6 +589,27 @@ func TestPresetApplyFailsOnMissingLayer(t *testing.T) {
 	}
 }
 
+func TestPresetApplyRefusesAForgetThatWonTheSetupLock(t *testing.T) {
+	p, proj := onboardPaths(t)
+	shipPreset(t, proj, PresetName, "agent = \"codex\"\n")
+	s, _, errw := testStreams("y\n", true)
+	notice := lockWaitWriter(errw)
+	s.Err = notice
+	err := saveDuringLockWait(t, p, notice,
+		func() {
+			if err := os.Remove(p.PathRecord); err != nil {
+				t.Fatal(err)
+			}
+		},
+		func() error { return PresetApply(s, proj, "") })
+	if err == nil || !strings.Contains(err.Error(), "cleared while waiting") {
+		t.Fatalf("forget winner error = %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(p.Dir, config.ProjectConfigName)); !os.IsNotExist(statErr) {
+		t.Fatalf("preset recreated config after forget: %v", statErr)
+	}
+}
+
 // With the layer present, the review resolves the chain: the layer's grants
 // show, attributed, and the chain itself is printed root-first.
 func TestPresetApplyResolvesLayerChainInReview(t *testing.T) {

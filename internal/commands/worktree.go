@@ -119,7 +119,7 @@ func Worktree(s Streams, projectDir, name, path string, selfEdit bool, credMode 
 	// Hand off to develop in the new worktree. If it fails, the worktree is still
 	// valid — retry with `byre develop` there, or drop it with `git worktree
 	// remove` — so we don't roll back a successful creation on a develop error.
-	return Develop(s, target, "", "", nil, selfEdit, credMode)
+	return developCommand(s, target, "", "", nil, selfEdit, credMode, false)
 }
 
 // worktreeCreate is the engine-facing half of Worktree: ensure the project
@@ -206,6 +206,11 @@ func ensureProjectImage(r engineRunner, s Streams, paths project.Paths, projectD
 	}
 	image := imageTag(paths.ID, ident.UID, ident.GID)
 	if err := withSetupLock(s.Err, paths.LockFile, func() error {
+		// Bootstrap happened before the lock existed. If forget won while this
+		// command waited, building now would silently resurrect the project.
+		if err := requireRecorded(paths); err != nil {
+			return err
+		}
 		// The only read this step needs is the one that feeds the build, so it
 		// happens here — under the lock the editor's save takes, and after any
 		// wait for it. Nothing outside the lock depends on the config: the

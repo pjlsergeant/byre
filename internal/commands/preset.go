@@ -155,6 +155,11 @@ func PresetApply(s Streams, projectDir, arg string) error {
 	}
 	h := packages.HashBytes(content)
 	return withSetupLock(s.Err, paths.LockFile, func() error {
+		// Bootstrap preceded the lock. A concurrent forget that won the lock is
+		// cancellation, not permission to recreate config in a recordless store.
+		if err := requireRecorded(paths); err != nil {
+			return err
+		}
 		if cur, _, _, rerr := readPreset(projectDir, arg); rerr == nil && packages.HashBytes(cur) != h {
 			// Only re-checkable for path sources that still exist; a changed
 			// file must not land bytes the human did not review.

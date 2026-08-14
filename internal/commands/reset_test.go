@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	projectlock "github.com/pjlsergeant/byre/internal/lock"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
@@ -173,6 +174,24 @@ func TestResetRefusesWhenLiveOnAnyEngine(t *testing.T) {
 	}
 	if len(docker.removed) != 0 {
 		t.Fatalf("must not wipe docker volumes while podman has a session: %v", docker.removed)
+	}
+}
+
+func TestResetRefusesWhileSetupIsInProgress(t *testing.T) {
+	p, _ := testPaths(t)
+	held, err := projectlock.Acquire(p.LockFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Release()
+	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}}
+	s, _, _ := testStreams("", false)
+	err = reset(s, p, engines(f), true)
+	if err == nil || !strings.Contains(err.Error(), "wait for it to finish") || !strings.Contains(err.Error(), "byre reset") {
+		t.Fatalf("setup-contention error = %v", err)
+	}
+	if len(f.removed) != 0 {
+		t.Fatalf("reset removed volumes while setup held the lock: %v", f.removed)
 	}
 }
 

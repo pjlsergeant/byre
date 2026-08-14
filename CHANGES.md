@@ -8,6 +8,14 @@
   text instead. Container control replies are now bounded while captured, so
   a box cannot grow host memory without limit through a forged reply.
 
+- **Destructive project-state actions now refuse while another setup operation
+  is in progress.** `byre reset`, `byre forget`, and the config editor's volume
+  Clear tell you to wait and retry instead of queueing behind a build or
+  migration and then deleting its result. Conversely, setup writers that lose
+  the lock race to `forget` detect the cleared project record and abort rather
+  than silently recreating it; a worktree already created in that race stays
+  usable, but its automatic session is cancelled.
+
 - **A project can now carry its own credentials, encrypted, in its config
   files.** An `env_from_host` row whose value is `encrypted:` (arrives as an
   environment variable) or `encrypted-file:` (arrives as a file on the box's

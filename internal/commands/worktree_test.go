@@ -560,3 +560,27 @@ func TestEnsureProjectImageRefusesAnEngineChangedUnderTheSetupLock(t *testing.T)
 		t.Fatalf("the refusal must precede the build: builds=%v", f.builds)
 	}
 }
+
+func TestEnsureProjectImageRefusesAForgetThatWonTheSetupLock(t *testing.T) {
+	p, proj := testPaths(t)
+	f := &fakeRunner{}
+	str := discardStreams()
+	notice := lockWaitWriter(str.Err)
+	str.Err = notice
+	err := saveDuringLockWait(t, p, notice,
+		func() {
+			if err := os.Remove(p.PathRecord); err != nil {
+				t.Fatal(err)
+			}
+		},
+		func() error {
+			_, _, err := ensureProjectImage(f, str, p, proj)
+			return err
+		})
+	if err == nil || !strings.Contains(err.Error(), "cleared while waiting") {
+		t.Fatalf("forget winner error = %v", err)
+	}
+	if len(f.builds) != 0 {
+		t.Fatalf("forgotten project was rebuilt: %v", f.builds)
+	}
+}

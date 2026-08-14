@@ -461,42 +461,33 @@ func firstLine(s string) string {
 
 // Clear removes a volume under the project setup lock, re-checking for a live
 // session inside it — the same guard `reset`/`forget` use, so a concurrent
-// `byre develop` can't seed a volume we're deleting (or vice versa). The row's
+// `byre develop` can't seed a volume we're deleting (or vice versa). It refuses
+// rather than waiting behind setup and then deleting that setup's result. The row's
 // scope decides the Docker name: an orphaned machine volume may share its
 // logical name with a declared project one, so name alone is ambiguous.
 func (a *volumeAdmin) Clear(v configui.VolumeStatus) error {
 	r := a.runnerFor(v.Engine)
-	// The lock file lives in the project store, which an unrecorded project
-	// doesn't have yet (e.g. clearing an orphaned machine volume from a
-	// never-developed project) — enroll before locking; a clear is a
-	// mutation, so that's fair even if the clear is then refused (the lock
-	// can't exist without the store).
-	if a.prepare != nil {
-		if err := a.prepare(); err != nil {
-			return err
-		}
-	}
-	// io.Discard: this runs inside the TUI; a waiting note would corrupt the screen.
-	return withSetupLock(io.Discard, a.paths.LockFile, func() error {
-		if live, err := liveSession(r, a.paths.ID); err != nil {
-			return fmt.Errorf("checking for a running session: %w", err)
-		} else if len(live) > 0 {
-			return fmt.Errorf("a session is running (%s) — exit it before clearing volumes", shortID(live[0]))
-		}
-		if v.Machine {
-			// A machine-scoped volume is mounted by EVERY project's boxes, so
-			// the this-project guard above isn't enough: refuse while ANY byre
-			// session runs (bare label key = presence filter). Clearing it is
-			// the machine-wide logout story (ADR 0017).
-			if live, lerr := r.RunningContainersByLabel(labelKey); lerr != nil {
-				return fmt.Errorf("checking for running byre sessions: %w", lerr)
+	return withPreparedDestructiveSetupLock(a.paths.LockFile,
+		"re-open `byre config` and clear the volume again", a.prepare, func() error {
+			if live, err := liveSession(r, a.paths.ID); err != nil {
+				return fmt.Errorf("checking for a running session: %w", err)
 			} else if len(live) > 0 {
-				return fmt.Errorf("this volume is shared by ALL your projects and a byre session is running (%s) — exit every session before clearing it", shortID(live[0]))
+				return fmt.Errorf("a session is running (%s) — exit it before clearing volumes", shortID(live[0]))
 			}
-			return r.VolumeRemove(machineVolumeName(os.Getuid(), v.Name))
-		}
-		return r.VolumeRemove(volumeName(a.paths.ID, v.Name))
-	})
+			if v.Machine {
+				// A machine-scoped volume is mounted by EVERY project's boxes, so
+				// the this-project guard above isn't enough: refuse while ANY byre
+				// session runs (bare label key = presence filter). Clearing it is
+				// the machine-wide logout story (ADR 0017).
+				if live, lerr := r.RunningContainersByLabel(labelKey); lerr != nil {
+					return fmt.Errorf("checking for running byre sessions: %w", lerr)
+				} else if len(live) > 0 {
+					return fmt.Errorf("this volume is shared by ALL your projects and a byre session is running (%s) — exit every session before clearing it", shortID(live[0]))
+				}
+				return r.VolumeRemove(machineVolumeName(os.Getuid(), v.Name))
+			}
+			return r.VolumeRemove(volumeName(a.paths.ID, v.Name))
+		})
 }
 
 // runnerFor maps a row's engine label back to its runner; rows always carry
