@@ -205,7 +205,7 @@ func ensureProjectImage(r engineRunner, s Streams, paths project.Paths, projectD
 		return "", runner.Identity{}, err
 	}
 	image := imageTag(paths.ID, ident.UID, ident.GID)
-	if err := withSetupLock(s.Err, paths.LockFile, func() error {
+	if err := withSetupLockProject(s.Err, paths, func() error {
 		// Bootstrap happened before the lock existed. If forget won while this
 		// command waited, building now would silently resurrect the project.
 		if err := requireRecorded(paths); err != nil {

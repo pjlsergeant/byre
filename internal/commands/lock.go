@@ -107,6 +107,11 @@ func withSetupLock(w io.Writer, path string, fn func() error) error {
 	return err
 }
 
+func withSetupLockProject(w io.Writer, paths project.Paths, fn func() error) error {
+	_, err := setupLockedProject(w, paths, func() (struct{}, error) { return struct{}{}, fn() })
+	return err
+}
+
 // withDestructiveSetupLock is reset/forget's fail-fast setup lock. Destructive
 // work must never queue behind an active setup and then erase what that command
 // just created; the user can safely retry after the named operation finishes.
@@ -147,6 +152,33 @@ func withTwoSetupLocks(w io.Writer, a, b string, fn func() error) error {
 		return err
 	}
 	lb, err := acquireNoisy(w, b)
+	if err != nil {
+		return errors.Join(err, la.Release())
+	}
+	ferr := fn()
+	return errors.Join(ferr, lb.Release(), la.Release())
+}
+
+// withTwoSetupLocksProject is rehome's two-id lock. Only the destination
+// project is required to remain enrolled; normalize its disappeared lock to
+// the same typed forget cancellation as every other project setup writer.
+func withTwoSetupLocksProject(w io.Writer, paths project.Paths, other string, fn func() error) error {
+	a, b := paths.LockFile, other
+	if a > b {
+		a, b = b, a
+	}
+	acquire := func(path string) (*lock.Lock, error) {
+		lk, err := acquireNoisy(w, path)
+		if path == paths.LockFile && os.IsNotExist(err) {
+			return nil, projectClearedError{}
+		}
+		return lk, err
+	}
+	la, err := acquire(a)
+	if err != nil {
+		return err
+	}
+	lb, err := acquire(b)
 	if err != nil {
 		return errors.Join(err, la.Release())
 	}

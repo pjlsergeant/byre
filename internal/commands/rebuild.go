@@ -46,7 +46,7 @@ func Rebuild(s Streams, projectDir string) error {
 // fake engine. w gets the progress note (stderr in production).
 func rebuild(w io.Writer, r imageRunner, eng runner.Engine, paths project.Paths, rv resolved, ident runner.Identity) error {
 	image := imageTag(paths.ID, ident.UID, ident.GID)
-	return withSetupLock(w, paths.LockFile, func() error {
+	return withSetupLockProject(w, paths, func() error {
 		// Re-establish enrollment under the lock, same as develop: a concurrent
 		// forget could have cleared the store while rebuild waited.
 		if err := requireRecorded(paths); err != nil {

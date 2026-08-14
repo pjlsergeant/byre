@@ -72,7 +72,7 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 	// file itself, so it can only be removed once the lock is released
 	// (forget's store removal has the same shape).
 	removeOldStore := false
-	if err := withTwoSetupLocks(s.Err, paths.LockFile, oldLock, func() error {
+	if err := withTwoSetupLocksProject(s.Err, paths, oldLock, func() error {
 		// Only the destination is required to remain enrolled. The old id is
 		// allowed to be a recordless rehome candidate; the new id was Bootstrapped
 		// before these locks and must not be resurrected if forget won meanwhile.

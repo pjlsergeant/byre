@@ -44,9 +44,9 @@ func Reset(s Streams, projectDir string, force bool) error {
 // path record AND no store dir. A dir WITHOUT its record is deliberately not
 // "never developed" — it's recordless residue (the half-enrollment the write
 // paths now refuse to create; hand-mutation can still make one), and teardown
-// is exactly the command that should clean it, so it falls through to the
-// normal flow: Bootstrap claims the dir with this project's record, then
-// removal proceeds. A collision errors loudly.
+// is exactly the command that should clean it. It falls through without
+// claiming/re-enrolling the residue, takes the existing store's lock, and
+// removes it. A recorded id collision still errors loudly.
 func neverEnrolled(paths project.Paths) (bool, error) {
 	recorded, err := paths.Recorded()
 	if err != nil || recorded {

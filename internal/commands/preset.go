@@ -154,7 +154,7 @@ func PresetApply(s Streams, projectDir, arg string) error {
 		return err
 	}
 	h := packages.HashBytes(content)
-	return withSetupLock(s.Err, paths.LockFile, func() error {
+	return withSetupLockProject(s.Err, paths, func() error {
 		// Bootstrap preceded the lock. A concurrent forget that won the lock is
 		// cancellation, not permission to recreate config in a recordless store.
 		if err := requireRecorded(paths); err != nil {

@@ -53,7 +53,7 @@ func TestRehomeRefusesLive(t *testing.T) {
 
 func TestRehomeRefusesAForgottenDestination(t *testing.T) {
 	p, _ := testPaths(t)
-	if err := os.Remove(p.PathRecord); err != nil {
+	if err := os.RemoveAll(p.Dir); err != nil {
 		t.Fatal(err)
 	}
 	f := &fakeRunner{vols: map[string]bool{"byre-oldid-cache": true}}

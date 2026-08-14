@@ -597,7 +597,7 @@ func TestPresetApplyRefusesAForgetThatWonTheSetupLock(t *testing.T) {
 	s.Err = notice
 	err := saveDuringLockWait(t, p, notice,
 		func() {
-			if err := os.Remove(p.PathRecord); err != nil {
+			if err := os.RemoveAll(p.Dir); err != nil {
 				t.Fatal(err)
 			}
 		},
