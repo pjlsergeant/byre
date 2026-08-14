@@ -350,7 +350,7 @@ func countRows(groups []config.CredentialFile) int {
 // credPayload is the under-lock decrypt's product: what the inject streams,
 // what the launch record notes, and what the chassis env/tmpfs need.
 type credPayload struct {
-	values   map[string][]byte // config key -> plaintext, held only until the inject
+	values   map[string][]byte // config key -> plaintext; retained while the attached develop command lives
 	manifest string            // the launcher's export map: "KEY kind" lines
 	record   []launchCredential
 	unlock   string // the record's unlock word

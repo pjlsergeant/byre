@@ -91,9 +91,10 @@ exceptions noted inline.
   `KEY = "encrypted:<blob>"` arrives as an environment variable, and
   `KEY = "encrypted-file:<blob>"` arrives as a file on the session
   tmpfs with `KEY` holding its path. You never type those rows: `byre
-  credentials set KEY` writes one (masked prompt or stdin -- never a
-  command-line argument), and the configuration editor's Env screen
-  writes the same thing. `KEY = ""` in a nearer layer disables an
+  credentials set KEY` writes one; its input is a single-line masked terminal
+  prompt or whole piped stdin for multiline values, never a command-line
+  argument. The configuration editor's Env screen writes the same encrypted
+  row through its own single-line masked field. `KEY = ""` in a nearer layer disables an
   inherited credential like any other row. An env-kind value must be
   NUL-free and at most 64 KiB; the file-kind ceiling is 256 KiB.
 - `[credentials]` -- written by `byre credentials`, not by hand: the

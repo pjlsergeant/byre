@@ -113,9 +113,12 @@ func unwrapIdentity(wrapped []byte, passphrase string) (*age.X25519Identity, err
 	if err != nil {
 		return nil, passphraseOrCause(err)
 	}
-	idStr, err := io.ReadAll(io.LimitReader(rd, identityReadCap))
+	idStr, err := io.ReadAll(io.LimitReader(rd, identityReadCap+1))
 	if err != nil {
 		return nil, passphraseOrCause(err)
+	}
+	if len(idStr) > identityReadCap {
+		return nil, fmt.Errorf("unwrapped credentials identity exceeds %d bytes", identityReadCap)
 	}
 	return age.ParseX25519Identity(strings.TrimSpace(string(idStr)))
 }

@@ -58,7 +58,7 @@ every command and flag.
 | `byre context remove <name>` | Remove standing instructions (closure-smart). |
 | `byre context list` | Show the resolved standing instructions (name + source). |
 | `byre credentials` | Manage this project's credentials (age-encrypted rows in the config, delivered per launch after unlock). |
-| `byre credentials set KEY` | Store a value under KEY: masked prompt on a terminal, or piped stdin. Never an argument. |
+| `byre credentials set KEY` | Store a value under KEY: single-line masked terminal prompt, or whole piped stdin (including multiline file values). Never an argument. |
 | `byre credentials unset KEY` | Remove a credential row. The ciphertext goes with it. |
 | `byre credentials rekey` | Rotate one config file's credentials passphrase (the identity is unchanged). |
 | `byre credentials list` | Show this cascade's credential rows: key, kind, source file. Values render nowhere. |

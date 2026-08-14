@@ -87,6 +87,29 @@ func TestInlineWrongPassphrase(t *testing.T) {
 	}
 }
 
+func TestUnwrapIdentityNamesAnOversizePlaintext(t *testing.T) {
+	r, err := age.NewScryptRecipient("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.SetWorkFactor(10)
+	var buf bytes.Buffer
+	w, err := age.Encrypt(&buf, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write(bytes.Repeat([]byte("x"), identityReadCap+1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = UnwrapIdentity(buf.Bytes(), "pw")
+	if err == nil || !strings.Contains(err.Error(), "exceeds") || !strings.Contains(err.Error(), "bytes") {
+		t.Fatalf("oversize identity error = %v", err)
+	}
+}
+
 func TestInlineKeyBindingMismatch(t *testing.T) {
 	// The accident guard: a blob set for one row, delivered as another. The
 	// refusal names BOTH keys, so the remedy is obvious.

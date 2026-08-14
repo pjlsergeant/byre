@@ -111,9 +111,10 @@ func recordSessionEngine(w io.Writer, paths project.Paths, eng runner.Engine, un
 // query a CLI-less daemon, so carrying it unresolved would nag forever after a
 // deliberate uninstall (footgun doctrine -- the user's own host is their
 // call). Residuals, disclosed (ADR 0004): a --self-edit agent can forge the
-// record, which only downgrades to the pre-record behavior in a box that
-// already authors its own next sandbox; and a develop run by an OLDER byre
-// doesn't update the record (mixed-version staleness).
+// record: garbage widens checking to the pre-record behavior, while a clean
+// forged record naming the configured engine suppresses cross-engine checking
+// in a box that already authors its own next sandbox. A develop run by an OLDER
+// byre does not update the record (mixed-version staleness).
 func crossEnginesToCheck(w io.Writer, others []sessionRunner, self runner.Engine, paths project.Paths) (toCheck []sessionRunner, tracked bool) {
 	rec := loadEngineRecord(paths)
 	if rec.last == "" {

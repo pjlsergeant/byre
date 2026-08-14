@@ -394,8 +394,9 @@ type preparedLaunch struct {
 	// made, the credential inject's target (an exec by ID cannot land on a
 	// same-named successor).
 	containerID string
-	// creds is the under-lock decrypt's product: values held only until the
-	// inject, the manifest, and the record entries already written.
+	// creds is the under-lock decrypt's product: values retained in this
+	// prepared launch while the attached develop command lives, plus the
+	// manifest and record entries already written.
 	creds credPayload
 }
 

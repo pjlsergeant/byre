@@ -122,6 +122,10 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.probeCredentialIdentity()
+		if m.credProbeErr != "" {
+			m.status = "cannot inspect this file's credentials identity: " + m.credProbeErr
+			return m, nil
+		}
 		if !m.credHasIdentity {
 			return m, nil
 		}

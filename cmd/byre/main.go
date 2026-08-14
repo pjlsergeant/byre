@@ -740,9 +740,10 @@ func credentialsCmd(dir string, s commands.Streams) *cobra.Command {
 	var setFile, setLayer = false, ""
 	set := &cobra.Command{
 		Use:   "set KEY",
-		Short: "Store a value under KEY: masked prompt on a terminal, or piped stdin. Never an argument.",
+		Short: "Store a value under KEY: single-line masked terminal prompt, or whole piped stdin (including multiline file values). Never an argument.",
 		Long: `Encrypt a value and write it as an env_from_host row in one config file.
-On a terminal the value is read masked; piped stdin is taken whole
+On a terminal the value is read masked as one line; piped stdin is taken whole,
+including multiline values for --file
 (op read ... | byre credentials set STRIPE_KEY). A value never rides the
 command line — argv lands in shell history and the process list.
 

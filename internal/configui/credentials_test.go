@@ -45,6 +45,7 @@ type fakeCredAdmin struct {
 	rekeys     int
 	err        error // the write path's refusal, when the test wants one
 	rekeyErr   error // Rekey's refusal, when the test wants one
+	probeErr   error // HasIdentity's refusal, when the test wants one
 	// concurrent runs INSIDE the write's window: after the bytes this write
 	// landed, before the editor takes its baseline. That is exactly where
 	// another session's write used to be adopted as this session's baseline,
@@ -58,7 +59,7 @@ func newFakeCredAdmin() *fakeCredAdmin {
 }
 
 func (f *fakeCredAdmin) Disclosure() string            { return f.disclosure }
-func (f *fakeCredAdmin) HasIdentity() (bool, error)    { return f.identity != nil, nil }
+func (f *fakeCredAdmin) HasIdentity() (bool, error)    { return f.identity != nil, f.probeErr }
 func (f *fakeCredAdmin) mintedUnder() string           { return f.passphrase }
 func (f *fakeCredAdmin) row(key string) (string, bool) { r, ok := f.rows[key]; return r, ok }
 
@@ -1102,6 +1103,21 @@ func TestRekeyIsReachableOnlyWithAWritePathAndAnIdentity(t *testing.T) {
 	opened, _ := ready.updateList(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	if opened.(model).mode != modeCredRekey {
 		t.Fatalf("r opened mode %v, want the rekey modal", opened.(model).mode)
+	}
+}
+
+func TestRekeyKeySurfacesAnIdentityProbeError(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.probeErr = errors.New("identity file is unreadable")
+	m := credModel(t, admin, nil)
+	m.listField = fEnv
+	next, _ := m.updateList(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	got := next.(model)
+	if !strings.Contains(got.status, "identity file is unreadable") {
+		t.Fatalf("r silently swallowed identity probe error: status=%q", got.status)
+	}
+	if got.mode == modeCredRekey {
+		t.Fatal("probe failure opened the rekey modal")
 	}
 }
 
