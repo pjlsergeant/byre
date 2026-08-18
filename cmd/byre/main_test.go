@@ -221,8 +221,14 @@ func TestRunUsageErrors(t *testing.T) {
 		{[]string{"dockerfile", "extra"}, "unexpected arguments"},
 		{[]string{"develop", "--template"}, ""}, // flag missing its value
 		{[]string{"develop", "--bogus"}, ""},    // unknown flag
-		{[]string{"config", "--bogus"}, ""},     // unknown flag
-		{[]string{"status", "--bogus"}, ""},     // unknown flag
+		// An explicitly blank --agent must refuse naming the rule and the
+		// "none" remedy — downstream it reads as "flag absent" and would be
+		// silently ignored, on both commands that carry the flag.
+		{[]string{"develop", "--agent="}, "--agent: blank value"},
+		{[]string{"develop", "-a", "   "}, "--agent: blank value"},
+		{[]string{"worktree", "feat", "--agent="}, "--agent: blank value"},
+		{[]string{"config", "--bogus"}, ""}, // unknown flag
+		{[]string{"status", "--bogus"}, ""}, // unknown flag
 		// --data already carries everything --full does; the pair is a
 		// misunderstanding of --data, not a combination to guess at.
 		{[]string{"status", "--full", "--data"}, "--full and --data are exclusive"},

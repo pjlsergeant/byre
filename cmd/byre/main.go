@@ -242,6 +242,14 @@ foreground. First run onboards the project (creates its host-side config).`,
 			if err != nil {
 				return usageError(err.Error())
 			}
+			// `--agent=` would read downstream as "flag absent" (every gate
+			// is `!= ""`) and silently launch the configured agent — an
+			// explicitly given flag must never be silently ignored. Judged
+			// by presence (Changed), the same tri-state trick --shared-auth
+			// uses above.
+			if cmd.Flags().Changed("agent") && strings.TrimSpace(agent) == "" {
+				return usageError(`--agent: blank value — name an agent skill, or "none" for an agentless run`)
+			}
 			return a.develop(s, dir, tmpl, agent, sharedAuthFlag, selfEdit, mode)
 		},
 	}
@@ -533,6 +541,12 @@ neither set, byre refuses rather than guessing.`,
 			mode, err := commands.ParseCredentialMode(creds)
 			if err != nil {
 				return usageError(err.Error())
+			}
+			// Same presence check as develop's: a blank `-a=` must refuse,
+			// not silently forward nothing (which would also dodge the
+			// never-developed-repo refusal in the handoff).
+			if cmd.Flags().Changed("agent") && strings.TrimSpace(agent) == "" {
+				return usageError(`--agent: blank value — name an agent skill, or "none" for an agentless run`)
 			}
 			return a.worktree(s, dir, args[0], path, agent, selfEdit, mode)
 		},

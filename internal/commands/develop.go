@@ -248,8 +248,9 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	// A run-scoped agent override changes what the box is ABOUT; say so up
 	// front (like the self-edit warning, it frames the session), and say what
 	// it does not do — the config is untouched, the next develop reverts.
+	// dataf: the agent is a package id byre did not author (P4's funnel).
 	if rv.agentOverride != "" {
-		fmt.Fprintf(s.Err, "byre: agent for this run: %s (--agent override; nothing written — the next develop uses byre.config again).\n", config.OrNone(rv.cfg.Agent))
+		dataf(s.Err, "byre: agent for this run: %s (--agent override; nothing written — the next develop uses byre.config again).\n", config.OrNone(rv.cfg.Agent))
 	}
 	// Credential unlock (launch step 1) is deliberately PRE-lock: a prompt
 	// under the setup lock would stall sibling worktrees on a human, and the
