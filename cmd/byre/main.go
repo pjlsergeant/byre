@@ -38,7 +38,7 @@ type app struct {
 	deliver       func(s commands.Streams, dir string, opts deliver.Options, paths []string) error
 	grab          func(s commands.Streams, dir string, opts deliver.Options, boxPath, hostPath string) error
 	installApp    func(s commands.Streams, box string) error
-	worktree      func(s commands.Streams, dir, name, path string, selfEdit bool, credMode commands.CredentialMode) error
+	worktree      func(s commands.Streams, dir, name, path, agent string, selfEdit bool, credMode commands.CredentialMode) error
 	rebuild       func(s commands.Streams, dir string) error
 	rehome        func(s commands.Streams, dir, oldID string) error
 	// rehomeCandidates is bare `byre rehome`: list stored projects whose
@@ -509,7 +509,7 @@ Boxes started by other users are hidden unless --skip-uid-check.`,
 }
 
 func worktreeCmd(a app, dir string, s commands.Streams) *cobra.Command {
-	var path string
+	var path, agent string
 	var selfEdit bool
 	var creds string
 	c := &cobra.Command{
@@ -534,10 +534,11 @@ neither set, byre refuses rather than guessing.`,
 			if err != nil {
 				return usageError(err.Error())
 			}
-			return a.worktree(s, dir, args[0], path, selfEdit, mode)
+			return a.worktree(s, dir, args[0], path, agent, selfEdit, mode)
 		},
 	}
 	c.Flags().StringVar(&path, "path", "", "create the worktree at an explicit path")
+	c.Flags().StringVarP(&agent, "agent", "a", "", "forward 'develop --agent' for the new session: the run-scoped agent override")
 	c.Flags().BoolVar(&selfEdit, "self-edit", false, "forward 'develop --self-edit' for the new session")
 	c.Flags().StringVar(&creds, "credentials", "", `forward 'develop --credentials' for the new session: ask|skip|stdin`)
 	return c

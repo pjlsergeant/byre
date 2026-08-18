@@ -92,7 +92,9 @@ config said so: the agent's skill is enabled for the run (its CLI, state
 volume, and egress ride the normal path), and the next plain
 `byre develop` is back on your config. Shared-auth companions never ride
 an override -- they enter via the written config only. `byre status`
-shows the running box's agent and names the override.
+shows the running box's agent and names the override. Works for a fresh
+worktree too: `byre worktree fix-thing -a codex` forwards it to the new
+session.
 
 ## Expose a port to see the box's dev server?
 

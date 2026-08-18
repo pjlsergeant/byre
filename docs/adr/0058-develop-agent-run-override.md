@@ -62,7 +62,8 @@ the config's agent. `--agent none` runs the box agentless for the run; a
 BLANK value is rejected naming the sentinel as the remedy, because it would
 canonicalize to "" and launch agentless with the override marker lost. On
 an already-running session the flag has no effect and says so, like
-`--self-edit`.
+`--self-edit`. `byre worktree -a <name>` forwards the flag to its handoff
+develop, the same forwarding `--self-edit`/`--credentials` already get.
 
 Accepted residual: the pre-release intermediate commit (654a912c) wrote
 `--agent none` records with an empty `agent`; under the sentinel rule those

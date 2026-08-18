@@ -54,8 +54,8 @@ func recorderApp(calls map[string]string) app {
 				boolStr(opts.SkipUIDCheck), boxPath, hostPath}, " "))
 		},
 		installApp: func(_ commands.Streams, box string) error { return note("install-app", box) },
-		worktree: func(_ commands.Streams, dir, name, path string, selfEdit bool, _ commands.CredentialMode) error {
-			return note("worktree", strings.Join([]string{dir, name, path, boolStr(selfEdit)}, " "))
+		worktree: func(_ commands.Streams, dir, name, path, agent string, selfEdit bool, _ commands.CredentialMode) error {
+			return note("worktree", strings.Join([]string{dir, name, path, agent, boolStr(selfEdit)}, " "))
 		},
 		rebuild:          func(_ commands.Streams, dir string) error { return note("rebuild", dir) },
 		rehome:           func(_ commands.Streams, dir, oldID string) error { return note("rehome", dir+" "+oldID) },
@@ -126,8 +126,9 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"grab", "out/report.pdf"}, "grab", "/proj  false out/report.pdf ."},
 		{[]string{"grab", "/workspace/a.txt", "~/dl"}, "grab", "/proj  false /workspace/a.txt ~/dl"},
 		{[]string{"grab", "--box", "x", "--skip-uid-check", "a.txt", "-"}, "grab", "/proj x true a.txt -"},
-		{[]string{"worktree", "feat"}, "worktree", "/proj feat  false"},
-		{[]string{"worktree", "feat", "--path", "/tmp/x", "--self-edit"}, "worktree", "/proj feat /tmp/x true"},
+		{[]string{"worktree", "feat"}, "worktree", "/proj feat   false"},
+		{[]string{"worktree", "feat", "--path", "/tmp/x", "--self-edit"}, "worktree", "/proj feat /tmp/x  true"},
+		{[]string{"worktree", "feat", "-a", "codex"}, "worktree", "/proj feat  codex false"},
 		{[]string{"rebuild"}, "rebuild", "/proj"},
 		{[]string{"rehome", "old-id"}, "rehome", "/proj old-id"},
 		{[]string{"rehome"}, "rehome candidates", "/proj"}, // bare = list likely old ids

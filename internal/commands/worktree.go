@@ -29,7 +29,11 @@ import (
 // ("sibling" = beside the repo, or a base dir), with the leaf <repo>-<name>;
 // unset, byre refuses rather than guess. Run from the main worktree or a
 // linked one: identity resolves to the main worktree either way.
-func Worktree(s Streams, projectDir, name, path string, selfEdit bool, credMode CredentialMode) error {
+//
+// agent forwards `develop --agent` to the handoff session: the worktree
+// inherits the project's config (already configured by construction), so it
+// lands as the run-scoped override (ADR 0058), never as onboarding input.
+func Worktree(s Streams, projectDir, name, path, agent string, selfEdit bool, credMode CredentialMode) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return fmt.Errorf("a worktree name (the branch) is required: byre worktree <name>")
@@ -119,7 +123,7 @@ func Worktree(s Streams, projectDir, name, path string, selfEdit bool, credMode 
 	// Hand off to develop in the new worktree. If it fails, the worktree is still
 	// valid — retry with `byre develop` there, or drop it with `git worktree
 	// remove` — so we don't roll back a successful creation on a develop error.
-	return developCommand(s, target, "", "", nil, selfEdit, credMode, false)
+	return developCommand(s, target, "", agent, nil, selfEdit, credMode, false)
 }
 
 // worktreeCreate is the engine-facing half of Worktree: ensure the project

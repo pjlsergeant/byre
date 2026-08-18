@@ -11,7 +11,8 @@
   override. The launch record now carries the agent (and whether it was
   an override), and `byre status` reports the running box's agent with
   an override or config-drift qualifier; `status --data` mirrors it as
-  `agent_note`. `--template`/`--shared-auth` remain first-run-only.
+  `agent_note`. `byre worktree -a <name>` forwards the flag to the new
+  worktree's session. `--template`/`--shared-auth` remain first-run-only.
   (ADR 0058.)
 
 ## v1.7.0 — 2026-08-14

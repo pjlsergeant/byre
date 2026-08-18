@@ -60,7 +60,7 @@ func TestWorktreeParent(t *testing.T) {
 func TestWorktreeRefusesWithoutLocation(t *testing.T) {
 	repo := initRepo(t)
 	t.Setenv("BYRE_HOME", t.TempDir()) // empty ~/.byre -> no worktree_base
-	err := Worktree(discardStreams(), repo, "feat", "", false, CredentialAsk)
+	err := Worktree(discardStreams(), repo, "feat", "", "", false, CredentialAsk)
 	if err == nil || !strings.Contains(err.Error(), "needs a location") {
 		t.Fatalf("worktree without --path or worktree_base must refuse with the needs-a-location rule, got: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestWorktreeRefusesWithoutEngine(t *testing.T) {
 	t.Cleanup(hostexec.ResetPins)
 	t.Setenv("BYRE_HOME", t.TempDir())
 	target := filepath.Join(filepath.Dir(repo), filepath.Base(repo)+"-noeng")
-	err := Worktree(discardStreams(), repo, "noeng", target, false, CredentialAsk)
+	err := Worktree(discardStreams(), repo, "noeng", target, "", false, CredentialAsk)
 	if err == nil || !strings.Contains(err.Error(), "needs a container engine") {
 		t.Fatalf("want engine refusal, got %v", err)
 	}
@@ -443,7 +443,7 @@ func TestWorktreeRecognizesExistingRegistration(t *testing.T) {
 	}
 
 	// Dir present + registered → resume with develop, not "already exists".
-	err := Worktree(discardStreams(), repo, "feat", target, false, CredentialAsk)
+	err := Worktree(discardStreams(), repo, "feat", target, "", false, CredentialAsk)
 	if err == nil || !strings.Contains(err.Error(), "byre develop") {
 		t.Fatalf("want a resume-with-develop refusal, got: %v", err)
 	}
@@ -452,7 +452,7 @@ func TestWorktreeRecognizesExistingRegistration(t *testing.T) {
 	if err := os.RemoveAll(target); err != nil {
 		t.Fatal(err)
 	}
-	err = Worktree(discardStreams(), repo, "feat", target, false, CredentialAsk)
+	err = Worktree(discardStreams(), repo, "feat", target, "", false, CredentialAsk)
 	if err == nil || !strings.Contains(err.Error(), "worktree prune") {
 		t.Fatalf("want a prune remedy for the stale registration, got: %v", err)
 	}
@@ -463,7 +463,7 @@ func TestWorktreeRefusesExistingUnregisteredTarget(t *testing.T) {
 	repo := initRepo(t)
 	t.Setenv("BYRE_HOME", t.TempDir())
 	target := t.TempDir()
-	err := Worktree(discardStreams(), repo, "feat", target, false, CredentialAsk)
+	err := Worktree(discardStreams(), repo, "feat", target, "", false, CredentialAsk)
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("want the exists refusal, got: %v", err)
 	}
