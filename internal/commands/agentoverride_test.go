@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
@@ -156,6 +157,12 @@ func TestWorktreeHandoffAgentProceedsOnConfiguredProject(t *testing.T) {
 	body := "agent = \"claude\"\n"
 	cfgPath := writeAgentOverrideConfig(t, p.Dir, body)
 	t.Setenv("PATH", t.TempDir()) // no engine: develop stops right after the override seam
+	// The resolver pins per PROCESS; a `docker` pinned by an earlier test in
+	// this binary would answer past the PATH this test just narrowed. Drop the
+	// pins on the way in and on the way out, so this test's not-found pin
+	// cannot poison a later one either.
+	hostexec.ResetPins()
+	t.Cleanup(hostexec.ResetPins)
 
 	err := developCommand(discardStreams(), proj, "", "codex", nil, false, CredentialAsk, false)
 	if err == nil || !strings.Contains(err.Error(), "no container engine found") {
