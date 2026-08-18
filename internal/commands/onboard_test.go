@@ -50,15 +50,17 @@ func onboardPaths(t *testing.T) (project.Paths, string) {
 	return p, proj
 }
 
-// An existing byre.config + a --template/--agent flag must error (pointing at
-// the file), not silently ignore the flag.
+// An existing byre.config + a --template/--shared-auth flag must error
+// (pointing at the file), not silently ignore the flag. --agent is the
+// exception: on a configured project it is develop's run-scoped override, so
+// onboarding accepts it and reports the project as already configured.
 func TestOnboardExistingConfigWithFlagErrors(t *testing.T) {
 	p, proj := onboardPaths(t)
 	cfg := filepath.Join(p.Dir, "byre.config") // host-side store
 	if err := os.WriteFile(cfg, []byte("agent = \"claude\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := onboardIfNeeded(discardStreams(), proj, p, "", "codex", nil)
+	_, err := onboardIfNeeded(discardStreams(), proj, p, "node", "", nil)
 	if err == nil || !strings.Contains(err.Error(), "already configured") {
 		t.Fatalf("a flag against a configured project must refuse with already-configured, got: %v", err)
 	}
@@ -67,8 +69,21 @@ func TestOnboardExistingConfigWithFlagErrors(t *testing.T) {
 	if (!strings.Contains(err.Error(), "agent=claude") && !strings.Contains(err.Error(), "agent=byre/claude")) || !strings.Contains(err.Error(), cfg) {
 		t.Fatalf("error should name the current agent and the file path: %v", err)
 	}
+	no := false
+	if _, err := onboardIfNeeded(discardStreams(), proj, p, "", "", &no); err == nil || !strings.Contains(err.Error(), "already configured") {
+		t.Fatalf("--shared-auth against a configured project must refuse with already-configured, got: %v", err)
+	}
+	// --agent alone is the run override, not onboarding input: accepted, and
+	// the configured answer tells develop to apply it.
+	configured, err := onboardIfNeeded(discardStreams(), proj, p, "", "codex", nil)
+	if err != nil {
+		t.Fatalf("--agent on a configured project is the run override, not an error: %v", err)
+	}
+	if !configured {
+		t.Fatal("onboardIfNeeded must report the project as already configured")
+	}
 	// Without a flag, an existing config is fine (no error, no prompt).
-	if err := onboardIfNeeded(discardStreams(), proj, p, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(discardStreams(), proj, p, "", "", nil); err != nil {
 		t.Fatalf("no-flag develop on a configured project should be a no-op: %v", err)
 	}
 }
@@ -90,7 +105,7 @@ func TestOnboardUnreadableStoreRefusesInsteadOfReonboarding(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(p.Dir, 0o700) })
 
-	err := onboardIfNeeded(discardStreams(), proj, p, "", "", nil)
+	_, err := onboardIfNeeded(discardStreams(), proj, p, "", "", nil)
 	if err == nil || !strings.Contains(err.Error(), "cannot tell whether") || !strings.Contains(err.Error(), cfg) {
 		t.Fatalf("an inconclusive probe must refuse and name the path, got: %v", err)
 	}
@@ -107,7 +122,7 @@ func TestOnboardUnreadableStoreRefusesInsteadOfReonboarding(t *testing.T) {
 // means at a prompt, and there is no Enter on a pipe.
 func TestOnboardPartialFlagNonTTYErrors(t *testing.T) {
 	p, proj := onboardPaths(t)
-	err := onboardIfNeeded(discardStreams(), proj, p, "", "codex", nil)
+	_, err := onboardIfNeeded(discardStreams(), proj, p, "", "codex", nil)
 	if err == nil || !strings.Contains(err.Error(), "--template") || !strings.Contains(err.Error(), `"none"`) {
 		t.Fatalf("partial flags without a TTY must error naming the fix, got: %v", err)
 	}
@@ -115,7 +130,7 @@ func TestOnboardPartialFlagNonTTYErrors(t *testing.T) {
 		t.Fatalf("a refused onboarding must write nothing: %v", err)
 	}
 	// Both flags explicit: the zero-prompt contract, unchanged.
-	if err := onboardIfNeeded(discardStreams(), proj, p, "none", "codex", nil); err != nil {
+	if _, err := onboardIfNeeded(discardStreams(), proj, p, "none", "codex", nil); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(filepath.Join(p.Dir, "byre.config"))
@@ -135,7 +150,7 @@ func TestOnboardSharedAuthFlag(t *testing.T) {
 
 	p, proj := onboardPaths(t)
 	s, _, errBuf := testStreams("", true) // empty stdin: any prompt would EOF
-	if err := onboardIfNeeded(s, proj, p, "none", "claude", &yes); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "none", "claude", &yes); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("claude")) {
@@ -155,7 +170,7 @@ func TestOnboardSharedAuthFlag(t *testing.T) {
 	// Explicit no: suppressed question, nothing opted in.
 	p2, proj2 := onboardPaths(t)
 	s2, _, errBuf2 := testStreams("", true)
-	if err := onboardIfNeeded(s2, proj2, p2, "none", "claude", &no); err != nil {
+	if _, err := onboardIfNeeded(s2, proj2, p2, "none", "claude", &no); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(errBuf2.String(), onboard.SharedAuthPrompt("claude")) {
@@ -172,7 +187,7 @@ func TestOnboardSharedAuthFlag(t *testing.T) {
 	// A yes with no ready companion (grok declares none) errors loudly.
 	p3, proj3 := onboardPaths(t)
 	s3, _, _ := testStreams("", true)
-	err = onboardIfNeeded(s3, proj3, p3, "none", "grok", &yes)
+	_, err = onboardIfNeeded(s3, proj3, p3, "none", "grok", &yes)
 	if err == nil || !strings.Contains(err.Error(), "no ready shared-auth companion") {
 		t.Fatalf("--shared-auth for a companion-less agent must refuse loudly: %v", err)
 	}
@@ -188,7 +203,7 @@ func TestOnboardSharedAuthDeclineRecordsNothingAndReasks(t *testing.T) {
 	p, proj := onboardPaths(t)
 	// Template: none, Agent: claude, shared auth: n, save-as-default: n.
 	s, _, errBuf := testStreams("\nclaude\nn\nn\n", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("claude")) {
@@ -216,7 +231,7 @@ func TestOnboardSharedAuthDeclineRecordsNothingAndReasks(t *testing.T) {
 		t.Fatal(err)
 	}
 	s2, _, errBuf2 := testStreams("\nclaude\nn\nn\n", true)
-	if err := onboardIfNeeded(s2, proj2, p2, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s2, proj2, p2, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(errBuf2.String(), onboard.SharedAuthPrompt("claude")) {
@@ -231,7 +246,7 @@ func TestOnboardSharedAuthAcceptEnablesCompanionForThisBox(t *testing.T) {
 	p, proj := onboardPaths(t)
 	// Template: none, Agent: claude, shared auth: y, save-as-default: n.
 	s, _, errBuf := testStreams("\nclaude\ny\nn\n", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"), false)
@@ -259,7 +274,7 @@ func TestOnboardSharedAuthAcceptEnablesCompanionForThisBox(t *testing.T) {
 		t.Fatal(err)
 	}
 	s2, _, errBuf2 := testStreams("\nclaude\nn\nn\n", true)
-	if err := onboardIfNeeded(s2, proj2, p2, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s2, proj2, p2, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(errBuf2.String(), onboard.SharedAuthPrompt("claude")) {
@@ -277,7 +292,7 @@ func TestOnboardVestigialDeclinedKeyDoesNotSuppressOffer(t *testing.T) {
 	}
 	// Template: none, Agent: claude, shared auth: n, save-as-default: n.
 	s, _, errBuf := testStreams("\nclaude\nn\nn\n", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("claude")) {
@@ -293,7 +308,7 @@ func TestOnboardAcceptSavedPrefillsNextBox(t *testing.T) {
 	p, proj := onboardPaths(t)
 	// Template: none, Agent: claude, shared auth: y, save-as-default: y.
 	s, _, _ := testStreams("\nclaude\ny\ny\n", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := config.ParseFile(filepath.Join(p.Home, "default.config"), true)
@@ -318,7 +333,7 @@ func TestOnboardAcceptSavedPrefillsNextBox(t *testing.T) {
 		t.Fatal(err)
 	}
 	s2, _, errBuf2 := testStreams("\n\n\n", true)
-	if err := onboardIfNeeded(s2, proj2, p2, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s2, proj2, p2, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(errBuf2.String(), onboard.SharedAuthPrompt("claude")) ||
@@ -344,7 +359,7 @@ func TestOnboardSaveNoRemovesPreference(t *testing.T) {
 	// Template: none (Enter), Agent: claude (favourite), shared auth:
 	// explicit n (news vs the stored yes), save: y.
 	s, _, errBuf := testStreams("\n\nn\ny\n", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(errBuf.String(), "[Y/n, i for info]") {
@@ -373,7 +388,7 @@ func TestOnboardFlagPathOffersSharedAuth(t *testing.T) {
 	p, proj := onboardPaths(t)
 	// Template: none (Enter), shared auth: y.
 	s, _, _ := testStreams("\ny\n", true)
-	if err := onboardIfNeeded(s, proj, p, "", "claude", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "claude", nil); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := config.ParseFile(filepath.Join(p.Dir, "byre.config"), false)
@@ -395,7 +410,7 @@ func TestOnboardNoOfferWhenCompanionAlreadyOnMachineWide(t *testing.T) {
 	}
 	// Template: none, Agent: claude, save-as-default: n — no offer between.
 	s, _, errBuf := testStreams("\nclaude\nn\n", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("claude")) {
@@ -422,7 +437,7 @@ func TestOnboardSaveWithoutOfferKeepsPreference(t *testing.T) {
 	}
 	// Template: none, Agent: claude, save-as-default: y — no offer between.
 	s, _, errBuf := testStreams("\nclaude\ny\n", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("claude")) {
@@ -442,7 +457,7 @@ func TestOnboardSaveWithoutOfferKeepsPreference(t *testing.T) {
 func TestOnboardNoOfferWithoutReadyCompanion(t *testing.T) {
 	p, proj := onboardPaths(t)
 	s, _, errBuf := testStreams("\ngrok\nn\n", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("grok")) {
@@ -455,7 +470,7 @@ func TestOnboardNoOfferWithoutReadyCompanion(t *testing.T) {
 func TestOnboardFullyFlaggedMakesNoOffer(t *testing.T) {
 	p, proj := onboardPaths(t)
 	s, _, errBuf := testStreams("", true) // empty stdin: any prompt would EOF
-	if err := onboardIfNeeded(s, proj, p, "none", "claude", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "none", "claude", nil); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(errBuf.String(), onboard.SharedAuthPrompt("claude")) {
@@ -473,7 +488,7 @@ func TestOnboardEOFMidPickerWritesNothing(t *testing.T) {
 	p, proj := onboardPaths(t)
 	// Template and agent answered; input ends at the shared-auth offer.
 	s, _, _ := testStreams("\nclaude\n", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err == nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err == nil {
 		t.Fatal("EOF mid-picker should abort onboarding")
 	}
 	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); !os.IsNotExist(err) {
@@ -506,7 +521,7 @@ func TestOnboardSaveDefaultWriteFailureLeavesProjectUnonboarded(t *testing.T) {
 	t.Cleanup(func() { os.Chmod(p.Home, 0o755) })
 	// Template: none, agent: claude, shared auth: n, save-as-default: y.
 	s, _, _ := testStreams("\nclaude\nn\ny\n", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err == nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err == nil {
 		t.Fatal("a failed save-default must abort onboarding")
 	}
 	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); !os.IsNotExist(err) {
@@ -528,7 +543,7 @@ func TestOnboardSkipQuestionsUsesStoredAnswersAndSaysSo(t *testing.T) {
 
 	// No input at all: a prompt would block or consume nothing and misconfigure.
 	s, _, errBuf := testStreams("", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	out := errBuf.String()
@@ -557,7 +572,7 @@ func TestOnboardWithoutSkipQuestionsStillAsks(t *testing.T) {
 	p, proj := onboardPaths(t)
 	mustWriteFile(t, filepath.Join(p.Home, "default.config"), []byte("template = \"go\"\nagent = \"claude\"\n"), 0o644)
 	s, _, errBuf := testStreams("\n\nn\n", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(errBuf.String(), "without asking") {
@@ -580,7 +595,7 @@ func TestOnboardShowsBrokenAgentsWithTheirReason(t *testing.T) {
 	// Template: none. Agent: try each broken row, then the working one.
 	// Shared auth: n. Save: n.
 	s, _, errBuf := testStreams("\nbrokenmount\nbadposture\nclaude\nn\nn\n", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	out := errBuf.String()
@@ -617,7 +632,7 @@ func TestOnboardDoesNotListAProblemRowThatIsAlsoOffered(t *testing.T) {
 	writeLocalSkill(t, p.Home, "claude", "description = \"old copy\"\n[agent]\ncommand = \"claude\"\n")
 
 	s, _, errBuf := testStreams("\nclaude\nn\nn\n", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	out := errBuf.String()
@@ -642,7 +657,7 @@ func TestOnboardAgentFlagNamingABrokenSkillSaysWhy(t *testing.T) {
 	writeLocalSkill(t, p.Home, "badposture",
 		"description = \"b\"\n[agent]\ncommand = \"x\"\n\n[runtime]\nnetwork_posture = \"Deny-Default\"\n")
 	s, _, _ := testStreams("", false)
-	err := onboardIfNeeded(s, proj, p, "none", "badposture", nil)
+	_, err := onboardIfNeeded(s, proj, p, "none", "badposture", nil)
 	if err == nil {
 		t.Fatal("a broken agent must not be accepted from a flag")
 	}
@@ -676,7 +691,7 @@ func TestOnboardSkipQuestionsRefusesAStalePick(t *testing.T) {
 		"template = \"none\"\nagent = \"claude\"\n\n[defaults]\nshared_auth = { claude = \"gone-shared-auth\" }\nskip_questions = true\n"), 0o644)
 
 	s, _, errBuf := testStreams("", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	got, err := config.ParseFile(filepath.Join(p.Dir, config.ProjectConfigName), true)
@@ -709,7 +724,7 @@ func TestOnboardSkipQuestionsAppliesALivePick(t *testing.T) {
 	mustWriteFile(t, filepath.Join(p.Home, "default.config"), []byte(
 		"template = \"none\"\nagent = \"claude\"\n\n[defaults]\nshared_auth = { claude = \"claude-shared-auth\" }\nskip_questions = true\n"), 0o644)
 	s, _, errBuf := testStreams("", true)
-	if err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
+	if _, err := onboardIfNeeded(s, proj, p, "", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	got, err := config.ParseFile(filepath.Join(p.Dir, config.ProjectConfigName), true)
@@ -732,7 +747,7 @@ func TestSharedAuthFlagTellsAmbiguityFromAbsence(t *testing.T) {
 	writeLocalSkill(t, p.Home, "aa-auth", "shared_auth_for = \"claude\"\n")
 	yes := true
 	s, _, _ := testStreams("", true)
-	err := onboardIfNeeded(s, proj, p, "none", "claude", &yes)
+	_, err := onboardIfNeeded(s, proj, p, "none", "claude", &yes)
 	if err == nil {
 		t.Fatal("two claimants must refuse --shared-auth")
 	}
@@ -749,7 +764,7 @@ func TestSharedAuthFlagTellsAmbiguityFromAbsence(t *testing.T) {
 	// shared_auth_for vouch).
 	p2, proj2 := onboardPaths(t)
 	s2, _, _ := testStreams("", true)
-	err = onboardIfNeeded(s2, proj2, p2, "none", "grok", &yes)
+	_, err = onboardIfNeeded(s2, proj2, p2, "none", "grok", &yes)
 	if err == nil || !strings.Contains(err.Error(), "no ready shared-auth companion") {
 		t.Fatalf("no claimant at all must still say so: %v", err)
 	}

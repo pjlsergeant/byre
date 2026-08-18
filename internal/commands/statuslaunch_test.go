@@ -499,3 +499,45 @@ func TestStatusDataHasNoLaunchWithoutABox(t *testing.T) {
 		t.Errorf("launch = %+v, subject = %q", d.Launch, d.Subject)
 	}
 }
+
+// The Agent row joins the running-box subject swap only when the record can
+// speak for it, and any difference is attributed: a --agent override names
+// the flag, a config edited since launch names the drift, and a pre-agent
+// record leaves the row config-derived rather than claiming "agentless".
+func TestStatusAgentRowSpeaksForTheLaunchedBox(t *testing.T) {
+	apply := func(rec *launchRecord) statusInfo {
+		s := statusInfo{Agent: "byre/claude", Launch: rec, LaunchState: launchRecordOK}
+		applyLaunchRecord(&s, rec, project.Paths{})
+		return s
+	}
+
+	s := apply(&launchRecord{Agent: "byre/codex", AgentOverride: true})
+	if s.Agent != "byre/codex" || !strings.Contains(s.AgentNote, "--agent override") || !strings.Contains(s.AgentNote, "byre/claude") {
+		t.Errorf("override: agent=%q note=%q (want the record's agent, the flag, and the config's answer)", s.Agent, s.AgentNote)
+	}
+
+	// --agent none: the override marker is what distinguishes a deliberate
+	// agentless launch from a record too old to say.
+	s = apply(&launchRecord{AgentOverride: true})
+	if s.Agent != "" || !strings.Contains(s.AgentNote, "--agent override") {
+		t.Errorf("agentless override: agent=%q note=%q", s.Agent, s.AgentNote)
+	}
+
+	// No override, but the config moved since launch: attributed as drift.
+	s = apply(&launchRecord{Agent: "byre/codex"})
+	if s.Agent != "byre/codex" || !strings.Contains(s.AgentNote, "config now") {
+		t.Errorf("drift: agent=%q note=%q", s.Agent, s.AgentNote)
+	}
+
+	// A pre-agent record cannot speak for the row: config-derived, no note.
+	s = apply(&launchRecord{})
+	if s.Agent != "byre/claude" || s.AgentNote != "" {
+		t.Errorf("pre-agent record: agent=%q note=%q", s.Agent, s.AgentNote)
+	}
+
+	// Agreement needs no qualifier.
+	s = apply(&launchRecord{Agent: "byre/claude"})
+	if s.Agent != "byre/claude" || s.AgentNote != "" {
+		t.Errorf("agreement: agent=%q note=%q", s.Agent, s.AgentNote)
+	}
+}

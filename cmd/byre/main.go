@@ -246,7 +246,7 @@ foreground. First run onboards the project (creates its host-side config).`,
 		},
 	}
 	c.Flags().StringVar(&tmpl, "template", "", `template for a NEW project's config (first run only; "none" to skip)`)
-	c.Flags().StringVar(&agent, "agent", "", `agent for a NEW project's config (first run only; "none" to skip)`)
+	c.Flags().StringVarP(&agent, "agent", "a", "", `agent for THIS run: on a configured project, a one-off override (skill enabled for the run, nothing written); on a NEW project, seeds its config ("none" = agentless)`)
 	c.Flags().BoolVar(&sharedAuth, "shared-auth", false, `opt a NEW project's box into the chosen agent's shared credentials without the question (=false declines it; first run only)`)
 	c.Flags().BoolVar(&selfEdit, "self-edit", false, "mount this project's host-side store read-write so the agent can edit its own byre.config — a deliberate grant, applied on the next develop")
 	c.Flags().StringVar(&creds, "credentials", "", `how this launch gets credential passphrases: ask (default, prompts per config file), skip (launch deliberately without them), stdin (one passphrase per line)`)

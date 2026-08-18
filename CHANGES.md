@@ -1,5 +1,19 @@
 # Changes
 
+## unreleased
+
+- **`byre develop --agent <name>` (`-a`) runs a one-off session with a
+  different agent.** On a configured project the flag overrides the
+  `agent` key for that run exactly as if the config said so — the
+  agent's skill is enabled for the run even when it isn't in the config
+  (installed packages only), and nothing is written: the next plain
+  develop is back on the config. Shared-auth companions never ride an
+  override. The launch record now carries the agent (and whether it was
+  an override), and `byre status` reports the running box's agent with
+  an override or config-drift qualifier; `status --data` mirrors it as
+  `agent_note`. `--template`/`--shared-auth` remain first-run-only.
+  (ADR 0058.)
+
 ## v1.7.0 — 2026-08-14
 
 - **Several configuration and package-store edge cases now fail or render

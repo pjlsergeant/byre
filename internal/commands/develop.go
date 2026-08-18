@@ -91,16 +91,24 @@ func developCommand(s Streams, projectDir, flagTemplate, flagAgent string, flagS
 	// its questions and write: reset/forget then refuse as "setup in progress",
 	// and a forget that won before this lock cancels onboarding instead of
 	// letting it recreate byre.config in a recordless store.
-	if _, err := setupLockedProject(s.Err, paths, func() (struct{}, error) {
+	//
+	// Whether --agent seeds or overrides is onboarding's answer: on a project
+	// that already had a config, the flag becomes the run-scoped agent
+	// override (nothing written); on a first run onboarding consumed it, and
+	// the config it just wrote already says so.
+	agentOverride := ""
+	if wasConfigured, err := setupLockedProject(s.Err, paths, func() (bool, error) {
 		if err := requireRecorded(paths); err != nil {
-			return struct{}{}, err
+			return false, err
 		}
-		return struct{}{}, onboardIfNeeded(s, projectDir, paths, flagTemplate, flagAgent, flagSharedAuth)
+		return onboardIfNeeded(s, projectDir, paths, flagTemplate, flagAgent, flagSharedAuth)
 	}); err != nil {
 		if !mayEnroll {
 			return wrapForgottenWorktreeHandoff(projectDir, err)
 		}
 		return err
+	} else if wasConfigured && flagAgent != "" {
+		agentOverride = flagAgent
 	}
 	// Validate bind sources before any build/seed side effects: a comma would
 	// corrupt a docker --mount value (workspace bind, and worktree git binds).
@@ -112,7 +120,7 @@ func developCommand(s Streams, projectDir, flagTemplate, flagAgent string, flagS
 	// the seed, the container -- is read again under it (resolved.refresh),
 	// because the editor's save takes the same lock and may land while develop
 	// waits for it.
-	rv, err := resolve(paths, projectDir, s.Err)
+	rv, err := resolveWithAgent(paths, projectDir, s.Err, agentOverride)
 	if err != nil {
 		return err
 	}
@@ -198,6 +206,9 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		if selfEdit {
 			fmt.Fprintln(s.Err, "byre: --self-edit only applies when starting a container; a session is already running, so it has no effect here.")
 		}
+		if rv.agentOverride != "" {
+			fmt.Fprintln(s.Err, "byre: --agent only applies when starting a container; a session is already running, so it has no effect here.")
+		}
 		reportRunning(s.Err, r.Engine(), ids, true)
 		return ExitError{Code: ExitRefused} // refused, session already live
 	}
@@ -215,6 +226,12 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		if paths.IsWorktree {
 			fmt.Fprintf(s.Err, "   this store is the REPO's, shared with %s and every other worktree of it — not scoped to this worktree.\n", paths.Canonical)
 		}
+	}
+	// A run-scoped agent override changes what the box is ABOUT; say so up
+	// front (like the self-edit warning, it frames the session), and say what
+	// it does not do — the config is untouched, the next develop reverts.
+	if rv.agentOverride != "" {
+		fmt.Fprintf(s.Err, "byre: agent for this run: %s (--agent override; nothing written — the next develop uses byre.config again).\n", config.OrNone(rv.cfg.Agent))
 	}
 	// Credential unlock (launch step 1) is deliberately PRE-lock: a prompt
 	// under the setup lock would stall sibling worktrees on a human, and the

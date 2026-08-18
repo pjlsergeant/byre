@@ -332,12 +332,14 @@ func TestLaunchRecordCapturesWhatTheEngineWasTold(t *testing.T) {
 	p, _ := testPaths(t)
 	rv := combine(config.Config{
 		Base:         "golang:1.26-bookworm",
+		Agent:        "byre/codex",
 		Ports:        []config.Port{{Container: 5432, Host: 15432}},
 		Mounts:       []config.Mount{{Host: "/tmp", Target: "/secrets", Mode: "ro"}},
 		Volumes:      []config.Volume{{Name: "state", Role: "state", Target: "/home/dev/.claude"}},
 		RunArgs:      []string{"--pids-limit", "512"},
 		EgressClosed: []string{"statsig.anthropic.com"},
 	}, skills.Resolved{})
+	rv.agentOverride = "byre/codex"
 	params, err := runParams(p, rv, "byre-img", false, false, runner.Identity{UID: 1000, GID: 1000}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -349,6 +351,11 @@ func TestLaunchRecordCapturesWhatTheEngineWasTold(t *testing.T) {
 	}
 	if rec.Created.IsZero() || rec.Byre == "" {
 		t.Errorf("provenance fields wrong: created=%v byre=%q", rec.Created, rec.Byre)
+	}
+	// The agent AS RESOLVED (here, a --agent override) plus the override
+	// marker: the one launch fact re-reading the config would answer wrong.
+	if rec.Agent != "byre/codex" || !rec.AgentOverride {
+		t.Errorf("agent fields wrong: agent=%q override=%v", rec.Agent, rec.AgentOverride)
 	}
 	// The workspace bind leads, then the config mount — the engine's own order.
 	if len(rec.Binds) != 2 || rec.Binds[0].Target != "/workspace" || rec.Binds[0].Mode != "rw" ||

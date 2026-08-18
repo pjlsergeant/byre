@@ -61,7 +61,8 @@ _Avoid_: "review" (taken: the preset grant-adoption review), "audit",
 
 **Agent**:
 The AI coding CLI (Claude, Codex, Gemini, Grok, OpenCode) that runs inside the
-box. byre is not an agent; it runs one. The `agent` config key selects it, and
+box. byre is not an agent; it runs one. The `agent` config key selects it
+(`byre develop --agent` overrides the selection for one run), and
 `byre status` and the config UI both label it **Agent**.
 _Primary agent_: the agent that launches, as distinct from other agent skills
 that are merely enabled. The distinction only arises on the config UI's Skills

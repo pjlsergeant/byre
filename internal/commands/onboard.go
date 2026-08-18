@@ -26,6 +26,12 @@ import (
 // non-TTY partially-flagged run errors instead of guessing the open axis from
 // a favourite — favourites answer prompts, they don't consent for a new
 // project, and there is no prompt to answer on a pipe.
+//
+// alreadyConfigured reports the project HAD a byre.config (nothing was
+// seeded): true is develop's cue that a given --agent is the run-scoped
+// override rather than onboarding input. Judged under the same call that
+// would seed, so a caller never has to probe the store twice and race the
+// answer.
 // skipQuestions reads the machine-scoped picker preference. A missing or
 // unparsable default.config reads as false: never skip on a guess.
 func skipQuestions(home string) bool {
@@ -36,7 +42,7 @@ func skipQuestions(home string) bool {
 	return cfg.Defaults.SkipQuestions
 }
 
-func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemplate, flagAgent string, flagSharedAuth *bool) error {
+func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemplate, flagAgent string, flagSharedAuth *bool) (alreadyConfigured bool, err error) {
 	anyFlag := flagTemplate != "" || flagAgent != "" || flagSharedAuth != nil
 
 	// The project's config lives in the host-side store, NOT the project tree, so
@@ -48,19 +54,21 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// and write the answers on top of it. Say which path could not be read.
 	ok, perr := hostopen.ExistsNoFollow(cfgPath)
 	if perr != nil {
-		return fmt.Errorf("cannot tell whether %s exists (%v) — fix the store's permissions, or run 'byre forget' to clear it", cfgPath, perr)
+		return false, fmt.Errorf("cannot tell whether %s exists (%v) — fix the store's permissions, or run 'byre forget' to clear it", cfgPath, perr)
 	}
 	if ok {
-		// Already configured. --template/--agent only configure a NEW project, so
-		// don't silently ignore them on an existing one — point at the file.
-		if anyFlag {
+		// Already configured. --template/--shared-auth only configure a NEW
+		// project, so don't silently ignore them on an existing one — point at
+		// the file. --agent is different: on a configured project it is the
+		// run-scoped override, the caller's to apply.
+		if flagTemplate != "" || flagSharedAuth != nil {
 			cur := ""
 			if c, e := config.Load(projectDir); e == nil && c.Agent != "" {
 				cur = fmt.Sprintf(" (currently agent=%s)", c.Agent)
 			}
-			return fmt.Errorf("this project is already configured%s — --template/--agent/--shared-auth only apply when creating a config.\nReconfigure with 'byre config' (or edit %s), or run 'byre forget' then re-run.", cur, cfgPath)
+			return true, fmt.Errorf("this project is already configured%s — --template/--shared-auth only apply when creating a config.\nReconfigure with 'byre config' (or edit %s), or run 'byre forget' then re-run.", cur, cfgPath)
 		}
-		return nil
+		return true, nil
 	}
 
 	// Catalog lists options / resolves flags. Silent EnsureStore: develop
@@ -68,11 +76,11 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// LEGACY lines. Standalone paths without a prior notice still
 	// prepare the store; they just skip the human lines here.
 	if err := builtins.EnsureStoreOut(paths.Home, nil); err != nil {
-		return err
+		return false, err
 	}
 	cat, err := builtins.LoadCatalogRaw(paths.Home)
 	if err != nil {
-		return err
+		return false, err
 	}
 	// ONE composer per axis, feeding the picker rows AND the sets that
 	// validate favourites and flags: two callers deriving the offered set
@@ -103,7 +111,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// proceeds from the cascade.
 	if !anyFlag {
 		if !s.TTY {
-			return nil
+			return false, nil
 		}
 		// defaults.skip_questions: a standing instruction, set at machine
 		// scope, that new projects take their stored answers unasked. Honour
@@ -145,14 +153,14 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 			if stale != "" {
 				fmt.Fprintf(s.Err, "byre: %s — shared credentials NOT enabled for %s; run `byre config --global` or re-onboard a project to answer again.\n", stale, defA)
 			}
-			return writeAndReport(s.Err, cfgPath, defT, defA, optedSkills(companion, companion != ""))
+			return false, writeAndReport(s.Err, cfgPath, defT, defA, optedSkills(companion, companion != ""))
 		}
 		choice, err := onboard.Pick(s.Err, in, tmplOpts, agentOpts,
 			onboard.Favourite{Stored: rawT, Effective: defT},
 			onboard.Favourite{Stored: rawA, Effective: defA},
 			sharedAuthFor)
 		if err != nil {
-			return err
+			return false, err
 		}
 		// Machine-level records first, the project's byre.config LAST: once
 		// byre.config exists this project never onboards again, so a failed
@@ -161,19 +169,19 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 		// re-run).
 		if choice.SaveDefault {
 			if err := onboard.SaveDefault(paths.Home, choice.Template, choice.Agent); err != nil {
-				return err
+				return false, err
 			}
 			// Shared-auth: yes+companion writes table-shape pick; decline
 			// removes the agent's entry (no stored "no"). Only when the offer
 			// was made — a no-offer save must not touch the stored favourite.
 			if choice.SharedAuthOffered && choice.Agent != "" {
 				if err := onboard.SaveSharedAuthDefaultPick(paths.Home, choice.Agent, choice.SharedAuthCompanion, choice.SharedAuth); err != nil {
-					return err
+					return false, err
 				}
 			}
 			fmt.Fprintln(s.Err, "byre: saved as your default for new projects.")
 		}
-		return writeAndReport(s.Err, cfgPath, choice.Template, choice.Agent, optedSkills(choice.SharedAuthCompanion, choice.SharedAuth))
+		return false, writeAndReport(s.Err, cfgPath, choice.Template, choice.Agent, optedSkills(choice.SharedAuthCompanion, choice.SharedAuth))
 	}
 
 	// Resolve explicitly-flagged axes first, so a bad flag value fails fast —
@@ -182,7 +190,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	if flagTemplate != "" {
 		v, err := resolveFlag(flagTemplate, defT, tmplOpts, "template")
 		if err != nil {
-			return err
+			return false, err
 		}
 		t, tFixed = v, true
 	}
@@ -190,7 +198,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	if flagAgent != "" {
 		v, err := resolveFlag(flagAgent, defA, agentOpts, "agent")
 		if err != nil {
-			return err
+			return false, err
 		}
 		a, aFixed = v, true
 	}
@@ -201,7 +209,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	// NEW project's config would turn a preference into an unconsented,
 	// persistent choice.
 	if !s.TTY && !(tFixed && aFixed) {
-		return fmt.Errorf("non-interactive onboarding needs both --template and --agent (pass %q to skip one) — run on a TTY to be asked for the rest", "none")
+		return false, fmt.Errorf("non-interactive onboarding needs both --template and --agent (pass %q to skip one) — run on a TTY to be asked for the rest", "none")
 	}
 
 	// Choose any un-flagged axis: prompt for it on a TTY (the picker, just
@@ -213,14 +221,14 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 	if !tFixed && s.TTY {
 		v, err := onboard.AskAxis(s.Err, in, "Template", tmplOpts, defT)
 		if err != nil {
-			return err
+			return false, err
 		}
 		t = v
 	}
 	if !aFixed && s.TTY {
 		v, err := onboard.AskAxis(s.Err, in, "Agent", agentOpts, defA)
 		if err != nil {
-			return err
+			return false, err
 		}
 		a = v
 	}
@@ -237,7 +245,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 			c, n := skills.SharedAuthCompanion(cat, a)
 			switch {
 			case n == 0:
-				return fmt.Errorf("--shared-auth: %s has no ready shared-auth companion skill", config.OrNone(a))
+				return false, fmt.Errorf("--shared-auth: %s has no ready shared-auth companion skill", config.OrNone(a))
 			case n > 1:
 				// Several claim the pairing and byre picks between rivals for
 				// nobody -- least of all for a credential grant. Name them, and
@@ -246,7 +254,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 				for _, cl := range skills.SharedAuthClaimants(cat, a) {
 					names = append(names, cl.Name)
 				}
-				return fmt.Errorf("--shared-auth: %d skills claim to be %s's shared-auth companion (%s) — byre won't choose between them; disable all but one, or drop --shared-auth and pick at the prompt", n, config.OrNone(a), strings.Join(names, ", "))
+				return false, fmt.Errorf("--shared-auth: %d skills claim to be %s's shared-auth companion (%s) — byre won't choose between them; disable all but one, or drop --shared-auth and pick at the prompt", n, config.OrNone(a), strings.Join(names, ", "))
 			}
 			companion, sharedAuth = c, true
 		}
@@ -256,11 +264,11 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 			var err error
 			companion, sharedAuth, err = onboard.OfferSharedAuthChoice(s.Err, in, a, offer)
 			if err != nil {
-				return err
+				return false, err
 			}
 		}
 	}
-	return writeAndReport(s.Err, cfgPath, t, a, optedSkills(companion, sharedAuth))
+	return false, writeAndReport(s.Err, cfgPath, t, a, optedSkills(companion, sharedAuth))
 }
 
 // agentOptions builds the first-run Agent rows: every selectable agent skill,

@@ -83,6 +83,17 @@ The `agent` key decides which enabled agent skill's command launches in
 the foreground. Each agent keeps its login in its own state volume, so
 switching to codex for a week and back to claude costs no re-auth.
 
+## Run a different agent just this once?
+
+tldr: `byre develop -a codex` -- one run, nothing written.
+
+The flag overrides the `agent` key for that session exactly as if the
+config said so: the agent's skill is enabled for the run (its CLI, state
+volume, and egress ride the normal path), and the next plain
+`byre develop` is back on your config. Shared-auth companions never ride
+an override -- they enter via the written config only. `byre status`
+shows the running box's agent and names the override.
+
 ## Expose a port to see the box's dev server?
 
 tldr: the **Ports** section of `byre config`.

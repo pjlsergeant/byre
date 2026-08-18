@@ -51,10 +51,14 @@ type statusData struct {
 	// the exact confusion the record exists to end.
 	Subject string `json:"subject"`
 
-	ProjectID  string   `json:"project_id,omitempty"`
-	Workdir    string   `json:"workdir"`
-	WorktreeOf string   `json:"worktree_of,omitempty"`
-	Agent      string   `json:"agent"`
+	ProjectID  string `json:"project_id,omitempty"`
+	Workdir    string `json:"workdir"`
+	WorktreeOf string `json:"worktree_of,omitempty"`
+	Agent      string `json:"agent"`
+	// AgentNote mirrors the human page's Agent-row qualifier: set when a
+	// launch record made the running box the subject and its agent is an
+	// override or differs from today's config.
+	AgentNote  string   `json:"agent_note,omitempty"`
 	Template   string   `json:"template,omitempty"`
 	Extends    []string `json:"extends,omitempty"`
 	PresetNote string   `json:"preset_note,omitempty"`
@@ -323,6 +327,7 @@ func statusDataOf(s statusInfo) statusData {
 		Workdir:    s.Canonical,
 		WorktreeOf: s.WorktreeOf,
 		Agent:      s.Agent,
+		AgentNote:  s.AgentNote,
 		Template:   s.Template,
 		Extends:    s.Chain,
 		PresetNote: s.PresetNote,

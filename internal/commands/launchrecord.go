@@ -94,6 +94,13 @@ type launchRecord struct {
 	Project string    `toml:"project"`
 	Workdir string    `toml:"workdir"`
 	Engine  string    `toml:"engine"`
+	// Agent is the agent skill this box launched with, AS RESOLVED — which
+	// includes `develop --agent`'s run-scoped override, the one case where
+	// re-reading the config would answer wrong. Empty for an agentless box.
+	// AgentOverride marks that case, so status can attribute the difference
+	// to the flag instead of leaving config and box silently disagreeing.
+	Agent         string `toml:"agent,omitempty"`
+	AgentOverride bool   `toml:"agent_override,omitempty"`
 	// EnvKeys are the keys that went onto the engine's argv as `-e`: byre's
 	// plumbing vars, the skill runtime env and the env_from_host passthrough,
 	// as one set. Config [env] is absent because it never rides `-e` -- it is
@@ -218,14 +225,16 @@ type launchSkill struct {
 // from config a second time would be a second chance to be wrong.
 func launchRecordOf(paths project.Paths, rv resolved, params runner.RunParams, eng runner.Engine, img launchImage) launchRecord {
 	rec := launchRecord{
-		Record:  LaunchRecordVersion,
-		Byre:    version.String(),
-		Created: launchNow().UTC().Truncate(time.Second),
-		Project: paths.ID,
-		Workdir: paths.WorkDir,
-		Engine:  string(eng),
-		RunArgs: append([]string{}, params.RunArgs...),
-		Image:   img,
+		Record:        LaunchRecordVersion,
+		Byre:          version.String(),
+		Created:       launchNow().UTC().Truncate(time.Second),
+		Project:       paths.ID,
+		Workdir:       paths.WorkDir,
+		Engine:        string(eng),
+		RunArgs:       append([]string{}, params.RunArgs...),
+		Image:         img,
+		Agent:         rv.cfg.Agent,
+		AgentOverride: rv.agentOverride != "",
 	}
 	rec.EnvKeys = slices.Sorted(maps.Keys(params.Env))
 	posture, postureSkill := rv.skills.NetworkPosture()

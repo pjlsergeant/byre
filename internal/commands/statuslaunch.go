@@ -175,6 +175,21 @@ func applyLaunchRecord(s *statusInfo, rec *launchRecord, paths project.Paths) (n
 	s.LaunchSkills = rec.Skills
 	s.Base = rv.Base
 	s.Image = rec.Image
+	// The Agent row joins the subject swap only when the record can speak for
+	// it: a pre-agent record carries no agent key, and its empty value must
+	// not read as "launched agentless". An agentless OVERRIDE (--agent none)
+	// is the AgentOverride-with-empty-Agent corner, hence the marker check.
+	if rec.Agent != "" || rec.AgentOverride {
+		switch {
+		case rec.AgentOverride && rec.Agent != s.Agent:
+			s.AgentNote = fmt.Sprintf("(--agent override for this run; config: %s)", orDefault(s.Agent, "none"))
+		case rec.AgentOverride:
+			s.AgentNote = "(--agent override for this run)"
+		case rec.Agent != s.Agent:
+			s.AgentNote = fmt.Sprintf("(this box; config now: %s)", orDefault(s.Agent, "none"))
+		}
+		s.Agent = rec.Agent
+	}
 	// EnvKeys (config [env]) is deliberately LEFT config-derived: those keys
 	// are baked into the image by the Dockerfile, never passed as `-e`, so
 	// they are not in the record and blanking the row would lose them

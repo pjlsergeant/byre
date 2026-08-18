@@ -22,7 +22,11 @@ import (
 
 // statusInfo is the resolved, display-ready view of a project for `byre status`.
 type statusInfo struct {
-	Agent           string
+	Agent string
+	// AgentNote qualifies the Agent row when a launch record replaced it
+	// (applyLaunchRecord): a --agent override, or a config edited since the
+	// box launched. "" when config and box agree.
+	AgentNote       string
 	Template        string
 	Chain           []string // named-layer extends chain, root-first ("" = none)
 	Engine          string
@@ -587,7 +591,11 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 	if s.ID != "" {
 		row("Project id", s.ID)
 	}
-	row("Agent", orDefault(s.Agent, "(none)"))
+	agentRow := orDefault(s.Agent, "(none)")
+	if s.AgentNote != "" {
+		agentRow += " " + s.AgentNote
+	}
+	row("Agent", agentRow)
 	pkgW := pkgIDWidth(s.Cat, append(s.Skills[:len(s.Skills):len(s.Skills)], s.Template), tier)
 	// The digest the default tier drops is a truncation like any other, so
 	// it says so -- but only where one was actually dropped, or the hint

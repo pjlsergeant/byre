@@ -57,7 +57,8 @@ exceptions noted inline.
   config only -- banned in layers and template configs.
 - `agent` -- `"claude"`, `"codex"`, `"gemini"`, `"grok"`, or
   `"opencode"`: whose command launches in the foreground. Implicitly
-  enables that agent's skill.
+  enables that agent's skill. `byre develop -a <name>` overrides it for
+  one run -- same implicit enable, nothing written, no shared auth.
 - `base` -- the `FROM` image (Debian-derived).
 - `extends` -- name this file's one parent layer. Chains are linear and
   walked to the root; cycles fail loudly. Legal in a project config or a

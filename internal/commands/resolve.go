@@ -67,6 +67,14 @@ type resolved struct {
 	// Set by resolve(); nil in combine() (and thus in unit tests, which drive
 	// develop directly) means the view is used as it was handed over.
 	reread func() (resolved, error)
+	// agentOverride is `develop --agent` on an already-configured project: the
+	// agent FOR THIS RUN, resolved exactly as if the config's `agent` key said
+	// so (the skill enabled implicitly, its contributions riding the normal
+	// path) but never written anywhere. Carried on the view so the under-lock
+	// re-read keeps it and the launch paths can say the box runs an override.
+	// "" means no override (the config's own agent); the canonical skill id or
+	// the "none" sentinel (an agentless run) otherwise.
+	agentOverride string
 }
 
 // refresh re-reads the project and returns the fresh view, carrying forward
@@ -198,6 +206,15 @@ func (rv resolved) attributedCollisions() error {
 // caller's s.Err; the once-per-process gate in builtins keeps develop's
 // earlier noticed call from doubling. nil = silent (tests).
 func resolve(paths project.Paths, projectDir string, notices io.Writer) (resolved, error) {
+	return resolveWithAgent(paths, projectDir, notices, "")
+}
+
+// resolveWithAgent is resolve with `develop --agent`'s run-scoped override
+// applied: the loaded config's `agent` is replaced BEFORE skill resolution, so
+// the override's skill is enabled implicitly and every downstream contribution
+// (Dockerfile, volumes, egress, injection adapters) follows the same path a
+// written key would. agentOverride "" is plain resolve.
+func resolveWithAgent(paths project.Paths, projectDir string, notices io.Writer, agentOverride string) (resolved, error) {
 	if err := builtins.EnsureStoreOut(paths.Home, notices); err != nil {
 		return resolved{}, err
 	}
@@ -208,6 +225,14 @@ func resolve(paths project.Paths, projectDir string, notices io.Writer) (resolve
 	cfg, err := config.Load(projectDir)
 	if err != nil {
 		return resolved{}, err
+	}
+	if agentOverride != "" {
+		// Same canonicalization the cascade applies to the key: aliases
+		// expand, the "none" sentinel means agentless. The override itself
+		// stays on the view in canonical spelling so launch and status can
+		// name it.
+		agentOverride = cat.ExpandAlias(agentOverride)
+		cfg.Agent = config.FromNone(agentOverride)
 	}
 	res, err := skills.Resolve(cfg, cat)
 	if err != nil {
@@ -229,7 +254,10 @@ func resolve(paths project.Paths, projectDir string, notices io.Writer) (resolve
 	// The view carries the means to take itself again: setup writers read the
 	// cascade once here to decide what precedes the lock (which engine, which
 	// prompts), then re-read under the lock, where a concurrent save is
-	// serialized against them.
-	rv.reread = func() (resolved, error) { return resolve(paths, projectDir, notices) }
+	// serialized against them. The agent override rides the re-read: a save
+	// landing while develop waits must not resurrect the config's agent for a
+	// launch the user pointed elsewhere.
+	rv.agentOverride = agentOverride
+	rv.reread = func() (resolved, error) { return resolveWithAgent(paths, projectDir, notices, agentOverride) }
 	return rv, nil
 }
