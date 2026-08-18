@@ -143,3 +143,30 @@ func TestWorktreeHandoffAgentRefusesUnconfiguredProject(t *testing.T) {
 		t.Fatalf("no config may be written by the refusal (exists=%v, err=%v)", ok, perr)
 	}
 }
+
+// The refusal's sibling: a CONFIGURED handoff with --agent must get PAST the
+// guard and onboarding and take the override path — an over-broad guard
+// (refuse whenever the handoff carries the flag) would pass the refusal test
+// above and kill the feature. In this environment develop then dies at engine
+// detection, which is exactly the evidence wanted: it advanced beyond the
+// config-existence guard and the already-configured onboarding check, and the
+// config's bytes were never touched.
+func TestWorktreeHandoffAgentProceedsOnConfiguredProject(t *testing.T) {
+	p, proj := testPaths(t)
+	body := "agent = \"claude\"\n"
+	cfgPath := writeAgentOverrideConfig(t, p.Dir, body)
+	t.Setenv("PATH", t.TempDir()) // no engine: develop stops right after the override seam
+
+	err := developCommand(discardStreams(), proj, "", "codex", nil, false, CredentialAsk, false)
+	if err == nil || !strings.Contains(err.Error(), "no container engine found") {
+		t.Fatalf("a configured handoff must carry the override into develop (and here die at engine detection), got: %v", err)
+	}
+	for _, refusal := range []string{"cannot be a run-scoped override", "already configured"} {
+		if strings.Contains(err.Error(), refusal) {
+			t.Fatalf("the guard misfired on a configured project: %v", err)
+		}
+	}
+	if got, rerr := os.ReadFile(cfgPath); rerr != nil || string(got) != body {
+		t.Fatalf("byre.config must be byte-untouched, got %q (%v)", got, rerr)
+	}
+}

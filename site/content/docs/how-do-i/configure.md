@@ -94,7 +94,9 @@ volume, and egress ride the normal path), and the next plain
 an override -- they enter via the written config only. `byre status`
 shows the running box's agent and names the override. Works for a fresh
 worktree too: `byre worktree fix-thing -a codex` forwards it to the new
-session.
+session -- of an already-configured project; a repo that has never been
+developed refuses the flag rather than silently configuring itself from
+it.
 
 ## Expose a port to see the box's dev server?
 

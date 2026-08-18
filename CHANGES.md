@@ -12,7 +12,8 @@
   an override), and `byre status` reports the running box's agent with
   an override or config-drift qualifier; `status --data` mirrors it as
   `agent_note`. `byre worktree -a <name>` forwards the flag to the new
-  worktree's session. `--template`/`--shared-auth` remain first-run-only.
+  worktree's session (a never-developed repo refuses it rather than
+  letting onboarding configure the whole repo from it). `--template`/`--shared-auth` remain first-run-only.
   (ADR 0058.)
 
 ## v1.7.0 — 2026-08-14
