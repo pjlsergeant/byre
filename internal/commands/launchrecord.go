@@ -96,9 +96,12 @@ type launchRecord struct {
 	Engine  string    `toml:"engine"`
 	// Agent is the agent skill this box launched with, AS RESOLVED — which
 	// includes `develop --agent`'s run-scoped override, the one case where
-	// re-reading the config would answer wrong. Empty for an agentless box.
-	// AgentOverride marks that case, so status can attribute the difference
-	// to the flag instead of leaving config and box silently disagreeing.
+	// re-reading the config would answer wrong. An agentless launch writes
+	// the config's own "none" sentinel, so an EMPTY value stays unambiguous:
+	// it can only mean a record from a byre too old to say, and status falls
+	// back to config instead of claiming "launched agentless". AgentOverride
+	// marks the flag case, so status can attribute the difference to the
+	// flag instead of leaving config and box silently disagreeing.
 	Agent         string `toml:"agent,omitempty"`
 	AgentOverride bool   `toml:"agent_override,omitempty"`
 	// EnvKeys are the keys that went onto the engine's argv as `-e`: byre's
@@ -233,7 +236,7 @@ func launchRecordOf(paths project.Paths, rv resolved, params runner.RunParams, e
 		Engine:        string(eng),
 		RunArgs:       append([]string{}, params.RunArgs...),
 		Image:         img,
-		Agent:         rv.cfg.Agent,
+		Agent:         config.OrNone(rv.cfg.Agent),
 		AgentOverride: rv.agentOverride != "",
 	}
 	rec.EnvKeys = slices.Sorted(maps.Keys(params.Env))

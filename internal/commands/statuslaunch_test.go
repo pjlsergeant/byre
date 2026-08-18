@@ -516,9 +516,9 @@ func TestStatusAgentRowSpeaksForTheLaunchedBox(t *testing.T) {
 		t.Errorf("override: agent=%q note=%q (want the record's agent, the flag, and the config's answer)", s.Agent, s.AgentNote)
 	}
 
-	// --agent none: the override marker is what distinguishes a deliberate
-	// agentless launch from a record too old to say.
-	s = apply(&launchRecord{AgentOverride: true})
+	// --agent none: the record's "none" sentinel is what distinguishes a
+	// deliberate agentless launch from a record too old to say.
+	s = apply(&launchRecord{Agent: "none", AgentOverride: true})
 	if s.Agent != "" || !strings.Contains(s.AgentNote, "--agent override") {
 		t.Errorf("agentless override: agent=%q note=%q", s.Agent, s.AgentNote)
 	}
@@ -527,6 +527,14 @@ func TestStatusAgentRowSpeaksForTheLaunchedBox(t *testing.T) {
 	s = apply(&launchRecord{Agent: "byre/codex"})
 	if s.Agent != "byre/codex" || !strings.Contains(s.AgentNote, "config now") {
 		t.Errorf("drift: agent=%q note=%q", s.Agent, s.AgentNote)
+	}
+
+	// An agentless LAUNCH (config said none) whose config has since gained an
+	// agent: the box is still the subject, and the drift is attributed —
+	// distinguishable from the pre-agent record below only via the sentinel.
+	s = apply(&launchRecord{Agent: "none"})
+	if s.Agent != "" || !strings.Contains(s.AgentNote, "config now") {
+		t.Errorf("agentless drift: agent=%q note=%q", s.Agent, s.AgentNote)
 	}
 
 	// A pre-agent record cannot speak for the row: config-derived, no note.

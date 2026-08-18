@@ -36,6 +36,7 @@ func sampleLaunchRecord() launchRecord {
 		Project: "byre-dev-4f21bc",
 		Workdir: "/home/pete/byre",
 		Engine:  "docker",
+		Agent:   "claude",
 		EnvKeys: []string{"BYRE_UID", "GIT_AUTHOR_NAME", "NGROK_AUTHTOKEN"},
 		RunArgs: []string{"-e", "INTTEST_VM=172.17.0.1"},
 		Image: launchImage{
@@ -74,6 +75,7 @@ created = 2026-07-28T21:40:11Z
 project = 'byre-dev-4f21bc'
 workdir = '/home/pete/byre'
 engine = 'docker'
+agent = 'claude'
 env_keys = ['BYRE_UID', 'GIT_AUTHOR_NAME', 'NGROK_AUTHTOKEN']
 run_args = ['-e', 'INTTEST_VM=172.17.0.1']
 
@@ -665,3 +667,20 @@ func TestLaunchRecordsAreOnePerBoxInOneProjectStore(t *testing.T) {
 }
 
 var _ = project.Paths{}
+
+// An agentless launch writes the "none" sentinel, never an empty value: empty
+// is reserved for records from a byre too old to carry the field, so status
+// can tell "launched agentless" from "cannot say".
+func TestLaunchRecordAgentlessWritesTheNoneSentinel(t *testing.T) {
+	pinLaunchClock(t)
+	p, _ := testPaths(t)
+	rv := combine(config.Config{}, skills.Resolved{})
+	params, err := runParams(p, rv, "byre-img", false, false, runner.Identity{UID: 1000, GID: 1000}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := launchRecordOf(p, rv, params, runner.Docker, launchImage{})
+	if rec.Agent != "none" || rec.AgentOverride {
+		t.Errorf("agent fields = (%q, %v), want the none sentinel and no override mark", rec.Agent, rec.AgentOverride)
+	}
+}

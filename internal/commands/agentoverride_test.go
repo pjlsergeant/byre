@@ -112,3 +112,15 @@ func contains(names []string, want string) bool {
 	}
 	return false
 }
+
+func TestAgentOverrideBlankValueIsRejected(t *testing.T) {
+	p, proj := testPaths(t)
+	writeAgentOverrideConfig(t, p.Dir, "agent = \"claude\"\n")
+
+	// A blank flag must not canonicalize into an unmarked agentless run —
+	// the deliberate spelling for agentless is the "none" sentinel.
+	_, err := resolveWithAgent(p, proj, nil, "   ")
+	if err == nil || !strings.Contains(err.Error(), "--agent: blank value") {
+		t.Fatalf("a blank override must be rejected naming the rule, got: %v", err)
+	}
+}

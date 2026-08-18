@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
@@ -227,6 +228,12 @@ func resolveWithAgent(paths project.Paths, projectDir string, notices io.Writer,
 		return resolved{}, err
 	}
 	if agentOverride != "" {
+		// A blank flag would canonicalize to "" and run agentless with the
+		// override marker lost — an unmarked launch nobody asked for. The
+		// deliberate spelling for agentless is the sentinel; require it.
+		if strings.TrimSpace(agentOverride) == "" {
+			return resolved{}, fmt.Errorf("--agent: blank value — name an agent skill, or %q for an agentless run", config.NoneLabel)
+		}
 		// Same canonicalization the cascade applies to the key: aliases
 		// expand, the "none" sentinel means agentless. The override itself
 		// stays on the view in canonical spelling so launch and status can
