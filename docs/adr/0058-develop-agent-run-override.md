@@ -43,8 +43,11 @@ develop rebuilds back, layer-cached); the override agent's state volume
 persists like any agent's. The launch announcement says the config is
 untouched; `byre status` renders the running box's agent from the launch
 record with an override qualifier (record fields `agent` +
-`agent_override`; a pre-agent record leaves the row config-derived rather
-than claiming "agentless").
+`agent_override`). The record writes the config's own "none" sentinel for
+an agentless launch, so an empty `agent` can only mean a pre-agent record
+-- that row stays config-derived rather than claiming "agentless", while a
+recorded launch (agented or not) gets the subject swap and a drift
+qualifier when the config has since moved.
 
 **`--template` / `--shared-auth` stay first-run-only.** A template is build
 identity, not a session mood; shared auth is a durable credential grant.
@@ -55,13 +58,22 @@ Both still refuse on a configured project.
 The override rides the resolved view (`resolveWithAgent`), applied to the
 loaded config before `skills.Resolve` and carried through the under-lock
 re-read -- a save landing while develop waits for the lock cannot resurrect
-the config's agent. `--agent none` runs the box agentless for the run. On
+the config's agent. `--agent none` runs the box agentless for the run; a
+BLANK value is rejected naming the sentinel as the remedy, because it would
+canonicalize to "" and launch agentless with the override marker lost. On
 an already-running session the flag has no effect and says so, like
 `--self-edit`.
 
+Accepted residual: the pre-release intermediate commit (654a912c) wrote
+`--agent none` records with an empty `agent`; under the sentinel rule those
+read as pre-agent records and lose their qualifier until relaunch. Never
+released, never launched in anger.
+
 [arm: TestAgentOverrideResolvesLikeAWrittenKeyWithoutWriting,
 TestAgentOverrideNoneRunsAgentless,
+TestAgentOverrideBlankValueIsRejected,
 TestAgentOverrideUnknownSkillFailsNamingIt,
 TestOnboardExistingConfigWithFlagErrors,
 TestLaunchRecordCapturesWhatTheEngineWasTold,
+TestLaunchRecordAgentlessWritesTheNoneSentinel,
 TestStatusAgentRowSpeaksForTheLaunchedBox]
