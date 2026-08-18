@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/deliver"
 	"github.com/pjlsergeant/byre/internal/hostexec"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -100,6 +102,22 @@ func developCommand(s Streams, projectDir, flagTemplate, flagAgent string, flagS
 	if wasConfigured, err := setupLockedProject(s.Err, paths, func() (bool, error) {
 		if err := requireRecorded(paths); err != nil {
 			return false, err
+		}
+		// The worktree handoff (mayEnroll=false) forwards --agent as the
+		// run-scoped override ONLY: on a project with no byre.config the
+		// flag would fall through to onboarding and durably configure the
+		// whole repo from a flag whose help promises "nothing written".
+		// Refuse by name, before onboarding can ask anything. Judged under
+		// the same lock onboarding runs under, same probe-failure stance.
+		if !mayEnroll && flagAgent != "" {
+			cfgPath := filepath.Join(paths.Dir, config.ProjectConfigName)
+			ok, perr := hostopen.ExistsNoFollow(cfgPath)
+			if perr != nil {
+				return false, fmt.Errorf("cannot tell whether %s exists (%v) — fix the store's permissions, or run 'byre forget' to clear it", cfgPath, perr)
+			}
+			if !ok {
+				return false, fmt.Errorf("--agent: this project has no byre.config, so the flag cannot be a run-scoped override — run 'byre develop' here first (or 'byre develop --agent %s' to configure the project with it)", flagAgent)
+			}
 		}
 		return onboardIfNeeded(s, projectDir, paths, flagTemplate, flagAgent, flagSharedAuth)
 	}); err != nil {

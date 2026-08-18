@@ -63,7 +63,11 @@ BLANK value is rejected naming the sentinel as the remedy, because it would
 canonicalize to "" and launch agentless with the override marker lost. On
 an already-running session the flag has no effect and says so, like
 `--self-edit`. `byre worktree -a <name>` forwards the flag to its handoff
-develop, the same forwarding `--self-edit`/`--credentials` already get.
+develop, the same forwarding `--self-edit`/`--credentials` already get --
+as the OVERRIDE only: on a never-developed repo (no byre.config to
+inherit) the handoff refuses the flag by name rather than letting
+onboarding consume it and durably configure the whole repo from a flag
+that promised "nothing written".
 
 Accepted residual: the pre-release intermediate commit (654a912c) wrote
 `--agent none` records with an empty `agent`; under the sentinel rule those
@@ -75,6 +79,7 @@ TestAgentOverrideNoneRunsAgentless,
 TestAgentOverrideBlankValueIsRejected,
 TestAgentOverrideUnknownSkillFailsNamingIt,
 TestOnboardExistingConfigWithFlagErrors,
+TestWorktreeHandoffAgentRefusesUnconfiguredProject,
 TestLaunchRecordCapturesWhatTheEngineWasTold,
 TestLaunchRecordAgentlessWritesTheNoneSentinel,
 TestStatusAgentRowSpeaksForTheLaunchedBox]

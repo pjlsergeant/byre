@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/hostopen"
 )
 
 // resolveWithAgent is the seam `develop --agent` rides on a configured
@@ -122,5 +124,22 @@ func TestAgentOverrideBlankValueIsRejected(t *testing.T) {
 	_, err := resolveWithAgent(p, proj, nil, "   ")
 	if err == nil || !strings.Contains(err.Error(), "--agent: blank value") {
 		t.Fatalf("a blank override must be rejected naming the rule, got: %v", err)
+	}
+}
+
+// The worktree handoff (developCommand with mayEnroll=false) forwards --agent
+// as the run-scoped override ONLY. On a project with no byre.config the flag
+// would otherwise fall through to onboarding and durably configure the whole
+// repo — refused by name instead, before any onboarding question, and the
+// store stays config-less.
+func TestWorktreeHandoffAgentRefusesUnconfiguredProject(t *testing.T) {
+	p, proj := testPaths(t)
+
+	err := developCommand(discardStreams(), proj, "", "codex", nil, false, CredentialAsk, false)
+	if err == nil || !strings.Contains(err.Error(), "cannot be a run-scoped override") {
+		t.Fatalf("an unconfigured handoff with --agent must refuse naming the rule, got: %v", err)
+	}
+	if ok, perr := hostopen.ExistsNoFollow(filepath.Join(p.Dir, "byre.config")); perr != nil || ok {
+		t.Fatalf("no config may be written by the refusal (exists=%v, err=%v)", ok, perr)
 	}
 }

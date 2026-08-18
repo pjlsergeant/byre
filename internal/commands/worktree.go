@@ -30,9 +30,11 @@ import (
 // unset, byre refuses rather than guess. Run from the main worktree or a
 // linked one: identity resolves to the main worktree either way.
 //
-// agent forwards `develop --agent` to the handoff session: the worktree
-// inherits the project's config (already configured by construction), so it
-// lands as the run-scoped override (ADR 0058), never as onboarding input.
+// agent forwards `develop --agent` to the handoff session as the run-scoped
+// override (ADR 0058), never as onboarding input: a never-developed repo has
+// no byre.config for the worktree to inherit, and the handoff refuses the
+// flag there rather than letting onboarding write it into the whole repo's
+// config.
 func Worktree(s Streams, projectDir, name, path, agent string, selfEdit bool, credMode CredentialMode) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
