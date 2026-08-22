@@ -87,7 +87,7 @@ func TestSharedAuthRowDistinguishesALegacyYes(t *testing.T) {
 	if !strings.Contains(got, "no companion recorded") {
 		t.Errorf("a yes with no pick must say so: %q", got)
 	}
-	for _, frag := range []string{"the next save drops it", "answer the shared-auth question again"} {
+	for _, frag := range []string{"the next save drops it", config.SharedAuthReRecordRemedy} {
 		if !strings.Contains(got, frag) {
 			t.Errorf("the legacy entry must carry the compat warning (%q): %q", frag, got)
 		}

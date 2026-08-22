@@ -22,6 +22,13 @@ type Warning struct {
 	Text  string `json:"text"`
 }
 
+// SharedAuthReRecordRemedy is the one owner of the re-record remedy the
+// array warning prints (the channel text, and the editor row that restates
+// it): it must name `byre config --global` because under skip_questions no
+// onboard question ever comes — "your next onboard" alone is a door that
+// never opens there.
+const SharedAuthReRecordRemedy = "answer the shared-auth question again (byre config --global, or your next onboard) to re-record"
+
 // Warning kinds, one per inventoried compat path (ADR 0049).
 const (
 	// WarnSharedAuthTopLevel: the pre-2026-07-28 top-level shared_auth
@@ -51,9 +58,8 @@ func LayerWarnings(label, path string, cfg Config) []Warning {
 			Layer: label,
 			Path:  path,
 			Text: fmt.Sprintf("legacy shared_auth entry for %s (yes with no "+
-				"companion package recorded) — the next save drops it; answer "+
-				"the shared-auth question again (byre config --global, or your "+
-				"next onboard) to re-record",
+				"companion package recorded) — the next save drops it; "+
+				SharedAuthReRecordRemedy,
 				quotedList(yes)),
 		})
 	}

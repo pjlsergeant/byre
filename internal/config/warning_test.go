@@ -27,7 +27,7 @@ func TestLayerWarningsDetectLegacySharedAuthShapes(t *testing.T) {
 		if len(got) != 1 || got[0].Kind != WarnSharedAuthArray {
 			t.Fatalf("warnings = %+v", got)
 		}
-		for _, frag := range []string{`"claude"`, "no companion package recorded", "the next save drops it"} {
+		for _, frag := range []string{`"claude"`, "no companion package recorded", "the next save drops it", SharedAuthReRecordRemedy} {
 			if !strings.Contains(got[0].Text, frag) {
 				t.Errorf("array warning must carry %q, got %q", frag, got[0].Text)
 			}

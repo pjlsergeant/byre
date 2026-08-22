@@ -34,9 +34,9 @@
   nothing under `skip_questions`. byre now stores only complete answers
   (agent → companion pick); a yes with no companion records nothing, and
   any save of a file still carrying yes-only entries drops them — answer
-  the shared-auth question at your next onboard to re-record. Existing
-  arrays still parse and still prefill until then. (ADR 0049 amendment,
-  2026-08-23.)
+  the shared-auth question again (`byre config --global`, or your next
+  onboard) to re-record. Existing arrays still parse and still prefill
+  until then. (ADR 0049 amendment, 2026-08-23.)
 
 - **`byre develop --agent <name>` (`-a`) runs a one-off session with a
   different agent.** On a configured project the flag overrides the

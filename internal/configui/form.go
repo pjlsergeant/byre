@@ -1548,7 +1548,7 @@ func (m model) sharedAuthLine() string {
 			// state since the 2026-08-23 ADR 0049 amendment — the warning the
 			// other surfaces print lands here too, on the row that owns the key.
 			parts = append(parts, packages.EscapeTerminal(a)+" → yes"+
-				warnStyle.Render("  ⚠ legacy entry (no companion recorded) — the next save drops it; answer the shared-auth question again to re-record"))
+				warnStyle.Render("  ⚠ legacy entry (no companion recorded) — the next save drops it; "+config.SharedAuthReRecordRemedy))
 			continue
 		}
 		row := packages.EscapeTerminal(a) + " → " + packages.EscapeTerminal(pick)
