@@ -38,26 +38,36 @@ import (
 // package owning the embedded bundled content, the byre version, and the
 // full stage-2 parser set — constructs the real loader and installs it here,
 // because config cannot import builtins (builtins imports config) or skills
-// (skills imports config). Tests inject fixture loaders the same way. When
-// unset (config-only tests), catalogFor degrades to a local-store-only
-// catalog with config's own template parser and no bundled content.
+// (skills imports config). Tests inject fixture loaders the same way —
+// LoadLocalOnlyCatalog is the stock choice. Unset is an ERROR at use, not
+// a fallback: a caller that forgot the install used to get a silently
+// bundled-less catalog and wrong resolution with no signal (TODO 0049
+// residue, closed 2026-08-23).
 var CatalogLoader func(home string) (*packages.Catalog, error)
 
 // ValidateTemplateBytes is the eager stage-2 template check for catalog
 // ingest: strict-parse the template body. Exported for the catalog
-// constructors (builtins, catalogFor's fallback) to hand to LoadCatalog.
+// constructors (builtins, LoadLocalOnlyCatalog) to hand to LoadCatalog.
 func ValidateTemplateBytes(raw []byte) error {
 	_, err := ParseTemplateBody(raw)
 	return err
 }
 
-// catalogFor builds the multi-provider catalog for home via CatalogLoader.
-func catalogFor(home string) (*packages.Catalog, error) {
-	if CatalogLoader != nil {
-		return CatalogLoader(home)
-	}
+// LoadLocalOnlyCatalog builds a catalog from the local store alone — no
+// bundled content, config's own template parser. The former silent
+// nil-loader fallback, now a choice a caller makes by name: config-only
+// tests install it as their CatalogLoader; nothing in production should.
+func LoadLocalOnlyCatalog(home string) (*packages.Catalog, error) {
 	return packages.LoadCatalog(home, nil, "0.0.0-devel", "0.0.0-devel",
 		packages.Stage2Hooks{Template: ValidateTemplateBytes})
+}
+
+// catalogFor builds the multi-provider catalog for home via CatalogLoader.
+func catalogFor(home string) (*packages.Catalog, error) {
+	if CatalogLoader == nil {
+		return nil, fmt.Errorf("config.CatalogLoader is not installed: importing internal/builtins installs the real loader; config-only tests install config.LoadLocalOnlyCatalog")
+	}
+	return CatalogLoader(home)
 }
 
 // SourceHint is one [sources] acquisition hint. From names the cascade

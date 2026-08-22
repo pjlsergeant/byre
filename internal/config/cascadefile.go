@@ -55,7 +55,15 @@ func CascadeFiles(projectDir string) ([]CascadeFile, error) {
 	if raw, cfg, derr := readCascadeFile(defPath, true); derr == nil {
 		out = append(out, CascadeFile{Label: "default", Path: defPath, Raw: raw, Cfg: cfg})
 	}
-	cat, _ := catalogFor(paths.Home)
+	// The catalog error is not a droppable sublayer: without a catalog the
+	// template and every extends layer silently vanish from the walk, and a
+	// surface speaking for the cascade (credential rows, compat warnings)
+	// would describe a cascade that is not this project's. Fail the way
+	// Load fails.
+	cat, err := catalogFor(paths.Home)
+	if err != nil {
+		return nil, fmt.Errorf("cannot build the package catalog for the cascade walk: %w", err)
+	}
 	if t := FromNone(projCfg.Template); t != "" && cat != nil {
 		if f, terr := templateCascadeFile(cat, t); terr == nil {
 			out = append(out, f)

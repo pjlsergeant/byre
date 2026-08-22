@@ -18,10 +18,11 @@ func TestAliasEquivalenceAndBangCancel(t *testing.T) {
 		"skills/claude/skill.toml":     &fstest.MapFile{Data: []byte("description = \"c\"\n")},
 		"templates/go/template.config": &fstest.MapFile{Data: []byte("base = \"golang:1.22\"\n")},
 	}
+	prev := CatalogLoader
 	CatalogLoader = func(h string) (*packages.Catalog, error) {
 		return packages.LoadCatalog(h, bundled, "0.2.0", "0.2.0", packages.Stage2Hooks{Template: ValidateTemplateBytes})
 	}
-	t.Cleanup(func() { CatalogLoader = nil })
+	t.Cleanup(func() { CatalogLoader = prev })
 
 	// default enables bare claude; project cancels with !byre/claude.
 	if err := os.WriteFile(filepath.Join(home, "default.config"),
@@ -55,10 +56,11 @@ func TestBareAndCanonicalAgentEquivalent(t *testing.T) {
 	bundled := fstest.MapFS{
 		"skills/claude/skill.toml": &fstest.MapFile{Data: []byte("description = \"c\"\n")},
 	}
+	prev := CatalogLoader
 	CatalogLoader = func(h string) (*packages.Catalog, error) {
 		return packages.LoadCatalog(h, bundled, "0.2.0", "0.2.0", packages.Stage2Hooks{Template: ValidateTemplateBytes})
 	}
-	t.Cleanup(func() { CatalogLoader = nil })
+	t.Cleanup(func() { CatalogLoader = prev })
 
 	cat, err := CatalogLoader(home)
 	if err != nil {
