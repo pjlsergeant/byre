@@ -16,6 +16,20 @@ recovery remedy in the message and a CHANGES.md recovery path. Removal
 means the whole apparatus goes together: parser field, migration
 machinery, command surface, catalog/UI rows, tests, docs.
 
+**Amended 2026-08-23 (Pete's ruling): while byre has no external users,
+the calendar and the warning-release step collapse.** The window above
+was calibrated to protect an installed base through upgrades; today every
+config a legacy path could live in is on the operator's own machines. The
+replacement rule: a compatibility path **warns and keeps working** — the
+warning names the file and the fix — and its removal is a per-path
+operator call once that path's warnings have gone quiet ("who knows what
+old repos I have" is the concern the warning phase serves; a calendar
+serves nobody). Removal-release requirements are unchanged: loud refusal
+with a remedy, CHANGES.md recovery path, the whole apparatus goes
+together. This amendment is conditioned on the no-external-users fact
+and expires with it: the first external user restores the windowed
+policy above for every path not yet removed.
+
 The window governs *compatibility paths* only: a **live** config key
 byre decides to stop supporting gets judgment rather than a window --
 removable in a minor, loudly, per the position stated in
