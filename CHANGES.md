@@ -2,6 +2,16 @@
 
 ## unreleased
 
+- **The legacy array-shaped `shared_auth` value is no longer written, and
+  saves clean it out.** `shared_auth = ["claude"]` ("yes, but no companion
+  package recorded") was half an answer: it prefilled the Yes and did
+  nothing under `skip_questions`. byre now stores only complete answers
+  (agent → companion pick); a yes with no companion records nothing, and
+  any save of a file still carrying yes-only entries drops them — answer
+  the shared-auth question at your next onboard to re-record. Existing
+  arrays still parse and still prefill until then. (ADR 0049 amendment,
+  2026-08-23.)
+
 - **`byre develop --agent <name>` (`-a`) runs a one-off session with a
   different agent.** On a configured project the flag overrides the
   `agent` key for that run exactly as if the config said so — the

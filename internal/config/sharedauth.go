@@ -101,8 +101,11 @@ func (d Defaults) Empty() bool { return d.SharedAuth.Empty() && !d.SkipQuestions
 //
 // A legacy array entry is a yes-inclination with no companion pick: it
 // prefills [Y/n] in the single-claimant case and does nothing in a picker.
-// Migration never invents a pick; the next save-as-default rewrites the
-// entry in the table shape.
+// Since the 2026-08-23 ADR 0049 amendment that state is PARSE-ONLY: byre
+// still reads it (and the prefill still works) but never writes it — the
+// saveable projection is picks-only (Saveable), migration never invents a
+// pick, and any save of the carrying file drops yes-only entries (the
+// offer re-asks).
 type SharedAuthPref struct {
 	// Yes lists agents with a legacy yes-inclination and no pick.
 	Yes []string
@@ -221,30 +224,33 @@ func (s *SharedAuthPref) UnmarshalTOML(data []byte) error {
 	}
 }
 
+// Saveable is the projection a writer may persist: picks only. A
+// yes-inclination is parse-only legacy state (ADR 0049 amendment
+// 2026-08-23) — every writer strips it through this one owner, so a save
+// of the carrying file is also what cleans a legacy array out of it.
+func (s SharedAuthPref) Saveable() SharedAuthPref {
+	out := s.Clone()
+	out.Yes = nil
+	return out
+}
+
 // EncodeTOMLValue renders the canonical VALUE for a non-empty preference --
 // the single owner of the stored shape, used by every writer (the config
-// editor's reconcile and the onboarding save alike). Any pick present ->
-// inline table of picks only; Yes-without-pick agents are omitted (they
-// re-ask; Save always writes a pick when it knows one). No picks -> the
-// legacy array shape.
+// editor's reconcile and the onboarding save alike): an inline table of
+// picks. Writers encode the Saveable projection and remove the key when it
+// is empty, so the legacy array shape is never written and yes-without-pick
+// agents are never persisted (they re-ask).
 func (s SharedAuthPref) EncodeTOMLValue() string {
-	if len(s.Pick) > 0 {
-		keys := make([]string, 0, len(s.Pick))
-		for k := range s.Pick {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		parts := make([]string, 0, len(keys))
-		for _, k := range keys {
-			// Keys are quoted: installed agents have qualified owner/name
-			// IDs, and '/' is illegal in a bare TOML key.
-			parts = append(parts, fmt.Sprintf("%q = %q", k, s.Pick[k]))
-		}
-		return "{ " + strings.Join(parts, ", ") + " }"
+	keys := make([]string, 0, len(s.Pick))
+	for k := range s.Pick {
+		keys = append(keys, k)
 	}
-	quoted := make([]string, len(s.Yes))
-	for i, a := range s.Yes {
-		quoted[i] = fmt.Sprintf("%q", a)
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		// Keys are quoted: installed agents have qualified owner/name
+		// IDs, and '/' is illegal in a bare TOML key.
+		parts = append(parts, fmt.Sprintf("%q = %q", k, s.Pick[k]))
 	}
-	return "[" + strings.Join(quoted, ", ") + "]"
+	return "{ " + strings.Join(parts, ", ") + " }"
 }

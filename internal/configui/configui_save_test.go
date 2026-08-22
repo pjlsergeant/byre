@@ -249,8 +249,9 @@ func TestEditorRoundTripMarksSavedOnlyOnWrite(t *testing.T) {
 // the struct into [shared_auth.Pick] -- a shape the dual-shape decoder
 // refuses, bricking default.config on a normal global save (reproduced)
 // -- so reconcile's canonical emission is
-// pinned for every reachable stored state; mixed canonicalizes to
-// picks-only (the EncodeTOMLValue rule: yes-without-pick re-asks).
+// pinned for every reachable stored state; yes-without-pick is parse-only
+// since the 2026-08-23 ADR 0049 amendment, so a save persists the Saveable
+// (picks-only) projection and yes-only entries are dropped, not written.
 func TestSaveRoundTripsSharedAuth(t *testing.T) {
 	cases := []struct {
 		name string
@@ -260,9 +261,9 @@ func TestSaveRoundTripsSharedAuth(t *testing.T) {
 		{"pick",
 			config.SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}},
 			config.SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}}},
-		{"legacy-yes",
+		{"legacy-yes-dropped",
 			config.SharedAuthPref{Yes: []string{"claude"}},
-			config.SharedAuthPref{Yes: []string{"claude"}}},
+			config.SharedAuthPref{}},
 		{"mixed-canonicalizes-to-picks",
 			config.SharedAuthPref{Yes: []string{"grok"}, Pick: map[string]string{"claude": "c"}},
 			config.SharedAuthPref{Pick: map[string]string{"claude": "c"}}},

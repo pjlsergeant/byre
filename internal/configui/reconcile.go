@@ -64,23 +64,28 @@ func reconcile(doc *tomldoc.Doc, cur, want config.Config) error {
 	// [defaults]: picker state. shared_auth is a canonical inline value; a
 	// table-form spelling (or the pre-2026-07-28 top-level one) is
 	// normalized only when the preference actually changed.
-	// The legacy construct's PRESENCE triggers canonicalization, not just a
+	// A legacy construct's PRESENCE triggers canonicalization, not just a
 	// changed value: an ordinary edit whose effective preference is
-	// unchanged still has to move it, or "migrated on the next write" is
-	// false and the two homes coexist indefinitely (codex).
-	legacyPresent := !cur.SharedAuthLegacy.Empty()
-	if legacyPresent || !cur.StoredSharedAuth().Equal(want.StoredSharedAuth()) {
+	// unchanged still has to move a top-level spelling (or "migrated on the
+	// next write" is false and the two homes coexist indefinitely), and
+	// still has to drop a legacy yes-only entry — yes-without-pick is
+	// parse-only state since the 2026-08-23 ADR 0049 amendment, so every
+	// save persists the Saveable (picks-only) projection.
+	legacyPresent := !cur.SharedAuthLegacy.Empty() ||
+		len(cur.StoredSharedAuth().Yes) > 0
+	wantPref := want.StoredSharedAuth().Saveable()
+	if legacyPresent || !cur.StoredSharedAuth().Equal(wantPref) {
 		if err := doc.RemoveTable([]string{"shared_auth"}); err != nil {
 			return err
 		}
 		if err := doc.RemoveKey(nil, "shared_auth"); err != nil {
 			return err
 		}
-		if want.StoredSharedAuth().Empty() {
+		if wantPref.Empty() {
 			if err := doc.RemoveKey([]string{"defaults"}, "shared_auth"); err != nil {
 				return err
 			}
-		} else if err := doc.SetKey([]string{"defaults"}, "shared_auth", want.StoredSharedAuth().EncodeTOMLValue()); err != nil {
+		} else if err := doc.SetKey([]string{"defaults"}, "shared_auth", wantPref.EncodeTOMLValue()); err != nil {
 			return err
 		}
 	}

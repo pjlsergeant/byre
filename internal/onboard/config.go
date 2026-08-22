@@ -143,10 +143,14 @@ func SharedAuthPick(home, agent string) string {
 
 // SaveSharedAuthDefaultPick records the shared-auth answer as agent's saved
 // preference (ADR 0025). yes with a non-empty companion writes the
-// table-shape pick; yes with empty companion writes a legacy-style
-// yes-inclination (array) only when no picks exist at all; no removes the
-// agent from both shapes. companion is ignored when yes is false.
-// Surgical, idempotent, and refused when the file can't be parsed.
+// table-shape pick; yes with empty companion records nothing —
+// yes-without-pick is parse-only legacy state since the 2026-08-23 ADR 0049
+// amendment, so there is nothing true to write. no removes the agent's
+// entry. companion is ignored when yes is false. Every write persists the
+// Saveable projection, so a save also drops any legacy yes-only entries the
+// file still carried (presence-triggered cleanup, same rule as the
+// top-level-spelling migration below). Surgical, idempotent, and refused
+// when the file can't be parsed.
 func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 	// Same as SaveDefault: home is not a store; creating it enrolls nothing.
 	if err := hostopen.PlainMkdirAll(home, 0o755, hostopen.StoreOwned); err != nil {
@@ -164,24 +168,12 @@ func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 		return fmt.Errorf("%s: %w — fix it in your own editor, then answer again", path, err)
 	}
 	want := cfg.StoredSharedAuth().Clone()
-	if yes {
-		if companion != "" {
-			if want.Pick == nil {
-				want.Pick = map[string]string{}
-			}
-			want.Pick[agent] = companion
-			// Drop any legacy Yes entry for this agent.
-			want.Yes = removeString(want.Yes, agent)
-		} else if len(want.Pick) == 0 && !slices.Contains(want.Yes, agent) {
-			// Yes-inclination only, the legacy array shape. Guarded to the
-			// no-picks case: EncodeTOMLValue renders picks-only whenever any
-			// pick exists, so a Yes entry appended beside picks would be
-			// dropped at encode and fail the semantic verify below. With any
-			// pick stored, yes-without-a-new-pick keeps what's stored.
-			want.Yes = append(append([]string{}, want.Yes...), agent)
+	if yes && companion != "" {
+		if want.Pick == nil {
+			want.Pick = map[string]string{}
 		}
-	} else {
-		want.Yes = removeString(want.Yes, agent)
+		want.Pick[agent] = companion
+	} else if !yes {
 		if want.Pick != nil {
 			delete(want.Pick, agent)
 			if len(want.Pick) == 0 {
@@ -189,11 +181,16 @@ func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 			}
 		}
 	}
-	// No-op only when there is nothing to write AND nothing to move: the
-	// legacy spelling's PRESENCE triggers canonicalization, not just a changed
-	// answer. Gating the migration on a CHANGED answer instead leaves the two
-	// homes coexisting for as long as the user keeps answering the same way,
-	// which makes "migrated on the next write" false -- the rule configui's
+	// A yes with no companion falls through: yes-without-pick is not a
+	// saveable state, so there is nothing to record (the offer re-asks).
+	want = want.Saveable()
+	// No-op only when there is nothing to write AND nothing to move or
+	// clean: the legacy top-level spelling's PRESENCE triggers migration,
+	// and a legacy yes-only entry's PRESENCE triggers its cleanup (want is
+	// the Saveable projection, so any stored Yes makes the compare unequal).
+	// Gating either on a CHANGED answer instead leaves the legacy state in
+	// place for as long as the user keeps answering the same way, which
+	// makes "the next save cleans it" false -- the rule configui's
 	// reconciler states.
 	if want.Equal(cfg.StoredSharedAuth()) && cfg.SharedAuthLegacy.Empty() {
 		return nil
@@ -230,16 +227,6 @@ func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 		return fmt.Errorf("could not update %s (%v)", path, err)
 	}
 	return nil
-}
-
-func removeString(ss []string, x string) []string {
-	out := make([]string, 0, len(ss))
-	for _, s := range ss {
-		if s != x {
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 // defaultConfigStub heads a default.config the surgical writers create from

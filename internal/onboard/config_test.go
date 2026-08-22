@@ -35,17 +35,36 @@ func parsedDefault(t *testing.T, home string) config.Config {
 	return cfg
 }
 
-func TestSaveSharedAuthDefaultYesCreatesFileAndList(t *testing.T) {
+// A yes with a companion creates the file and stores the pick. A yes
+// WITHOUT a companion records nothing: yes-without-pick is parse-only
+// legacy state (ADR 0049 amendment 2026-08-23), so there is nothing true
+// to write and the offer re-asks.
+func TestSaveSharedAuthDefaultYesCreatesFileAndPick(t *testing.T) {
 	home := t.TempDir()
-	if err := SaveSharedAuthDefaultPick(home, "claude", "", true); err != nil {
+	if err := SaveSharedAuthDefaultPick(home, "claude", "claude-shared-auth", true); err != nil {
 		t.Fatal(err)
 	}
 	got := parsedDefault(t, home).StoredSharedAuth()
-	if !got.HasYes("claude") {
+	if got.CompanionPick("claude") != "claude-shared-auth" {
 		t.Fatalf("shared_auth = %+v", got)
 	}
 	if !SharedAuthPreference(home, "claude") {
 		t.Fatal("saved yes must read back as the preference")
+	}
+}
+
+func TestSaveSharedAuthDefaultYesWithoutCompanionRecordsNothing(t *testing.T) {
+	home := t.TempDir()
+	if err := SaveSharedAuthDefaultPick(home, "claude", "", true); err != nil {
+		t.Fatal(err)
+	}
+	// Nothing to record means nothing to write: no default.config appears.
+	if _, err := os.Stat(filepath.Join(home, "default.config")); !os.IsNotExist(err) {
+		t.Fatalf("a no-op answer must not create the file (stat err: %v):\n%s",
+			err, readDefault(t, home))
+	}
+	if SharedAuthPreference(home, "claude") {
+		t.Fatal("no preference may read back")
 	}
 }
 
@@ -71,7 +90,7 @@ func TestSaveSharedAuthDefaultPickQualifiedAgent(t *testing.T) {
 func TestSaveSharedAuthDefaultNeverTouchesSkills(t *testing.T) {
 	home := t.TempDir()
 	writeDefault(t, home, "# my comment\nbase = \"debian:bookworm\"\nskills = [\"devloop\"] # keep\n\n[env]\nK = \"v\"\n")
-	if err := SaveSharedAuthDefaultPick(home, "claude", "", true); err != nil {
+	if err := SaveSharedAuthDefaultPick(home, "claude", "claude-shared-auth", true); err != nil {
 		t.Fatal(err)
 	}
 	got := readDefault(t, home)
@@ -89,11 +108,14 @@ func TestSaveSharedAuthDefaultNeverTouchesSkills(t *testing.T) {
 	}
 }
 
-// Saving no removes the agent from the list (and removes the line once the
-// list empties); saving the stored answer again rewrites nothing.
+// Saving no removes the agent's pick (and removes the line once the picks
+// empty); saving the stored answer again rewrites nothing. Any save also
+// drops legacy yes-only entries wholesale (presence-triggered cleanup):
+// they encode a state that is no longer saveable.
 func TestSaveSharedAuthDefaultNoRemovesAndIdempotent(t *testing.T) {
 	home := t.TempDir()
-	writeDefault(t, home, "shared_auth = [\"claude\", \"codex\"]\n")
+	writeDefault(t, home,
+		"[defaults]\nshared_auth = { \"claude\" = \"c\", \"codex\" = \"x\" }\n")
 	if err := SaveSharedAuthDefaultPick(home, "claude", "", false); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +126,7 @@ func TestSaveSharedAuthDefaultNoRemovesAndIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(readDefault(t, home), "shared_auth") {
-		t.Fatalf("an emptied preference list must remove the line:\n%s", readDefault(t, home))
+		t.Fatalf("an emptied preference must remove the line:\n%s", readDefault(t, home))
 	}
 
 	before := readDefault(t, home)
@@ -113,6 +135,23 @@ func TestSaveSharedAuthDefaultNoRemovesAndIdempotent(t *testing.T) {
 	}
 	if got := readDefault(t, home); got != before {
 		t.Fatalf("saving the stored answer must not rewrite the file:\n%s", got)
+	}
+}
+
+// A legacy array (yes-only entries) is cleaned out by ANY save of the file,
+// including one whose own answer records nothing — the state it encodes is
+// unrepresentable, and presence is the trigger.
+func TestSaveSharedAuthDefaultDropsLegacyYesEntriesOnAnySave(t *testing.T) {
+	home := t.TempDir()
+	writeDefault(t, home, "[defaults]\nshared_auth = [\"claude\", \"codex\"]\n")
+	if err := SaveSharedAuthDefaultPick(home, "grok", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(readDefault(t, home), "shared_auth") {
+		t.Fatalf("legacy yes-only entries must be dropped on save:\n%s", readDefault(t, home))
+	}
+	if got := parsedDefault(t, home).StoredSharedAuth(); !got.Empty() {
+		t.Fatalf("shared_auth = %+v", got)
 	}
 }
 
@@ -144,14 +183,15 @@ func TestSaveSharedAuthDefaultRefusesUnparsableFile(t *testing.T) {
 // A hand-formatted multi-line shared_auth list was a shape the old one-line
 // rewriter refused; the style-preserving editor (ADR 0044) handles it — the
 // whole construct is rewritten canonically because the edit targets it, and
-// surrounding content survives. Since 2026-07-28 the rewrite also MIGRATES:
-// the value lands under [defaults] and the old top-level key goes, taking
-// any comment glued to it (that is what glued means) — content that is not
-// part of the migrated construct is untouched.
+// surrounding content survives. The rewrite also MIGRATES a top-level
+// spelling under [defaults], taking any comment glued to it (that is what
+// glued means) — and since the 2026-08-23 ADR 0049 amendment the legacy
+// yes-only entries themselves are DROPPED, so what lands is the new pick
+// alone.
 func TestSaveSharedAuthDefaultHandlesMultilineList(t *testing.T) {
 	home := t.TempDir()
 	writeDefault(t, home, "# keep me\nbase = \"node:22\"\n\nshared_auth = [\n  \"codex\",\n]\n")
-	if err := SaveSharedAuthDefaultPick(home, "claude", "", true); err != nil {
+	if err := SaveSharedAuthDefaultPick(home, "claude", "claude-shared-auth", true); err != nil {
 		t.Fatal(err)
 	}
 	got := readDefault(t, home)
@@ -171,16 +211,22 @@ func TestSaveSharedAuthDefaultHandlesMultilineList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.StoredSharedAuth().HasYes("codex") || !cfg.StoredSharedAuth().HasYes("claude") {
-		t.Fatalf("both answers must be stored: %+v", cfg.StoredSharedAuth())
+	got2 := cfg.StoredSharedAuth()
+	if got2.CompanionPick("claude") != "claude-shared-auth" {
+		t.Fatalf("the new pick must be stored: %+v", got2)
+	}
+	if got2.HasYes("codex") {
+		t.Errorf("the legacy yes-only entry must be dropped by the save: %+v", got2)
 	}
 }
 
-// The legacy top-level spelling migrates on the next write even when the
+// A legacy top-level spelling is cleaned on the next write even when the
 // answer is UNCHANGED: presence is the trigger. Gated on a changed answer,
-// a user who keeps answering the same way keeps two homes for the preference
-// indefinitely -- and StoredSharedAuth then has to union them forever.
-func TestSaveSharedAuthDefaultMigratesLegacySpellingOnAnUnchangedAnswer(t *testing.T) {
+// a user who keeps answering the same way keeps the legacy construct
+// indefinitely -- exactly what "the next save cleans it" must not mean.
+// The top-level array here carries only yes-only entries, so the cleanup
+// removes the construct outright (nothing saveable survives to migrate).
+func TestSaveSharedAuthDefaultCleansLegacySpellingOnAnUnchangedAnswer(t *testing.T) {
 	home := t.TempDir()
 	writeDefault(t, home, "base = \"node:22\"\nshared_auth = [\"claude\"]\n")
 	// Same answer that is already stored: yes for claude, no companion.
@@ -188,30 +234,26 @@ func TestSaveSharedAuthDefaultMigratesLegacySpellingOnAnUnchangedAnswer(t *testi
 		t.Fatal(err)
 	}
 	got := readDefault(t, home)
-	sec := strings.Index(got, "[defaults]")
-	if sec < 0 {
-		t.Fatalf("the preference must land under [defaults]:\n%s", got)
-	}
-	if strings.Contains(got[:sec], "shared_auth") {
-		t.Errorf("the top-level spelling must be migrated away:\n%s", got)
+	if strings.Contains(got, "shared_auth") {
+		t.Errorf("nothing saveable survives: the legacy construct must be removed, not migrated:\n%s", got)
 	}
 	cfg := parsedDefault(t, home)
 	if !cfg.SharedAuthLegacy.Empty() {
-		t.Errorf("the legacy home must be empty after the migration: %+v", cfg.SharedAuthLegacy)
+		t.Errorf("the legacy home must be empty after the cleanup: %+v", cfg.SharedAuthLegacy)
 	}
-	if !cfg.StoredSharedAuth().HasYes("claude") {
-		t.Errorf("the preference itself must survive the migration: %+v", cfg.StoredSharedAuth())
+	if !cfg.StoredSharedAuth().Empty() {
+		t.Errorf("yes-without-pick must not be re-persisted anywhere: %+v", cfg.StoredSharedAuth())
 	}
 	if !strings.Contains(got, "base = \"node:22\"") {
 		t.Errorf("surrounding content must survive:\n%s", got)
 	}
-	// Migrated once, the next identical answer writes nothing.
+	// Cleaned once, the next identical answer writes nothing.
 	before := readDefault(t, home)
 	if err := SaveSharedAuthDefaultPick(home, "claude", "", true); err != nil {
 		t.Fatal(err)
 	}
 	if after := readDefault(t, home); after != before {
-		t.Errorf("an unchanged answer with nothing left to migrate must not rewrite the file:\n%s", after)
+		t.Errorf("an unchanged answer with nothing left to clean must not rewrite the file:\n%s", after)
 	}
 }
 

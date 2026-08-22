@@ -60,6 +60,13 @@ remedies).
    the array shape is also round-tripped by `EncodeTOMLValue`. Sequence:
    build the warning channel (or piggyback on develop-time notices),
    warn one release, then drop the array arm of the parser and encoder.
+   **Amended 2026-08-23:** the write side is retired -- yes-without-pick
+   is no longer a saveable state, `EncodeTOMLValue` emits picks only, and
+   every writer persists the `Saveable` projection, so a save of a
+   carrying file drops legacy yes-only entries (presence-triggered, like
+   #1's migration). The array arm of the PARSER stays warn-and-works
+   under the amended policy above; dropping it is the per-path operator
+   call once its warnings go quiet.
 3. **Repo-root `byre.config` as a legacy preset name** (accepted beside
    `byre.preset`). The in-product rename note IS the warning; removal
    is a release-time decision at the end of its window -- refuse with
