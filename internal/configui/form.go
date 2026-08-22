@@ -1532,7 +1532,14 @@ func (m model) sharedAuthLine() string {
 	agents = append(agents, pref.Yes...)
 	sort.Strings(agents)
 
-	parts := make([]string, 0, len(agents))
+	parts := make([]string, 0, len(agents)+1)
+	// The pre-2026-07-28 top-level spelling: parseable, retired, migrated by
+	// the next save — the same warning develop/status print lands here, on
+	// the row that owns the key (P0/P6; ADR 0049 amended).
+	if !m.base.SharedAuthLegacy.Empty() {
+		parts = append(parts,
+			warnStyle.Render("⚠ legacy top-level shared_auth — the next save moves it under [defaults]"))
+	}
 	for _, a := range agents {
 		pick := pref.CompanionPick(a)
 		if pick == "" {
@@ -1541,7 +1548,7 @@ func (m model) sharedAuthLine() string {
 			// state since the 2026-08-23 ADR 0049 amendment — the warning the
 			// other surfaces print lands here too, on the row that owns the key.
 			parts = append(parts, packages.EscapeTerminal(a)+" → yes"+
-				warnStyle.Render("  ⚠ legacy entry (no companion recorded) — the next save drops it; re-answer at the next onboard"))
+				warnStyle.Render("  ⚠ legacy entry (no companion recorded) — the next save drops it; answer the shared-auth question again to re-record"))
 			continue
 		}
 		row := packages.EscapeTerminal(a) + " → " + packages.EscapeTerminal(pick)

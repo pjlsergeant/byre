@@ -49,10 +49,11 @@ remedies).
    into users' `default.config`, so refusing it would break upgrades for
    byre's own doing. Every write migrates it -- the editor canonicalizes on
    the presence of the construct, not only on a changed value -- so the
-   window is about configs never saved since. Removal: after two minors or
-   90 days from the 2026-07-28 replacement, whichever is longer; the last
-   supported release warns, then the field and its union in
-   `StoredSharedAuth` go together.
+   window is about configs never saved since. **Amended 2026-08-23:**
+   under the amended policy above this path warns through the compat
+   warning channel and keeps working; removal (the field and its union in
+   `StoredSharedAuth` go together) is the per-path operator call once its
+   warnings go quiet, no calendar.
 2. **Array-shaped `shared_auth`** (`internal/config/sharedauth.go`
    accepts both the legacy array and the table shape).
    **Blocker, recorded so it isn't lost: removal needs a warning

@@ -16,7 +16,6 @@ import (
 	"github.com/pjlsergeant/byre/internal/deliver"
 	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/hostopen"
-	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -723,12 +722,11 @@ func warnNonDebianBase(w io.Writer, base string) {
 // warnCompatLegacy warns at develop about legacy config spellings the
 // cascade still carries (ADR 0049, amended 2026-08-23: warn-and-keep-
 // working; the file and the fix are named, removal is a later per-path
-// call). Rendered text carries config-authored values, so the whole line
-// rides the terminal-escape funnel.
+// call). Rendered text carries config-authored values, so the line rides
+// dataf -- the funnel that escapes by default rather than by memory (P4).
 func warnCompatLegacy(w io.Writer, projectDir string) {
 	for _, wn := range config.CascadeWarnings(projectDir) {
-		fmt.Fprintf(w, "byre: warning: %s [%s]\n",
-			packages.EscapeTerminal(wn.Text), packages.EscapeTerminal(wn.Attribution()))
+		dataf(w, "byre: warning: %s [%s]\n", wn.Text, wn.Attribution())
 	}
 }
 

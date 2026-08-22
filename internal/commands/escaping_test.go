@@ -67,7 +67,12 @@ func statusPayloads(p string) statusInfo {
 		Canonical:  "/home/me/" + p + "proj",
 		WorktreeOf: "/home/me/main" + p,
 		PresetNote: "applied" + p,
-		Skills:     []string{"moarcode" + p},
+		CompatWarnings: []config.Warning{{
+			Kind: config.WarnSharedAuthArray, Layer: "default",
+			Path: "/h" + p + "/default.config",
+			Text: "legacy shared_auth entry for " + p + "agent",
+		}},
+		Skills: []string{"moarcode" + p},
 		Binds: []config.Mount{
 			{Host: "/data" + p, Target: "/data" + p, Mode: "ro"},
 		},
@@ -200,6 +205,21 @@ func TestStatusDevelopWarningsEscapeExternalValues(t *testing.T) {
 	}}})
 	assertNoESC(t, "warnManagedPathShadows", shadow.String())
 	assertKept(t, "warnManagedPathShadows", shadow.String(), "cannot re-assert over a runtime mount", "greedy")
+
+	// The compat warning prints config-authored agent names and store paths
+	// at develop, outside renderStatus's row funnel: it rides dataf, and this
+	// arm is what keeps a later edit from printing around it (P4). Raw
+	// control bytes fail TOML parsing; the realistic vector is a TOML
+	// unicode escape that DECODES to ESC (the preset-review arm's lesson).
+	p, _ := testPaths(t)
+	if err := os.WriteFile(filepath.Join(p.Home, "default.config"),
+		[]byte("[defaults]\nshared_auth = [\"claude\\u001B]52;c;x\\u0007\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var compat bytes.Buffer
+	warnCompatLegacy(&compat, p.WorkDir)
+	assertNoESC(t, "warnCompatLegacy", compat.String())
+	assertKept(t, "warnCompatLegacy", compat.String(), "legacy shared_auth entry", "claude")
 }
 
 func TestExitReportEscapesWatchedValues(t *testing.T) {

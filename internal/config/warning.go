@@ -52,7 +52,8 @@ func LayerWarnings(label, path string, cfg Config) []Warning {
 			Path:  path,
 			Text: fmt.Sprintf("legacy shared_auth entry for %s (yes with no "+
 				"companion package recorded) — the next save drops it; answer "+
-				"the shared-auth question at your next onboard to re-record",
+				"the shared-auth question again (byre config --global, or your "+
+				"next onboard) to re-record",
 				quotedList(yes)),
 		})
 	}

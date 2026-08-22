@@ -78,12 +78,19 @@ func TestSharedAuthRowFlagsAStalePick(t *testing.T) {
 }
 
 // Legacy yes-inclinations name no companion, so there is nothing to check and
-// nothing that gets applied unasked -- the row says which it is.
+// nothing that gets applied unasked -- the row says which it is, and since
+// the 2026-08-23 ADR 0049 amendment carries the compat warning (drop on
+// save, re-answer to re-record) the other surfaces print.
 func TestSharedAuthRowDistinguishesALegacyYes(t *testing.T) {
 	m := sharedAuthModel(t, config.SharedAuthPref{Yes: []string{"claude"}})
 	got := m.renderValue(fSharedAuth, false)
 	if !strings.Contains(got, "no companion recorded") {
 		t.Errorf("a yes with no pick must say so: %q", got)
+	}
+	for _, frag := range []string{"the next save drops it", "answer the shared-auth question again"} {
+		if !strings.Contains(got, frag) {
+			t.Errorf("the legacy entry must carry the compat warning (%q): %q", frag, got)
+		}
 	}
 	if strings.Contains(got, "no longer installed") {
 		t.Errorf("nothing to check, so nothing to flag: %q", got)
@@ -92,6 +99,27 @@ func TestSharedAuthRowDistinguishesALegacyYes(t *testing.T) {
 	empty := sharedAuthModel(t, config.SharedAuthPref{})
 	if got := empty.renderValue(fSharedAuth, false); !strings.Contains(got, "nothing stored") {
 		t.Errorf("an unanswered preference must read as unanswered: %q", got)
+	}
+}
+
+// The retired TOP-LEVEL spelling has no row of its own (P0's named
+// exemption), so the shared-auth row that owns the key carries its warning:
+// parseable, retired, migrated under [defaults] by the next save. Both
+// legacy facts warn independently — a top-level file also carrying picks
+// still discloses its spelling.
+func TestSharedAuthRowWarnsOnTheTopLevelSpelling(t *testing.T) {
+	m := sharedAuthModel(t, config.SharedAuthPref{})
+	m.base.SharedAuthLegacy = config.SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}}
+	got := m.renderValue(fSharedAuth, false)
+	for _, frag := range []string{"legacy top-level shared_auth", "the next save moves it under [defaults]"} {
+		if !strings.Contains(got, frag) {
+			t.Errorf("top-level spelling must warn with %q: %q", frag, got)
+		}
+	}
+	// Canonical home only: no top-level warning.
+	clean := sharedAuthModel(t, config.SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}})
+	if got := clean.renderValue(fSharedAuth, false); strings.Contains(got, "top-level") {
+		t.Errorf("a canonical preference must not carry the top-level warning: %q", got)
 	}
 }
 

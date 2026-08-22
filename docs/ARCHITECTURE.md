@@ -341,8 +341,9 @@ new|list|validate` and edit with `byre config --layer <name>`.
 **The project layer lives host-side, NOT in the project tree** (ADR
 0003): a config inside the rw-mounted project would let the boxed agent
 rewrite its own sandbox. A repo can ship a **preset** -- conventionally
-`byre.preset`, a complete config proposal (ADR 0029; a legacy-named
-in-repo `byre.config` is accepted with a rename note) -- but cloning
+`byre.preset`, a complete config proposal (ADR 0029; the retired
+in-repo `byre.config` spelling is refused with the rename remedy) --
+but cloning
 gives you a file, not a prompt: nothing takes effect until an explicit
 `byre preset apply`, which chauffeurs installs for missing packages,
 shows the composed box's full grant review (with a diff against the
