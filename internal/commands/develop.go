@@ -16,6 +16,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/deliver"
 	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/hostopen"
+	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -475,6 +476,7 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	warnNonDebianBase(s.Err, rv.cfg.Base)
 	warnGuardCollisions(s.Err, rv.cfg, rv.skills)
 	warnManagedPathShadows(s.Err, rv.cfg, rv.skills)
+	warnCompatLegacy(s.Err, paths.WorkDir)
 	// One host-env resolution feeds the runtime env, the exposure tally,
 	// and (in status) the row -- render-from-effect, no re-derivation.
 	hostEnv := resolveHostEnv(rv.cfg, rv.gitExe)
@@ -715,6 +717,18 @@ func warnNonDebianBase(w io.Writer, base string) {
 	l := strings.ToLower(base)
 	if strings.Contains(l, "alpine") || strings.Contains(l, "scratch") || strings.Contains(l, "distroless") {
 		fmt.Fprintf(w, "byre: warning: base %q is not Debian-derived; byre's core block assumes apt + glibc and may fail to build. Use a Debian/Ubuntu base (other bases are unsupported — use docker directly).\n", base)
+	}
+}
+
+// warnCompatLegacy warns at develop about legacy config spellings the
+// cascade still carries (ADR 0049, amended 2026-08-23: warn-and-keep-
+// working; the file and the fix are named, removal is a later per-path
+// call). Rendered text carries config-authored values, so the whole line
+// rides the terminal-escape funnel.
+func warnCompatLegacy(w io.Writer, projectDir string) {
+	for _, wn := range config.CascadeWarnings(projectDir) {
+		fmt.Fprintf(w, "byre: warning: %s [%s]\n",
+			packages.EscapeTerminal(wn.Text), packages.EscapeTerminal(wn.Attribution()))
 	}
 }
 

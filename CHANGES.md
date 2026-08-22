@@ -2,6 +2,15 @@
 
 ## unreleased
 
+- **Legacy config spellings now warn, everywhere byre speaks.** ADR 0049's
+  retirement policy gained a warning channel: a cascade file carrying a
+  legacy spelling (today: the top-level `shared_auth` home, and the
+  array-shaped value below) gets a warning naming the file and the fix —
+  on `byre develop`, on `byre status`, in the config editor's shared-auth
+  row, and in `status --data` as a structured `warnings` array
+  (StatusDataVersion 2 → 3). The config keeps working as written;
+  removal of a warned spelling is a later, separate release.
+
 - **The legacy array-shaped `shared_auth` value is no longer written, and
   saves clean it out.** `shared_auth = ["claude"]` ("yes, but no companion
   package recorded") was half an answer: it prefilled the Yes and did

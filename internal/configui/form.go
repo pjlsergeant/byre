@@ -1537,8 +1537,11 @@ func (m model) sharedAuthLine() string {
 		pick := pref.CompanionPick(a)
 		if pick == "" {
 			// A legacy yes-inclination: an answer with no companion named, so
-			// there is nothing to check and nothing to apply unasked.
-			parts = append(parts, packages.EscapeTerminal(a)+" → yes"+dimStyle.Render(" (no companion recorded)"))
+			// there is nothing to check and nothing to apply unasked. Parse-only
+			// state since the 2026-08-23 ADR 0049 amendment — the warning the
+			// other surfaces print lands here too, on the row that owns the key.
+			parts = append(parts, packages.EscapeTerminal(a)+" → yes"+
+				warnStyle.Render("  ⚠ legacy entry (no companion recorded) — the next save drops it; re-answer at the next onboard"))
 			continue
 		}
 		row := packages.EscapeTerminal(a) + " → " + packages.EscapeTerminal(pick)

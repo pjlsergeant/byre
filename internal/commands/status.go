@@ -65,6 +65,9 @@ type statusInfo struct {
 	// BYRE_ namespace: accepted (trusted machinery) but rendered, with
 	// the claims each can skew degraded -- see skills.ReservedEnvClaims.
 	SkillReservedEnv []skills.ReservedEnvSet
+	// CompatWarnings are legacy-spelling warnings the cascade files carry
+	// (ADR 0049 amended): warn-and-keep-working, file and fix named.
+	CompatWarnings []config.Warning
 	// ArtifactShadows marks byre-baked artifact paths (mcp.json, the agent
 	// context file, the claude-skills dir) that a project `files` entry
 	// overwrites. Those artifacts are emitted BEFORE the project block and
@@ -253,10 +256,15 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 	// errors stop the next launch, so both are worth the row.
 	if files, ferr := config.CascadeFiles(projectDir); ferr != nil {
 		info.CredentialErr = ferr.Error()
-	} else if groups, gerr := config.EncryptedRows(files); gerr != nil {
-		info.CredentialErr = gerr.Error()
 	} else {
-		info.Credentials = groups
+		// Compat warnings ride the same file walk the rows beside them
+		// describe (ADR 0050: one read feeds the surfaces).
+		info.CompatWarnings = config.FileWarnings(files)
+		if groups, gerr := config.EncryptedRows(files); gerr != nil {
+			info.CredentialErr = gerr.Error()
+		} else {
+			info.Credentials = groups
+		}
 	}
 	info.EnvProvided = providedEnv(cfg, info.HostEnv)
 	info.EnvKeys = slices.Sorted(maps.Keys(cfg.Env))
@@ -622,6 +630,12 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 			note = s.PresetShort
 		}
 		row("Preset", note)
+	}
+	// Legacy-spelling warnings (ADR 0049 amended): the config still works
+	// as written, so these are rows beside it, not a refusal. Escaping is
+	// writeStatusRows's business like every other row.
+	for _, wn := range s.CompatWarnings {
+		row("Warning", "⚠ "+wn.Text+"  ["+wn.Attribution()+"]")
 	}
 	if s.EngineErr != "" {
 		row("Engine", s.Engine+"  (not found: "+s.EngineErr+")")

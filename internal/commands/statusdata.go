@@ -39,7 +39,9 @@ import (
 // beside the `(exclusive)` mark the page prints. Folded into 2 rather than
 // bumped: no release has published 2, so there is no consumer of the shape
 // without the key to migrate.
-const StatusDataVersion = 2
+// 3 (2026-08-23): `warnings` — the compat-path warnings the page prints
+// (kind, layer, path, text), absent when the cascade is clean.
+const StatusDataVersion = 3
 
 type statusData struct {
 	Version int `json:"version"`
@@ -116,6 +118,11 @@ type statusData struct {
 	// Changes is what differs in the current config, in the page's own words.
 	// Absent when nothing differs.
 	Changes []string `json:"changes_on_next_launch,omitempty"`
+
+	// Warnings are the compat-path warnings the page prints (ADR 0049
+	// amended): legacy spellings that still work, each naming the carrying
+	// file and the fix. Absent when the cascade is clean.
+	Warnings []config.Warning `json:"warnings,omitempty"`
 }
 
 type statusDataLaunch struct {
@@ -344,6 +351,7 @@ func statusDataOf(s statusInfo) statusData {
 		EnvKeys:    s.EnvKeys,
 		RunArgs:    s.RunArgs,
 		BuildRaw:   s.BuildRaw,
+		Warnings:   s.CompatWarnings,
 	}
 	d.ClaudeSkillsClosed = s.ClaudeSkillsClosed
 	d.Network = statusDataNetworkOf(s)

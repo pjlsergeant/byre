@@ -326,6 +326,42 @@ func TestDevelopBuildsSeedsThenRuns(t *testing.T) {
 	}
 }
 
+// A cascade file carrying a legacy spelling warns at develop (ADR 0049
+// amended: warn-and-keep-working) — the finding, the fix, and the carrying
+// file, on stderr, and the launch proceeds. A clean cascade prints none.
+func TestDevelopWarnsOnLegacySharedAuthSpelling(t *testing.T) {
+	p, _ := testPaths(t)
+	if err := os.WriteFile(filepath.Join(p.Home, "default.config"),
+		[]byte("[defaults]\nshared_auth = [\"claude\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeRunner{}
+	s, _, stderr := testStreams("", false)
+	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk); err != nil {
+		t.Fatal(err)
+	}
+	out := stderr.String()
+	for _, frag := range []string{"byre: warning:", "legacy shared_auth entry", "the next save drops it", "default.config"} {
+		if !strings.Contains(out, frag) {
+			t.Errorf("develop must warn with %q, got:\n%s", frag, out)
+		}
+	}
+	if len(f.creates) != 1 {
+		t.Fatalf("the warning must not stop the launch: creates=%v", f.creates)
+	}
+
+	// Clean cascade: no warning line.
+	p2, _ := testPaths(t)
+	f2 := &fakeRunner{}
+	s2, _, stderr2 := testStreams("", false)
+	if err := develop(f2, s2, p2, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stderr2.String(), "byre: warning:") {
+		t.Errorf("a clean cascade must not warn:\n%s", stderr2.String())
+	}
+}
+
 // Every real session opens by showing the walls going up: the exposure lines
 // print right before the run, and their counts must match what runParams
 // actually does (disabled mounts don't bind; config egress joins the union).

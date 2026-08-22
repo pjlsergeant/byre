@@ -37,6 +37,31 @@ func TestStatusDataCarriesItsVersion(t *testing.T) {
 	}
 }
 
+// --data mirrors the page's compat-warning rows (version 3): kind, layer,
+// path and text cross; a clean cascade omits the field entirely.
+func TestStatusDataCarriesCompatWarnings(t *testing.T) {
+	got := decodeStatusData(t, statusInfo{CompatWarnings: []config.Warning{{
+		Kind: config.WarnSharedAuthTopLevel, Layer: "default",
+		Path: "/h/default.config",
+		Text: "legacy top-level shared_auth — the next save moves it under [defaults]",
+	}}})
+	warns, ok := got["warnings"].([]any)
+	if !ok || len(warns) != 1 {
+		t.Fatalf("warnings = %v", got["warnings"])
+	}
+	w := warns[0].(map[string]any)
+	if w["kind"] != config.WarnSharedAuthTopLevel || w["layer"] != "default" {
+		t.Errorf("warning = %v", w)
+	}
+	if s, _ := w["text"].(string); !strings.Contains(s, "moves it under [defaults]") {
+		t.Errorf("warning text must carry the remedy: %v", w["text"])
+	}
+
+	if clean := decodeStatusData(t, statusInfo{}); clean["warnings"] != nil {
+		t.Errorf("a clean cascade must omit warnings, got %v", clean["warnings"])
+	}
+}
+
 // The exit report's rule holds on every surface: env KEYS cross, values
 // never do.
 func TestStatusDataCarriesEnvKeysNeverValues(t *testing.T) {

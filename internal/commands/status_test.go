@@ -69,6 +69,33 @@ func TestRenderStatusFull(t *testing.T) {
 	assertRow(t, out, "Container", "running (abcdef012345)") // short id
 }
 
+// A compat warning (ADR 0049 amended) renders as its own row: the finding,
+// the fix, and the carrying file — beside the config it describes, never a
+// refusal. A clean cascade renders no Warning row.
+func TestRenderStatusCompatWarningRow(t *testing.T) {
+	var b bytes.Buffer
+	renderStatusTest(&b, statusInfo{
+		Agent: "claude", Engine: "docker", Canonical: "/home/me/proj",
+		CompatWarnings: []config.Warning{{
+			Kind: config.WarnSharedAuthArray, Layer: "default",
+			Path: "/h/default.config",
+			Text: "legacy shared_auth entry for \"claude\" (yes with no companion package recorded) — the next save drops it; answer the shared-auth question at your next onboard to re-record",
+		}},
+	})
+	out := b.String()
+	for _, frag := range []string{"Warning", "legacy shared_auth entry", "the next save drops it", "default (/h/default.config)"} {
+		if !strings.Contains(out, frag) {
+			t.Errorf("warning row must carry %q:\n%s", frag, out)
+		}
+	}
+
+	b.Reset()
+	renderStatusTest(&b, statusInfo{Agent: "claude", Engine: "docker", Canonical: "/home/me/proj"})
+	if strings.Contains(b.String(), "Warning") {
+		t.Errorf("a clean cascade must render no Warning row:\n%s", b.String())
+	}
+}
+
 func TestRenderStatusGrantsAndRawBuild(t *testing.T) {
 	info := statusInfo{
 		Engine:    "docker",

@@ -64,9 +64,12 @@ remedies).
    is no longer a saveable state, `EncodeTOMLValue` emits picks only, and
    every writer persists the `Saveable` projection, so a save of a
    carrying file drops legacy yes-only entries (presence-triggered, like
-   #1's migration). The array arm of the PARSER stays warn-and-works
-   under the amended policy above; dropping it is the per-path operator
-   call once its warnings go quiet.
+   #1's migration). The warning channel the blocker asked for now exists
+   (`internal/config/warning.go`, per-layer collection rendered on
+   develop, status, the editor row, and `status --data`), and both this
+   path and #1 warn through it. The array arm of the PARSER stays
+   warn-and-works under the amended policy above; dropping it is the
+   per-path operator call once its warnings go quiet.
 3. **Repo-root `byre.config` as a legacy preset name** (accepted beside
    `byre.preset`). The in-product rename note IS the warning; removal
    is a release-time decision at the end of its window -- refuse with
