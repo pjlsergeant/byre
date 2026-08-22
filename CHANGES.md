@@ -11,6 +11,14 @@
   (StatusDataVersion 2 → 3). The config keeps working as written;
   removal of a warned spelling is a later, separate release.
 
+- **A repo preset named `byre.config` is no longer applied.** The legacy
+  preset name (renamed to `byre.preset` in v0.2.0) is now refused wherever
+  it appears — conventional discovery, an explicit `preset apply` path or
+  URI argument, and the passive status/develop note — always with the
+  remedy: rename the file to `byre.preset`. Detection is permanent, so an
+  old repo shipping the retired name fails loudly instead of silently
+  doing nothing.
+
 - **The legacy array-shaped `shared_auth` value is no longer written, and
   saves clean it out.** `shared_auth = ["claude"]` ("yes, but no companion
   package recorded") was half an answer: it prefilled the Yes and did

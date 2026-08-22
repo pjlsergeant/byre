@@ -161,25 +161,40 @@ func TestPresetDriftStates(t *testing.T) {
 	}
 }
 
-func TestPresetLegacyNameAccepted(t *testing.T) {
+// The retired preset name (ADR 0049 #3, removed 2026-08-23): a repo
+// byre.config is still DETECTED — the passive note names the retired name
+// and the rename remedy, and apply refuses by name with the same remedy,
+// writing nothing. An old repo fails loudly, never silently.
+func TestPresetRetiredNameRefused(t *testing.T) {
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, "byre.config", "agent = \"none\"\n")
 	state, legacy := presetState(proj, p)
 	if state != "unapplied" || !legacy {
-		t.Fatalf("legacy byre.config must count as an unapplied preset (state=%q legacy=%v)", state, legacy)
+		t.Fatalf("a retired-name preset must still be detected (state=%q legacy=%v)", state, legacy)
 	}
-	if note := presetNote(proj, p); !strings.Contains(note, "legacy name") {
-		t.Fatalf("legacy note must carry the rename hint: %q", note)
+	note := presetNote(proj, p)
+	for _, frag := range []string{"retired name", "rename it to " + PresetName} {
+		if !strings.Contains(note, frag) {
+			t.Errorf("passive note must carry %q: %q", frag, note)
+		}
 	}
-	s, _, out := testStreams("y\n", true)
-	if err := PresetApply(s, proj, ""); err != nil {
-		t.Fatal(err)
+	s, _, _ := testStreams("y\n", true)
+	err := PresetApply(s, proj, "")
+	if err == nil {
+		t.Fatal("apply must refuse the retired name")
 	}
-	if !strings.Contains(out.String(), "legacy name") {
-		t.Errorf("apply must print the rename note:\n%s", out.String())
+	for _, frag := range []string{"retired preset name", "rename it to " + PresetName} {
+		if !strings.Contains(err.Error(), frag) {
+			t.Errorf("refusal must carry %q: %v", frag, err)
+		}
 	}
-	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); err != nil {
-		t.Fatal("legacy-named preset must still apply")
+	if _, serr := os.Stat(filepath.Join(p.Dir, "byre.config")); !os.IsNotExist(serr) {
+		t.Fatal("a refused apply must write nothing")
+	}
+	// The explicit-argument spelling refuses by the same rule.
+	if _, _, rerr := readPreset(proj, filepath.Join(proj, "byre.config")); rerr == nil ||
+		!strings.Contains(rerr.Error(), "retired preset name") {
+		t.Errorf("an explicit byre.config argument must refuse by name, got: %v", rerr)
 	}
 }
 
@@ -187,12 +202,12 @@ func TestPresetPrefersConventionalName(t *testing.T) {
 	_, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"none\"\napt = [\"preset-marker\"]\n")
 	shipPreset(t, proj, "byre.config", "agent = \"none\"\napt = [\"legacy-marker\"]\n")
-	content, source, legacy, err := readPreset(proj, "")
+	content, source, err := readPreset(proj, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if legacy || !strings.Contains(source, PresetName) || !strings.Contains(string(content), "preset-marker") {
-		t.Fatalf("byre.preset must win over the legacy name: %q %v", source, legacy)
+	if !strings.Contains(source, PresetName) || !strings.Contains(string(content), "preset-marker") {
+		t.Fatalf("byre.preset must win over a retired-name sibling: %q", source)
 	}
 }
 
@@ -210,7 +225,7 @@ func TestPresetDiscoveryRefusesOnAnInconclusiveProbe(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(proj, 0o700) })
 
-	_, _, _, err := readPreset(proj, "")
+	_, _, err := readPreset(proj, "")
 	if err == nil || !strings.Contains(err.Error(), "cannot tell whether") || !strings.Contains(err.Error(), PresetName) {
 		t.Fatalf("an inconclusive probe must surface, got: %v", err)
 	}
@@ -443,18 +458,18 @@ func TestPresetReadFileURI(t *testing.T) {
 	elsewhere := filepath.Join(t.TempDir(), "team.preset")
 	mustWriteFile(t, elsewhere, []byte("agent = \"none\"\n"), 0o644)
 	for _, arg := range []string{elsewhere, "file://" + elsewhere, "file://localhost" + elsewhere} {
-		if _, _, _, err := readPreset(proj, arg); err != nil {
+		if _, _, err := readPreset(proj, arg); err != nil {
 			t.Errorf("readPreset(%q): %v", arg, err)
 		}
 	}
-	if _, _, _, err := readPreset(proj, "file://evil.example/x"); err == nil || !strings.Contains(err.Error(), "host") {
+	if _, _, err := readPreset(proj, "file://evil.example/x"); err == nil || !strings.Contains(err.Error(), "host") {
 		t.Errorf("non-local file host must be rejected by the file-URI host rule (a plain missing-file error also keeps a bare nil-check green), got: %v", err)
 	}
-	// Exact-basename legacy detection: not-byre.config is NOT legacy-named.
+	// Exact-basename detection: not-byre.config is NOT the retired name.
 	notLegacy := filepath.Join(t.TempDir(), "not-byre.config")
 	mustWriteFile(t, notLegacy, []byte("agent = \"none\"\n"), 0o644)
-	if _, _, legacy, err := readPreset(proj, notLegacy); err != nil || legacy {
-		t.Errorf("suffix match must not trigger the legacy note (legacy=%v err=%v)", legacy, err)
+	if _, _, err := readPreset(proj, notLegacy); err != nil {
+		t.Errorf("suffix match must not trigger the retired-name refusal: %v", err)
 	}
 }
 
@@ -490,7 +505,7 @@ func TestPresetApplyAbortsOnUnreadableStoreConfig(t *testing.T) {
 func TestPresetConventionalPathIsBounded(t *testing.T) {
 	_, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, strings.Repeat("# pad\n", packages.MaxManifestBytes/6+1))
-	if _, _, _, err := readPreset(proj, ""); err == nil || !strings.Contains(err.Error(), "limit") {
+	if _, _, err := readPreset(proj, ""); err == nil || !strings.Contains(err.Error(), "limit") {
 		t.Fatalf("oversized conventional preset must be rejected by the size bound, got: %v", err)
 	}
 }

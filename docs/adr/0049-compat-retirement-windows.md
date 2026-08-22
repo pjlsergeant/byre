@@ -73,7 +73,11 @@ remedies).
 3. **Repo-root `byre.config` as a legacy preset name** (accepted beside
    `byre.preset`). The in-product rename note IS the warning; removal
    is a release-time decision at the end of its window -- refuse with
-   the rename remedy.
+   the rename remedy. **RETIRED 2026-08-23** under the amended policy:
+   discovery, the explicit argument, and the passive drift note all
+   refuse/flag the name with the rename remedy
+   (`commands.retiredPresetName`); detection is permanent so an old repo
+   fails loudly, never silently.
 4. **Legacy materialized-package machinery** (`ProvLegacy` rows,
    `skill archive-legacy`, store-setup detection). User-facing recovery
    for pre-ADR-0029 stores; keep until the end of its window, then

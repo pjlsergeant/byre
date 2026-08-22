@@ -16,10 +16,21 @@ import (
 )
 
 // PresetName is the conventional in-repo preset filename. byre.config
-// is reserved for the box's live consent document and nothing else wears its
-// name; a legacy-named repo byre.config is accepted as a preset with the
-// rename note.
+// is reserved for the box's live consent document and nothing else wears
+// its name: a repo file wearing it was accepted as a preset until
+// 2026-08-23 (ADR 0049 #3) and is now refused by name with the rename
+// remedy — detection is permanent so an old repo fails loudly, never
+// silently.
 const PresetName = "byre.preset"
+
+// retiredPresetName renders the refusal for a repo preset wearing the
+// retired byre.config name (ADR 0049 #3): the rule, the offender, and the
+// remedy. One owner — the discovery refusal, the explicit-argument
+// refusal, and the passive status note all speak it.
+func retiredPresetName(path string) string {
+	return fmt.Sprintf("%s wears the retired preset name %s — rename it to %s and re-run (byre no longer applies the old name)",
+		path, config.ProjectConfigName, PresetName)
+}
 
 // appliedRecord is the per-project marker `preset apply` writes (apply step
 // 6): line 1 = sha256 of the applied preset bytes, line 2 = its source
@@ -63,12 +74,9 @@ func PresetApply(s Streams, projectDir, arg string) error {
 		return err
 	}
 
-	content, source, legacyName, err := readPreset(projectDir, arg)
+	content, source, err := readPreset(projectDir, arg)
 	if err != nil {
 		return err
-	}
-	if legacyName {
-		dataf(s.Err, "byre: %s is the legacy name -- the convention is now %s (rename when convenient; both apply the same way).\n", config.ProjectConfigName, PresetName)
 	}
 	preset, err := parsePreset(content, source)
 	if err != nil {
@@ -160,7 +168,7 @@ func PresetApply(s Streams, projectDir, arg string) error {
 		if err := requireRecorded(paths); err != nil {
 			return err
 		}
-		if cur, _, _, rerr := readPreset(projectDir, arg); rerr == nil && packages.HashBytes(cur) != h {
+		if cur, _, rerr := readPreset(projectDir, arg); rerr == nil && packages.HashBytes(cur) != h {
 			// Only re-checkable for path sources that still exist; a changed
 			// file must not land bytes the human did not review.
 			return fmt.Errorf("%s changed while you were reviewing; re-run preset apply", source)
@@ -204,12 +212,9 @@ func PresetInspect(s Streams, projectDir, arg string) error {
 	if err := paths.ValidateExisting(); err != nil {
 		return err
 	}
-	content, source, legacyName, err := readPreset(projectDir, arg)
+	content, source, err := readPreset(projectDir, arg)
 	if err != nil {
 		return err
-	}
-	if legacyName {
-		dataf(s.Err, "byre: %s is the legacy name -- the convention is now %s.\n", config.ProjectConfigName, PresetName)
 	}
 	preset, err := parsePreset(content, source)
 	if err != nil {
@@ -239,11 +244,11 @@ func PresetInspect(s Streams, projectDir, arg string) error {
 	return nil
 }
 
-// readPreset locates and fetches preset bytes: an explicit path/URI argument,
-// or the conventional ./byre.preset, or (legacy, with the rename note) a repo
-// ./byre.config. https fetches ride the hardened package fetcher and its
-// bounds.
-func readPreset(projectDir, arg string) (content []byte, source string, legacyName bool, err error) {
+// readPreset locates and fetches preset bytes: an explicit path/URI
+// argument, or the conventional ./byre.preset. A source wearing the retired
+// byre.config name is refused with the rename remedy (ADR 0049 #3). https
+// fetches ride the hardened package fetcher and its bounds.
+func readPreset(projectDir, arg string) (content []byte, source string, err error) {
 	if arg == "" {
 		// Conventional discovery: byre DERIVED this path from the cwd, so
 		// nobody named it, and it gets the passive probe's no-follow read
@@ -258,36 +263,41 @@ func readPreset(projectDir, arg string) (content []byte, source string, legacyNa
 		p := filepath.Join(projectDir, PresetName)
 		ok, perr := hostopen.ExistsNoFollow(p)
 		if perr != nil {
-			return nil, "", false, fmt.Errorf("cannot tell whether %s is here: %w", p, perr)
+			return nil, "", fmt.Errorf("cannot tell whether %s is here: %w", p, perr)
 		}
 		if ok {
 			b, err := readPresetDerived(p)
-			return b, p, false, err
+			return b, p, err
 		}
+		// The retired legacy name still gets DETECTED — an old repo must
+		// fail loudly with the rename remedy, never fall through to "no
+		// preset here" as though its document did not exist.
 		legacy := filepath.Join(projectDir, config.ProjectConfigName)
 		ok, perr = hostopen.ExistsNoFollow(legacy)
 		if perr != nil {
-			return nil, "", false, fmt.Errorf("cannot tell whether %s is here: %w", legacy, perr)
+			return nil, "", fmt.Errorf("cannot tell whether %s is here: %w", legacy, perr)
 		}
 		if ok {
-			b, err := readPresetDerived(legacy)
-			return b, legacy, true, err
+			return nil, "", fmt.Errorf("%s", retiredPresetName(legacy))
 		}
-		return nil, "", false, fmt.Errorf("no %s here (and no legacy %s); pass a path or URI", PresetName, config.ProjectConfigName)
+		return nil, "", fmt.Errorf("no %s here; pass a path or URI", PresetName)
+	}
+	if filepath.Base(arg) == config.ProjectConfigName {
+		return nil, "", fmt.Errorf("%s", retiredPresetName(arg))
 	}
 	// Every explicit source rides the hardened package fetcher: https gets
 	// the fetcher's bounds and origin rules; file:/paths get the real file-URI
 	// parse (localhost-only) and the same size bound -- never a raw
 	// prefix-trimmed ReadFile.
 	if _, err := packages.ParseSourceURI(arg); err != nil {
-		return nil, "", false, err
+		return nil, "", err
 	}
 	var f packages.Fetcher
 	b, _, err := f.FetchManifest(arg)
 	if err != nil {
-		return nil, "", false, err
+		return nil, "", err
 	}
-	return b, arg, filepath.Base(arg) == config.ProjectConfigName, nil
+	return b, arg, nil
 }
 
 // readPresetDerived reads a preset byre found ITSELF (no path argument),
@@ -516,19 +526,21 @@ func presetNote(projectDir string, paths project.Paths) string {
 // knows, and which crowds the exposure rows the page exists for.
 func presetNotes(projectDir string, paths project.Paths) (full, short string) {
 	state, legacyName := presetState(projectDir, paths)
-	name := PresetName
-	renameHint := ""
-	if legacyName {
-		name = config.ProjectConfigName
-		renameHint = " (legacy name; the convention is " + PresetName + ")"
+	if legacyName && state != "" {
+		// The retired name (ADR 0049 #3): apply refuses it, so the note must
+		// not advertise a command that refuses — the remedy IS the rename,
+		// for either drift state.
+		return fmt.Sprintf("this repo ships its preset as %s — the retired name; rename it to %s (byre no longer applies the old name)",
+				config.ProjectConfigName, PresetName),
+			fmt.Sprintf("%s: retired preset name  (rename to %s)", config.ProjectConfigName, PresetName)
 	}
 	switch state {
 	case "unapplied":
-		return fmt.Sprintf("this repo ships a %s%s (not applied); `byre preset apply` to review it", name, renameHint),
-			fmt.Sprintf("%s not applied  (`byre preset apply`)", name)
+		return fmt.Sprintf("this repo ships a %s (not applied); `byre preset apply` to review it", PresetName),
+			fmt.Sprintf("%s not applied  (`byre preset apply`)", PresetName)
 	case "diverged":
-		return fmt.Sprintf("the repo's %s%s differs from the version you applied; `byre preset apply` to review the changes", name, renameHint),
-			fmt.Sprintf("%s differs from what you applied  (`byre preset apply`)", name)
+		return fmt.Sprintf("the repo's %s differs from the version you applied; `byre preset apply` to review the changes", PresetName),
+			fmt.Sprintf("%s differs from what you applied  (`byre preset apply`)", PresetName)
 	}
 	return "", ""
 }
