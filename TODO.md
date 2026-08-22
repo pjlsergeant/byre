@@ -17,21 +17,14 @@ the rationale lives.
 
 ## Open
 
-- [ ] (XS) **Retire legacy `byre.config` preset name at window end** (ADR 0049
-  #3): refuse with the rename remedy; release-time call.
-- [ ] (XS) **Schedule archive-legacy machinery removal at window end**
-  (ADR 0049 #4): collapse to RetiredNames tombstones.
-- [ ] (S) **shared_auth array-shape retirement: build the warning channel first**
-  (ADR 0049 #2). No parse-time warning channel exists; the array shape is also
-  round-tripped by EncodeTOMLValue. Warn one release, then drop both arms.
-- [ ] (M) **config.CatalogLoader silent nil-fallback** (ADR 0049 residue): an
-  entrypoint that skips builtins gets a bundled-less catalog silently; the
-  real fix is threading a catalog into config.Load's signature (the staged
-  lifecycle-split territory).
-- [ ] (L) **Config lifecycle split, staged** (ADR 0049): move merge state
-  (EgressClosed, MCPClosed, ClaudeSkillsClosed, Sources.From) out of the
-  persisted struct so Merge no longer tolerates its own output as input;
-  only then decide whether the full type split pays.
+- [ ] (S) **Retire the shared_auth legacy parser arms when their warnings go
+  quiet** (ADR 0049 #1/#2, amended policy): the write side and the warning
+  channel shipped 2026-08-23; the array and top-level parse arms
+  warn-and-keep-working until Pete calls the drop per path.
+- [ ] (S) **Rule on the full Layer/Resolved type split** (and catalog
+  signature threading): assessed 2026-08-23 in
+  wip/lifecycle-split-assessment.md (recommendation: doesn't pay now);
+  on ruling, the wip file deletes into ADR 0049's disposition.
 
 - [ ] (S) **Bare keys after `[package]` are silently swallowed** (QA pass
   2026-07-29): a skill author writing `files = {...}` (or any bare key)
