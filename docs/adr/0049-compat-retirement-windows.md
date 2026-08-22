@@ -83,6 +83,12 @@ remedies).
    for pre-ADR-0029 stores; keep until the end of its window, then
    collapse to tombstones only (`RetiredNames` protection stays --
    that is permanent name protection, not a compat path).
+   **RETIRED 2026-08-23** under the amended policy: the archive-legacy
+   verb, `ArchiveLegacy`, the store-setup notice, and the dedicated
+   LEGACY provenance are gone. A local dir wearing a protected name
+   ingests as an ordinary INVALID row ("never loaded -- rename or
+   remove the directory"); `RetiredNames` and the missing-package
+   tombstone remedies are unchanged and permanent.
 
 ## Staged work the absorbed review file carried (dispositions)
 

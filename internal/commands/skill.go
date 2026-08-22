@@ -48,7 +48,7 @@ func PackageList(s Streams, kind packages.Kind) error {
 		}
 		label := ent.ProvenanceLabel()
 		switch ent.Provenance {
-		case packages.ProvInvalid, packages.ProvConflict, packages.ProvLegacy:
+		case packages.ProvInvalid, packages.ProvConflict:
 			dataf(s.Out, "%-28s  %-16s  %s\n", id, label, ent.Reason)
 		default:
 			if ent.Description != "" {
@@ -695,24 +695,4 @@ func validateOne(cat *packages.Catalog, ent *packages.Entry) error {
 	// Same stage-2 path cascade load uses (composition ban + strict parse).
 	_, err = config.ParseTemplateBody(raw)
 	return err
-}
-
-// SkillArchiveLegacy moves LEGACY dirs aside.
-func SkillArchiveLegacy(s Streams) error {
-	home, err := project.Home()
-	if err != nil {
-		return err
-	}
-	moved, err := builtins.ArchiveLegacy(home)
-	if err != nil {
-		return err
-	}
-	if len(moved) == 0 {
-		fmt.Fprintln(s.Err, "byre: no legacy package dirs to archive")
-		return nil
-	}
-	for _, m := range moved {
-		dataf(s.Err, "byre: archived %s\n", m)
-	}
-	return nil
 }

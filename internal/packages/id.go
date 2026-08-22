@@ -26,7 +26,6 @@ const (
 	ProvBundled   Provenance = "bundled"
 	ProvInstalled Provenance = "installed"
 	ProvLocal     Provenance = "local"
-	ProvLegacy    Provenance = "legacy"
 	ProvInvalid   Provenance = "invalid"
 	ProvConflict  Provenance = "conflict"
 )

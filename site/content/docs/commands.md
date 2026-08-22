@@ -77,7 +77,6 @@ every command and flag.
 | `byre skill init <name>` | Scaffold a new local skill package. |
 | `byre skill adopt <dir>` | Make a directory the local source for the skill id it declares (symlink into the store). |
 | `byre skill validate [name]` | Two-stage parse and resolve-check a skill (or all). |
-| `byre skill archive-legacy` | Move LEGACY materialized dirs to skills.legacy/ / templates.legacy/. |
 | `byre template` | Manage template packages (list, inspect, fork, init, validate). |
 | `byre template list` | List template packages in the catalog. |
 | `byre template inspect <id\|uri>` | Show template package metadata (URIs fetch without installing). |

@@ -15,8 +15,8 @@ import (
 )
 
 // Entry is one row in the catalog: a resolvable package, or a scoped problem
-// row (INVALID / conflict / LEGACY) that list surfaces and resolve rejects
-// only when referenced.
+// row (INVALID / conflict) that list surfaces and resolve rejects only when
+// referenced.
 type Entry struct {
 	ID          string
 	Alias       string // bare name when this is a bundled package
@@ -24,14 +24,14 @@ type Entry struct {
 	Kind        Kind
 	Provenance  Provenance
 	Description string
-	// Reason explains INVALID / LEGACY / conflict rows.
+	// Reason explains INVALID / conflict rows.
 	Reason string
 	// Claimants lists EVERY location fighting over the id of a conflict row,
 	// in load order -- an id can have more than two (installed + local skill
 	// + local template), and remedies need the full set.
 	Claimants []string
 
-	// Loading: either Dir (local/legacy on disk) or FS+Sub (bundled embed).
+	// Loading: either Dir (local on disk) or FS+Sub (bundled embed).
 	// Installed snapshots (phase 2) will also use Dir under packages/<digest>.
 	Dir string
 	FS  fs.FS  // non-nil for bundled
@@ -397,11 +397,14 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 		return nil
 	}
 
-	// Legacy: bare dir name matches protected/retired -> never load.
+	// A bare dir name matching a protected (bundled or retired) name is
+	// never loaded — that protection is permanent. The dedicated LEGACY
+	// provenance and its archive machinery retired 2026-08-23 (ADR 0049
+	// #4); the dir is now an ordinary INVALID row with the rename remedy.
 	if IsBare(id) && c.IsProtected(id) {
 		reason := c.protected[id]
-		c.addProblemAgent(id, kind, ProvLegacy,
-			"legacy materialized copy of "+reason+"; never loaded. Fork to keep edits, or archive via store-ensure offer.",
+		c.addProblemAgent(id, kind, ProvInvalid,
+			"wears a protected name ("+reason+"); never loaded -- rename or remove the directory",
 			dir, kind == KindSkill && looksLikeAgent(raw))
 		return nil
 	}
@@ -517,7 +520,7 @@ func (c *Catalog) MarkInvalid(ent *Entry, reason string) {
 		return
 	}
 	switch ent.Provenance {
-	case ProvInvalid, ProvConflict, ProvLegacy:
+	case ProvInvalid, ProvConflict:
 		return
 	}
 	ent.Provenance = ProvInvalid
@@ -536,9 +539,6 @@ func (c *Catalog) addProblemAgent(id string, kind Kind, prov Provenance, reason,
 		return
 	}
 	if ent, ok := c.byID[id+"#"+string(prov)]; ok {
-		ent.LooksLikeAgent = agent
-	}
-	if ent, ok := c.byID[id+"#legacy"]; ok && prov == ProvLegacy {
 		ent.LooksLikeAgent = agent
 	}
 }
@@ -594,9 +594,6 @@ func (c *Catalog) addProblem(id string, kind Kind, prov Provenance, reason, dir 
 	// show them and ResolveName keeps returning the bundled package.
 	if prev, ok := c.byID[id]; ok && prev.Provenance == ProvBundled {
 		key := id + "#" + string(prov)
-		if prov == ProvLegacy {
-			key = id + "#legacy"
-		}
 		c.byID[key] = &Entry{
 			ID:         id,
 			Kind:       kind,
@@ -674,8 +671,8 @@ func (c *Catalog) ExpandAlias(name string) string {
 }
 
 // ResolveName is the one resolution function every name surface uses.
-// It expands aliases and looks up the catalog. Missing, INVALID, conflict,
-// and LEGACY entries return an error. The returned Entry is always loadable
+// It expands aliases and looks up the catalog. Missing, INVALID and
+// conflict entries return an error. The returned Entry is always loadable
 // (bundled or local or installed).
 func (c *Catalog) ResolveName(name string) (*Entry, error) {
 	if name == "" {
@@ -698,8 +695,6 @@ func (c *Catalog) ResolveName(name string) (*Entry, error) {
 		return nil, fmt.Errorf("package %q is invalid: %s", canon, ent.Reason)
 	case ProvConflict:
 		return nil, fmt.Errorf("package %q conflicts: %s", canon, ent.Reason)
-	case ProvLegacy:
-		return nil, fmt.Errorf("package %q is a legacy materialized copy and is never loaded: %s", canon, ent.Reason)
 	}
 	return ent, nil
 }
@@ -724,7 +719,7 @@ func (c *Catalog) Lookup(id string) (*Entry, bool) {
 }
 
 // List returns all catalog rows, sorted by ID, optionally filtered by kind.
-// kind == "" returns both. Includes INVALID/conflict/LEGACY rows.
+// kind == "" returns both. Includes INVALID/conflict rows.
 func (c *Catalog) List(kind Kind) []*Entry {
 	var out []*Entry
 	for _, key := range c.order {
@@ -737,13 +732,13 @@ func (c *Catalog) List(kind Kind) []*Entry {
 	return out
 }
 
-// ListProblemRows returns INVALID/conflict/LEGACY entries for kind (for
-// pickers that must show disabled-with-reason rows).
+// ListProblemRows returns INVALID/conflict entries for kind (for pickers
+// that must show disabled-with-reason rows).
 func (c *Catalog) ListProblemRows(kind Kind) []*Entry {
 	var out []*Entry
 	for _, ent := range c.List(kind) {
 		switch ent.Provenance {
-		case ProvInvalid, ProvConflict, ProvLegacy:
+		case ProvInvalid, ProvConflict:
 			out = append(out, ent)
 		}
 	}
@@ -871,8 +866,6 @@ func (e *Entry) provenanceLabel(digest bool) string {
 			return "local (shadows installed " + e.ShadowsInstalled + ")"
 		}
 		return "local"
-	case ProvLegacy:
-		return "LEGACY"
 	case ProvInvalid:
 		return "INVALID"
 	case ProvConflict:

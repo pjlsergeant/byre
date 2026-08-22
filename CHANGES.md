@@ -19,6 +19,15 @@
   old repo shipping the retired name fails loudly instead of silently
   doing nothing.
 
+- **The archive-legacy machinery is gone.** `byre skill archive-legacy`,
+  the store-setup "legacy materialized package" notice, and the catalog's
+  dedicated LEGACY provenance were recovery UX for stores predating the
+  packages redesign (v0.2.0). A local dir wearing a protected (bundled or
+  retired) name is still never loaded — that protection is permanent —
+  and now lists as an ordinary INVALID row with the remedy: rename or
+  remove the directory (`skills.legacy/`/`templates.legacy/` parking by
+  hand still works, byre just no longer does it for you).
+
 - **The legacy array-shaped `shared_auth` value is no longer written, and
   saves clean it out.** `shared_auth = ["claude"]` ("yes, but no companion
   package recorded") was half an answer: it prefilled the Yes and did

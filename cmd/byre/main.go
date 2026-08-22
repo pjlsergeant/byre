@@ -904,15 +904,9 @@ func packCmd(s commands.Streams, noun string, kind packages.Kind) *cobra.Command
 
 func skillCmd(s commands.Streams) *cobra.Command {
 	return packageCmd(s, "skill", packages.KindSkill,
-		"list|inspect|install|uninstall|fork|init|adopt|validate|pack|archive-legacy",
+		"list|inspect|install|uninstall|fork|init|adopt|validate|pack",
 		"Show skill package metadata and grants (URIs fetch without installing).",
 		"Two-stage parse and resolve-check a skill (or all).",
-		&cobra.Command{
-			Use:   "archive-legacy",
-			Short: "Move LEGACY materialized dirs to skills.legacy/ / templates.legacy/.",
-			Args:  noArgsU,
-			RunE:  func(cmd *cobra.Command, args []string) error { return commands.SkillArchiveLegacy(s) },
-		},
 	)
 }
 

@@ -22,11 +22,13 @@ const stampName = "bundled/.byre-version"
 //     whenever it differs from the binary's copy).
 //  3. On byre-version stamp mismatch: rewrite ~/.byre/bundled/ mirror from
 //     embed.FS and update the stamp.
-//  4. Surface LEGACY dirs (names matching bundled/retired) via the returned
-//     notice; optional archive is a separate call (ArchiveLegacy).
 //
 // Unlike the deleted Materialize path, this NEVER copies bundled packages
 // into skills/ or templates/. The loader reads bundled bytes from embed only.
+// A local dir wearing a protected (bundled or retired) name is the
+// catalog's business: it ingests as an INVALID row with the rename remedy
+// and is never loaded (the archive-legacy machinery retired 2026-08-23,
+// ADR 0049 #4).
 //
 // bundled is the embed.FS (skills/ + templates/ tops). byreVer is the stamp
 // and the version written into generated [package] headers in the mirror.
@@ -110,18 +112,6 @@ func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) erro
 		}
 	}
 
-	// LEGACY notice: dirs under skills/templates whose bare names are
-	// protected (bundled or retired). Never load them; offer archive once
-	// per EnsureStore when any exist (caller may ignore the notice).
-	legacy := findLegacyDirs(home, bundled)
-	if len(legacy) > 0 && out != nil {
-		fmt.Fprintf(out, "byre: found %d legacy materialized package dir(s) (never loaded):\n", len(legacy))
-		for _, p := range legacy {
-			fmt.Fprintf(out, "  %s\n", p)
-		}
-		fmt.Fprintln(out, "byre: to keep edits, fork first; to dismiss, run: byre skill archive-legacy")
-		fmt.Fprintln(out, "      (or move them by hand to skills.legacy/ / templates.legacy/)")
-	}
 	return nil
 }
 
@@ -135,91 +125,6 @@ func mirrorStale(home, root, byreVer string) (stale, present bool) {
 	present = err == nil && fi.IsDir()
 	cur, _ := hostopen.PlainReadFile(filepath.Join(home, stampName), hostopen.StoreOwned)
 	return strings.TrimSpace(string(cur)) != byreVer || !present, present
-}
-
-// findLegacyDirs returns store-relative paths of flat skill/template dirs
-// whose names match a currently-bundled or retired bare name.
-func findLegacyDirs(home string, bundled fs.FS) []string {
-	protected := map[string]bool{}
-	for bare := range RetiredNames {
-		protected[bare] = true
-	}
-	for _, sub := range []string{"skills", "templates"} {
-		if bundled == nil {
-			break
-		}
-		entries, err := fs.ReadDir(bundled, sub)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if e.IsDir() {
-				protected[e.Name()] = true
-			}
-		}
-	}
-	var out []string
-	for _, sub := range []string{"skills", "templates"} {
-		entries, err := hostopen.PlainReadDir(filepath.Join(home, sub), hostopen.StoreOwned)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
-				continue
-			}
-			if protected[e.Name()] {
-				// Confirm it looks like a package (has primary file).
-				kind := KindSkill
-				if sub == "templates" {
-					kind = KindTemplate
-				}
-				prim := PrimaryName(kind)
-				if _, err := hostopen.PlainStat(filepath.Join(home, sub, e.Name(), prim), hostopen.StoreOwned); err == nil {
-					out = append(out, filepath.Join(sub, e.Name()))
-				}
-			}
-		}
-	}
-	return out
-}
-
-// ArchiveLegacy moves LEGACY dirs to skills.legacy/ and templates.legacy/
-// (one-confirm archive). Returns the paths moved.
-func ArchiveLegacy(home string, bundled fs.FS) ([]string, error) {
-	legacy := findLegacyDirs(home, bundled)
-	var moved []string
-	for _, rel := range legacy {
-		src := filepath.Join(home, rel)
-		// rel is skills/<name> or templates/<name>
-		parts := strings.SplitN(rel, string(filepath.Separator), 2)
-		if len(parts) != 2 {
-			parts = strings.SplitN(rel, "/", 2)
-		}
-		if len(parts) != 2 {
-			continue
-		}
-		bakRoot := parts[0] + ".legacy"
-		dstDir := filepath.Join(home, bakRoot)
-		if err := hostopen.PlainMkdirAll(dstDir, 0o755, hostopen.StoreOwned); err != nil {
-			return moved, err
-		}
-		dst := filepath.Join(dstDir, parts[1])
-		// If destination exists, unique-ify.
-		if _, err := hostopen.PlainStat(dst, hostopen.StoreOwned); err == nil {
-			tmp, terr := hostopen.PlainMkdirTemp(dstDir, parts[1]+".", hostopen.StoreOwned)
-			if terr != nil {
-				return moved, fmt.Errorf("archive %s: %w", rel, terr)
-			}
-			hostopen.PlainRemove(tmp, hostopen.ByreCreated) // MkdirTemp created a dir; we want the name for Rename
-			dst = tmp
-		}
-		if err := hostopen.PlainRename(src, dst, hostopen.StoreOwned); err != nil {
-			return moved, fmt.Errorf("archive %s: %w", rel, err)
-		}
-		moved = append(moved, rel+" -> "+filepath.Join(bakRoot, filepath.Base(dst)))
-	}
-	return moved, nil
 }
 
 // midSwap runs inside the swap's open window -- after the old mirror is

@@ -890,7 +890,7 @@ func (m model) optDisabled(name string) string {
 		return ""
 	}
 	switch ent.Provenance {
-	case packages.ProvInvalid, packages.ProvLegacy, packages.ProvConflict:
+	case packages.ProvInvalid, packages.ProvConflict:
 		if ent.Reason != "" {
 			return ent.Reason
 		}

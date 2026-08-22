@@ -38,9 +38,8 @@ conventions are what stands in its place.
   consent document -- see the next section), the recorded project
   `path`, the generated Dockerfile and build context, locks and
   markers. Machine state, mostly byre-written.
-- `skills.legacy/`, `templates.legacy/` -- parked leftovers from old
-  byre versions (`byre skill archive-legacy` puts them there). Never
-  loaded.
+- `skills.legacy/`, `templates.legacy/` -- parked leftovers an old
+  byre's archive step moved aside. Never loaded.
 
 Anything not listed is byre's plumbing; leave it alone.
 
@@ -82,12 +81,9 @@ a working package, and byre's index will not know it moved.
                                           source for its declared id
     byre skill validate [name]
     byre skill pack <name> -o skill.toml  emit a distributable manifest
-    byre skill archive-legacy             park leftover legacy dirs
 
-`byre template` has the same verbs (except `archive-legacy`, which
-lives under `byre skill` and archives both kinds). When byre reports
-a missing package it prints the exact install command -- run that, don't
-improvise.
+`byre template` has the same verbs. When byre reports a missing package
+it prints the exact install command -- run that, don't improvise.
 
 ## Changing a provided package: layer, don't fork-edit
 

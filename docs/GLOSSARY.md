@@ -290,9 +290,10 @@ exact pinned install command): the name never returns to the free pool.
 First retirees: `codereview`, `devlog`.
 
 **LEGACY row**:
-The catalog's marker for a leftover materialized copy of a bundled or
-retired name under `~/.byre/skills|templates/`: never loaded, listed
-with its reason, archived aside by `byre skill archive-legacy`.
+RETIRED vocabulary (2026-08-23, ADR 0049 #4). A leftover local dir
+wearing a bundled or retired name under `~/.byre/skills|templates/` is
+now an ordinary INVALID row: never loaded, listed with the rename
+remedy.
 
 **`[sources]` hint**:
 A config/preset table mapping package ids to `{ uri, digest }`

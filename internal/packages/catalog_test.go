@@ -153,7 +153,11 @@ func TestCatalogAliasExpansion(t *testing.T) {
 	}
 }
 
-func TestCatalogLegacyDir(t *testing.T) {
+// A local dir wearing a protected (bundled or retired) name is never
+// loaded -- permanent name protection. Since the archive-legacy machinery
+// retired (2026-08-23, ADR 0049 #4) it ingests as an ordinary INVALID row
+// carrying the rename remedy.
+func TestCatalogProtectedNameDir(t *testing.T) {
 	home := t.TempDir()
 	// Legacy materialized claude dir.
 	dir := filepath.Join(home, "skills", "claude")
@@ -184,15 +188,20 @@ func TestCatalogLegacyDir(t *testing.T) {
 	if _, err := cat.ResolveName("my-linter"); err != nil {
 		t.Fatalf("local my-linter: %v", err)
 	}
-	// LEGACY row present.
-	var legacy bool
+	// The protected-name dir is an INVALID row with the rename remedy.
+	var found bool
 	for _, ent := range cat.List(KindSkill) {
-		if ent.Provenance == ProvLegacy && ent.ID == "claude" {
-			legacy = true
+		if ent.ID == "claude" && ent.Provenance == ProvInvalid {
+			found = true
+			for _, frag := range []string{"protected name", "never loaded", "rename or remove"} {
+				if !strings.Contains(ent.Reason, frag) {
+					t.Errorf("reason must carry %q: %q", frag, ent.Reason)
+				}
+			}
 		}
 	}
-	if !legacy {
-		t.Fatal("expected LEGACY row for materialized claude")
+	if !found {
+		t.Fatal("expected an INVALID row for the protected-name dir")
 	}
 }
 
@@ -221,30 +230,6 @@ func TestEnsureStoreMirror(t *testing.T) {
 	entries, _ := os.ReadDir(filepath.Join(home, "skills"))
 	if len(entries) != 0 {
 		t.Fatalf("skills/ should be empty, got %v", entries)
-	}
-}
-
-func TestArchiveLegacyNameCollision(t *testing.T) {
-	home := t.TempDir()
-	// Seed a legacy claude dir and a pre-existing archive slot.
-	if err := os.MkdirAll(filepath.Join(home, "skills", "claude"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(home, "skills", "claude", "skill.toml"), []byte("x=1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(home, "skills.legacy", "claude"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	moved, err := ArchiveLegacy(home, bundledFS())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(moved) == 0 {
-		t.Fatal("expected to archive legacy claude")
-	}
-	if _, err := os.Stat(filepath.Join(home, "skills", "claude")); !os.IsNotExist(err) {
-		t.Fatal("legacy dir should be gone from skills/")
 	}
 }
 
