@@ -97,6 +97,16 @@ remedies).
   moving merge state (`EgressClosed` etc.) out of the persisted struct
   needs its own session; only then decide if the full type split pays.
   Tracked in TODO.md.
+  **Staged move SHIPPED 2026-08-23:** merge bookkeeping lives in
+  `config.Closures` (all four genera), produced beside the merged Config
+  by `MergeStep` — whose `over` is always a raw layer, so the fold never
+  eats its own output. `config.Merged{Config; Closures}` is the resolved
+  view `Load`/`ResolveProposed` return; skills subtraction, the build
+  pipeline, commands, and the editor's live re-merge consume it.
+  `SourceHint.From` stays put (layer attribution, not merge state). The
+  full-type-split go/no-go is assessed in
+  `wip/lifecycle-split-assessment.md` (recommendation: doesn't pay;
+  revive trigger recorded there), held for the operator's ruling.
 - **Carving `internal/commands` (item 8)**: extraction on the second
   real consumer, never by decree; reconcile CLAUDE/ARCHITECTURE wording
   when the first extraction lands. No open work until a consumer shows.

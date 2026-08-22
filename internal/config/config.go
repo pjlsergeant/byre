@@ -448,17 +448,6 @@ type Config struct {
 	// declarative and inert without one (nothing enforces it, same as skill
 	// egress). String list, so the cascade unions it with `!entry` removal.
 	Egress []string `toml:"egress,omitempty"`
-	// EgressClosed is the set of `!host[:port]` closures that survived the
-	// cascade -- never a TOML key of its own (the marker grammar lives inside
-	// `egress`); Merge extracts markers here instead of consuming them. A
-	// closure subtracts its endpoint from the DERIVED allowlist, after skill
-	// egress unions in, which is what puts skill-declared entries in its
-	// reach (plain mergeStrings removal never could -- skills aren't a
-	// cascade layer). Stored as stripped names ("host[:port]", no '!').
-	// PORTLESS closes every port of the host; ported closes just that one —
-	// the deliberate asymmetry with the open grammar (where portless means
-	// :443): addition is never greedy, subtraction may be.
-	EgressClosed []string `toml:"-"`
 	// EgressOffered is a declared-but-CLOSED door (ADR 0020): same grammar,
 	// ALWAYS inert at enforcement time. Templates ship their registries here;
 	// the config UI offers each as a switch whose open writes the plain entry
@@ -470,35 +459,18 @@ type Config struct {
 	// see mcp.go for the model. Two homes (config layers and skill.toml);
 	// within the cascade a later layer replaces by name.
 	MCPs []MCP `toml:"mcp,omitempty"`
-	// MCPClosed is the set of `!name` MCP closures that survived the
-	// cascade — never a TOML key of its own (the marker grammar lives
-	// inside `mcp` name fields); Merge extracts markers here instead of
-	// consuming them, so a closure can subtract a SKILL-declared server
-	// after the union (ADR 0030 semantics, wholesale). Stored stripped.
-	MCPClosed []string `toml:"-"`
 
 	// ClaudeSkills are declared Claude Skills ([[claude_skills]] blocks):
 	// wiring, not grants — see claudeskills.go for the model. Two homes
 	// (config layers and skill.toml); within the cascade a later layer
 	// replaces by name.
 	ClaudeSkills []ClaudeSkill `toml:"claude_skills,omitempty"`
-	// ClaudeSkillsClosed is the set of `!name` claude-skill closures that
-	// survived the cascade — never a TOML key of its own; Merge extracts
-	// markers here instead of consuming them, so a closure can subtract a
-	// SKILL-declared Claude Skill after the union (the MCPClosed semantics,
-	// wholesale). Stored stripped.
-	ClaudeSkillsClosed []string `toml:"-"`
 
 	// Contexts are declared standing-instruction snippets ([[context]]
 	// blocks): the operator's prose for the agent's memory — see
 	// contextdecl.go for the model. One home (config layers only); within
 	// the cascade a later layer replaces by name.
 	Contexts []ContextDecl `toml:"context,omitempty"`
-	// ContextsClosed is the set of `!name` context closures that survived
-	// the cascade — never a TOML key of its own; Merge extracts markers
-	// here (genus uniformity — with no skill home to subtract from after
-	// the merge, survivors are inert). Stored stripped.
-	ContextsClosed []string `toml:"-"`
 
 	DockerfilePre  []string `toml:"dockerfile_pre,omitempty"`
 	DockerfilePost []string `toml:"dockerfile_post,omitempty"`
@@ -514,10 +486,10 @@ func (c Config) SeedPrefsEnabled() bool {
 // Load resolves the full cascade for a project directory and validates the
 // result. Missing config files are treated as empty layers; only malformed TOML
 // or an invalid resolved config is an error.
-func Load(projectDir string) (Config, error) {
+func Load(projectDir string) (Merged, error) {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
-		return Config{}, err
+		return Merged{}, err
 	}
 	// The project config is read from the host-side store
 	// (~/.byre/projects/<id>/byre.config), NOT from the project tree. byre never
@@ -526,7 +498,7 @@ func Load(projectDir string) (Config, error) {
 	// (`byre preset apply`), never read directly here.
 	proj, err := loadLayer(filepath.Join(paths.Dir, ProjectConfigName), false)
 	if err != nil {
-		return Config{}, err
+		return Merged{}, err
 	}
 	return resolveWith(paths.Home, proj)
 }
@@ -553,10 +525,10 @@ func loadLayer(path string, follow bool) (Config, error) {
 // a file not yet in the store) can be shown with its EFFECTIVE settings (incl.
 // the grants a selected template adds) before a human applies it — without
 // ever making it live.
-func ResolveProposed(proj Config) (Config, error) {
+func ResolveProposed(proj Config) (Merged, error) {
 	home, err := project.Home()
 	if err != nil {
-		return Config{}, err
+		return Merged{}, err
 	}
 	return resolveWith(home, proj)
 }
@@ -566,23 +538,23 @@ func ResolveProposed(proj Config) (Config, error) {
 // Package references (skills, agent, template, !markers) are canonicalized
 // through the catalog BEFORE merge, so `!byre/claude` cancels a lower
 // layer's bare `claude` after both expand to the same canonical ID.
-func resolveWith(home string, proj Config) (Config, error) {
+func resolveWith(home string, proj Config) (Merged, error) {
 	// Catalog is required for alias expansion and template loading from
 	// embed.FS (bundled templates are no longer materialized into the store).
 	// Callers that care about the display mirror should EnsureStore first;
 	// the catalog reads bundled bytes from embed.FS directly.
 	cat, err := catalogFor(home)
 	if err != nil {
-		return Config{}, err
+		return Merged{}, err
 	}
 	return resolveWithCatalog(home, proj, cat)
 }
 
 // resolveWithCatalog is the testable core of resolveWith.
-func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config, error) {
+func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Merged, error) {
 	def, err := loadLayer(filepath.Join(home, "default.config"), true)
 	if err != nil {
-		return Config{}, err
+		return Merged{}, err
 	}
 	// default.config's `template`/`agent` are the first-run picker's PRE-SELECTED
 	// options only — they must not silently cascade into a project's resolved
@@ -596,13 +568,15 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config
 	// today only the host git identity passthrough. A real config layer (not
 	// hardcoded plumbing) so any higher layer can see, override, or disable
 	// it per key, and the legibility surfaces count it like the grant it is.
-	def = Merge(Config{EnvFromHost: CoreEnvFromHost()}, def)
+	// The fold's closure accumulator starts here and threads every step.
+	lower, closures := mergeStep(Config{EnvFromHost: CoreEnvFromHost()}, Closures{}, def)
+	def = lower
 
 	// The extends chain hangs off the PROJECT config (the chain's leaf).
 	// default.config carrying one would be a second, silent chain slot —
 	// refuse loudly rather than ignore a key with teeth.
 	if def.Extends != "" {
-		return Config{}, fmt.Errorf("default.config: extends belongs in a layer file or the project config, not the global default")
+		return Merged{}, fmt.Errorf("default.config: extends belongs in a layer file or the project config, not the global default")
 	}
 
 	// Canonicalize package references on every layer before merge.
@@ -630,9 +604,9 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config
 			// A missing template prints its kind-correct install command
 			// when any layer carries a [sources] hint for it.
 			if hint, ok := mergeSources(def.Sources, proj.Sources)[templateName]; ok {
-				return Config{}, fmt.Errorf("%w\n  install it: %s", err, hint.InstallHint("template"))
+				return Merged{}, fmt.Errorf("%w\n  install it: %s", err, hint.InstallHint("template"))
 			}
-			return Config{}, err
+			return Merged{}, err
 		}
 		// Templates are shape only: already validated in loadTemplateLayer.
 		canonicalizeLayer(cat, &tmpl)
@@ -643,16 +617,16 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config
 	// live — resolved on every load, like the template slot.
 	chain, err := LoadExtendsChain(home, cat, proj.Extends)
 	if err != nil {
-		return Config{}, err
+		return Merged{}, err
 	}
-	lower := Merge(def, tmpl)
+	lower, closures = mergeStep(def, closures, tmpl)
 	for _, nl := range chain {
 		canonicalizeLayer(cat, &nl.Config)
 		stampSources(&nl.Config, "layer "+nl.Name)
-		lower = Merge(lower, nl.Config)
+		lower, closures = mergeStep(lower, closures, nl.Config)
 	}
 
-	resolved := Merge(lower, proj)
+	resolved, closures := mergeStep(lower, closures, proj)
 	// Resolve the "none" sentinel out: it exists to beat lower layers in the
 	// merge, and means empty everywhere downstream.
 	resolved.Template = FromNone(resolved.Template)
@@ -667,10 +641,11 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Config
 	// dropped at parse.)
 	resolved.Defaults = Defaults{}
 	resolved.SharedAuthLegacy = SharedAuthPref{}
-	if err := resolved.Validate(); err != nil {
-		return Config{}, err
+	out := Merged{Config: resolved, Closures: closures}
+	if err := out.Validate(); err != nil {
+		return Merged{}, err
 	}
-	return resolved, nil
+	return out, nil
 }
 
 // canonicalizeLayer expands package aliases on template/agent/skills (incl.
@@ -917,9 +892,11 @@ func decodeStrict(content []byte) (Config, error) {
 	return c, nil
 }
 
-// Merge layers over onto base per byre's rules and returns the result.
-func Merge(base, over Config) Config {
+// mergeStep is MergeStep's body: layers the raw layer `over` onto the
+// accumulated (base, baseCl) per byre's rules.
+func mergeStep(base Config, baseCl Closures, over Config) (Config, Closures) {
 	out := base
+	var cl Closures
 
 	// Scalars: a non-empty over value wins. Extends included only for
 	// well-definedness on hand-merged layers — resolution consumes each
@@ -952,7 +929,7 @@ func Merge(base, over Config) Config {
 	if over.Defaults.SkipQuestions {
 		out.Defaults.SkipQuestions = true
 	}
-	out.Egress, out.EgressClosed = mergeEgress(base, over)
+	out.Egress, cl.Egress = mergeEgress(base.Egress, baseCl.Egress, over.Egress)
 	// Offered egress keeps the plain-list idiom: it is never enforced, so a
 	// closure has nothing to subtract from and the marker just removes the
 	// inherited entry (ADR 0018).
@@ -968,21 +945,21 @@ func Merge(base, over Config) Config {
 	out.Mounts = mergeByIdentity(base.Mounts, over.Mounts, func(m Mount) string { return m.Target })
 	out.Volumes = mergeByIdentity(base.Volumes, over.Volumes, func(v Volume) string { return v.Name })
 	out.Ports = mergePorts(base.Ports, over.Ports)
-	// MCP declarations replace by name; `!name` closures survive the merge
-	// (MCPClosed) so they can subtract skill-declared servers post-union.
-	out.MCPs, out.MCPClosed = mergeMCPs(base, over)
+	// MCP declarations replace by name; `!name` closures survive the fold
+	// (cl.MCP) so they can subtract skill-declared servers post-union.
+	out.MCPs, cl.MCP = mergeMCPs(base.MCPs, baseCl.MCP, over.MCPs)
 	// Claude Skill declarations: same taxonomy.
-	out.ClaudeSkills, out.ClaudeSkillsClosed = mergeClaudeSkills(base, over)
+	out.ClaudeSkills, cl.ClaudeSkills = mergeClaudeSkills(base.ClaudeSkills, baseCl.ClaudeSkills, over.ClaudeSkills)
 	// Context declarations: same taxonomy, one home (closures spend
-	// themselves in the merge; survivors are inert).
-	out.Contexts, out.ContextsClosed = mergeContexts(base, over)
+	// themselves in the fold; survivors are inert).
+	out.Contexts, cl.Contexts = mergeContexts(base.Contexts, baseCl.Contexts, over.Contexts)
 
 	// Raw blocks: append-only/union, no per-line removal in v0.
 	out.DockerfilePre = appendAll(base.DockerfilePre, over.DockerfilePre)
 	out.DockerfilePost = appendAll(base.DockerfilePost, over.DockerfilePost)
 	out.RunArgs = appendAll(base.RunArgs, over.RunArgs)
 
-	return out
+	return out, cl
 }
 
 // validContainerTarget requires an in-container mount/volume target to be an
@@ -1087,6 +1064,7 @@ func (c Config) validateScalarsLayer() error {
 		filter(c.Apt, func(s string) bool { return !IsRemoval(s) }),
 		egress,
 		filter(c.EgressOffered, func(s string) bool { return !IsRemoval(s) }),
+		nil, // a raw layer's closures are its inline markers, held above
 		func() error {
 			if err := ValidateLayerName(c.Extends); err != nil {
 				return fmt.Errorf("extends: %w", err)
@@ -1100,8 +1078,8 @@ func (c Config) validateScalarsLayer() error {
 // (Merge consumed or extracted them; the shape checks reject a surviving
 // '!'), and `extends` must not survive resolution — same stance as every
 // other resolved-config marker.
-func (c Config) validateScalarsResolved() error {
-	return c.validateScalarsCommon(c.Apt, c.Egress, c.EgressOffered,
+func (c Config) validateScalarsResolved(egressClosed []string) error {
+	return c.validateScalarsCommon(c.Apt, c.Egress, c.EgressOffered, egressClosed,
 		func() error { return fmt.Errorf("extends: only meaningful in a cascade layer") })
 }
 
@@ -1111,7 +1089,7 @@ func (c Config) validateScalarsResolved() error {
 // before content). The layer/resolved duality exists because one Config type
 // currently carries both lifecycles; if that ever splits into distinct types,
 // these entry points become their methods.
-func (c Config) validateScalarsCommon(apt, egress, offered []string, extends func() error) error {
+func (c Config) validateScalarsCommon(apt, egress, offered, egressClosed []string, extends func() error) error {
 	switch c.Engine {
 	case "", "auto", "docker", "podman":
 	default:
@@ -1189,7 +1167,7 @@ func (c Config) validateScalarsCommon(apt, egress, offered []string, extends fun
 			return err
 		}
 	}
-	for _, e := range c.EgressClosed {
+	for _, e := range egressClosed {
 		if _, _, err := ParseEgress(e); err != nil {
 			return err
 		}
@@ -1407,13 +1385,21 @@ func (c Config) validatePorts(marker func(Port) error) error {
 	return nil
 }
 
-// Validate checks a RESOLVED config (post-cascade): every field well-formed AND
-// the cross-entry invariants — mount/volume targets unique, volume names unique,
-// ports non-colliding. resolveWith runs this on the merged result, so a `!name`
-// removal marker reaching here would be a bug (Merge should have consumed it) and
+// Validate on a bare Config checks a resolved-SHAPE config that carries no
+// closures — the shape-check convenience (a skill's mount/volume shapes, a
+// hand-built set). A real resolved cascade validates through
+// Merged.Validate, which also holds the fold's closures to their grammars.
+func (c Config) Validate() error { return Merged{Config: c}.Validate() }
+
+// Validate checks a RESOLVED cascade (post-merge): every field well-formed
+// AND the cross-entry invariants — mount/volume targets unique, volume names
+// unique, ports non-colliding — with the fold's closures held to the same
+// grammars. resolveWith runs this on the merged result, so a `!name` removal
+// marker reaching here would be a bug (the fold should have consumed it) and
 // is correctly rejected by the shape checks.
-func (c Config) Validate() error {
-	if err := c.validateScalarsResolved(); err != nil {
+func (m Merged) Validate() error {
+	c, cl := m.Config, m.Closures
+	if err := c.validateScalarsResolved(cl.Egress); err != nil {
 		return err
 	}
 
@@ -1443,13 +1429,13 @@ func (c Config) Validate() error {
 		}
 		targets[v.Target] = "volume " + v.Name
 	}
-	if err := c.validateMCPsResolved(); err != nil {
+	if err := c.validateMCPsResolved(cl.MCP); err != nil {
 		return err
 	}
-	if err := c.validateClaudeSkillsResolved(); err != nil {
+	if err := c.validateClaudeSkillsResolved(cl.ClaudeSkills); err != nil {
 		return err
 	}
-	if err := c.validateContextsResolved(); err != nil {
+	if err := c.validateContextsResolved(cl.Contexts); err != nil {
 		return err
 	}
 	return c.validatePortsResolved()
@@ -1567,7 +1553,7 @@ func override(base, over string) string {
 // mergeEgress folds one cascade step of the `egress` list into (open, closed).
 // Unlike the plain-list idiom (mergeStrings, ADR 0018), a `!host[:port]`
 // closure is NOT consumed when it removes an entry: it survives the cascade
-// (in EgressClosed) so it can subtract the same endpoint from the DERIVED
+// (in Closures.Egress) so it can subtract the same endpoint from the DERIVED
 // allowlist after skill egress unions in. Precedence stays cascade-ordered
 // like every other list -- a later layer's plain entry re-opens an earlier
 // layer's closure, deleting every closure it matches WHOLE (a portless
@@ -1576,9 +1562,10 @@ func override(base, over string) string {
 // closures after, mirroring mergeStrings). Matching is EgressClosureMatches,
 // so `!statsig.example.com` closes an inherited `statsig.example.com:443`
 // (raw-string matching would miss it) — and every other port besides.
-func mergeEgress(base, over Config) (open, closed []string) {
-	open, closed = splitEgress(base.Egress, base.EgressClosed)
-	overOpen, overClosed := splitEgress(over.Egress, over.EgressClosed)
+// over is a raw layer: its closures are the `!` markers in its own list.
+func mergeEgress(baseEgress, baseClosed, overEgress []string) (open, closed []string) {
+	open, closed = splitEgress(baseEgress, baseClosed)
+	overOpen, overClosed := splitEgress(overEgress, nil)
 	for _, e := range overOpen {
 		closed = filter(closed, func(c string) bool { return !EgressClosureMatches(c, e) })
 		if !containsEgress(open, e) {
@@ -1595,8 +1582,8 @@ func mergeEgress(base, over Config) (open, closed []string) {
 }
 
 // splitEgress separates an egress list into plain entries and the stripped
-// names of its `!` closure markers, folding an already-populated EgressClosed
-// (a previously merged config re-entering Merge) into the latter.
+// names of its `!` closure markers, folding the accumulated closures of the
+// cascade so far (the base side of a fold step) into the latter.
 func splitEgress(egress, egressClosed []string) (open, closed []string) {
 	for _, e := range egress {
 		if n, ok := CutRemoval(e); ok {

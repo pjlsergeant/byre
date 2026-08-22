@@ -332,15 +332,14 @@ func TestLaunchRecordUnreadableIsNotReportedAsMissing(t *testing.T) {
 func TestLaunchRecordCapturesWhatTheEngineWasTold(t *testing.T) {
 	pinLaunchClock(t)
 	p, _ := testPaths(t)
-	rv := combine(config.Config{
-		Base:         "golang:1.26-bookworm",
-		Agent:        "byre/codex",
-		Ports:        []config.Port{{Container: 5432, Host: 15432}},
-		Mounts:       []config.Mount{{Host: "/tmp", Target: "/secrets", Mode: "ro"}},
-		Volumes:      []config.Volume{{Name: "state", Role: "state", Target: "/home/dev/.claude"}},
-		RunArgs:      []string{"--pids-limit", "512"},
-		EgressClosed: []string{"statsig.anthropic.com"},
-	}, skills.Resolved{})
+	rv := combine(config.Merged{Config: config.Config{
+		Base:    "golang:1.26-bookworm",
+		Agent:   "byre/codex",
+		Ports:   []config.Port{{Container: 5432, Host: 15432}},
+		Mounts:  []config.Mount{{Host: "/tmp", Target: "/secrets", Mode: "ro"}},
+		Volumes: []config.Volume{{Name: "state", Role: "state", Target: "/home/dev/.claude"}},
+		RunArgs: []string{"--pids-limit", "512"},
+	}, Closures: config.Closures{Egress: []string{"statsig.anthropic.com"}}}, skills.Resolved{})
 	rv.agentOverride = "byre/codex"
 	params, err := runParams(p, rv, "byre-img", false, false, runner.Identity{UID: 1000, GID: 1000}, nil)
 	if err != nil {
@@ -521,7 +520,7 @@ func TestDevelopWritesTheLaunchRecordAndLabelsTheContainer(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{}
 	s, _, _ := testStreams("", false)
-	rv := combine(config.Config{Base: "golang:1.26-bookworm"}, skills.Resolved{})
+	rv := combine(merged(config.Config{Base: "golang:1.26-bookworm"}), skills.Resolved{})
 	if err := develop(f, s, p, rv, false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
@@ -556,7 +555,7 @@ func TestLaunchLabelSurvivesASpoofingRunArg(t *testing.T) {
 	forged := launchKey + "=" + strings.Repeat("f", 64)
 	f := &fakeRunner{}
 	s, _, _ := testStreams("", false)
-	rv := combine(config.Config{RunArgs: []string{"--label", forged}}, skills.Resolved{})
+	rv := combine(merged(config.Config{RunArgs: []string{"--label", forged}}), skills.Resolved{})
 	if err := develop(f, s, p, rv, false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
@@ -585,7 +584,7 @@ func TestLaunchRecordDigestFailureIsRecordedNotGuessed(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{imageDigestErr: errors.New("no such image")}
 	s, _, stderr := testStreams("", false)
-	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk); err != nil {
+	if err := develop(f, s, p, combine(merged(config.Config{}), skills.Resolved{}), false, CredentialAsk); err != nil {
 		t.Fatal(err)
 	}
 	var hash string
@@ -618,7 +617,7 @@ func TestLaunchRecordWriteFailureDegradesNeverBlocks(t *testing.T) {
 	}
 	f := &fakeRunner{}
 	s, _, stderr := testStreams("", false)
-	if err := develop(f, s, p, combine(config.Config{}, skills.Resolved{}), false, CredentialAsk); err != nil {
+	if err := develop(f, s, p, combine(merged(config.Config{}), skills.Resolved{}), false, CredentialAsk); err != nil {
 		t.Fatalf("develop must not fail over its own bookkeeping: %v", err)
 	}
 	if !strings.Contains(stderr.String(), "couldn't write the launch record") {
@@ -674,7 +673,7 @@ var _ = project.Paths{}
 func TestLaunchRecordAgentlessWritesTheNoneSentinel(t *testing.T) {
 	pinLaunchClock(t)
 	p, _ := testPaths(t)
-	rv := combine(config.Config{}, skills.Resolved{})
+	rv := combine(merged(config.Config{}), skills.Resolved{})
 	params, err := runParams(p, rv, "byre-img", false, false, runner.Identity{UID: 1000, GID: 1000}, nil)
 	if err != nil {
 		t.Fatal(err)

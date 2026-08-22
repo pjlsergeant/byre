@@ -110,17 +110,18 @@ var claudeSkillDeclOps = namedDeclOps[ClaudeSkill]{
 // validateClaudeSkillsLayer / validateClaudeSkillsResolved check the
 // [[claude_skills]] list per the shared lifecycle split (see nameddecl.go).
 func (c Config) validateClaudeSkillsLayer() error {
-	return validateNamedDeclsLayer(claudeSkillDeclOps, c.ClaudeSkills, c.ClaudeSkillsClosed)
+	return validateNamedDeclsLayer(claudeSkillDeclOps, c.ClaudeSkills, nil)
 }
 
-func (c Config) validateClaudeSkillsResolved() error {
-	return validateNamedDeclsResolved(claudeSkillDeclOps, c.ClaudeSkills, c.ClaudeSkillsClosed)
+func (c Config) validateClaudeSkillsResolved(closed []string) error {
+	return validateNamedDeclsResolved(claudeSkillDeclOps, c.ClaudeSkills, closed)
 }
 
 // mergeClaudeSkills folds one cascade step of the [[claude_skills]] list into
 // (open, closed) per the shared genus taxonomy (see mergeNamedDecls):
-// closures survive in ClaudeSkillsClosed so they can subtract after the skill
-// union (skills.ClaudeSkillSet).
-func mergeClaudeSkills(base, over Config) (open []ClaudeSkill, closed []string) {
-	return mergeNamedDecls(base.ClaudeSkills, base.ClaudeSkillsClosed, over.ClaudeSkills, over.ClaudeSkillsClosed, claudeSkillDeclOps.name)
+// closures survive in Closures.ClaudeSkills so they can subtract after the
+// skill union (skills.ClaudeSkillSet). over is a raw layer: its closures are
+// the `!` markers in its own list.
+func mergeClaudeSkills(base []ClaudeSkill, baseClosed []string, over []ClaudeSkill) (open []ClaudeSkill, closed []string) {
+	return mergeNamedDecls(base, baseClosed, over, nil, claudeSkillDeclOps.name)
 }

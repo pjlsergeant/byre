@@ -90,7 +90,7 @@ func TestContextDeclLayerMarkersAndDuplicates(t *testing.T) {
 func TestContextDeclMergeReplaceByName(t *testing.T) {
 	base := Config{Contexts: []ContextDecl{{Name: "house-rules", Text: "old"}, {Name: "tone", Text: "t"}}}
 	over := Config{Contexts: []ContextDecl{{Name: "house-rules", Text: "new"}}}
-	got := Merge(base, over)
+	got := mergeT(base, over)
 	if len(got.Contexts) != 2 {
 		t.Fatalf("Contexts = %+v", got.Contexts)
 	}
@@ -108,12 +108,12 @@ func TestContextDeclMergeReplaceByName(t *testing.T) {
 func TestContextDeclMergeClosureRemovesAndReopens(t *testing.T) {
 	base := Config{Contexts: []ContextDecl{{Name: "house-rules", Text: "x"}}}
 	over := Config{Contexts: []ContextDecl{{Name: "!house-rules"}}}
-	got := Merge(base, over)
+	got := mergeT(base, over)
 	if len(got.Contexts) != 0 {
 		t.Fatalf("closure must remove the declaration: %+v", got.Contexts)
 	}
 	// A later layer's plain declaration re-opens the closure.
-	reopened := Merge(got, Config{Contexts: []ContextDecl{{Name: "house-rules", Text: "again"}}})
+	reopened := mergeM(got, Config{Contexts: []ContextDecl{{Name: "house-rules", Text: "again"}}})
 	if len(reopened.Contexts) != 1 || reopened.Contexts[0].Text != "again" {
 		t.Fatalf("reopen: %+v", reopened.Contexts)
 	}

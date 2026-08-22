@@ -467,19 +467,19 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	// The engine is the one thing this re-read cannot honor -- develop's
 	// ADR 0004 peer set is fixed by the pre-lock detection too -- so the
 	// shared refusal fires before anything is built.
-	if err := refuseEngineChangedUnderLock(fresh.cfg, r.Engine(), "develop"); err != nil {
+	if err := refuseEngineChangedUnderLock(fresh.cfg.Config, r.Engine(), "develop"); err != nil {
 		return none, err
 	}
 	rv = fresh
 	// The build warnings speak for the config that is about to be built,
 	// which is this one.
 	warnNonDebianBase(s.Err, rv.cfg.Base)
-	warnGuardCollisions(s.Err, rv.cfg, rv.skills)
-	warnManagedPathShadows(s.Err, rv.cfg, rv.skills)
+	warnGuardCollisions(s.Err, rv.cfg.Config, rv.skills)
+	warnManagedPathShadows(s.Err, rv.cfg.Config, rv.skills)
 	warnCompatLegacy(s.Err, paths.WorkDir)
 	// One host-env resolution feeds the runtime env, the exposure tally,
 	// and (in status) the row -- render-from-effect, no re-derivation.
-	hostEnv := resolveHostEnv(rv.cfg, rv.gitExe)
+	hostEnv := resolveHostEnv(rv.cfg.Config, rv.gitExe)
 	params, err := runParams(paths, rv, image, selfEdit, s.TTY, ident, hostEnv)
 	if err != nil {
 		return none, err
@@ -541,7 +541,7 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 			// every port). The deny-by-default helper never reads this (its
 			// allowlist above is already subtracted); the open-denylist
 			// helper drops exactly these.
-			netnsEnv["BYRE_EGRESS_DENY"] = strings.Join(rv.cfg.EgressClosed, " ")
+			netnsEnv["BYRE_EGRESS_DENY"] = strings.Join(rv.cfg.Closures.Egress, " ")
 		} else {
 			fmt.Fprintln(s.Err, "byre: no randomness available for the netns ownership nonce; skipping netns init — the launch gate will fail the launch closed.")
 		}
@@ -676,7 +676,7 @@ func decodeAgentExit(runErr error) error {
 // UID/GID via --build-arg so /home/dev and the volume mount points are born
 // owned by the runtime user (no runtime chown) — the host user's ids on the
 // rootful path, the generic keep-id ids under rootless Podman (ADR 0032).
-func buildImageWarn(warn io.Writer, r imageRunner, paths project.Paths, cfg config.Config, res skills.Resolved, image string, noCache bool, ident runner.Identity) error {
+func buildImageWarn(warn io.Writer, r imageRunner, paths project.Paths, cfg config.Merged, res skills.Resolved, image string, noCache bool, ident runner.Identity) error {
 	if _, err := build.AssembleWarn(paths, cfg, res, warn); err != nil {
 		return err
 	}
@@ -883,7 +883,7 @@ func exposureOf(rv resolved, selfEdit bool, hostEnv []hostEnvResult) config.Expo
 		Env:         len(envKeys),
 		Credentials: countRows(rv.credFiles),
 		Egress:      len(resolvedEgress(rv)),
-		Closed:      len(rv.cfg.EgressClosed),
+		Closed:      len(rv.cfg.Closures.Egress),
 		RawRunArgs:  len(rv.cfg.RunArgs) > 0,
 		RawBuild:    len(rv.cfg.DockerfilePre)+len(rv.cfg.DockerfilePost) > 0,
 		// The third degradation input, from the predicate status's Network row
@@ -937,7 +937,7 @@ func resolvedEgress(rv resolved) []string {
 	// Closures subtract LAST — after the skill union — which is what puts
 	// skill-declared entries in their reach (`claude` minus its statsig; the
 	// cascade merge already consumed any config entry a closure matched).
-	return egressAfterClosures(out, rv.cfg.EgressClosed)
+	return egressAfterClosures(out, rv.cfg.Closures.Egress)
 }
 
 // egressAfterClosures subtracts the config's `!host[:port]` closures from a

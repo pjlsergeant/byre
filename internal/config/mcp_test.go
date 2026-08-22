@@ -127,7 +127,7 @@ func TestMCPLayerMarkersAndDuplicates(t *testing.T) {
 func TestMCPMergeReplaceByName(t *testing.T) {
 	base := Config{MCPs: []MCP{{Name: "github", Command: []string{"old"}}, {Name: "linear", URL: "https://mcp.linear.app/mcp"}}}
 	over := Config{MCPs: []MCP{{Name: "github", Command: []string{"new", "stdio"}}}}
-	got := Merge(base, over)
+	got := mergeT(base, over)
 	if len(got.MCPs) != 2 {
 		t.Fatalf("MCPs = %+v", got.MCPs)
 	}
@@ -144,31 +144,31 @@ func TestMCPMergeReplaceByName(t *testing.T) {
 func TestMCPMergeClosureSurvivesAndReopens(t *testing.T) {
 	base := Config{MCPs: []MCP{{Name: "github", Command: []string{"srv"}}}}
 	over := Config{MCPs: []MCP{{Name: "!github"}, {Name: "!linear"}}}
-	got := Merge(base, over)
+	got := mergeT(base, over)
 	if len(got.MCPs) != 0 {
 		t.Fatalf("closure must remove the inherited declaration: %+v", got.MCPs)
 	}
 	// NOT consumed: both closures survive for the post-union subtraction —
 	// including "!linear", which matched nothing in the cascade (it may
 	// match a skill-declared server later).
-	if len(got.MCPClosed) != 2 || got.MCPClosed[0] != "github" || got.MCPClosed[1] != "linear" {
-		t.Fatalf("MCPClosed = %v", got.MCPClosed)
+	if len(got.Closures.MCP) != 2 || got.Closures.MCP[0] != "github" || got.Closures.MCP[1] != "linear" {
+		t.Fatalf("MCPClosed = %v", got.Closures.MCP)
 	}
 
 	// A later layer's plain declaration re-opens the closure.
-	reopened := Merge(got, Config{MCPs: []MCP{{Name: "github", Command: []string{"srv2"}}}})
+	reopened := mergeM(got, Config{MCPs: []MCP{{Name: "github", Command: []string{"srv2"}}}})
 	if len(reopened.MCPs) != 1 || reopened.MCPs[0].Command[0] != "srv2" {
 		t.Fatalf("re-open failed: %+v", reopened.MCPs)
 	}
-	if len(reopened.MCPClosed) != 1 || reopened.MCPClosed[0] != "linear" {
-		t.Fatalf("unrelated closure must survive the re-open: %v", reopened.MCPClosed)
+	if len(reopened.Closures.MCP) != 1 || reopened.Closures.MCP[0] != "linear" {
+		t.Fatalf("unrelated closure must survive the re-open: %v", reopened.Closures.MCP)
 	}
 
 	// Within ONE layer a closure beats a plain declaration (adds fold
 	// first, closures after — mirrors mergeEgress).
-	sameLayer := Merge(Config{}, Config{MCPs: []MCP{{Name: "x", Command: []string{"s"}}, {Name: "!x"}}})
-	if len(sameLayer.MCPs) != 0 || len(sameLayer.MCPClosed) != 1 {
-		t.Fatalf("same-layer closure: MCPs=%+v closed=%v", sameLayer.MCPs, sameLayer.MCPClosed)
+	sameLayer := mergeT(Config{}, Config{MCPs: []MCP{{Name: "x", Command: []string{"s"}}, {Name: "!x"}}})
+	if len(sameLayer.MCPs) != 0 || len(sameLayer.Closures.MCP) != 1 {
+		t.Fatalf("same-layer closure: MCPs=%+v closed=%v", sameLayer.MCPs, sameLayer.Closures.MCP)
 	}
 }
 

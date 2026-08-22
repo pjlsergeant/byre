@@ -23,7 +23,7 @@ var claudeSkillVerbs = declVerbs[config.ClaudeSkill]{
 	name:   func(cs config.ClaudeSkill) string { return cs.Name },
 	marker: func(name string) config.ClaudeSkill { return config.ClaudeSkill{Name: name} },
 	list:   func(c *config.Config) *[]config.ClaudeSkill { return &c.ClaudeSkills },
-	effectiveHas: func(effective config.Config, res skills.Resolved, name string) (bool, error) {
+	effectiveHas: func(effective config.Merged, res skills.Resolved, name string) (bool, error) {
 		set, err := skills.ClaudeSkillSet(effective, res)
 		if err != nil {
 			return false, err
@@ -101,14 +101,14 @@ func ClaudeSkillRemove(s Streams, projectDir string, global bool, name string) e
 // the arm that field guards.
 func ClaudeSkillList(s Streams, projectDir string) error {
 	info, err := listDeclInfo(s, projectDir,
-		func(info *statusInfo, cfg config.Config) {
-			info.ClaudeSkillsClosed = cfg.ClaudeSkillsClosed
+		func(info *statusInfo, cfg config.Merged) {
+			info.ClaudeSkillsClosed = cfg.Closures.ClaudeSkills
 			info.ClaudeSkills, _ = skills.ClaudeSkillSet(cfg, skills.Resolved{})
 			// Same story as status and mcp list: a project files entry
 			// overwriting the staged dir means the delivery line must stop
 			// asserting. Without this the shared renderer's shadow arm can
 			// never fire HERE, and this surface tells the story status denies.
-			info.ArtifactShadows = artifactShadows(cfg)
+			info.ArtifactShadows = artifactShadows(cfg.Config)
 		},
 		func(info *statusInfo, rv resolved, res skills.Resolved) {
 			info.ClaudeSkills = rv.claudeSkills

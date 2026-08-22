@@ -30,7 +30,7 @@ var contextVerbs = declVerbs[config.ContextDecl]{
 	name:   func(cd config.ContextDecl) string { return cd.Name },
 	marker: func(name string) config.ContextDecl { return config.ContextDecl{Name: name} },
 	list:   func(c *config.Config) *[]config.ContextDecl { return &c.Contexts },
-	effectiveHas: func(effective config.Config, res skills.Resolved, name string) (bool, error) {
+	effectiveHas: func(effective config.Merged, res skills.Resolved, name string) (bool, error) {
 		for _, cd := range effective.Contexts {
 			if cd.Name == name {
 				return true, nil
@@ -209,12 +209,12 @@ func ContextList(s Streams, projectDir string) error {
 	}
 	// The delivery verdict, by the SAME renderer status uses (the
 	// claude-skill list precedent: two surfaces, one story).
-	info := statusInfo{Agent: cfg.Agent, Contexts: cfg.Contexts, ArtifactShadows: artifactShadows(cfg)}
+	info := statusInfo{Agent: cfg.Agent, Contexts: cfg.Contexts, ArtifactShadows: artifactShadows(cfg.Config)}
 	if serr := builtins.EnsureStoreOut(paths.Home, s.Err); serr != nil {
 		info.SkillErr = serr.Error()
 	} else if cat, _ := builtins.LoadCatalogRaw(paths.Home); cat == nil {
 		info.SkillErr = "catalog unavailable"
-	} else if res, rerr := skills.Resolve(cfg, cat); rerr != nil {
+	} else if res, rerr := skills.Resolve(cfg.Config, cat); rerr != nil {
 		info.SkillErr = rerr.Error()
 	} else {
 		// Same story as status: reserved overrides degrade this surface's

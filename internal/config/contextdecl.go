@@ -108,19 +108,20 @@ var contextDeclOps = namedDeclOps[ContextDecl]{
 // validateContextsLayer / validateContextsResolved check the [[context]] list
 // per the shared lifecycle split (see nameddecl.go).
 func (c Config) validateContextsLayer() error {
-	return validateNamedDeclsLayer(contextDeclOps, c.Contexts, c.ContextsClosed)
+	return validateNamedDeclsLayer(contextDeclOps, c.Contexts, nil)
 }
 
-func (c Config) validateContextsResolved() error {
-	return validateNamedDeclsResolved(contextDeclOps, c.Contexts, c.ContextsClosed)
+func (c Config) validateContextsResolved(closed []string) error {
+	return validateNamedDeclsResolved(contextDeclOps, c.Contexts, closed)
 }
 
 // mergeContexts folds one cascade step of the [[context]] list into
 // (open, closed) per the shared genus taxonomy (see mergeNamedDecls). With no
-// second home the closure's work is done by the merge itself; survivors in
-// ContextsClosed are inert.
-func mergeContexts(base, over Config) (open []ContextDecl, closed []string) {
-	return mergeNamedDecls(base.Contexts, base.ContextsClosed, over.Contexts, over.ContextsClosed, contextDeclOps.name)
+// second home the closure's work is done by the fold itself; survivors in
+// Closures.Contexts are inert. over is a raw layer: its closures are the `!`
+// markers in its own list.
+func mergeContexts(base []ContextDecl, baseClosed []string, over []ContextDecl) (open []ContextDecl, closed []string) {
+	return mergeNamedDecls(base, baseClosed, over, nil, contextDeclOps.name)
 }
 
 // SourceLayer is one raw cascade layer with its attribution label, in merge

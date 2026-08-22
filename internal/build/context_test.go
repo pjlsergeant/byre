@@ -35,8 +35,13 @@ func bootstrapped(t *testing.T) project.Paths {
 }
 
 // Assemble is the test-side shorthand for AssembleWarn with no operator
-// attached; production callers always thread a real warn writer.
+// attached and no cascade closures; production callers always thread a real
+// warn writer. assembleMerged is the sibling for closure-carrying cases.
 func Assemble(paths project.Paths, cfg config.Config, res skills.Resolved) (string, error) {
+	return AssembleWarn(paths, config.Merged{Config: cfg}, res, io.Discard)
+}
+
+func assembleMerged(paths project.Paths, cfg config.Merged, res skills.Resolved) (string, error) {
 	return AssembleWarn(paths, cfg, res, io.Discard)
 }
 
@@ -274,7 +279,7 @@ func TestAssembleConfigContextSizeTiers(t *testing.T) {
 	}
 	cfg := config.Config{Base: "node:22", Contexts: []config.ContextDecl{{Name: "big", File: big}}}
 	var warn bytes.Buffer
-	if _, err := AssembleWarn(paths, cfg, skills.Resolved{}, &warn); err != nil {
+	if _, err := AssembleWarn(paths, config.Merged{Config: cfg}, skills.Resolved{}, &warn); err != nil {
 		t.Fatalf("a 1 MiB file must WARN, not refuse: %v", err)
 	}
 	if !strings.Contains(warn.String(), "🛑 context big") || !strings.Contains(warn.String(), "skill") {
@@ -284,7 +289,7 @@ func TestAssembleConfigContextSizeTiers(t *testing.T) {
 	// Inline prose gets the identical tier — form must not change outcome.
 	warn.Reset()
 	cfg = config.Config{Base: "node:22", Contexts: []config.ContextDecl{{Name: "talky", Text: strings.Repeat("a", contextWarnBytes+1)}}}
-	if _, err := AssembleWarn(paths, cfg, skills.Resolved{}, &warn); err != nil {
+	if _, err := AssembleWarn(paths, config.Merged{Config: cfg}, skills.Resolved{}, &warn); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(warn.String(), "⚠ context talky") {
@@ -347,16 +352,15 @@ func TestAssembleWritesMCPConfig(t *testing.T) {
 		t.Fatalf("empty mcp.json = %q", b)
 	}
 
-	cfg := config.Config{
-		Base:      "node:22",
-		MCPs:      []config.MCP{{Name: "github", Command: []string{"gh-mcp", "stdio"}}},
-		MCPClosed: []string{"telemetry"},
+	cfg := config.Merged{
+		Config:   config.Config{Base: "node:22", MCPs: []config.MCP{{Name: "github", Command: []string{"gh-mcp", "stdio"}}}},
+		Closures: config.Closures{MCP: []string{"telemetry"}},
 	}
 	res := skills.Resolved{Skills: []skills.Skill{{Name: "pete/tools", File: skills.File{MCPs: []config.MCP{
 		{Name: "linear", URL: "https://mcp.linear.app/mcp"},
 		{Name: "telemetry", Command: []string{"t"}},
 	}}}}}
-	df, err := Assemble(paths, cfg, res)
+	df, err := assembleMerged(paths, cfg, res)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +434,7 @@ func TestRenderMatchesAssembleWithoutTouchingContext(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(rp.Canonical, "seed.txt"), []byte("hi"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := Render(rp, cfg, skills.Resolved{})
+	got, err := Render(rp, config.Merged{Config: cfg}, skills.Resolved{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1285,9 +1289,9 @@ func TestAssembleStagesClaudeSkills(t *testing.T) {
 
 	// A closure removes the staged dir on the next assemble (re-staged from
 	// scratch, no residue).
-	cfg.ClaudeSkillsClosed = []string{"tdd-loop"}
 	cfg.ClaudeSkills = nil
-	if _, err := Assemble(paths, cfg, res); err != nil {
+	if _, err := assembleMerged(paths, config.Merged{Config: cfg,
+		Closures: config.Closures{ClaudeSkills: []string{"tdd-loop"}}}, res); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "tdd-loop")); !os.IsNotExist(err) {
@@ -1462,7 +1466,7 @@ func TestAgentWritableRootsCoverShapeableTrees(t *testing.T) {
 	var sf skills.File
 	sf.Runtime.Mounts = []config.Mount{{Host: skillRW, Target: "/s", Mode: "rw"}}
 	res := skills.Resolved{Skills: []skills.Skill{{Name: "sk", File: sf}}}
-	roots := agentWritableRoots(paths, cfg, res)
+	roots := agentWritableRoots(paths, config.Merged{Config: cfg}, res)
 
 	for _, c := range []struct{ path, wantRoot string }{
 		{filepath.Join(work, "a.md"), work},

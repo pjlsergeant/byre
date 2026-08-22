@@ -197,7 +197,7 @@ func TestSelfHostBuildStagesAndOrders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	df, err := build.AssembleWarn(paths, cfg, res, io.Discard)
+	df, err := build.AssembleWarn(paths, config.Merged{Config: cfg}, res, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

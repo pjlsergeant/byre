@@ -149,11 +149,11 @@ func TestIntegrationLaunchPathAndOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rv := combine(cfg, res)
+	rv := combine(merged(cfg), res)
 	ident := testIdentity(t, r)
 	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImageWarn(io.Discard, r, p, cfg, res, image, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, p, merged(cfg), res, image, false, ident); err != nil {
 		t.Fatalf("image failed to build: %v", err)
 	}
 
@@ -243,15 +243,15 @@ func TestIntegrationMachineVolumeSharedAcrossProjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rv := combine(cfg, res)
+	rv := combine(merged(cfg), res)
 
 	ident := testIdentity(t, r)
 	imageA, imageB := imageTag(pA.ID, ident.UID, ident.GID), imageTag(pB.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(imageA); _ = r.ImageRemove(imageB) })
-	if err := buildImageWarn(io.Discard, r, pA, cfg, res, imageA, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, pA, merged(cfg), res, imageA, false, ident); err != nil {
 		t.Fatalf("project A image failed to build: %v", err)
 	}
-	if err := buildImageWarn(io.Discard, r, pB, cfg, res, imageB, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, pB, merged(cfg), res, imageB, false, ident); err != nil {
 		t.Fatalf("project B image failed to build: %v", err)
 	}
 
@@ -343,7 +343,7 @@ func TestIntegrationRootlessPodmanKeepID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rv := combine(cfg, res)
+	rv := combine(merged(cfg), res)
 
 	var identOut strings.Builder
 	ident, err := resolveIdentity(&identOut, r)
@@ -362,7 +362,7 @@ func TestIntegrationRootlessPodmanKeepID(t *testing.T) {
 
 	image := imageTag(p.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImageWarn(io.Discard, r, p, cfg, res, image, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, p, merged(cfg), res, image, false, ident); err != nil {
 		t.Fatalf("generic-uid image failed to build: %v", err)
 	}
 

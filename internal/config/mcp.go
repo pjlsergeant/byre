@@ -290,18 +290,19 @@ var mcpDeclOps = namedDeclOps[MCP]{
 // validateMCPsLayer / validateMCPsResolved check the [[mcp]] list per the
 // shared lifecycle split (see nameddecl.go).
 func (c Config) validateMCPsLayer() error {
-	return validateNamedDeclsLayer(mcpDeclOps, c.MCPs, c.MCPClosed)
+	return validateNamedDeclsLayer(mcpDeclOps, c.MCPs, nil)
 }
 
-func (c Config) validateMCPsResolved() error {
-	return validateNamedDeclsResolved(mcpDeclOps, c.MCPs, c.MCPClosed)
+func (c Config) validateMCPsResolved(closed []string) error {
+	return validateNamedDeclsResolved(mcpDeclOps, c.MCPs, closed)
 }
 
 // mergeMCPs folds one cascade step of the [[mcp]] list into (open, closed)
 // per the shared genus taxonomy (see mergeNamedDecls): closures survive in
-// MCPClosed so they can subtract after the skill union (skills.MCPSet).
-func mergeMCPs(base, over Config) (open []MCP, closed []string) {
-	return mergeNamedDecls(base.MCPs, base.MCPClosed, over.MCPs, over.MCPClosed, mcpDeclOps.name)
+// Closures.MCP so they can subtract after the skill union (skills.MCPSet).
+// over is a raw layer: its closures are the `!` markers in its own list.
+func mergeMCPs(base []MCP, baseClosed []string, over []MCP) (open []MCP, closed []string) {
+	return mergeNamedDecls(base, baseClosed, over, nil, mcpDeclOps.name)
 }
 
 // MCPConfigJSON renders the effective declared set as the canonical

@@ -17,7 +17,7 @@ import (
 // enabled skills, and — because every consumer wants them — the combined
 // (config + skill) mount and volume sets, formed in one place.
 type resolved struct {
-	cfg     config.Config
+	cfg     config.Merged
 	skills  skills.Resolved
 	mounts  []config.Mount  // config mounts, then skill contributions
 	volumes []config.Volume // config volumes, then skill contributions
@@ -123,7 +123,7 @@ func refuseEngineChangedUnderLock(cfg config.Config, running runner.Engine, comm
 // combine forms the resolved view from a loaded config and its skills — the
 // single place the config+skill mount/volume union and the effective MCP set
 // are built.
-func combine(cfg config.Config, res skills.Resolved) resolved {
+func combine(cfg config.Merged, res skills.Resolved) resolved {
 	mcps, mcpErr := skills.MCPSet(cfg, res)
 	claudeSkills, claudeSkillsErr := skills.ClaudeSkillSet(cfg, res)
 	return resolved{
@@ -241,7 +241,7 @@ func resolveWithAgent(paths project.Paths, projectDir string, notices io.Writer,
 		agentOverride = cat.ExpandAlias(agentOverride)
 		cfg.Agent = config.FromNone(agentOverride)
 	}
-	res, err := skills.Resolve(cfg, cat)
+	res, err := skills.Resolve(cfg.Config, cat)
 	if err != nil {
 		return resolved{}, err
 	}

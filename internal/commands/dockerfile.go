@@ -45,7 +45,7 @@ func Dockerfile(s Streams, projectDir string) error {
 	// A `files` entry shadowing a byre-managed security path is overridden by the
 	// tail guard; say so on stderr so the printed artifact isn't read as if the
 	// clobber took effect (stdout stays the clean Dockerfile).
-	warnGuardCollisions(s.Err, rv.cfg, rv.skills)
+	warnGuardCollisions(s.Err, rv.cfg.Config, rv.skills)
 	_, err = io.WriteString(s.Out, df)
 	return err
 }
@@ -99,13 +99,13 @@ func DockerRun(s Streams, projectDir string) error {
 		return fmt.Errorf("credentials: %w — byre prints no run command for this project: the rows are declared, so the command would carry no credential gate and the box would run without the values its config names. Fix the row, or take it out with `byre credentials unset`, then re-run. `byre develop` refuses this config for the same reason", rv.credErr)
 	}
 	roots := boxWritableRoots(paths)
-	engine, ident := resolveEngineIdentity(rv.cfg, roots)
+	engine, ident := resolveEngineIdentity(rv.cfg.Config, roots)
 	image := imageTag(paths.ID, ident.UID, ident.GID)
 	// A git byre won't run resolves the `git:` env sources to empty, exactly as
 	// an absent git does -- and the printed argv is then what develop would
 	// actually pass, which is the whole contract of this command.
 	gitExe, _ := hostGit(roots)
-	params, err := runParams(paths, rv, image, false, s.TTY, ident, resolveHostEnv(rv.cfg, gitExe))
+	params, err := runParams(paths, rv, image, false, s.TTY, ident, resolveHostEnv(rv.cfg.Config, gitExe))
 	if err != nil {
 		return err
 	}
@@ -176,7 +176,7 @@ func EjectFirewall(s Streams, projectDir string) error {
 	if len(hooks) == 0 {
 		return fmt.Errorf("no netns hooks (firewall) enabled for this project — nothing to eject")
 	}
-	engine, ident := resolveEngineIdentity(rv.cfg, boxWritableRoots(paths))
+	engine, ident := resolveEngineIdentity(rv.cfg.Config, boxWritableRoots(paths))
 	image := imageTag(paths.ID, ident.UID, ident.GID)
 
 	var b strings.Builder
@@ -194,7 +194,7 @@ func EjectFirewall(s Streams, projectDir string) error {
 			engine, "run", "--rm", "-u", "0:0", "--cap-add", "NET_ADMIN",
 			"--entrypoint", h.Path,
 			"-e", "BYRE_EGRESS=" + strings.Join(resolvedEgress(rv), " "),
-			"-e", "BYRE_EGRESS_DENY=" + strings.Join(rv.cfg.EgressClosed, " "),
+			"-e", "BYRE_EGRESS_DENY=" + strings.Join(rv.cfg.Closures.Egress, " "),
 		}))
 		// Keep-id boxes (rootless Podman) own their netns from inside their
 		// userns; the helper must join it or iptables gets EPERM (mirrors

@@ -105,7 +105,7 @@ func TestMountHostPathReachesBindCleaned(t *testing.T) {
 	}
 	paths, _ := testPaths(t)
 	cfg := config.Config{Mounts: []config.Mount{{Host: "/live/sub/..", Target: "/t", Mode: "rw"}}}
-	p, err := runParams(paths, combine(cfg, skills.Resolved{}), "img", false, false, hostIdentity(), nil)
+	p, err := runParams(paths, combine(merged(cfg), skills.Resolved{}), "img", false, false, hostIdentity(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestRunParamsRunArgsAndCapsPrecedence(t *testing.T) {
 	sf.Runtime.Caps = []string{"SYS_PTRACE"}
 	sf.Runtime.Env = map[string]string{"SKILLENV": "1"}
 	res := skills.Resolved{Skills: []skills.Skill{{Name: "s", File: sf}}}
-	p, err := runParams(paths, combine(cfg, res), "byre-x", false, false, hostIdentity(), nil)
+	p, err := runParams(paths, combine(merged(cfg), res), "byre-x", false, false, hostIdentity(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestRunParamsMachineScopedVolumeName(t *testing.T) {
 		{Name: ".claude", Role: "state", Target: "/home/dev/.claude"},
 	}
 	res := skills.Resolved{Skills: []skills.Skill{{Name: "s", File: sf}}}
-	p, err := runParams(paths, combine(config.Config{}, res), "img", false, false, hostIdentity(), nil)
+	p, err := runParams(paths, combine(merged(config.Config{}), res), "img", false, false, hostIdentity(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestRunParamsSkipsDisabledMounts(t *testing.T) {
 		// whose host path is currently bogus can be switched off harmlessly.
 		{Host: "not-absolute", Target: "/off", Mode: "rw", Disabled: true},
 	}}
-	p, err := runParams(paths, combine(cfg, skills.Resolved{}), "i", false, false, hostIdentity(), nil)
+	p, err := runParams(paths, combine(merged(cfg), skills.Resolved{}), "i", false, false, hostIdentity(), nil)
 	if err != nil {
 		t.Fatalf("disabled mount must not block runParams: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestRunParamsSelfEditMount(t *testing.T) {
 	paths, _ := testPaths(t)
 
 	// Without --self-edit, no ~/.byre bind.
-	p, err := runParams(paths, combine(config.Config{}, skills.Resolved{}), "i", false, false, hostIdentity(), nil)
+	p, err := runParams(paths, combine(merged(config.Config{}), skills.Resolved{}), "i", false, false, hostIdentity(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestRunParamsSelfEditMount(t *testing.T) {
 	}
 
 	// With --self-edit, the host ~/.byre is bound rw at the dev home.
-	p, err = runParams(paths, combine(config.Config{}, skills.Resolved{}), "i", true, false, hostIdentity(), nil)
+	p, err = runParams(paths, combine(merged(config.Config{}), skills.Resolved{}), "i", true, false, hostIdentity(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestRunParamsWorktreeMountsAndLabels(t *testing.T) {
 		CommonGitDir:     "/home/me/main/.git",
 		CommonGitDirHost: "/real/main/.git",
 	}
-	p, err := runParams(paths, combine(config.Config{}, skills.Resolved{}), "img", false, false, hostIdentity(), nil)
+	p, err := runParams(paths, combine(merged(config.Config{}), skills.Resolved{}), "img", false, false, hostIdentity(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +332,7 @@ func TestRunParamsWorktreeMountsAndLabels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pp, err := runParams(plain, combine(config.Config{}, skills.Resolved{}), "img", false, false, hostIdentity(), nil)
+	pp, err := runParams(plain, combine(merged(config.Config{}), skills.Resolved{}), "img", false, false, hostIdentity(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,7 +415,7 @@ func indexOf(s []string, v string) int {
 
 func TestRunParamsProjectAndWorktreeEnv(t *testing.T) {
 	paths, _ := testPaths(t)
-	p, err := runParams(paths, combine(config.Config{}, skills.Resolved{}), "img", false, false, hostIdentity(), nil)
+	p, err := runParams(paths, combine(merged(config.Config{}), skills.Resolved{}), "img", false, false, hostIdentity(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +437,7 @@ func TestRunParamsWorktreeDistinctEnv(t *testing.T) {
 		ID: "projid", WorktreeID: "wtid", WorkDir: "/wt", Canonical: "/main",
 		Home: t.TempDir(), Dir: t.TempDir(),
 	}
-	p, err := runParams(paths, combine(config.Config{}, skills.Resolved{}), "img", false, false, hostIdentity(), nil)
+	p, err := runParams(paths, combine(merged(config.Config{}), skills.Resolved{}), "img", false, false, hostIdentity(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,7 +465,7 @@ func TestRunParamsEgressAnnouncementEnv(t *testing.T) {
 		{Name: "claude", File: ag},
 	}}
 	cfg := config.Config{Egress: []string{"github.com:443"}}
-	p, err := runParams(paths, combine(cfg, res), "img", false, false, hostIdentity(), nil)
+	p, err := runParams(paths, combine(merged(cfg), res), "img", false, false, hostIdentity(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -479,7 +479,7 @@ func TestRunParamsEgressAnnouncementEnv(t *testing.T) {
 	// open-denylist: no allowlist exists, so no announcement env.
 	var od skills.File
 	od.Runtime.NetworkPosture = "open-denylist"
-	p, err = runParams(paths, combine(config.Config{}, skills.Resolved{Skills: []skills.Skill{{Name: "fw-open", File: od}}}), "img", false, false, hostIdentity(), nil)
+	p, err = runParams(paths, combine(merged(config.Config{}), skills.Resolved{Skills: []skills.Skill{{Name: "fw-open", File: od}}}), "img", false, false, hostIdentity(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -488,7 +488,7 @@ func TestRunParamsEgressAnnouncementEnv(t *testing.T) {
 	}
 
 	// No posture at all: same.
-	p, err = runParams(paths, combine(config.Config{Egress: []string{"github.com"}}, skills.Resolved{}), "img", false, false, hostIdentity(), nil)
+	p, err = runParams(paths, combine(merged(config.Config{Egress: []string{"github.com"}}), skills.Resolved{}), "img", false, false, hostIdentity(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

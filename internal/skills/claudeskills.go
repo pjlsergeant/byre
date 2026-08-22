@@ -50,9 +50,9 @@ type ClaudeSkillDecl struct {
 // (declClaims): duplicate ACTIVE names across sources hard-reject with both
 // claimants named; a CLOSED name neither delivers nor collides. A closure
 // matching nothing is inert.
-func ClaudeSkillSet(cfg config.Config, r Resolved) ([]ClaudeSkillDecl, error) {
+func ClaudeSkillSet(cfg config.Merged, r Resolved) ([]ClaudeSkillDecl, error) {
 	var out []ClaudeSkillDecl
-	claims := newDeclClaims("claude skill", "claude_skills", ClaudeSkillsFromConfig, cfg.ClaudeSkillsClosed)
+	claims := newDeclClaims("claude skill", "claude_skills", ClaudeSkillsFromConfig, cfg.Closures.ClaudeSkills)
 	add := func(src string, d ClaudeSkillDecl) error {
 		active, err := claims.claim(src, d.CS.Name)
 		if err != nil {

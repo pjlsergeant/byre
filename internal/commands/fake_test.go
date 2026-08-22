@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 )
@@ -429,3 +430,8 @@ func testPaths(t *testing.T) (project.Paths, string) {
 	}
 	return p, proj
 }
+
+// merged wraps a hand-built raw config as a closure-free resolved view —
+// the unit-test spelling of "this config is the whole cascade". A test that
+// exercises closure subtraction builds config.Merged with Closures set.
+func merged(c config.Config) config.Merged { return config.Merged{Config: c} }

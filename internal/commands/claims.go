@@ -26,6 +26,18 @@ func inert(why string) claimClass      { return claimClass{rendered: false, note
 // included -- they subtract from claims, which makes them claim inputs) to
 // its classification. Keyed by Go field name; the guard test fails on a
 // missing field AND on a ghost entry.
+// closureClaimSurface classifies the cascade's merge bookkeeping
+// (config.Closures) the way claimSurface classifies config fields: the
+// closures are not Config keys any more (2026-08-23 lifecycle split), but
+// they render on the same surfaces and answer the same reviewable
+// question.
+var closureClaimSurface = map[string]claimClass{
+	"Egress":       rendered("closure rows (closureLine); subtracts from the allowlist, the summary counts, and networkLine's blocked tally"),
+	"MCP":          rendered("mcp closures; a closed declaration renders closed-by, not vanished"),
+	"ClaudeSkills": rendered("claude-skill closures, mirroring the MCP trio"),
+	"Contexts":     rendered("subtracts from the rendered context set at merge (genus uniformity)"),
+}
+
 var claimSurface = map[string]claimClass{
 	"Engine":   rendered("the Engine row"),
 	"Template": rendered("the Template row; anything it pulls in renders as the layers/skills it contributes"),
@@ -51,18 +63,14 @@ var claimSurface = map[string]claimClass{
 	"Volumes": rendered("volume rows (state/cache/machine split); an exclusive volume is marked in its row and qualifies the " +
 		"Worktrees row (ADR 0054); a target covering a byre-managed path renders " +
 		"the same runtime-shadow disclosure as Mounts"),
-	"Ports":        rendered("port rows via portStatusLine -- the runtime's own normalization, so the row can't lie about defaults"),
-	"Egress":       rendered("egress rows + networkLine; config entries marked unenforced when no posture arms them (ADR 0019)"),
-	"EgressClosed": rendered("closure rows (closureLine); subtracts from the allowlist, the summary counts, and networkLine's blocked tally"),
+	"Ports":  rendered("port rows via portStatusLine -- the runtime's own normalization, so the row can't lie about defaults"),
+	"Egress": rendered("egress rows + networkLine; config entries marked unenforced when no posture arms them (ADR 0019)"),
 	"EgressOffered": inert("declared-but-CLOSED doors (ADR 0020): always inert at enforcement; opening one writes a plain " +
 		"egress entry, which then renders like any other"),
-	"MCPs":               rendered("mcp rows + the delivery line; carried egress rides the Egress rows attributed mcp:<name>"),
-	"MCPClosed":          rendered("mcp closures; a closed declaration renders closed-by, not vanished"),
-	"ClaudeSkills":       rendered("claude-skill rows + the delivery line; zero exposure contribution by design"),
-	"ClaudeSkillsClosed": rendered("claude-skill closures, mirroring the MCP trio"),
-	"Contexts":           rendered("context rows + the delivery line"),
-	"ContextsClosed":     rendered("subtracts from the rendered context set at merge (genus uniformity)"),
-	"DockerfilePre":      rendered("Raw build rows, verbatim + not-introspected note; presence degrades the network claim"),
-	"DockerfilePost":     rendered("Raw build rows, same treatment as DockerfilePre"),
-	"RunArgs":            rendered("the Raw run args row, verbatim; presence degrades the network claim"),
+	"MCPs":           rendered("mcp rows + the delivery line; carried egress rides the Egress rows attributed mcp:<name>"),
+	"ClaudeSkills":   rendered("claude-skill rows + the delivery line; zero exposure contribution by design"),
+	"Contexts":       rendered("context rows + the delivery line"),
+	"DockerfilePre":  rendered("Raw build rows, verbatim + not-introspected note; presence degrades the network claim"),
+	"DockerfilePost": rendered("Raw build rows, same treatment as DockerfilePre"),
+	"RunArgs":        rendered("the Raw run args row, verbatim; presence degrades the network claim"),
 }

@@ -369,7 +369,7 @@ func TestReconcileCoversEveryField(t *testing.T) {
 				t.Fatal(err)
 			}
 			// Overlay the sample onto the file's parsed content, then Save.
-			merged := config.Merge(base, cfg)
+			merged, _ := config.MergeStep(base, config.Closures{}, cfg)
 			if err := Save(path, false, merged, nil, nil, true); err != nil {
 				t.Fatalf("save: %v", err)
 			}

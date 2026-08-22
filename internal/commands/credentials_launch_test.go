@@ -72,7 +72,7 @@ func sortedKeys(m map[string]string) []string {
 // only one of them would be a view develop can never actually hold — and the
 // launch's symmetric consent check compares exactly these two.
 func credResolved(groups ...config.CredentialFile) resolved {
-	rv := combine(config.Config{}, skills.Resolved{})
+	rv := combine(merged(config.Config{}), skills.Resolved{})
 	rv.credFiles = groups
 	rv.cfg.EnvFromHost = map[string]string{}
 	for _, g := range groups {
@@ -654,7 +654,7 @@ func TestDevelopMismatchedBlobStops(t *testing.T) {
 // blocking has no "read what parsed" arm.
 func TestDevelopUnreadableCascadeStops(t *testing.T) {
 	p, _ := testPaths(t)
-	rv := combine(config.Config{}, skills.Resolved{})
+	rv := combine(merged(config.Config{}), skills.Resolved{})
 	rv.credErr = fmt.Errorf("layer:acme: env_from_host A: the encrypted value is not valid base64 (!!)")
 	var errBuf bytes.Buffer
 	f := &fakeRunner{}

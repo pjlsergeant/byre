@@ -21,7 +21,7 @@ func csDecl(skill, name, src string) ClaudeSkillDecl {
 }
 
 func TestClaudeSkillSetUnionAndAttribution(t *testing.T) {
-	cfg := config.Config{ClaudeSkills: []config.ClaudeSkill{{Name: "tdd-loop", Path: "~/cs/tdd-loop"}}}
+	cfg := config.Merged{Config: config.Config{ClaudeSkills: []config.ClaudeSkill{{Name: "tdd-loop", Path: "~/cs/tdd-loop"}}}}
 	r := Resolved{Skills: []Skill{mkClaudeSkillCarrier("pete/tools", csDecl("pete/tools", "review-loop", "/resolved/review-loop"))}}
 	set, err := ClaudeSkillSet(cfg, r)
 	if err != nil {
@@ -39,7 +39,7 @@ func TestClaudeSkillSetUnionAndAttribution(t *testing.T) {
 }
 
 func TestClaudeSkillSetDuplicateHardReject(t *testing.T) {
-	cfg := config.Config{ClaudeSkills: []config.ClaudeSkill{{Name: "review-loop", Path: "/a"}}}
+	cfg := config.Merged{Config: config.Config{ClaudeSkills: []config.ClaudeSkill{{Name: "review-loop", Path: "/a"}}}}
 	r := Resolved{Skills: []Skill{mkClaudeSkillCarrier("pete/tools", csDecl("pete/tools", "review-loop", "/b"))}}
 	_, err := ClaudeSkillSet(cfg, r)
 	if err == nil || !strings.Contains(err.Error(), "declared by both the config and skill \"pete/tools\"") {
@@ -51,7 +51,7 @@ func TestClaudeSkillSetDuplicateHardReject(t *testing.T) {
 }
 
 func TestClaudeSkillSetClosureSubtractsAfterSkillUnion(t *testing.T) {
-	cfg := config.Config{ClaudeSkillsClosed: []string{"review-loop"}}
+	cfg := config.Merged{Closures: config.Closures{ClaudeSkills: []string{"review-loop"}}}
 	r := Resolved{Skills: []Skill{mkClaudeSkillCarrier("pete/tools",
 		csDecl("pete/tools", "review-loop", "/r"),
 		csDecl("pete/tools", "tdd-loop", "/t"),
@@ -64,9 +64,9 @@ func TestClaudeSkillSetClosureSubtractsAfterSkillUnion(t *testing.T) {
 		t.Fatalf("closure must subtract the skill contribution: %+v", set)
 	}
 	// A closed name doesn't collide either — closing is the documented remedy.
-	cfg2 := config.Config{
-		ClaudeSkills:       []config.ClaudeSkill{{Name: "review-loop", Path: "/mine"}},
-		ClaudeSkillsClosed: []string{"review-loop"},
+	cfg2 := config.Merged{
+		Config:   config.Config{ClaudeSkills: []config.ClaudeSkill{{Name: "review-loop", Path: "/mine"}}},
+		Closures: config.Closures{ClaudeSkills: []string{"review-loop"}},
 	}
 	if set, err := ClaudeSkillSet(cfg2, r); err != nil || len(set) != 1 {
 		t.Fatalf("closed name must not collide: set=%+v err=%v", set, err)

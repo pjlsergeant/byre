@@ -666,7 +666,7 @@ func TestExclusiveRefusalEscapesEngineAndLabelValues(t *testing.T) {
 		labelsByID: map[string]map[string]string{"sibling-box": holder},
 	}
 	s, _, errBuf := testStreams("", false)
-	if err := develop(f, s, p, combine(cfg, skills.Resolved{}), false, CredentialAsk); err == nil {
+	if err := develop(f, s, p, combine(merged(cfg), skills.Resolved{}), false, CredentialAsk); err == nil {
 		t.Fatal("want a refusal")
 	}
 	assertNoESC(t, "exclusive volume refusal (forged workdir label)", errBuf.String())
@@ -675,7 +675,7 @@ func TestExclusiveRefusalEscapesEngineAndLabelValues(t *testing.T) {
 	// The same for an engine's own error text, on the arm that reports it.
 	p2, _ := testPaths(t)
 	cfg2, _ := exclusiveConfig(p2)
-	rv := combine(cfg2, skills.Resolved{})
+	rv := combine(merged(cfg2), skills.Resolved{})
 	rv.otherEngines = []sessionRunner{&fakeRunner{
 		engine: runner.Podman,
 		// Deliberately NOT an unreachable-shaped error: that arm substitutes

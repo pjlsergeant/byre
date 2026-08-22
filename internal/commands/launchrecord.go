@@ -245,7 +245,7 @@ func launchRecordOf(paths project.Paths, rv resolved, params runner.RunParams, e
 		Posture:        posture,
 		PostureSkill:   postureSkill,
 		Egress:         strings.Join(resolvedEgress(rv), " "),
-		EgressDeny:     append([]string{}, rv.cfg.EgressClosed...),
+		EgressDeny:     append([]string{}, rv.cfg.Closures.Egress...),
 		ProjectRunArgs: len(rv.cfg.RunArgs) > 0,
 		RawBuild:       len(rv.cfg.DockerfilePre)+len(rv.cfg.DockerfilePost) > 0,
 	}

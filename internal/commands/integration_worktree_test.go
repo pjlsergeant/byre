@@ -83,13 +83,13 @@ func TestIntegrationConcurrentWorktreeSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rv := combine(cfg, res)
+	rv := combine(merged(cfg), res)
 
 	// One image, shared by both sessions (imageTag keys on the project ID).
 	ident := testIdentity(t, r)
 	image := imageTag(pMain.ID, ident.UID, ident.GID)
 	t.Cleanup(func() { _ = r.ImageRemove(image) })
-	if err := buildImageWarn(io.Discard, r, pMain, cfg, res, image, false, ident); err != nil {
+	if err := buildImageWarn(io.Discard, r, pMain, merged(cfg), res, image, false, ident); err != nil {
 		t.Fatalf("image failed to build: %v", err)
 	}
 

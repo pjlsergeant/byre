@@ -64,7 +64,7 @@ func rebuild(w io.Writer, r imageRunner, eng runner.Engine, paths project.Paths,
 		// the pre-lock detection, so a save that renames the engine gets the
 		// same refusal develop gives rather than a rebuild reported as done
 		// for an image the next develop never looks at.
-		if err := refuseEngineChangedUnderLock(fresh.cfg, eng, "rebuild"); err != nil {
+		if err := refuseEngineChangedUnderLock(fresh.cfg.Config, eng, "rebuild"); err != nil {
 			return err
 		}
 		fmt.Fprintf(w, "byre: rebuilding %s with --no-cache...\n", image)

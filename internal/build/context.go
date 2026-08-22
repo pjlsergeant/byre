@@ -80,7 +80,7 @@ func (b *copyBudget) charge(size int64) error {
 // (it reads and validates sources, but stages no bytes) and returns the copy
 // jobs that would populate the context. Assemble and Render share it so the
 // rendered Dockerfile always matches what a build would actually use.
-func buildInput(paths project.Paths, cfg config.Config, res skills.Resolved) (gen.Input, []fileCopy, error) {
+func buildInput(paths project.Paths, cfg config.Merged, res skills.Resolved) (gen.Input, []fileCopy, error) {
 	// `files` copies host paths into the image: map each source to its staged
 	// context path (so the generated COPY can find it) and record the copy job.
 	genFiles, fileJobs, err := planFiles(paths, cfg.Files)
@@ -174,7 +174,7 @@ func planGuard(genSkills []gen.SkillBlock, res skills.Resolved) []gen.GuardFile 
 // context on disk. `byre dockerfile` is informational and side-effect-free, so
 // it must not clear-and-restage the context (which Assemble does) — that would
 // race a concurrent `byre develop` build sharing the same context dir.
-func Render(paths project.Paths, cfg config.Config, res skills.Resolved) (string, error) {
+func Render(paths project.Paths, cfg config.Merged, res skills.Resolved) (string, error) {
 	in, _, err := buildInput(paths, cfg, res)
 	if err != nil {
 		return "", err
@@ -186,7 +186,7 @@ func Render(paths project.Paths, cfg config.Config, res skills.Resolved) (string
 // + any `files`) and returns the generated Dockerfile text, with the
 // operator's stderr attached: size-tier notes about [[context]] prose land on
 // warn as the context is staged. Callers with no operator pass io.Discard.
-func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, warn io.Writer) (string, error) {
+func AssembleWarn(paths project.Paths, cfg config.Merged, res skills.Resolved, warn io.Writer) (string, error) {
 	// Every mutation below is staged through a descriptor confined to the REAL
 	// context dir, so a `develop --self-edit` agent that swapped context/ (or an
 	// interior staging dir) for a symlink cannot redirect byre's host-side
@@ -315,7 +315,7 @@ func AssembleWarn(paths project.Paths, cfg config.Config, res skills.Resolved, w
 		base = gen.DefaultBase
 	}
 	ctx += "\n\nBox base image: " + base + "."
-	if p := provisionedContext(cfg); p != "" {
+	if p := provisionedContext(cfg.Config); p != "" {
 		ctx += "\n\n" + p
 	}
 	if sc := res.Context(); sc != "" {
@@ -671,7 +671,7 @@ func diffStagedTrees(ctxRoot *os.Root, a, b fileCopy, rel string) (string, error
 // config declaration's `path` expands here (`~`-anchored or absolute — config
 // vocabulary is deliberately wider than the project-relative `files` key, see
 // config/claudeskills.go). Staging itself rejects symlinks (copyPath).
-func planClaudeSkills(cfg config.Config, res skills.Resolved) ([]fileCopy, error) {
+func planClaudeSkills(cfg config.Merged, res skills.Resolved) ([]fileCopy, error) {
 	set, err := skills.ClaudeSkillSet(cfg, res)
 	if err != nil {
 		return nil, err
@@ -913,7 +913,7 @@ func stageCopy(dstRoot *os.Root, agentRoots []string, j fileCopy) error {
 // Ordering matters: the most specific root wins, so a path inside a rw mount
 // nested under the project anchors at the mount. Read-only mounts are absent
 // deliberately -- the box cannot shape them.
-func agentWritableRoots(paths project.Paths, cfg config.Config, res skills.Resolved) []string {
+func agentWritableRoots(paths project.Paths, cfg config.Merged, res skills.Resolved) []string {
 	roots := []string{paths.WorkDir}
 	if paths.CommonGitDirHost != "" {
 		roots = append(roots, paths.CommonGitDirHost)

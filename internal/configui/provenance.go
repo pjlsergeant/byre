@@ -109,21 +109,30 @@ type Inherited struct {
 	ProjectDir string
 }
 
-// lowerNow is the lower-layer resolved config
-// (default ⊕ template ⊕ chain(root … parent)) under the CURRENTLY selected
-// template and extends values; zero Config when this editor has no lower.
-func (m model) lowerNow() config.Config {
-	if !m.inh.HasLower {
-		return config.Config{}
-	}
-	lower := m.inh.Default
+// lowerFold folds the lower layers (default ⊕ template ⊕ chain(root …
+// parent)) under the CURRENTLY selected template and extends values onto
+// base, threading the closure accumulator the way resolution does — the
+// editor's live re-merge must not drop closures, or the rows that render
+// closed-by state go silently wrong (P0).
+func (m model) lowerFold(base config.Config) (config.Config, config.Closures) {
+	lower, cl := config.MergeStep(base, config.Closures{}, m.inh.Default)
 	if t := m.templateNow(); t != "" {
-		lower = config.Merge(lower, m.inh.Templates[t])
+		lower, cl = config.MergeStep(lower, cl, m.inh.Templates[t])
 	}
 	for _, nl := range m.chainNow() {
-		lower = config.Merge(lower, nl.Config)
+		lower, cl = config.MergeStep(lower, cl, nl.Config)
 	}
-	return lower
+	return lower, cl
+}
+
+// lowerNow is the lower-layer resolved view (config + closures); zero
+// Merged when this editor has no lower.
+func (m model) lowerNow() config.Merged {
+	if !m.inh.HasLower {
+		return config.Merged{}
+	}
+	c, cl := m.lowerFold(config.Config{})
+	return config.Merged{Config: c, Closures: cl}
 }
 
 // lowerScalar reports what the cascade BELOW this file provides for one scalar
@@ -134,18 +143,19 @@ func (m model) lowerScalar(get func(config.Config) string, includeTemplate bool)
 	if !m.inh.HasLower {
 		return ""
 	}
-	lower := m.inh.Default
+	lower, cl := config.MergeStep(config.Config{}, config.Closures{}, m.inh.Default)
 	if includeTemplate {
 		// templateNow, not the raw row: with the template picker on its own
 		// inherit row the effective template is the inherited one, and an
 		// agent it sets is genuinely below this file.
 		if t := m.templateNow(); t != "" {
-			lower = config.Merge(lower, m.inh.Templates[t])
+			lower, cl = config.MergeStep(lower, cl, m.inh.Templates[t])
 		}
 	}
 	for _, nl := range m.chainNow() {
-		lower = config.Merge(lower, nl.Config)
+		lower, cl = config.MergeStep(lower, cl, nl.Config)
 	}
+	_ = cl // scalars only: closures have no scalar to contribute
 	v := config.FromNone(get(lower))
 	return v
 }
@@ -214,9 +224,11 @@ func (m model) chainNow() []config.NamedLayer {
 // predicate; the shape mirrors a disabled mount, which is likewise shown and
 // separately tallied.
 func (m model) hostEnvNow() map[string]string {
-	merged := config.Merge(config.Config{EnvFromHost: config.CoreEnvFromHost()}, m.lowerNow()).EnvFromHost
+	// The core layer (byre's shipped git-identity passthrough) sits under
+	// the lower fold, the way resolution stacks it.
+	merged, _ := m.lowerFold(config.Config{EnvFromHost: config.CoreEnvFromHost()})
 	out := map[string]string{}
-	for k, v := range merged {
+	for k, v := range merged.EnvFromHost {
 		out[k] = v
 	}
 	for _, kv := range m.hostEnv {

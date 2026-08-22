@@ -33,4 +33,26 @@ func TestEveryConfigFieldHasClaimClassification(t *testing.T) {
 			t.Errorf("claimSurface entry %s matches no config.Config field (renamed? drop or rename the entry)", name)
 		}
 	}
+
+	// The merge bookkeeping renders on the same surfaces (2026-08-23
+	// lifecycle split moved it off Config): same guard, same rules.
+	ctyp := reflect.TypeOf(config.Closures{})
+	cfields := map[string]bool{}
+	for i := 0; i < ctyp.NumField(); i++ {
+		name := ctyp.Field(i).Name
+		cfields[name] = true
+		cc, ok := closureClaimSurface[name]
+		if !ok {
+			t.Errorf("config.Closures.%s has no closureClaimSurface entry -- classify it in claims.go", name)
+			continue
+		}
+		if cc.note == "" {
+			t.Errorf("closureClaimSurface[%s]: the note is the reviewable content -- it can't be empty", name)
+		}
+	}
+	for name := range closureClaimSurface {
+		if !cfields[name] {
+			t.Errorf("closureClaimSurface entry %s matches no config.Closures field (renamed? drop or rename the entry)", name)
+		}
+	}
 }

@@ -30,7 +30,7 @@ type declVerbs[T any] struct {
 	list func(*config.Config) *[]T
 	// effectiveHas reports whether name survives in the vocabulary's
 	// effective set for a resolved config + skill resolution.
-	effectiveHas func(effective config.Config, res skills.Resolved, name string) (bool, error)
+	effectiveHas func(effective config.Merged, res skills.Resolved, name string) (bool, error)
 }
 
 // declLayerPath resolves which cascade layer file a verb edits, a short human
@@ -240,7 +240,7 @@ func declStillEffective[T any](cur config.Config, v declVerbs[T], name string) (
 	if err != nil {
 		return false, err
 	}
-	res, err := skills.Resolve(effective, cat)
+	res, err := skills.Resolve(effective.Config, cat)
 	if err != nil {
 		return false, err
 	}
@@ -254,7 +254,7 @@ func declStillEffective[T any](cur config.Config, v declVerbs[T], name string) (
 // info.SkillErr rather than erroring -- the same posture status takes.
 // fromCfg seeds the config-only view (used verbatim when skills can't
 // resolve); fromResolved overlays the full effective view.
-func listDeclInfo(s Streams, projectDir string, fromCfg func(*statusInfo, config.Config), fromResolved func(*statusInfo, resolved, skills.Resolved)) (statusInfo, error) {
+func listDeclInfo(s Streams, projectDir string, fromCfg func(*statusInfo, config.Merged), fromResolved func(*statusInfo, resolved, skills.Resolved)) (statusInfo, error) {
 	info := statusInfo{}
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
@@ -273,7 +273,7 @@ func listDeclInfo(s Streams, projectDir string, fromCfg func(*statusInfo, config
 		info.SkillErr = serr.Error()
 	} else if cat, _ := builtins.LoadCatalogRaw(paths.Home); cat == nil {
 		info.SkillErr = "catalog unavailable"
-	} else if res, rerr := skills.Resolve(cfg, cat); rerr != nil {
+	} else if res, rerr := skills.Resolve(cfg.Config, cat); rerr != nil {
 		info.SkillErr = rerr.Error()
 	} else {
 		rv := combine(cfg, res)

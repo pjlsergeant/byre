@@ -84,7 +84,7 @@ func TestClaudeSkillLayerMarkersAndDuplicates(t *testing.T) {
 func TestClaudeSkillMergeReplaceByName(t *testing.T) {
 	base := Config{ClaudeSkills: []ClaudeSkill{{Name: "tdd-loop", Path: "/old"}, {Name: "review", Path: "/r"}}}
 	over := Config{ClaudeSkills: []ClaudeSkill{{Name: "tdd-loop", Path: "/new"}}}
-	got := Merge(base, over)
+	got := mergeT(base, over)
 	if len(got.ClaudeSkills) != 2 {
 		t.Fatalf("ClaudeSkills = %+v", got.ClaudeSkills)
 	}
@@ -101,22 +101,22 @@ func TestClaudeSkillMergeReplaceByName(t *testing.T) {
 func TestClaudeSkillMergeClosureSurvivesAndReopens(t *testing.T) {
 	base := Config{ClaudeSkills: []ClaudeSkill{{Name: "tdd-loop", Path: "/t"}}}
 	over := Config{ClaudeSkills: []ClaudeSkill{{Name: "!tdd-loop"}, {Name: "!review"}}}
-	got := Merge(base, over)
+	got := mergeT(base, over)
 	if len(got.ClaudeSkills) != 0 {
 		t.Fatalf("closure must remove the declaration: %+v", got.ClaudeSkills)
 	}
 	// Closures survive the merge (they subtract skill contributions later).
-	if len(got.ClaudeSkillsClosed) != 2 {
-		t.Fatalf("ClaudeSkillsClosed = %v", got.ClaudeSkillsClosed)
+	if len(got.Closures.ClaudeSkills) != 2 {
+		t.Fatalf("ClaudeSkillsClosed = %v", got.Closures.ClaudeSkills)
 	}
 	// A later layer's plain declaration re-opens the closure.
-	reopened := Merge(got, Config{ClaudeSkills: []ClaudeSkill{{Name: "tdd-loop", Path: "/again"}}})
+	reopened := mergeM(got, Config{ClaudeSkills: []ClaudeSkill{{Name: "tdd-loop", Path: "/again"}}})
 	if len(reopened.ClaudeSkills) != 1 || reopened.ClaudeSkills[0].Path != "/again" {
 		t.Fatalf("reopen: %+v", reopened.ClaudeSkills)
 	}
-	for _, c := range reopened.ClaudeSkillsClosed {
+	for _, c := range reopened.Closures.ClaudeSkills {
 		if c == "tdd-loop" {
-			t.Fatalf("reopened name must leave the closed set: %v", reopened.ClaudeSkillsClosed)
+			t.Fatalf("reopened name must leave the closed set: %v", reopened.Closures.ClaudeSkills)
 		}
 	}
 }

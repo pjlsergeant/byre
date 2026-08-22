@@ -916,8 +916,9 @@ func TestEgressOfferedRowsAndOpen(t *testing.T) {
 func TestEgressOfferedNeverEnforced(t *testing.T) {
 	// Offered entries must not reach the resolved allowlist: resolvedEgress is
 	// commands-side, but the config merge must also keep them out of Egress.
-	got := config.Merge(
+	got, _ := config.MergeStep(
 		config.Config{EgressOffered: []string{"proxy.golang.org"}},
+		config.Closures{},
 		config.Config{Egress: []string{"grafana.com"}},
 	)
 	if contains(got.Egress, "proxy.golang.org") {

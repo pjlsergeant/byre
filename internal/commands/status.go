@@ -226,14 +226,14 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 		Ports:              cfg.Ports,
 		Volumes:            cfg.Volumes,
 		RunArgs:            cfg.RunArgs,
-		EgressClosed:       cfg.EgressClosed,
-		MCPClosed:          cfg.MCPClosed,
-		ClaudeSkillsClosed: cfg.ClaudeSkillsClosed,
+		EgressClosed:       cfg.Closures.Egress,
+		MCPClosed:          cfg.Closures.MCP,
+		ClaudeSkillsClosed: cfg.Closures.ClaudeSkills,
 		BuildRaw:           append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
 		Base:               cfg.Base,
 		ProjectRunArgs:     len(cfg.RunArgs) > 0,
-		HostEnv:            resolveHostEnv(cfg, gitExe),
-		ArtifactShadows:    artifactShadows(cfg),
+		HostEnv:            resolveHostEnv(cfg.Config, gitExe),
+		ArtifactShadows:    artifactShadows(cfg.Config),
 		Cat:                cat,
 	}
 	// Config-declared MCPs stay visible even when skills fail to resolve (the
@@ -266,7 +266,7 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 			info.Credentials = groups
 		}
 	}
-	info.EnvProvided = providedEnv(cfg, info.HostEnv)
+	info.EnvProvided = providedEnv(cfg.Config, info.HostEnv)
 	info.EnvKeys = slices.Sorted(maps.Keys(cfg.Env))
 	if paths.IsWorktree {
 		info.WorktreeOf = paths.Canonical
@@ -291,7 +291,7 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 		info.SkillErr = merr.Error()
 	} else if cat == nil {
 		info.SkillErr = "catalog unavailable"
-	} else if r, rerr := skills.Resolve(cfg, cat); rerr != nil {
+	} else if r, rerr := skills.Resolve(cfg.Config, cat); rerr != nil {
 		info.SkillErr = rerr.Error()
 	} else {
 		// Validate the combined config+skills set the SAME way develop/dockerfile
@@ -337,7 +337,7 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 	// containment rows. Outside the skills branch on purpose: the config side
 	// is knowable whatever happened to resolution, and this line is now the
 	// only place a shadow is reported.
-	info.ManagedShadows = managedPathShadows(cfg, res)
+	info.ManagedShadows = managedPathShadows(cfg.Config, res)
 	if eng, exe, derr := runner.Detect(cfg.Engine, hostexec.Looker(roots)); derr != nil {
 		info.Engine = orDefault(cfg.Engine, "auto")
 		// Carries a shadowed-engine refusal as well as "not installed" — the

@@ -12,7 +12,7 @@ func mkSkill(name string, mcps ...config.MCP) Skill {
 }
 
 func TestMCPSetUnionAndAttribution(t *testing.T) {
-	cfg := config.Config{MCPs: []config.MCP{{Name: "github", Command: []string{"gh-mcp"}}}}
+	cfg := config.Merged{Config: config.Config{MCPs: []config.MCP{{Name: "github", Command: []string{"gh-mcp"}}}}}
 	r := Resolved{Skills: []Skill{mkSkill("pete/tools", config.MCP{Name: "linear", URL: "https://mcp.linear.app/mcp"})}}
 	set, err := MCPSet(cfg, r)
 	if err != nil {
@@ -30,7 +30,7 @@ func TestMCPSetUnionAndAttribution(t *testing.T) {
 }
 
 func TestMCPSetDuplicateHardReject(t *testing.T) {
-	cfg := config.Config{MCPs: []config.MCP{{Name: "github", Command: []string{"a"}}}}
+	cfg := config.Merged{Config: config.Config{MCPs: []config.MCP{{Name: "github", Command: []string{"a"}}}}}
 	r := Resolved{Skills: []Skill{mkSkill("pete/tools", config.MCP{Name: "github", Command: []string{"b"}})}}
 	_, err := MCPSet(cfg, r)
 	if err == nil || !strings.Contains(err.Error(), "declared by both the config and skill \"pete/tools\"") {
@@ -45,7 +45,7 @@ func TestMCPSetDuplicateHardReject(t *testing.T) {
 		mkSkill("a/x", config.MCP{Name: "github", Command: []string{"a"}}),
 		mkSkill("b/y", config.MCP{Name: "github", Command: []string{"b"}}),
 	}}
-	if _, err := MCPSet(config.Config{}, r2); err == nil || !strings.Contains(err.Error(), `skill "a/x" and skill "b/y"`) {
+	if _, err := MCPSet(config.Merged{}, r2); err == nil || !strings.Contains(err.Error(), `skill "a/x" and skill "b/y"`) {
 		t.Fatalf("skill+skill: %v", err)
 	}
 }
@@ -53,7 +53,7 @@ func TestMCPSetDuplicateHardReject(t *testing.T) {
 func TestMCPSetClosureSubtractsAfterSkillUnion(t *testing.T) {
 	// The whole point of keeping closures through the merge: a config-layer
 	// "!statsig" reaches a SKILL-declared server.
-	cfg := config.Config{MCPClosed: []string{"telemetry"}}
+	cfg := config.Merged{Closures: config.Closures{MCP: []string{"telemetry"}}}
 	r := Resolved{Skills: []Skill{mkSkill("pete/tools",
 		config.MCP{Name: "telemetry", Command: []string{"t"}},
 		config.MCP{Name: "github", Command: []string{"g"}},
@@ -67,7 +67,7 @@ func TestMCPSetClosureSubtractsAfterSkillUnion(t *testing.T) {
 	}
 
 	// A closure matching nothing is inert, never an error.
-	set2, err := MCPSet(config.Config{MCPClosed: []string{"ghost"}}, r)
+	set2, err := MCPSet(config.Merged{Closures: config.Closures{MCP: []string{"ghost"}}}, r)
 	if err != nil || len(set2) != 2 {
 		t.Fatalf("inert closure: set=%+v err=%v", set2, err)
 	}
@@ -76,9 +76,9 @@ func TestMCPSetClosureSubtractsAfterSkillUnion(t *testing.T) {
 	// makes `!name` the duplicate error's own working remedy — including for
 	// a skill+skill collision, which no cascade merge could otherwise fix
 	// short of disabling a whole skill.
-	cfg3 := config.Config{
-		MCPs:      []config.MCP{{Name: "github", Command: []string{"a"}}},
-		MCPClosed: []string{"github"},
+	cfg3 := config.Merged{
+		Config:   config.Config{MCPs: []config.MCP{{Name: "github", Command: []string{"a"}}}},
+		Closures: config.Closures{MCP: []string{"github"}},
 	}
 	r3 := Resolved{Skills: []Skill{mkSkill("pete/tools", config.MCP{Name: "github", Command: []string{"b"}})}}
 	set3, err := MCPSet(cfg3, r3)
@@ -89,7 +89,7 @@ func TestMCPSetClosureSubtractsAfterSkillUnion(t *testing.T) {
 		mkSkill("a/x", config.MCP{Name: "github", Command: []string{"a"}}),
 		mkSkill("b/y", config.MCP{Name: "github", Command: []string{"b"}}, config.MCP{Name: "other", Command: []string{"o"}}),
 	}}
-	set4, err := MCPSet(config.Config{MCPClosed: []string{"github"}}, r4)
+	set4, err := MCPSet(config.Merged{Closures: config.Closures{MCP: []string{"github"}}}, r4)
 	if err != nil || len(set4) != 1 || set4[0].MCP.Name != "other" {
 		t.Fatalf("skill+skill collision must dissolve under the closure: set=%+v err=%v", set4, err)
 	}

@@ -29,9 +29,9 @@ type MCPDecl struct {
 // server (or the config's) would be surprising; a CLOSED name neither
 // delivers nor collides. A closure matching nothing is inert (config
 // hygiene, not an error).
-func MCPSet(cfg config.Config, r Resolved) ([]MCPDecl, error) {
+func MCPSet(cfg config.Merged, r Resolved) ([]MCPDecl, error) {
 	var out []MCPDecl
-	claims := newDeclClaims("mcp", "mcp", MCPFromConfig, cfg.MCPClosed)
+	claims := newDeclClaims("mcp", "mcp", MCPFromConfig, cfg.Closures.MCP)
 	add := func(src string, m config.MCP) error {
 		active, err := claims.claim(src, m.Name)
 		if err != nil {

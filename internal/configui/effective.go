@@ -256,7 +256,7 @@ func (m model) mcpRows() []listRow {
 		local:       declRowItems(m.mcps, mcpName, mcpLine),
 		lower:       declRowItems(lowerCfg.MCPs, mcpName, mcpLine),
 		lowerVals:   func(i int) []string { return mcpVals(lowerCfg.MCPs[i]) },
-		lowerClosed: lowerCfg.MCPClosed,
+		lowerClosed: lowerCfg.Closures.MCP,
 		skillDecls: func(sk string) []declRowItem {
 			return declRowItems(m.inh.Skills[sk].MCPs, mcpName, mcpLine)
 		},
@@ -277,7 +277,7 @@ func (m model) claudeSkillRows() []listRow {
 		localText:   func(i int) string { return claudeSkillRowText(m.claudeSkills[i]) },
 		lower:       declRowItems(lowerCfg.ClaudeSkills, claudeSkillName, claudeSkillLine),
 		lowerVals:   func(i int) []string { return claudeSkillVals(lowerCfg.ClaudeSkills[i]) },
-		lowerClosed: lowerCfg.ClaudeSkillsClosed,
+		lowerClosed: lowerCfg.Closures.ClaudeSkills,
 		skillDecls: func(sk string) []declRowItem {
 			return declRowItems(m.inh.Skills[sk].ClaudeSkills, claudeSkillName, claudeSkillLine)
 		},
@@ -342,7 +342,7 @@ func (m model) contextRows() []listRow {
 		local:       declRowItems(m.contexts, contextDeclName, contextDeclLine),
 		lower:       declRowItems(lowerCfg.Contexts, contextDeclName, contextDeclLine),
 		lowerVals:   func(i int) []string { return contextVals(lowerCfg.Contexts[i]) },
-		lowerClosed: lowerCfg.ContextsClosed,
+		lowerClosed: lowerCfg.Closures.Contexts,
 		skillDecls:  func(sk string) []declRowItem { return nil },
 		lowerHas:    func(c config.Config, rawName string) bool { return hasContextName(c.Contexts, rawName) },
 	})
@@ -391,7 +391,7 @@ func (m model) egressRows() []listRow {
 	// Lower-layer closures still active at this layer: a local plain entry
 	// re-opens (deletes) every closure it matches, same as the merge.
 	var lowerClosures []string
-	for _, c := range m.lowerNow().EgressClosed {
+	for _, c := range m.lowerNow().Closures.Egress {
 		reopened := false
 		for e := range localIdx {
 			if config.EgressClosureMatches(c, e) {
@@ -1357,7 +1357,7 @@ func (m model) exposureNow() config.Exposure {
 			localPlain = append(localPlain, en)
 		}
 	}
-	for _, c := range m.lowerNow().EgressClosed {
+	for _, c := range m.lowerNow().Closures.Egress {
 		reopened := false
 		for _, p := range localPlain {
 			if config.EgressClosureMatches(c, p) {

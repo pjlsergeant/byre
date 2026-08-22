@@ -17,7 +17,7 @@ func TestValidateAttributesCrossSourceCollisions(t *testing.T) {
 	dockerHost.File.Runtime.Mounts = []config.Mount{{Host: "/var/run/docker.sock", Target: "/var/run/docker.sock", Mode: "rw"}}
 
 	cfg := config.Config{Mounts: []config.Mount{{Host: "~/notes", Target: "/var/run/docker.sock", Mode: "ro"}}}
-	err := combine(cfg, skills.Resolved{Skills: []skills.Skill{dockerHost}}).validate()
+	err := combine(merged(cfg), skills.Resolved{Skills: []skills.Skill{dockerHost}}).validate()
 	if err == nil || !strings.Contains(err.Error(), "collides with") {
 		t.Fatalf("cross-source target collision must be rejected by the collision rule, got: %v", err)
 	}
@@ -33,7 +33,7 @@ func TestValidateAttributesCrossSourceCollisions(t *testing.T) {
 	a.File.Volumes = []config.Volume{{Name: "shared", Role: "state", Target: "/home/dev/.x"}}
 	b.Name = "pete/two"
 	b.File.Volumes = []config.Volume{{Name: "shared", Role: "state", Target: "/home/dev/.y"}}
-	err = combine(config.Config{}, skills.Resolved{Skills: []skills.Skill{a, b}}).validate()
+	err = combine(merged(config.Config{}), skills.Resolved{Skills: []skills.Skill{a, b}}).validate()
 	if err == nil || !strings.Contains(err.Error(), "collides with") {
 		t.Fatalf("skill-vs-skill volume name collision must be rejected by the collision rule, got: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestValidateAttributesCrossSourceCollisions(t *testing.T) {
 	}
 
 	// No collision: the combined set still passes.
-	if err := combine(cfg, skills.Resolved{}).validate(); err != nil {
+	if err := combine(merged(cfg), skills.Resolved{}).validate(); err != nil {
 		t.Fatalf("collision-free combine must validate: %v", err)
 	}
 }

@@ -38,3 +38,17 @@ func TestUninstalledCatalogLoaderIsALoudError(t *testing.T) {
 		t.Errorf("CascadeFiles must refuse the same way Load does, got: %v", err)
 	}
 }
+
+// mergeT folds a raw over-layer onto a raw base layer — the two-layer
+// cascade the merge-rule tests exercise; the returned view carries the
+// fold's closures. mergeM continues a fold from an accumulated view, the
+// way the real cascade threads its accumulator.
+func mergeT(base, over Config) Merged {
+	c, cl := mergeStep(base, Closures{}, over)
+	return Merged{Config: c, Closures: cl}
+}
+
+func mergeM(base Merged, over Config) Merged {
+	c, cl := mergeStep(base.Config, base.Closures, over)
+	return Merged{Config: c, Closures: cl}
+}

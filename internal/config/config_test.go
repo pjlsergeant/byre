@@ -16,7 +16,7 @@ import (
 )
 
 func TestMergeScalarOverride(t *testing.T) {
-	got := Merge(Config{Engine: "docker", Base: "debian"}, Config{Engine: "podman"})
+	got := mergeT(Config{Engine: "docker", Base: "debian"}, Config{Engine: "podman"})
 	if got.Engine != "podman" {
 		t.Errorf("engine override: got %q", got.Engine)
 	}
@@ -26,21 +26,21 @@ func TestMergeScalarOverride(t *testing.T) {
 }
 
 func TestMergeStringUnionDedup(t *testing.T) {
-	got := Merge(Config{Skills: []string{"a", "b"}}, Config{Skills: []string{"b", "c"}}).Skills
+	got := mergeT(Config{Skills: []string{"a", "b"}}, Config{Skills: []string{"b", "c"}}).Skills
 	if want := []string{"a", "b", "c"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("union: got %v want %v", got, want)
 	}
 }
 
 func TestMergeStringRemoval(t *testing.T) {
-	got := Merge(Config{Skills: []string{"a", "b"}}, Config{Skills: []string{"!a", "c"}}).Skills
+	got := mergeT(Config{Skills: []string{"a", "b"}}, Config{Skills: []string{"!a", "c"}}).Skills
 	if want := []string{"b", "c"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("removal: got %v want %v", got, want)
 	}
 }
 
 func TestMergeMap(t *testing.T) {
-	got := Merge(
+	got := mergeT(
 		Config{Env: map[string]string{"X": "1", "Y": "2"}},
 		Config{Env: map[string]string{"Y": "3", "Z": "4"}},
 	).Env
@@ -59,7 +59,7 @@ func TestMergeVolumesOverrideAndRemove(t *testing.T) {
 		{Name: "cache", Role: "cache", Target: "/c2"}, // override target
 		{Name: "!creds"}, // remove
 	}}
-	got := Merge(base, over).Volumes
+	got := mergeT(base, over).Volumes
 	if len(got) != 1 || got[0].Name != "cache" || got[0].Target != "/c2" {
 		t.Errorf("volume override/remove: got %+v", got)
 	}
@@ -68,7 +68,7 @@ func TestMergeVolumesOverrideAndRemove(t *testing.T) {
 func TestMergeMountsByTarget(t *testing.T) {
 	base := Config{Mounts: []Mount{{Host: "/h", Target: "/t", Mode: "ro"}}}
 	over := Config{Mounts: []Mount{{Host: "/h2", Target: "/t", Mode: "rw"}}}
-	got := Merge(base, over).Mounts
+	got := mergeT(base, over).Mounts
 	if len(got) != 1 || got[0].Mode != "rw" || got[0].Host != "/h2" {
 		t.Errorf("mount override by target: got %+v", got)
 	}
@@ -79,7 +79,7 @@ func TestMergeMountsReenableByReplacing(t *testing.T) {
 	// target without it re-enables the mount (no per-field merge).
 	base := Config{Mounts: []Mount{{Host: "/h", Target: "/t", Mode: "rw", Disabled: true}}}
 	over := Config{Mounts: []Mount{{Host: "/h", Target: "/t", Mode: "rw"}}}
-	got := Merge(base, over).Mounts
+	got := mergeT(base, over).Mounts
 	if len(got) != 1 || got[0].Disabled {
 		t.Errorf("later layer should re-enable by replacement: got %+v", got)
 	}
@@ -108,7 +108,7 @@ func TestCutRemovalRequiresAnIdentity(t *testing.T) {
 func TestMergeDoesNotConsumeBareBang(t *testing.T) {
 	// Consumed as a marker, "!" would silently remove the entry named "" and
 	// vanish. It must survive as an entry so validation can reject it.
-	got := Merge(Config{Apt: []string{"curl"}}, Config{Apt: []string{"!"}})
+	got := mergeT(Config{Apt: []string{"curl"}}, Config{Apt: []string{"!"}})
 	if !slices.Contains(got.Apt, "!") {
 		t.Errorf(`bare "!" must survive the merge as an entry: %v`, got.Apt)
 	}
@@ -127,7 +127,7 @@ func TestMergeMountsReplacementTakesReplacingLayerPosition(t *testing.T) {
 		{Host: "/o", Target: "/other", Mode: "ro"},
 	}}
 	over := Config{Mounts: []Mount{{Host: "/h2", Target: "/t", Mode: "rw"}}}
-	got := Merge(base, over).Mounts
+	got := mergeT(base, over).Mounts
 	if len(got) != 2 {
 		t.Fatalf("Mounts = %+v", got)
 	}
@@ -145,7 +145,7 @@ func TestMergeVolumesReplacementTakesReplacingLayerPosition(t *testing.T) {
 		{Name: "other", Role: "state", Target: "/o"},
 	}}
 	over := Config{Volumes: []Volume{{Name: "cache", Role: "cache", Target: "/c2"}}}
-	got := Merge(base, over).Volumes
+	got := mergeT(base, over).Volumes
 	if len(got) != 2 {
 		t.Fatalf("Volumes = %+v", got)
 	}
@@ -172,7 +172,7 @@ func TestValidateDisabledMountStillChecked(t *testing.T) {
 }
 
 func TestRawBlocksAppendOnly(t *testing.T) {
-	got := Merge(Config{DockerfilePre: []string{"RUN a"}}, Config{DockerfilePre: []string{"RUN a", "RUN b"}}).DockerfilePre
+	got := mergeT(Config{DockerfilePre: []string{"RUN a"}}, Config{DockerfilePre: []string{"RUN a", "RUN b"}}).DockerfilePre
 	if want := []string{"RUN a", "RUN a", "RUN b"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("raw append-only (no dedup/removal): got %v want %v", got, want)
 	}
@@ -182,7 +182,7 @@ func TestAptHonorsRemoval(t *testing.T) {
 	// Reversed by ADR 0018: apt takes `!name` like every other string list.
 	// (Previously pinned as literal-only; packageRe never admitted a leading
 	// '!', so no real package is shadowed by the marker.)
-	got := Merge(Config{Apt: []string{"a"}}, Config{Apt: []string{"!a", "b"}}).Apt
+	got := mergeT(Config{Apt: []string{"a"}}, Config{Apt: []string{"!a", "b"}}).Apt
 	if want := []string{"b"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("apt should honor !removal: got %v want %v", got, want)
 	}
@@ -722,7 +722,7 @@ func TestValidatePorts(t *testing.T) {
 func TestMergePortsDedup(t *testing.T) {
 	base := Config{Ports: []Port{{Container: 8080, Host: 8080}}}
 	over := Config{Ports: []Port{{Container: 8080, Host: 8080}, {Container: 3000}}}
-	got := Merge(base, over).Ports
+	got := mergeT(base, over).Ports
 	if len(got) != 2 {
 		t.Fatalf("expected dedup to 2 ports, got %v", got)
 	}
@@ -753,36 +753,32 @@ func boolPtr(b bool) *bool { return &b }
 // a field to Config forces adding it both here and to Merge.
 func sampleConfig() Config {
 	return Config{
-		Engine:             "podman",
-		Extends:            "torn",
-		Template:           "go",
-		Agent:              "claude",
-		Base:               "debian:bookworm",
-		SeedPrefs:          boolPtr(true),
-		WorktreeBase:       "sibling",
-		Apt:                []string{"jq"},
-		Env:                map[string]string{"K": "v"},
-		Files:              map[string]string{"a.txt": "/opt/a.txt"},
-		Skills:             []string{"devloop"},
-		SharedAuthLegacy:   SharedAuthPref{Yes: []string{"claude"}},
-		Defaults:           Defaults{SharedAuth: SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}}, SkipQuestions: true},
-		Sources:            map[string]SourceHint{"pete/x": {URI: "https://example.test/x/skill.toml", Digest: "sha256:ab", From: "project config"}},
-		EnvFromHost:        map[string]string{"GIT_AUTHOR_NAME": "git:user.name"},
-		Egress:             []string{"grafana.com"},
-		EgressClosed:       []string{"statsig.anthropic.com"},
-		EgressOffered:      []string{"registry.npmjs.org"},
-		Mounts:             []Mount{{Host: "/h", Target: "/t", Mode: "ro"}},
-		Volumes:            []Volume{{Name: "v", Role: "cache", Target: "/c"}},
-		Ports:              []Port{{Container: 8080}},
-		MCPs:               []MCP{{Name: "github", Command: []string{"github-mcp-server"}}},
-		MCPClosed:          []string{"linear"},
-		ClaudeSkills:       []ClaudeSkill{{Name: "tdd-loop", Path: "~/claude-skills/tdd-loop"}},
-		ClaudeSkillsClosed: []string{"review"},
-		Contexts:           []ContextDecl{{Name: "house-rules", Text: "sample"}},
-		ContextsClosed:     []string{"tone"},
-		DockerfilePre:      []string{"RUN true"},
-		DockerfilePost:     []string{"RUN false"},
-		RunArgs:            []string{"--cap-add=X"},
+		Engine:           "podman",
+		Extends:          "torn",
+		Template:         "go",
+		Agent:            "claude",
+		Base:             "debian:bookworm",
+		SeedPrefs:        boolPtr(true),
+		WorktreeBase:     "sibling",
+		Apt:              []string{"jq"},
+		Env:              map[string]string{"K": "v"},
+		Files:            map[string]string{"a.txt": "/opt/a.txt"},
+		Skills:           []string{"devloop"},
+		SharedAuthLegacy: SharedAuthPref{Yes: []string{"claude"}},
+		Defaults:         Defaults{SharedAuth: SharedAuthPref{Pick: map[string]string{"claude": "claude-shared-auth"}}, SkipQuestions: true},
+		Sources:          map[string]SourceHint{"pete/x": {URI: "https://example.test/x/skill.toml", Digest: "sha256:ab", From: "project config"}},
+		EnvFromHost:      map[string]string{"GIT_AUTHOR_NAME": "git:user.name"},
+		Egress:           []string{"grafana.com"},
+		EgressOffered:    []string{"registry.npmjs.org"},
+		Mounts:           []Mount{{Host: "/h", Target: "/t", Mode: "ro"}},
+		Volumes:          []Volume{{Name: "v", Role: "cache", Target: "/c"}},
+		Ports:            []Port{{Container: 8080}},
+		MCPs:             []MCP{{Name: "github", Command: []string{"github-mcp-server"}}},
+		ClaudeSkills:     []ClaudeSkill{{Name: "tdd-loop", Path: "~/claude-skills/tdd-loop"}},
+		Contexts:         []ContextDecl{{Name: "house-rules", Text: "sample"}},
+		DockerfilePre:    []string{"RUN true"},
+		DockerfilePost:   []string{"RUN false"},
+		RunArgs:          []string{"--cap-add=X"},
 	}
 }
 
@@ -800,11 +796,31 @@ func TestMergeCoversEveryField(t *testing.T) {
 			t.Fatalf("sampleConfig leaves Config.%s zero — give it a sample value so the merge guard covers it (and handle it in Merge)", v.Type().Field(i).Name)
 		}
 	}
-	if got := Merge(Config{}, sample); !reflect.DeepEqual(got, sample) {
-		t.Errorf("Merge(empty, sample) must reproduce the sample — a field Merge doesn't propagate vanishes from override layers:\ngot  %+v\nwant %+v", got, sample)
+	if got := mergeT(Config{}, sample); !reflect.DeepEqual(got.Config, sample) {
+		t.Errorf("mergeT(empty, sample) must reproduce the sample — a field the fold doesn't propagate vanishes from override layers:\ngot  %+v\nwant %+v", got.Config, sample)
 	}
-	if got := Merge(sample, Config{}); !reflect.DeepEqual(got, sample) {
-		t.Errorf("Merge(sample, empty) must reproduce the sample:\ngot  %+v\nwant %+v", got, sample)
+	if got := mergeT(sample, Config{}); !reflect.DeepEqual(got.Config, sample) {
+		t.Errorf("mergeT(sample, empty) must reproduce the sample:\ngot  %+v\nwant %+v", got.Config, sample)
+	}
+}
+
+// The closure accumulator's own growth guard: a `!` marker in each genus
+// must land in its Closures field through one fold step, and survive a
+// second step's re-fold. A genus added to Closures without fold coverage
+// fails the reflection walk.
+func TestMergeStepThreadsEveryClosureGenus(t *testing.T) {
+	step1 := mergeT(Config{}, Config{
+		Egress:       []string{"!statsig.anthropic.com"},
+		MCPs:         []MCP{{Name: "!telemetry"}},
+		ClaudeSkills: []ClaudeSkill{{Name: "!legacy"}},
+		Contexts:     []ContextDecl{{Name: "!tone"}},
+	})
+	got := mergeM(step1, Config{})
+	v := reflect.ValueOf(got.Closures)
+	for i := 0; i < v.NumField(); i++ {
+		if v.Field(i).Len() != 1 {
+			t.Errorf("Closures.%s = %v — the fold must extract this genus's marker and thread it", v.Type().Field(i).Name, v.Field(i))
+		}
 	}
 }
 
@@ -893,7 +909,7 @@ func TestLoadRejectsWithinLayerCollisionInAnyLayer(t *testing.T) {
 
 func TestMergeAptNpmRemoval(t *testing.T) {
 	// ADR 0018: package lists take the same `!name` off-switch as skills.
-	got := Merge(Config{Apt: []string{"ripgrep", "htop"}}, Config{Apt: []string{"!htop", "jq"}}).Apt
+	got := mergeT(Config{Apt: []string{"ripgrep", "htop"}}, Config{Apt: []string{"!htop", "jq"}}).Apt
 	if want := []string{"ripgrep", "jq"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("apt removal: got %v want %v", got, want)
 	}
@@ -908,7 +924,7 @@ func TestMergePortsRemove(t *testing.T) {
 		{Container: 3000},
 	}}
 	over := Config{Ports: []Port{{Container: 5432, Remove: true}}}
-	got := Merge(base, over).Ports
+	got := mergeT(base, over).Ports
 	if len(got) != 1 || got[0].Container != 3000 {
 		t.Errorf("port remove: got %+v", got)
 	}
@@ -931,7 +947,7 @@ func TestMergePortsReplaceByContainerPort(t *testing.T) {
 		{Container: 5432},
 	}}
 	over := Config{Ports: []Port{{Container: 3000, Host: 8080}}}
-	got := Merge(base, over).Ports
+	got := mergeT(base, over).Ports
 	want := []Port{{Container: 5432}, {Container: 3000, Host: 8080}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("replace by container port: got %+v, want %+v", got, want)
@@ -945,7 +961,7 @@ func TestMergePortsLastWinsWithinOneLayer(t *testing.T) {
 		{Container: 3000, Host: 8080},
 		{Container: 3000, Host: 9090},
 	}}
-	got := Merge(Config{}, over).Ports
+	got := mergeT(Config{}, over).Ports
 	want := []Port{{Container: 3000, Host: 9090}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("within-layer last wins: got %+v, want %+v", got, want)
@@ -953,7 +969,7 @@ func TestMergePortsLastWinsWithinOneLayer(t *testing.T) {
 	// A restatement that only spells out the defaults still collapses onto one
 	// binding, which is what the old dedup bought and replacement keeps.
 	same := Config{Ports: []Port{{Container: 3000}, {Container: 3000, Interface: "127.0.0.1", Host: 3000}}}
-	if got := Merge(Config{}, same).Ports; len(got) != 1 {
+	if got := mergeT(Config{}, same).Ports; len(got) != 1 {
 		t.Fatalf("a spelled-out restatement must not become a second binding: %+v", got)
 	}
 }
@@ -966,7 +982,7 @@ func TestMergePortsRemoveAfterAdditions(t *testing.T) {
 		{Container: 8080, Host: 18080},
 		{Container: 8080, Remove: true},
 	}}
-	if got := Merge(base, over).Ports; len(got) != 0 {
+	if got := mergeT(base, over).Ports; len(got) != 0 {
 		t.Errorf("add+remove same layer should resolve off: got %+v", got)
 	}
 }
@@ -1011,7 +1027,7 @@ func TestValidateLayerPortRemoveNoCollision(t *testing.T) {
 }
 
 func TestMergeEgressUnionAndRemoval(t *testing.T) {
-	got := Merge(Config{Egress: []string{"grafana.com", "internal:8443"}},
+	got := mergeT(Config{Egress: []string{"grafana.com", "internal:8443"}},
 		Config{Egress: []string{"!internal:8443", "api.stripe.com"}})
 	if want := []string{"grafana.com", "api.stripe.com"}; !reflect.DeepEqual(got.Egress, want) {
 		t.Errorf("egress merge: got %v want %v", got.Egress, want)
@@ -1019,57 +1035,57 @@ func TestMergeEgressUnionAndRemoval(t *testing.T) {
 	// Unlike every other `!name` list, the closure is kept, not consumed: it
 	// must go on to subtract the endpoint from the derived allowlist (where
 	// skill egress unions in) after the cascade is done.
-	if want := []string{"internal:8443"}; !reflect.DeepEqual(got.EgressClosed, want) {
-		t.Errorf("egress closures: got %v want %v", got.EgressClosed, want)
+	if want := []string{"internal:8443"}; !reflect.DeepEqual(got.Closures.Egress, want) {
+		t.Errorf("egress closures: got %v want %v", got.Closures.Egress, want)
 	}
 }
 
 func TestMergeEgressClosureSemantics(t *testing.T) {
 	t.Run("portless closure removes every port", func(t *testing.T) {
-		got := Merge(Config{Egress: []string{"internal:8443", "internal:9000", "grafana.com"}},
+		got := mergeT(Config{Egress: []string{"internal:8443", "internal:9000", "grafana.com"}},
 			Config{Egress: []string{"!internal"}})
 		if want := []string{"grafana.com"}; !reflect.DeepEqual(got.Egress, want) {
 			t.Errorf("open: got %v want %v", got.Egress, want)
 		}
-		if want := []string{"internal"}; !reflect.DeepEqual(got.EgressClosed, want) {
-			t.Errorf("closed: got %v want %v", got.EgressClosed, want)
+		if want := []string{"internal"}; !reflect.DeepEqual(got.Closures.Egress, want) {
+			t.Errorf("closed: got %v want %v", got.Closures.Egress, want)
 		}
 	})
 	t.Run("ported closure matches the portless open spelling", func(t *testing.T) {
 		// Open grammar reads portless as :443, and matching honors that.
-		got := Merge(Config{Egress: []string{"statsig.anthropic.com"}},
+		got := mergeT(Config{Egress: []string{"statsig.anthropic.com"}},
 			Config{Egress: []string{"!statsig.anthropic.com:443"}})
 		if len(got.Egress) != 0 {
 			t.Errorf("open: got %v want none", got.Egress)
 		}
 	})
 	t.Run("later plain entry re-opens, deleting the closure whole", func(t *testing.T) {
-		got := Merge(Config{Egress: []string{"!statsig.anthropic.com"}},
+		got := mergeT(Config{Egress: []string{"!statsig.anthropic.com"}},
 			Config{Egress: []string{"statsig.anthropic.com:443"}})
 		if want := []string{"statsig.anthropic.com:443"}; !reflect.DeepEqual(got.Egress, want) {
 			t.Errorf("open: got %v want %v", got.Egress, want)
 		}
 		// No partial narrowing: the portless closure does not survive as
 		// "every port except 443".
-		if len(got.EgressClosed) != 0 {
-			t.Errorf("closed: got %v want none", got.EgressClosed)
+		if len(got.Closures.Egress) != 0 {
+			t.Errorf("closed: got %v want none", got.Closures.Egress)
 		}
 	})
 	t.Run("within one layer the closure wins", func(t *testing.T) {
-		got := Merge(Config{}, Config{Egress: []string{"x.example.com", "!x.example.com"}})
+		got := mergeT(Config{}, Config{Egress: []string{"x.example.com", "!x.example.com"}})
 		if len(got.Egress) != 0 {
 			t.Errorf("open: got %v want none", got.Egress)
 		}
 	})
 	t.Run("closures survive re-merging and dedup by identity", func(t *testing.T) {
-		// The resolved cascade is Merge(Merge(def, tmpl), proj): a closure
-		// from the first step must ride EgressClosed through the second, and
+		// The resolved cascade is mergeT(mergeT(def, tmpl), proj): a closure
+		// from the first step must ride the accumulator through the second, and
 		// the same host closed portless and at :443 are distinct closures.
-		step1 := Merge(Config{Egress: []string{"!statsig.anthropic.com"}},
+		step1 := mergeT(Config{Egress: []string{"!statsig.anthropic.com"}},
 			Config{Egress: []string{"!statsig.anthropic.com:443"}})
-		got := Merge(step1, Config{Egress: []string{"!statsig.anthropic.com"}})
-		if want := []string{"statsig.anthropic.com", "statsig.anthropic.com:443"}; !reflect.DeepEqual(got.EgressClosed, want) {
-			t.Errorf("closed: got %v want %v", got.EgressClosed, want)
+		got := mergeM(step1, Config{Egress: []string{"!statsig.anthropic.com"}})
+		if want := []string{"statsig.anthropic.com", "statsig.anthropic.com:443"}; !reflect.DeepEqual(got.Closures.Egress, want) {
+			t.Errorf("closed: got %v want %v", got.Closures.Egress, want)
 		}
 	})
 }
@@ -1120,8 +1136,8 @@ func TestValidateEgressEntries(t *testing.T) {
 	if err := (Config{Egress: []string{"!bad host"}}).ValidateLayer(); err == nil || !strings.Contains(err.Error(), "not a valid host[:port]") {
 		t.Errorf("closure marker with a malformed name should fail layer validation, got %v", err)
 	}
-	if err := (Config{EgressClosed: []string{"bad host"}}).Validate(); err == nil || !strings.Contains(err.Error(), "not a valid host[:port]") {
-		t.Errorf("malformed EgressClosed entry should fail resolved validation, got %v", err)
+	if err := (Merged{Closures: Closures{Egress: []string{"bad host"}}}).Validate(); err == nil || !strings.Contains(err.Error(), "not a valid host[:port]") {
+		t.Errorf("malformed closure entry should fail resolved validation, got %v", err)
 	}
 }
 
@@ -1304,16 +1320,16 @@ func TestAtomicWriteRequiresParentDir(t *testing.T) {
 // gap the docs mislabeled as deliberate (PRINCIPLES.md §7).
 func TestMergeSeedPrefsTriState(t *testing.T) {
 	on, off := boolPtr(true), boolPtr(false)
-	if got := Merge(Config{SeedPrefs: on}, Config{}); !got.SeedPrefsEnabled() {
+	if got := mergeT(Config{SeedPrefs: on}, Config{}); !got.SeedPrefsEnabled() {
 		t.Fatal("unset over must inherit true")
 	}
-	if got := Merge(Config{SeedPrefs: on}, Config{SeedPrefs: off}); got.SeedPrefsEnabled() {
+	if got := mergeT(Config{SeedPrefs: on}, Config{SeedPrefs: off}); got.SeedPrefsEnabled() {
 		t.Fatal("an explicit false in a later layer must turn the opt-in OFF")
 	}
-	if got := Merge(Config{}, Config{SeedPrefs: off}); got.SeedPrefsEnabled() || got.SeedPrefs == nil {
+	if got := mergeT(Config{}, Config{SeedPrefs: off}); got.SeedPrefsEnabled() || got.SeedPrefs == nil {
 		t.Fatal("explicit false must survive as explicit (not decay to unset)")
 	}
-	if got := Merge(Config{SeedPrefs: off}, Config{SeedPrefs: on}); !got.SeedPrefsEnabled() {
+	if got := mergeT(Config{SeedPrefs: off}, Config{SeedPrefs: on}); !got.SeedPrefsEnabled() {
 		t.Fatal("a later true must win over an earlier false")
 	}
 }

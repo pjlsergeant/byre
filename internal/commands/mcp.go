@@ -23,7 +23,7 @@ var mcpVerbs = declVerbs[config.MCP]{
 	name:   func(m config.MCP) string { return m.Name },
 	marker: func(name string) config.MCP { return config.MCP{Name: name} },
 	list:   func(c *config.Config) *[]config.MCP { return &c.MCPs },
-	effectiveHas: func(effective config.Config, res skills.Resolved, name string) (bool, error) {
+	effectiveHas: func(effective config.Merged, res skills.Resolved, name string) (bool, error) {
 		set, err := skills.MCPSet(effective, res)
 		if err != nil {
 			return false, err
@@ -119,17 +119,17 @@ func MCPList(s Streams, projectDir string) error {
 	// declines to run reads as "not passed" here too.
 	gitExe, _ := hostGit(boxWritableRootsFor(projectDir))
 	info, err := listDeclInfo(s, projectDir,
-		func(info *statusInfo, cfg config.Config) {
-			info.EgressClosed = cfg.EgressClosed
-			info.MCPClosed = cfg.MCPClosed
+		func(info *statusInfo, cfg config.Merged) {
+			info.EgressClosed = cfg.Closures.Egress
+			info.MCPClosed = cfg.Closures.MCP
 			// Error structurally nil: empty Resolved + config.Load already
 			// refused config-internal duplicate names (see the same call in
 			// status.go).
 			info.MCPs, _ = skills.MCPSet(cfg, skills.Resolved{})
 			// Same shared resolution status/develop use: "provided" means
 			// delivered, never configured-and-hoped (render-from-effect).
-			info.EnvProvided = providedEnv(cfg, resolveHostEnv(cfg, gitExe))
-			info.ArtifactShadows = artifactShadows(cfg)
+			info.EnvProvided = providedEnv(cfg.Config, resolveHostEnv(cfg.Config, gitExe))
+			info.ArtifactShadows = artifactShadows(cfg.Config)
 		},
 		func(info *statusInfo, rv resolved, res skills.Resolved) {
 			info.MCPs = rv.mcps

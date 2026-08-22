@@ -52,8 +52,8 @@ func buildFirewallImage(t *testing.T, r *runner.Runner) (string, map[string]stri
 	// 1.1.1.1 is the IP-pinned allow the egress test asserts; github.com
 	// exercises the helper's hostname-resolution path (reachability
 	// deliberately unasserted — see the probe comment there).
-	cfg := config.Config{Skills: []string{"firewall"}, Egress: []string{"1.1.1.1", "github.com"}}
-	res, err := skills.Resolve(cfg, cat)
+	cfg := merged(config.Config{Skills: []string{"firewall"}, Egress: []string{"1.1.1.1", "github.com"}})
+	res, err := skills.Resolve(cfg.Config, cat)
 	if err != nil {
 		t.Fatalf("resolve firewall skill: %v", err)
 	}
@@ -295,9 +295,9 @@ func TestIntegrationFirewallRestartFailsClosed(t *testing.T) {
 
 // buildFirewallOpenImage mirrors buildFirewallImage for the open-denylist
 // sibling: a firewall-open project whose config closes example.com. The
-// closure rides the `egress` key as a `!` marker and must survive to
-// EgressClosed via the real merge (Merge extracts markers), the same road
-// develop's cascade takes.
+// closure rides the `egress` key as a `!` marker and must survive to the
+// fold's Closures.Egress via the real merge step (which extracts markers),
+// the same road develop's cascade takes.
 func buildFirewallOpenImage(t *testing.T, r *runner.Runner) (string, map[string]string, runner.Identity) {
 	t.Helper()
 	p, _ := testPaths(t)
@@ -313,8 +313,9 @@ func buildFirewallOpenImage(t *testing.T, r *runner.Runner) (string, map[string]
 	// allow, but inverted: a hostname closure that re-resolves differently
 	// at probe time MISSES, reading as a leak); !example.com keeps the
 	// helper's hostname-resolution path exercised, reachability unasserted.
-	cfg := config.Merge(config.Config{}, config.Config{Skills: []string{"firewall-open"}, Egress: []string{"!9.9.9.9", "!example.com"}})
-	res, err := skills.Resolve(cfg, cat)
+	mc, mcl := config.MergeStep(config.Config{}, config.Closures{}, config.Config{Skills: []string{"firewall-open"}, Egress: []string{"!9.9.9.9", "!example.com"}})
+	cfg := config.Merged{Config: mc, Closures: mcl}
+	res, err := skills.Resolve(cfg.Config, cat)
 	if err != nil {
 		t.Fatalf("resolve firewall-open skill: %v", err)
 	}
@@ -329,7 +330,7 @@ func buildFirewallOpenImage(t *testing.T, r *runner.Runner) (string, map[string]
 		env = map[string]string{}
 	}
 	// Mirror develop's netns env: the helper enforces exactly the closures.
-	env["BYRE_EGRESS_DENY"] = strings.Join(cfg.EgressClosed, " ")
+	env["BYRE_EGRESS_DENY"] = strings.Join(cfg.Closures.Egress, " ")
 	return image, env, ident
 }
 

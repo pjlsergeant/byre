@@ -33,25 +33,25 @@ func effectiveReview(paths project.Paths, proposal config.Config) (config.Config
 		return proposal, sortGrantLines(append(grants,
 			grantLine{Text: "could not expand the cascade (" + err.Error() + ") — grants shown are from the raw file only"}))
 	}
-	grants := grantSummary(effective)
-	res, rerr := skills.Resolve(effective, cat)
+	grants := grantSummary(effective.Config)
+	res, rerr := skills.Resolve(effective.Config, cat)
 	if rerr != nil {
 		grants = append(grants, egressGrantLine(effective.Egress, "", "", false)...)
 		grants = append(grants, mcpGrantLines(configMCPDecls(effective.MCPs), nil)...)
-		grants = append(grants, shadowGrantLines(effective, skills.Resolved{})...)
-		return effective, sortGrantLines(append(grants,
+		grants = append(grants, shadowGrantLines(effective.Config, skills.Resolved{})...)
+		return effective.Config, sortGrantLines(append(grants,
 			grantLine{Text: "could not expand skills (" + rerr.Error() + ") — their grants are NOT shown"}))
 	}
 	posture, postureSkill := res.NetworkPosture()
 	grants = append(grants, egressGrantLine(effective.Egress, posture, postureSkill, true)...)
 	grants = append(grants, skillGrantSummary(res)...)
-	grants = append(grants, shadowGrantLines(effective, res)...)
+	grants = append(grants, shadowGrantLines(effective.Config, res)...)
 	// The EFFECTIVE MCP set — skill contributions included, attributed —
 	// so a preset can't enable a skill whose wiring (and carried reach)
 	// goes undisclosed at confirm time.
 	mcps, merr := skills.MCPSet(effective, res)
 	grants = append(grants, mcpGrantLines(mcps, merr)...)
-	return effective, sortGrantLines(grants)
+	return effective.Config, sortGrantLines(grants)
 }
 
 // shadowGrantLines renders the runtime-shadow disclosure (ADR 0052) at

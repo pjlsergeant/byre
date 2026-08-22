@@ -231,7 +231,7 @@ func ensureProjectImage(r engineRunner, s Streams, paths project.Paths, projectD
 		// ident, the image tag, and the creation container that runs from the
 		// image. Refuse rather than register a worktree against an image the
 		// develop handoff will not use.
-		if err := refuseEngineChangedUnderLock(rv.cfg, r.Engine(), "worktree"); err != nil {
+		if err := refuseEngineChangedUnderLock(rv.cfg.Config, r.Engine(), "worktree"); err != nil {
 			return err
 		}
 		warnNonDebianBase(s.Err, rv.cfg.Base)
