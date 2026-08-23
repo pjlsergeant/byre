@@ -104,10 +104,20 @@ remedies).
   eats its own output. `config.Merged{Config; Closures}` is the resolved
   view `Load`/`ResolveProposed` return; skills subtraction, the build
   pipeline, commands, and the editor's live re-merge consume it.
-  `SourceHint.From` stays put (layer attribution, not merge state). The
-  full-type-split go/no-go is assessed in
-  `wip/lifecycle-split-assessment.md` (recommendation: doesn't pay;
-  revive trigger recorded there), held for the operator's ruling.
+  `SourceHint.From` stays put (layer attribution, not merge state).
+  **Full type split RULED OUT 2026-08-24 (Pete):** the staged move
+  closed the only bug class with recorded instances (merge state riding
+  the persisted struct; closures dropped on a re-fold); distinct
+  Layer/Resolved types would buy compile-time enforcement against a
+  mistake class with no recorded instance, at the cost of a second
+  ~40-file migration and a permanent two-type API. Revive trigger: the
+  first real bug where a raw Config is consumed as resolved (or a
+  Merged re-enters a fold as a layer) — at that point the fence has
+  earned its keep. The same ruling declines full catalog
+  signature-threading for now (the loud nil-loader error closed the
+  actual defect): its triggers are a second binary/entrypoint, or
+  resolve latency showing up in use (threading also kills the known
+  double catalog-load in commands.resolve).
 - **Carving `internal/commands` (item 8)**: extraction on the second
   real consumer, never by decree; reconcile CLAUDE/ARCHITECTURE wording
   when the first extraction lands. No open work until a consumer shows.

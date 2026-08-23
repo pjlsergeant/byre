@@ -21,10 +21,6 @@ the rationale lives.
   quiet** (ADR 0049 #1/#2, amended policy): the write side and the warning
   channel shipped 2026-08-23; the array and top-level parse arms
   warn-and-keep-working until Pete calls the drop per path.
-- [ ] (S) **Rule on the full Layer/Resolved type split** (and catalog
-  signature threading): assessed 2026-08-23 in
-  wip/lifecycle-split-assessment.md (recommendation: doesn't pay now);
-  on ruling, the wip file deletes into ADR 0049's disposition.
 
 - [ ] (S) **Bare keys after `[package]` are silently swallowed** (QA pass
   2026-07-29): a skill author writing `files = {...}` (or any bare key)
