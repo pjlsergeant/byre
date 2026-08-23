@@ -1,6 +1,6 @@
 # Changes
 
-## unreleased
+## v1.8.0 — 2026-08-24
 
 - **Legacy config spellings now warn, everywhere byre speaks.** ADR 0049's
   retirement policy gained a warning channel: a cascade file carrying a
