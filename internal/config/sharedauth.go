@@ -61,12 +61,20 @@ func (s SharedAuthPref) mergedWith(o SharedAuthPref) SharedAuthPref {
 		out.Yes = removeStringPref(out.Yes, agent) // a pick supersedes a bare yes
 	}
 	for _, agent := range o.Yes {
-		if _, picked := out.Pick[agent]; picked {
-			continue
-		}
+		// Canonical wins per agent in BOTH directions: a canonical
+		// yes-inclination replaces a legacy pick, exactly as a canonical
+		// pick replaces a legacy yes above — skipping here left a stale
+		// legacy companion standing over the canonical half-answer, which
+		// hid it from Incomplete(), the compat warning, and the writers'
+		// cleanup (and let a save resurrect the legacy pick under
+		// [defaults]).
+		delete(out.Pick, agent)
 		if !containsPref(out.Yes, agent) {
 			out.Yes = append(out.Yes, agent)
 		}
+	}
+	if len(out.Pick) == 0 {
+		out.Pick = nil
 	}
 	return out
 }
