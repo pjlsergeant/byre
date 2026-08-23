@@ -11,7 +11,7 @@ package config
 //
 // Same two homes and merge taxonomy as [[mcp]]: byre.config layers replace by
 // name; skill.toml contributions union AFTER the merge; a `!name` closure is
-// kept through the merge (ClaudeSkillsClosed) and subtracts after the skill
+// kept through the fold (Closures.ClaudeSkills) and subtracts after the skill
 // union, so "this skill, minus one of its Claude Skills" works. Duplicate
 // ACTIVE names across sources hard-reject (skills.ClaudeSkillSet).
 //

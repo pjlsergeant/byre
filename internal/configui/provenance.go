@@ -69,14 +69,15 @@ type SkillRuntime struct {
 	// ProvLabel is the human label ("bundled 0.2.0", "local", ...).
 	ProvLabel string
 	// DisabledReason, when set, marks the row disabled-with-reason (INVALID,
-	// conflict, LEGACY) rather than selectable.
+	// conflict, a protected-name dir) rather than selectable.
 	DisabledReason string
 }
 
 // Inherited is the editor's provenance input. The lower layers ride RAW (not
 // pre-merged) so each effective row can name which layer set it; the editor
-// merges them itself via config.Merge -- the same op the cascade runs. Zero
-// value = show nothing inherited (degrade to the plain layer view).
+// folds them itself via config.MergeStep -- the same op the cascade runs,
+// closures threaded (lowerFold). Zero value = show nothing inherited
+// (degrade to the plain layer view).
 type Inherited struct {
 	// HasLower is false for the --global editor: it IS the base layer, so
 	// nothing is inherited regardless of what else is set.
@@ -100,7 +101,7 @@ type Inherited struct {
 	// --layer editor, minus itself and anything whose chain runs through it).
 	LayerNames []string
 	// Catalog is optional; when set, skill/template rows can show provenance
-	// and disable INVALID/conflict/LEGACY entries.
+	// and disable INVALID/conflict entries.
 	Catalog *packages.Catalog
 	// ProjectDir is the project tree [build].files sources resolve against
 	// ("" for the global and layer editors, where there is no project and a

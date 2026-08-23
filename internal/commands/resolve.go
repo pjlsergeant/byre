@@ -203,7 +203,7 @@ func (rv resolved) attributedCollisions() error {
 
 // resolve loads the config cascade and the enabled skills for a project, and
 // re-validates the combined mount/volume set (config + skill contributions).
-// notices receives store-ensure human lines (mirror regen, LEGACY) — pass the
+// notices receives store-ensure human lines (mirror regen) — pass the
 // caller's s.Err; the once-per-process gate in builtins keeps develop's
 // earlier noticed call from doubling. nil = silent (tests).
 func resolve(paths project.Paths, projectDir string, notices io.Writer) (resolved, error) {

@@ -224,13 +224,38 @@ func (s *SharedAuthPref) UnmarshalTOML(data []byte) error {
 	}
 }
 
-// Saveable is the projection a writer may persist: picks only. A
-// yes-inclination is parse-only legacy state (ADR 0049 amendment
-// 2026-08-23) — every writer strips it through this one owner, so a save
-// of the carrying file is also what cleans a legacy array out of it.
+// Saveable is the projection a writer may persist: complete picks only.
+// A yes-inclination is parse-only legacy state (ADR 0049 amendment
+// 2026-08-23), and a hand-edited EMPTY pick ({ claude = "" }) is the same
+// yes-without-companion half-answer in table spelling — every writer
+// strips both through this one owner, so a save of the carrying file is
+// also what cleans the unrepresentable state out of it.
 func (s SharedAuthPref) Saveable() SharedAuthPref {
 	out := s.Clone()
 	out.Yes = nil
+	for a, c := range out.Pick {
+		if c == "" {
+			delete(out.Pick, a)
+		}
+	}
+	if len(out.Pick) == 0 {
+		out.Pick = nil
+	}
+	return out
+}
+
+// Incomplete lists the agents whose stored answer is a yes with no
+// companion recorded — legacy array entries plus empty-valued picks, one
+// unrepresentable state in two spellings. The compat warning's subject,
+// and the presence trigger for the writers' cleanup.
+func (s SharedAuthPref) Incomplete() []string {
+	out := append([]string{}, s.Yes...)
+	for a, c := range s.Pick {
+		if c == "" && !containsPref(out, a) {
+			out = append(out, a)
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 

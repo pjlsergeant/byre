@@ -138,6 +138,52 @@ func TestSaveSharedAuthDefaultNoRemovesAndIdempotent(t *testing.T) {
 	}
 }
 
+// SaveDefault is the OTHER default.config writer (favourites only), and
+// "the next save drops it" must be true of it too: an onboarding that saves
+// favourites with no shared-auth offer still cleans legacy state out of the
+// file it rewrites — the top-level spelling's complete picks migrate under
+// [defaults], its yes-only entries drop, and a canonical file's construct
+// is left byte-untouched.
+func TestSaveDefaultCleansLegacySharedAuthState(t *testing.T) {
+	home := t.TempDir()
+	writeDefault(t, home,
+		"base = \"node:22\"\n[shared_auth]\nclaude = \"claude-shared-auth\"\ncodex = \"\"\n")
+	if err := SaveDefault(home, "go", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	got := readDefault(t, home)
+	sec := strings.Index(got, "[defaults]")
+	if sec < 0 || strings.Contains(got[:sec], "shared_auth") {
+		t.Fatalf("the top-level spelling must migrate under [defaults]:\n%s", got)
+	}
+	cfg := parsedDefault(t, home)
+	if !cfg.SharedAuthLegacy.Empty() {
+		t.Errorf("the legacy home must be empty after the cleanup: %+v", cfg.SharedAuthLegacy)
+	}
+	pref := cfg.StoredSharedAuth()
+	if pref.CompanionPick("claude") != "claude-shared-auth" {
+		t.Errorf("the complete pick must survive the migration: %+v", pref)
+	}
+	if pref.HasYes("codex") {
+		t.Errorf("the empty-pick half-answer must be dropped: %+v", pref)
+	}
+	if cfg.Template != "go" || cfg.Agent != "claude" {
+		t.Errorf("the favourites save must still land: %+v", cfg)
+	}
+
+	// Canonical file: the shared_auth construct is untouched by a
+	// favourites save (presence is the trigger, ADR 0044 keeps the bytes).
+	home2 := t.TempDir()
+	writeDefault(t, home2,
+		"[defaults]\nshared_auth = { \"claude\" = \"claude-shared-auth\" } # my note\n")
+	if err := SaveDefault(home2, "go", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	if got := readDefault(t, home2); !strings.Contains(got, "# my note") {
+		t.Errorf("a canonical construct must keep its bytes:\n%s", got)
+	}
+}
+
 // A legacy array (yes-only entries) is cleaned out by ANY save of the file,
 // including one whose own answer records nothing — the state it encodes is
 // unrepresentable, and presence is the trigger.

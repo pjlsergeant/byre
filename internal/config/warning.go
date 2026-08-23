@@ -52,7 +52,7 @@ func LayerWarnings(label, path string, cfg Config) []Warning {
 				"under [defaults]",
 		})
 	}
-	if yes := cfg.StoredSharedAuth().Yes; len(yes) > 0 {
+	if yes := cfg.StoredSharedAuth().Incomplete(); len(yes) > 0 {
 		out = append(out, Warning{
 			Kind:  WarnSharedAuthArray,
 			Layer: label,

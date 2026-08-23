@@ -24,7 +24,7 @@ package config
 // the inherited declaration during the merge. It still rides the shared
 // named-declaration machinery (nameddecl.go): layers replace by name, the
 // closure grammar and its refusals are uniform with [[mcp]] and
-// [[claude_skills]], and ContextsClosed carries survivors inertly.
+// [[claude_skills]], and Closures.Contexts carries survivors inertly.
 
 import (
 	"fmt"

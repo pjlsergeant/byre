@@ -32,7 +32,7 @@ const stampName = "bundled/.byre-version"
 //
 // bundled is the embed.FS (skills/ + templates/ tops). byreVer is the stamp
 // and the version written into generated [package] headers in the mirror.
-// out, when non-nil, receives human notices (mirror regen, legacy found).
+// out, when non-nil, receives human notices (mirror regen).
 func EnsureStore(home string, bundled fs.FS, byreVer string, out io.Writer) error {
 	// NOT "bundled": every touch of the mirror path, its CREATION included,
 	// happens under the store lock below. An unlocked MkdirAll here lands in

@@ -22,7 +22,7 @@ type skillEntry struct {
 	inherited   bool // a LOWER cascade layer (default/template) enables it
 	removedHere bool // this layer carries a `!name` removal marker for it
 	// Provenance label (dimmed) and optional disabled reason (INVALID/
-	// conflict/LEGACY). disabled rows are not toggleable.
+	// conflict/protected-name). disabled rows are not toggleable.
 	provLabel string
 	disabled  string // non-empty => disabled-with-reason
 }

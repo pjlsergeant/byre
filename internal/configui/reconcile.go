@@ -72,7 +72,7 @@ func reconcile(doc *tomldoc.Doc, cur, want config.Config) error {
 	// parse-only state since the 2026-08-23 ADR 0049 amendment, so every
 	// save persists the Saveable (picks-only) projection.
 	legacyPresent := !cur.SharedAuthLegacy.Empty() ||
-		len(cur.StoredSharedAuth().Yes) > 0
+		len(cur.StoredSharedAuth().Incomplete()) > 0
 	wantPref := want.StoredSharedAuth().Saveable()
 	if legacyPresent || !cur.StoredSharedAuth().Equal(wantPref) {
 		if err := doc.RemoveTable([]string{"shared_auth"}); err != nil {

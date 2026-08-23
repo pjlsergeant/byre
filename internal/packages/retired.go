@@ -3,7 +3,8 @@ package packages
 // RetiredNames is the permanent in-binary table of bare names that a past
 // byre release bundled and a later release does not. They stay
 // protected exactly like bundled bare names -- no local or installed
-// package may claim them; legacy dirs bearing them are LEGACY rows.
+// package may claim them; a local dir bearing one ingests as an ordinary
+// INVALID row (never loaded, rename remedy).
 //
 // Map values are one-line tombstones for remedy text. The pinned install
 // hints are a migration aid and may be trimmed to bare "retired; see CHANGES"

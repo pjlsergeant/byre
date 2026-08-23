@@ -861,7 +861,7 @@ func (m model) skipDisabled(opts []string, start, dir int) int {
 // optProv / optDisabled look up catalog provenance for template/agent options.
 // Both go through Lookup, which expands aliases: a name that resolves to a
 // loadable package is NEVER disabled, even when a same-named problem row
-// exists — a LEGACY materialized `claude` dir must not grey out the valid
+// exists — a protected-name local `claude` dir must not grey out the valid
 // bundled `claude` option (sibling-keyed problem rows shadow nothing).
 func (m model) optProv(name string) string {
 	if m.inh.Catalog == nil || name == "" || name == noneOption {
@@ -1368,7 +1368,7 @@ func (m model) renderPick(opts []string, sel int, focused bool) string {
 	return s
 }
 
-// appendPickerProblems adds catalog INVALID/conflict/LEGACY names of kind to
+// appendPickerProblems adds catalog INVALID/conflict names of kind to
 // opts (agentsOnly: only LooksLikeAgent skill rows). Disabled problem rows sit
 // before the none/inherit meta-choices so inherit remains the final selectable
 // and displayed option.

@@ -36,8 +36,8 @@ func stage2Hooks() packages.Stage2Hooks {
 	}
 }
 
-// EnsureStoreOut prepares the store at home: bundled mirror + legacy notices.
-// notices, when non-nil, receives human-facing lines (mirror regen, LEGACY) --
+// EnsureStoreOut prepares the store at home: bundled mirror + its notices.
+// notices, when non-nil, receives human-facing lines (mirror regen) --
 // they print once per process, first non-nil writer wins. Strict paths
 // (develop, resolve) pass nil and surface errors; soft paths (status) may
 // log notices to stderr. The mirror stamp uses version.String()
@@ -58,7 +58,7 @@ var (
 	noticeDone bool
 )
 
-// ensureNotices yields a writer that prints mirror/LEGACY notices on the first
+// ensureNotices yields a writer that prints the store-ensure notices on the first
 // noticed call in this process; later calls with a writer are silent so
 // develop+onboard do not double.
 func ensureNotices(w io.Writer) io.Writer {

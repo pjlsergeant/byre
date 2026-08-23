@@ -117,7 +117,7 @@ type statusInfo struct {
 	EngineErr         string   // why the engine/container state is unknown, if applicable
 	SkillErr          string   // why skills couldn't be resolved, if applicable
 	SelfEdit          string   // host store path when --self-edit is active, else ""
-	PresetNote        string   // note about a committed repo-side preset (byre.preset; legacy byre.config name accepted through its window)
+	PresetNote        string   // note about a committed repo-side preset (byre.preset; the retired byre.config name gets the rename note)
 	PresetShort       string   // the same note, default-tier length
 	Cat               *packages.Catalog
 	// Base is the base image the next build would use. Rendered only under a

@@ -37,6 +37,14 @@ func TestLayerWarningsDetectLegacySharedAuthShapes(t *testing.T) {
 		}
 	})
 
+	t.Run("empty-pick-is-the-same-half-answer", func(t *testing.T) {
+		got := LayerWarnings("default", "",
+			parse(t, "[defaults]\nshared_auth = { \"claude\" = \"\" }\n"))
+		if len(got) != 1 || got[0].Kind != WarnSharedAuthArray {
+			t.Fatalf("an empty pick is yes-without-companion and must warn: %+v", got)
+		}
+	})
+
 	t.Run("top-level-table", func(t *testing.T) {
 		got := LayerWarnings("default", "/h/default.config",
 			parse(t, "[shared_auth]\nclaude = \"claude-shared-auth\"\n"))

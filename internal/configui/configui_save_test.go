@@ -267,6 +267,9 @@ func TestSaveRoundTripsSharedAuth(t *testing.T) {
 		{"mixed-canonicalizes-to-picks",
 			config.SharedAuthPref{Yes: []string{"grok"}, Pick: map[string]string{"claude": "c"}},
 			config.SharedAuthPref{Pick: map[string]string{"claude": "c"}}},
+		{"empty-pick-dropped",
+			config.SharedAuthPref{Pick: map[string]string{"claude": "c", "codex": ""}},
+			config.SharedAuthPref{Pick: map[string]string{"claude": "c"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

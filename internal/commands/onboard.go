@@ -73,7 +73,7 @@ func onboardIfNeeded(s Streams, projectDir string, paths project.Paths, flagTemp
 
 	// Catalog lists options / resolves flags. Silent EnsureStore: develop
 	// already ran EnsureStoreOut so a second noticed call would double-print
-	// LEGACY lines. Standalone paths without a prior notice still
+	// notice lines. Standalone paths without a prior notice still
 	// prepare the store; they just skip the human lines here.
 	if err := builtins.EnsureStoreOut(paths.Home, nil); err != nil {
 		return false, err
@@ -302,7 +302,7 @@ func templateOptions(cat *packages.Catalog) []onboard.Option {
 	return append(onboard.Options(names...), problemOptions(cat, packages.KindTemplate, false, names)...)
 }
 
-// problemOptions turns the catalog's INVALID/conflict/LEGACY rows of a kind
+// problemOptions turns the catalog's INVALID/conflict rows of a kind
 // into disabled picker rows. agentsOnly keeps the agent axis to rows whose
 // primary carries an [agent] table.
 //

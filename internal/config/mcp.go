@@ -12,7 +12,7 @@ package config
 // contributions — under one merge taxonomy: within config layers a later
 // layer replaces by name (normal cascade); skill contributions union AFTER
 // the merge; a `!name` closure adopts the egress-closure semantic WHOLESALE
-// (ADR 0030): kept through the merge (never consumed, see MCPClosed) and
+// (ADR 0030): kept through the fold (never consumed, see Closures.MCP) and
 // subtracted after the skill union, so "this skill, minus one of its
 // servers" works. Duplicate ACTIVE declarations across sources are a hard
 // reject (skills.MCPSet).

@@ -74,7 +74,7 @@ func developCommand(s Streams, projectDir, flagTemplate, flagAgent string, flagS
 	} else if err := requireRecorded(paths); err != nil {
 		return wrapForgottenWorktreeHandoff(projectDir, err)
 	}
-	// Store-ensure (bundled mirror + LEGACY notices) rides every develop so an
+	// Store-ensure (the bundled mirror + its notices) rides every develop so an
 	// upgraded byre surfaces them with no separate update step.
 	if err := builtins.EnsureStoreOut(paths.Home, s.Err); err != nil {
 		return err

@@ -88,6 +88,23 @@ func SaveDefault(home, template, agent string) error {
 			return err
 		}
 	}
+	// "The next save drops it" means THIS save too: a favourites-only save
+	// still cleans legacy shared_auth state out of the file it rewrites
+	// (top-level spelling migrated, incomplete answers dropped) — without
+	// this, an onboarding that saved favourites with no shared-auth offer
+	// preserved the state its own warning said the save would clean. Gated
+	// on presence so a canonical file's bytes stay untouched (ADR 0044),
+	// and degraded on a config.Parse refusal (a file the strict parser
+	// refuses still gets its two scalars; the cleanup lands on a later
+	// save once the file parses).
+	if cfg, perr := config.Parse([]byte(content)); perr == nil {
+		stored := cfg.StoredSharedAuth()
+		if !cfg.SharedAuthLegacy.Empty() || len(stored.Incomplete()) > 0 {
+			if err := canonicalizeSharedAuthDoc(doc, stored.Saveable()); err != nil {
+				return err
+			}
+		}
+	}
 	// Atomic write, so a crash or concurrent save can't truncate the favourites.
 	return config.AtomicWrite(path, string(doc.Bytes()))
 }
@@ -200,22 +217,7 @@ func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 	if err != nil {
 		return err
 	}
-	// Canonical inline value under [defaults]; a hand-written [shared_auth]
-	// table spelling is one construct, rewritten where it stands. The
-	// pre-2026-07-28 TOP-LEVEL spelling is migrated away here rather than
-	// left to rot in two homes.
-	if err := doc.RemoveTable([]string{"shared_auth"}); err != nil {
-		return err
-	}
-	if err := doc.RemoveKey(nil, "shared_auth"); err != nil {
-		return err
-	}
-	if want.Empty() {
-		err = doc.RemoveKey([]string{"defaults"}, "shared_auth")
-	} else {
-		err = doc.SetKey([]string{"defaults"}, "shared_auth", want.EncodeTOMLValue())
-	}
-	if err != nil {
+	if err := canonicalizeSharedAuthDoc(doc, want); err != nil {
 		return err
 	}
 	// Verify the edit SEMANTICALLY before it lands.
@@ -227,6 +229,27 @@ func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 		return fmt.Errorf("could not update %s (%v)", path, err)
 	}
 	return nil
+}
+
+// canonicalizeSharedAuthDoc rewrites doc's shared_auth construct to the
+// canonical [defaults] pick-table spelling of want (already the Saveable
+// projection), removing the retired top-level construct — a hand-written
+// [shared_auth] table spelling is one construct, rewritten where it
+// stands; the pre-2026-07-28 TOP-LEVEL spelling is migrated away rather
+// than left to rot in two homes. The ONE owner both default.config
+// writers share, so ANY save of the file performs the presence-triggered
+// cleanup the compat warnings promise.
+func canonicalizeSharedAuthDoc(doc *tomldoc.Doc, want config.SharedAuthPref) error {
+	if err := doc.RemoveTable([]string{"shared_auth"}); err != nil {
+		return err
+	}
+	if err := doc.RemoveKey(nil, "shared_auth"); err != nil {
+		return err
+	}
+	if want.Empty() {
+		return doc.RemoveKey([]string{"defaults"}, "shared_auth")
+	}
+	return doc.SetKey([]string{"defaults"}, "shared_auth", want.EncodeTOMLValue())
 }
 
 // defaultConfigStub heads a default.config the surgical writers create from
