@@ -123,7 +123,11 @@ func installDarwin(s Streams, a appInstall, d installDeps) error {
 		if rerr != nil || !strings.Contains(string(prev), generatedMarker) {
 			return errNotByreGenerated(appPath)
 		}
-		if got := installIDOf(prev); got != a.label {
+		got, ok := installIDOf(prev)
+		if !ok {
+			return errNotByreGenerated(appPath)
+		}
+		if got != a.label {
 			return errWrongInstall(appPath, got)
 		}
 	case !os.IsNotExist(err):
@@ -143,7 +147,11 @@ func installDarwin(s Streams, a appInstall, d installDeps) error {
 		if rerr != nil || !strings.Contains(string(prev), generatedMarker) {
 			return errNotByreGenerated(svcPath)
 		}
-		if got := installIDOf(prev); got != a.label {
+		got, ok := installIDOf(prev)
+		if !ok {
+			return errNotByreGenerated(svcPath)
+		}
+		if got != a.label {
 			return errWrongInstall(svcPath, got)
 		}
 	case !os.IsNotExist(err):
@@ -249,7 +257,11 @@ func installLinux(s Streams, a appInstall, d installDeps) error {
 		if !strings.Contains(string(prev), generatedMarker) {
 			return errNotByreGenerated(entryPath)
 		}
-		if got := installIDOf(prev); got != a.label {
+		got, ok := installIDOf(prev)
+		if !ok {
+			return errNotByreGenerated(entryPath)
+		}
+		if got != a.label {
 			return errWrongInstall(entryPath, got)
 		}
 	case !os.IsNotExist(err):

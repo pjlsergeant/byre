@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/pjlsergeant/byre/internal/gen"
 )
@@ -55,10 +56,16 @@ type appInstall struct {
 	slug       string // Linux filename fragment
 }
 
-// ValidateInstallName reports whether --name can label an install: after
-// sanitization it must still name a file on both platforms. Exported so
-// the CLI can refuse before dispatch (usage errors never dispatch).
+// ValidateInstallName reports whether --name can label an install: it
+// must be valid UTF-8 (sanitization would otherwise silently rewrite
+// invalid bytes to U+FFFD, so the rerun hint no longer reproduces the
+// install), and after sanitization it must still name a file on both
+// platforms. Exported so the CLI can refuse before dispatch (usage
+// errors never dispatch).
 func ValidateInstallName(name string) error {
+	if !utf8.ValidString(name) {
+		return fmt.Errorf("--name is not valid UTF-8")
+	}
 	if fsLabel(stripControls(name)) == "" || linuxSlug(stripControls(name)) == "" {
 		return fmt.Errorf("--name has no usable characters")
 	}
@@ -67,10 +74,17 @@ func ValidateInstallName(name string) error {
 
 func resolveInstall(byrePath string, o InstallAppOptions) (appInstall, error) {
 	// The CLI rejects these up front; this guards direct API callers. Every
-	// baked value lands in line-oriented text (AppleScript comments and
-	// string literals, .desktop lines), where a control character is a
-	// structural break shell quoting cannot contain.
-	for _, v := range []string{o.Box, o.RemoteByre, o.SSH} {
+	// baked value lands in line-oriented UTF-8 text (AppleScript comments
+	// and string literals, .desktop lines, a UTF-8-declared plist), where a
+	// control character is a structural break shell quoting cannot contain
+	// and an invalid byte makes the artifact not-text. The byre path is in
+	// the same class: it is baked into every grammar too.
+	for _, v := range []string{byrePath, o.Box, o.RemoteByre, o.SSH, o.Name} {
+		if !utf8.ValidString(v) {
+			return appInstall{}, fmt.Errorf("%q is not valid UTF-8 — generated launchers are UTF-8 text", v)
+		}
+	}
+	for _, v := range []string{byrePath, o.Box, o.RemoteByre, o.SSH} {
 		if strings.ContainsFunc(v, unicode.IsControl) {
 			return appInstall{}, fmt.Errorf("control characters in %q — generated launchers are line-oriented text", v)
 		}
@@ -213,21 +227,32 @@ func (a appInstall) idLine() string {
 	return "byre-install-id:" + hex.EncodeToString([]byte(a.label))
 }
 
-// installIDRe extracts the identity token from an existing artifact.
-var installIDRe = regexp.MustCompile(`byre-install-id:([0-9a-f]*)`)
+// installIDRe extracts the identity token from an existing artifact —
+// anchored to the dedicated comment line in each grammar, because the
+// rerun hint earlier in the file carries user-supplied values that can
+// themselves contain token-shaped text. User values are control-free
+// (rejected up front), so they can never START a line; only byre's own
+// id line can.
+var installIDRe = regexp.MustCompile(`(?m)^(?:-- |# |<!-- )byre-install-id:([0-9a-f]*)`)
 
 // installIDOf is the label an artifact declares itself to belong to
-// ("" = unnamed, or a pre-feature artifact).
-func installIDOf(content []byte) string {
-	m := installIDRe.FindSubmatch(content)
-	if m == nil {
-		return ""
+// ("" = unnamed, or a pre-feature artifact). ok is false when the
+// declaration can't be trusted — two id lines, or undecodable hex —
+// which no generated artifact contains; the caller refuses rather
+// than guesses.
+func installIDOf(content []byte) (label string, ok bool) {
+	m := installIDRe.FindAllSubmatch(content, 2)
+	if len(m) == 0 {
+		return "", true
 	}
-	label, err := hex.DecodeString(string(m[1]))
+	if len(m) > 1 {
+		return "", false
+	}
+	decoded, err := hex.DecodeString(string(m[0][1]))
 	if err != nil {
-		return ""
+		return "", false
 	}
-	return string(label)
+	return string(decoded), true
 }
 
 func (a appInstall) menuItem() string {

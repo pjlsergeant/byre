@@ -252,6 +252,8 @@ func TestRunUsageErrors(t *testing.T) {
 		{[]string{"deliver", "--install-app", "--name", "///"}, "--name has no usable characters"},
 		{[]string{"deliver", "--install-app", "--name", "a\nb"}, "--name contains control characters"},
 		{[]string{"deliver", "--install-app", "--box", "a\nb"}, "--box contains control characters"},
+		{[]string{"deliver", "--install-app", "--box", "a\xffb"}, "--box is not valid UTF-8"},
+		{[]string{"deliver", "--install-app", "--name", "a\xffb"}, "--name is not valid UTF-8"},
 		{[]string{"deliver", "--install-app", "ssh://h", "--remote-byre", "/x\n/y"}, "--remote-byre contains control characters"},
 		// --no-clip=false is still a supplied flag the exclusivity promise rejects.
 		{[]string{"deliver", "--install-app", "--no-clip=false"}, "takes an optional ssh:// target, --box, --name, and --remote-byre"},

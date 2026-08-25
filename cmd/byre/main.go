@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -465,6 +466,12 @@ byre; --box bakes a fixed box (the remote's, when a target is given).`,
 				for _, f := range []struct{ flag, v string }{
 					{"--box", opts.Box}, {"--name", opts.Name}, {"--remote-byre", opts.RemoteByre},
 				} {
+					// Not-UTF-8 checked too: sanitization would silently
+					// rewrite invalid bytes to U+FFFD, and unicode.IsControl
+					// never sees the raw byte.
+					if !utf8.ValidString(f.v) {
+						return usageError(fmt.Sprintf("byre deliver --install-app: %s is not valid UTF-8 (%q)", f.flag, f.v))
+					}
 					if strings.ContainsFunc(f.v, unicode.IsControl) {
 						return usageError(fmt.Sprintf("byre deliver --install-app: %s contains control characters (%q)", f.flag, f.v))
 					}
