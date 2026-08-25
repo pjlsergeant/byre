@@ -67,8 +67,10 @@ terminal won't paste an image any other way). Dragging a file from
 Finder onto the deliver window names the host path and asks before opening
 and delivering it; whole directories
 arrive intact; `byre deliver --install-app` adds a Dock-droppable
-app and a Finder "Deliver to Byre" Quick Action on macOS. Works from
-any directory -- it finds your running box. The full surface, including
+app and a Finder "Deliver to Byre" Quick Action on macOS -- and takes
+an `ssh://` target and/or `--name`, so several drag targets can
+coexist, each labeled and delivering to its own (local or remote)
+box. Works from any directory -- it finds your running box. The full surface, including
 piping from stdin:
 [docs/DELIVER.md](https://github.com/pjlsergeant/byre/blob/main/docs/DELIVER.md).
 
@@ -101,7 +103,10 @@ remote mode: `byre deliver ssh://dev@studio shot.png` streams from the
 laptop side, with the box picked locally and plain ssh doing transport
 and auth. byre must be installed on both ends (a version mismatch fails
 loudly before anything moves; `--remote-byre` points at a binary sshd
-can't find).
+can't find). The drag targets work for remotes too:
+`byre deliver --install-app ssh://dev@studio` installs a
+"Byre Deliver (dev@studio)" app (distinct icon) whose drops ship
+straight to the remote box.
 
 ## Get tab completion for byre commands?
 

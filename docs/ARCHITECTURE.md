@@ -935,8 +935,14 @@ shipped inside the bundle; nothing prebuilt crosses a machine boundary,
 so no signing certificate is involved -- the ad-hoc codesign repairs the
 signature that writing byre's script and icons into the applet stub
 invalidates), a Finder Quick Action, and a Linux `.desktop`
-entry. Regeneration replaces only artifacts carrying byre's generated
-marker; a same-named file byre didn't write is refused.
+entry. An `ssh://` target and/or `--name` produce coexisting per-target
+installs. Regeneration replaces only text artifacts carrying byre's
+generated marker in their header (plus, for a labeled install, its
+identity token — a colliding label refuses rather than clobbers); a
+same-named file byre didn't write is refused. Icons are the one
+non-text artifact: on Linux they're judged by content (only byre's own
+bytes are ever replaced; anything else is skipped with a note), and the
+icns inside a macOS bundle rides the bundle's own marker gate.
 
 ## Platform note
 

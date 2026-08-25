@@ -63,8 +63,10 @@ directly. Everything
 byre ever makes is prefixed `byre-` on the engine and lives under
 `~/.byre` on the host; there are no daemons, no background services,
 and no networks to clean. If you installed the deliver app, delete
-`~/Applications/Byre Deliver.app` and `~/Library/Services/Deliver to
-Byre.workflow` (macOS) or the `.desktop` launcher (Linux).
+`~/Applications/Byre Deliver*.app` and `~/Library/Services/Deliver to
+Byre*.workflow` (macOS) or the `byre-deliver*` launchers and icons
+under `~/.local/share` (Linux) -- named/remote installs add one
+artifact set per target, and each install prints its own paths.
 
 ## Report a bug?
 
