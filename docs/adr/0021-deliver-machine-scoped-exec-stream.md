@@ -148,6 +148,13 @@ owns local capabilities, remote byre owns what it already owns.
 - `byre deliver --install-app` (follow-on tranche) generates the
   "deliver app" — a readable generated artifact, display name "Byre
   Deliver" — because macOS Dock drop targets must be `.app` bundles.
+  *Annotated 2026-08-25:* `--install-app` also takes an optional
+  `ssh://` target (baking the ADR 0037 remote-deliver invocation, with
+  a distinct icon) and/or a `--name` label, producing coexisting
+  per-target artifact sets — "Byre Deliver (<label>)" and "Deliver to
+  Byre (<label>)". Each labeled artifact carries a hex identity token
+  so filename-sanitization collisions refuse rather than clobber; the
+  unnamed local singleton keeps the original names.
 - The user guide `docs/DELIVER.md` owns user-facing behavior including
   the degradation matrix; ARCHITECTURE owns internals; this ADR owns
   the decisions; GLOSSARY owns the words (deliver, inbox, deliver app).

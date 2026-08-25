@@ -452,6 +452,13 @@ byre; --box bakes a fixed box (the remote's, when a target is given).`,
 				if cmd.Flags().Changed("remote-byre") && ssh == "" {
 					return usageError("byre deliver --install-app: --remote-byre applies only to an ssh:// target")
 				}
+				// `--remote-byre=` would read downstream as "flag absent"
+				// and bake the PATH default — same presence rule as --name
+				// below. Exactly empty, not trimmed: a space-bearing path
+				// is unusual but not invalid.
+				if cmd.Flags().Changed("remote-byre") && opts.RemoteByre == "" {
+					return usageError(`--remote-byre: blank value — name the remote byre binary, or omit the flag for the ssh PATH default`)
+				}
 				// `--name=` reads downstream as "flag absent" and would
 				// silently install the singleton — an explicitly given
 				// flag must never be silently ignored. Judged by presence

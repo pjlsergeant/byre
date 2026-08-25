@@ -244,6 +244,7 @@ func TestRunUsageErrors(t *testing.T) {
 		{[]string{"deliver", "--install-app", "x.txt"}, `the only allowed argument is an ssh:// target ("x.txt")`},
 		{[]string{"deliver", "--install-app", "ssh://h", "x.txt"}, "takes at most one argument"},
 		{[]string{"deliver", "--install-app", "--remote-byre", "/x"}, "--remote-byre applies only to an ssh:// target"},
+		{[]string{"deliver", "--install-app", "ssh://h", "--remote-byre="}, "--remote-byre: blank value"},
 		{[]string{"deliver", "--install-app", "ssh://"}, "names no host"},
 		{[]string{"deliver", "--install-app", "ssh://u:p@h"}, "embeds a password"},
 		{[]string{"deliver", "--install-app", "ssh://u%0Ax@h"}, "decodes to control characters"},
