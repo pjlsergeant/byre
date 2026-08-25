@@ -8,7 +8,6 @@ import (
 	"os"
 	"runtime/debug"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/spf13/cobra"
@@ -444,8 +443,8 @@ byre; --box bakes a fixed box (the remote's, when a target is given).`,
 					// %0A-shaped target smuggles a decoded control
 					// character into every generated artifact. Garbage
 					// destination, loud refusal.
-					if strings.ContainsFunc(target.User+target.Host, unicode.IsControl) {
-						return usageError(fmt.Sprintf("byre deliver --install-app: %q decodes to control characters in its user or host", args[0]))
+					if strings.ContainsFunc(target.User+target.Host, commands.InvalidArtifactRune) {
+						return usageError(fmt.Sprintf("byre deliver --install-app: %q decodes to characters a generated launcher cannot carry", args[0]))
 					}
 					ssh = target.URL()
 				}
@@ -466,21 +465,21 @@ byre; --box bakes a fixed box (the remote's, when a target is given).`,
 				if cmd.Flags().Changed("name") && strings.TrimSpace(opts.Name) == "" {
 					return usageError(`--name: blank value — label the install, or omit the flag for the default name`)
 				}
-				// Every baked value lands in line-oriented generated text
-				// (AppleScript comments and literals, .desktop lines) where
-				// a control character is a structural break shell quoting
-				// cannot contain.
+				// Every baked value lands in line-oriented XML/UTF-8
+				// generated text, where a control character is a
+				// structural break shell quoting cannot contain and
+				// U+FFFE/U+FFFF cannot be represented at all.
 				for _, f := range []struct{ flag, v string }{
 					{"--box", opts.Box}, {"--name", opts.Name}, {"--remote-byre", opts.RemoteByre},
 				} {
 					// Not-UTF-8 checked too: sanitization would silently
-					// rewrite invalid bytes to U+FFFD, and unicode.IsControl
-					// never sees the raw byte.
+					// rewrite invalid bytes to U+FFFD, and the rune
+					// predicate never sees the raw byte.
 					if !utf8.ValidString(f.v) {
 						return usageError(fmt.Sprintf("byre deliver --install-app: %s is not valid UTF-8 (%q)", f.flag, f.v))
 					}
-					if strings.ContainsFunc(f.v, unicode.IsControl) {
-						return usageError(fmt.Sprintf("byre deliver --install-app: %s contains control characters (%q)", f.flag, f.v))
+					if strings.ContainsFunc(f.v, commands.InvalidArtifactRune) {
+						return usageError(fmt.Sprintf("byre deliver --install-app: %s contains characters a generated launcher cannot carry (%q)", f.flag, f.v))
 					}
 				}
 				if opts.Name != "" {

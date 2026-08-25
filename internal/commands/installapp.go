@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -66,7 +67,7 @@ func ValidateInstallName(name string) error {
 	if !utf8.ValidString(name) {
 		return fmt.Errorf("--name is not valid UTF-8")
 	}
-	if fsLabel(stripControls(name)) == "" || linuxSlug(stripControls(name)) == "" {
+	if fsLabel(stripInvalidRunes(name)) == "" || linuxSlug(stripInvalidRunes(name)) == "" {
 		return fmt.Errorf("--name has no usable characters")
 	}
 	return nil
@@ -85,8 +86,8 @@ func resolveInstall(byrePath string, o InstallAppOptions) (appInstall, error) {
 		}
 	}
 	for _, v := range []string{byrePath, o.Box, o.RemoteByre, o.SSH} {
-		if strings.ContainsFunc(v, unicode.IsControl) {
-			return appInstall{}, fmt.Errorf("control characters in %q — generated launchers are line-oriented text", v)
+		if strings.ContainsFunc(v, InvalidArtifactRune) {
+			return appInstall{}, fmt.Errorf("characters in %q that a generated launcher cannot carry — line-oriented XML/UTF-8 text", v)
 		}
 	}
 	a := appInstall{
@@ -99,7 +100,7 @@ func resolveInstall(byrePath string, o InstallAppOptions) (appInstall, error) {
 	// The name reaches display strings (the .desktop Name= line, AppleScript
 	// title literals) and the rerun headers, where a control character is a
 	// structural break, not text — strip them before anything is derived.
-	a.name = stripControls(o.Name)
+	a.name = stripInvalidRunes(o.Name)
 	if o.Name != "" && a.name == "" {
 		return appInstall{}, fmt.Errorf("--name has no usable characters")
 	}
@@ -155,10 +156,19 @@ func linuxSlug(s string) string {
 	return strings.TrimLeft(b.String(), ".-")
 }
 
-// stripControls drops control runes; everything else passes through.
-func stripControls(s string) string {
+// InvalidArtifactRune reports a rune no generated artifact grammar can
+// carry: controls break line-oriented text, and U+FFFE/U+FFFF fall
+// outside XML 1.0's Char production entirely — no escape can represent
+// them in a plist. Exported for the CLI's pre-dispatch validation.
+func InvalidArtifactRune(r rune) bool {
+	return unicode.IsControl(r) || r == 0xFFFE || r == 0xFFFF
+}
+
+// stripInvalidRunes drops runes InvalidArtifactRune rejects; everything
+// else passes through.
+func stripInvalidRunes(s string) string {
 	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		if InvalidArtifactRune(r) {
 			return -1
 		}
 		return r
@@ -227,28 +237,39 @@ func (a appInstall) idLine() string {
 	return "byre-install-id:" + hex.EncodeToString([]byte(a.label))
 }
 
-// installIDRe extracts the identity token from an existing artifact —
-// anchored to the dedicated comment line in each grammar, because the
-// rerun hint earlier in the file carries user-supplied values that can
-// themselves contain token-shaped text. User values are control-free
-// (rejected up front), so they can never START a line; only byre's own
-// id line can.
-var installIDRe = regexp.MustCompile(`(?m)^(?:-- |# |<!-- )byre-install-id:([0-9a-f]*)`)
+// installIDLineRe is the exact identity line each grammar carries —
+// anchored at BOTH ends, because the rerun hint earlier in the file
+// carries user-supplied values that can themselves contain token-shaped
+// text (user values are control-free, so they can never START a line),
+// and an unbounded tail would read a malformed token's valid-hex prefix
+// as a label. installIDPrefixRe detects token-SHAPED lines so a
+// malformed one refuses rather than reading as unnamed.
+var (
+	installIDLineRe   = regexp.MustCompile(`(?m)^(?:(?:-- |# )byre-install-id:([0-9a-f]*)|<!-- byre-install-id:([0-9a-f]*) -->)$`)
+	installIDPrefixRe = regexp.MustCompile(`(?m)^(?:-- |# |<!-- )byre-install-id:`)
+)
 
 // installIDOf is the label an artifact declares itself to belong to
 // ("" = unnamed, or a pre-feature artifact). ok is false when the
-// declaration can't be trusted — two id lines, or undecodable hex —
-// which no generated artifact contains; the caller refuses rather
-// than guesses.
+// declaration can't be trusted — a malformed token line, two id lines,
+// or undecodable hex — which no generated artifact contains; the caller
+// refuses rather than guesses.
 func installIDOf(content []byte) (label string, ok bool) {
-	m := installIDRe.FindAllSubmatch(content, 2)
-	if len(m) == 0 {
-		return "", true
-	}
-	if len(m) > 1 {
+	strict := installIDLineRe.FindAllSubmatch(content, -1)
+	if len(installIDPrefixRe.FindAllIndex(content, -1)) != len(strict) {
 		return "", false
 	}
-	decoded, err := hex.DecodeString(string(m[0][1]))
+	if len(strict) == 0 {
+		return "", true
+	}
+	if len(strict) > 1 {
+		return "", false
+	}
+	hexPart := strict[0][1]
+	if hexPart == nil {
+		hexPart = strict[0][2]
+	}
+	decoded, err := hex.DecodeString(string(hexPart))
 	if err != nil {
 		return "", false
 	}
@@ -262,17 +283,22 @@ func (a appInstall) menuItem() string {
 	return "Deliver to Byre (" + a.label + ")"
 }
 
-// iconName is the Linux icon identity, tied to the entry's own filename
-// so each install owns its icon: a shared name would make one install's
-// printed uninstall paths delete every sibling's icon. The -ssh suffix
-// keeps the remote art distinct from a local install whose slug happens
-// to collide with a target's.
+// iconName is the Linux icon identity, per-install: a shared name would
+// make one install's printed uninstall paths delete every sibling's
+// icon. The slug is for the human; the hash is the identity — any plain
+// suffix could be forged by a --name ending in it (a local 'far-ssh'
+// colliding with remote 'far'), so the local/remote kind and the label
+// are hashed with a separator no label can contain.
 func (a appInstall) iconName() string {
-	base := strings.TrimSuffix(a.linuxDesktopName(), ".desktop")
-	if a.ssh != "" {
-		return base + "-ssh"
+	if a.label == "" {
+		return "byre-deliver"
 	}
-	return base
+	kind := "local"
+	if a.ssh != "" {
+		kind = "ssh"
+	}
+	sum := sha256.Sum256([]byte(kind + "\x00" + a.label))
+	return "byre-deliver-" + a.slug + "-" + hex.EncodeToString(sum[:4])
 }
 
 func (a appInstall) iconPNG() []byte {

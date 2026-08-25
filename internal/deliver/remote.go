@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -85,6 +86,14 @@ func ParseSSHTarget(arg string) (t SSHTarget, isSSH bool, err error) {
 		return SSHTarget{}, true, fmt.Errorf("%q carries more than [user@]host[:port] — the ssh target names a machine, sources follow as arguments", arg)
 	}
 	t = SSHTarget{Host: u.Hostname(), Port: u.Port()}
+	// url.Parse is permissive about multi-colon authorities ("a:b:22"
+	// becomes host "a:b", port "22"); URL() would bracket that host and
+	// the bracketed form only re-parses as an IP literal — the generated
+	// deliver app would bake a target its own next parse rejects. A
+	// colon-bearing host must actually BE an IPv6 literal.
+	if strings.Contains(t.Host, ":") && net.ParseIP(t.Host) == nil {
+		return SSHTarget{}, true, fmt.Errorf("%q: a colon-bearing host must be a bracketed IPv6 literal", arg)
+	}
 	if u.User != nil {
 		if _, has := u.User.Password(); has {
 			return SSHTarget{}, true, fmt.Errorf("%q embeds a password — ssh owns authentication (keys, agents, prompts)", arg)

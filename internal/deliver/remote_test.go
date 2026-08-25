@@ -154,6 +154,22 @@ func TestSSHTargetURLRoundTrips(t *testing.T) {
 	}
 }
 
+func TestParseSSHTargetRejectsMultiColonHost(t *testing.T) {
+	// url.Parse reads "a:b:22" as host "a:b" + port "22"; URL() would
+	// bracket the host and the result only re-parses as an IP literal —
+	// so a colon-bearing host must be one.
+	if _, isSSH, err := ParseSSHTarget("ssh://a:b:22"); !isSSH || err == nil || !strings.Contains(err.Error(), "must be a bracketed IPv6 literal") {
+		t.Errorf("ssh://a:b:22: want the IPv6-literal rule, got isSSH=%v err=%v", isSSH, err)
+	}
+	// An explicitly bracketed non-IP host is rejected by url.Parse itself.
+	if _, isSSH, err := ParseSSHTarget("ssh://[a:b]:22"); !isSSH || err == nil || !strings.Contains(err.Error(), "cannot parse") {
+		t.Errorf("ssh://[a:b]:22: want the parse rule, got isSSH=%v err=%v", isSSH, err)
+	}
+	if tgt, _, err := ParseSSHTarget("ssh://[2001:db8::1]:22"); err != nil || tgt.Host != "2001:db8::1" {
+		t.Fatalf("real IPv6 literal rejected: %+v %v", tgt, err)
+	}
+}
+
 func TestRemoteAutoPickSoleBox(t *testing.T) {
 	ssh := &fakeSSH{responses: []sshResponse{
 		{stdout: "abc123\tdocker\tproj\tproj\t\n"},

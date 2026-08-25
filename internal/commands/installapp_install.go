@@ -132,6 +132,13 @@ func installDarwin(s Streams, a appInstall, d installDeps) error {
 	switch _, err := hostopen.PlainStat(appPath, hostopen.HostUserOwned); {
 	case err == nil:
 		appExists = true
+		// Judge the marker where it stands: ReadFile/WriteFile follow a
+		// final-component symlink, so a link here would be read AND
+		// written through, mutating its target — the same present-but-
+		// unprovable rule as the icon gate.
+		if fi, lerr := hostopen.PlainLstat(marker, hostopen.HostUserOwned); lerr != nil || !fi.Mode().IsRegular() {
+			return errNotByreGenerated(appPath)
+		}
 		prev, rerr := hostopen.PlainReadFile(marker, hostopen.HostUserOwned)
 		if rerr != nil || !looksByreGenerated(prev) {
 			return errNotByreGenerated(appPath)
@@ -156,6 +163,10 @@ func installDarwin(s Streams, a appInstall, d installDeps) error {
 	wflowPath := filepath.Join(svcPath, "Contents", "document.wflow")
 	switch _, err := hostopen.PlainStat(svcPath, hostopen.HostUserOwned); {
 	case err == nil:
+		// Same no-follow rule as the app marker above.
+		if fi, lerr := hostopen.PlainLstat(wflowPath, hostopen.HostUserOwned); lerr != nil || !fi.Mode().IsRegular() {
+			return errNotByreGenerated(svcPath)
+		}
 		prev, rerr := hostopen.PlainReadFile(wflowPath, hostopen.HostUserOwned)
 		if rerr != nil || !looksByreGenerated(prev) {
 			return errNotByreGenerated(svcPath)
@@ -265,6 +276,11 @@ func installDarwin(s Streams, a appInstall, d installDeps) error {
 func installLinux(s Streams, a appInstall, d installDeps) error {
 	appsDir := filepath.Join(d.home, ".local", "share", "applications")
 	entryPath := filepath.Join(appsDir, a.linuxDesktopName())
+	// Judge the entry where it stands (no-follow): a symlink here would
+	// be read and then written through, mutating its target.
+	if fi, lerr := hostopen.PlainLstat(entryPath, hostopen.HostUserOwned); lerr == nil && !fi.Mode().IsRegular() {
+		return errNotByreGenerated(entryPath)
+	}
 	switch prev, err := hostopen.PlainReadFile(entryPath, hostopen.HostUserOwned); {
 	case err == nil:
 		if !looksByreGenerated(prev) {

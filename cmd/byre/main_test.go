@@ -247,15 +247,18 @@ func TestRunUsageErrors(t *testing.T) {
 		{[]string{"deliver", "--install-app", "ssh://h", "--remote-byre="}, "--remote-byre: blank value"},
 		{[]string{"deliver", "--install-app", "ssh://"}, "names no host"},
 		{[]string{"deliver", "--install-app", "ssh://u:p@h"}, "embeds a password"},
-		{[]string{"deliver", "--install-app", "ssh://u%0Ax@h"}, "decodes to control characters"},
+		{[]string{"deliver", "--install-app", "ssh://u%0Ax@h"}, "decodes to characters a generated launcher cannot carry"},
 		{[]string{"deliver", "--install-app", "--name="}, "--name: blank value"},
 		{[]string{"deliver", "--install-app", "--name", "   "}, "--name: blank value"},
 		{[]string{"deliver", "--install-app", "--name", "///"}, "--name has no usable characters"},
-		{[]string{"deliver", "--install-app", "--name", "a\nb"}, "--name contains control characters"},
-		{[]string{"deliver", "--install-app", "--box", "a\nb"}, "--box contains control characters"},
+		{[]string{"deliver", "--install-app", "--name", "a\nb"}, "--name contains characters a generated launcher cannot carry"},
+		{[]string{"deliver", "--install-app", "--box", "a\nb"}, "--box contains characters a generated launcher cannot carry"},
+		// U+FFFE is valid UTF-8 and not a control rune, but XML 1.0 cannot
+		// represent it — no escape exists, so it must refuse up front.
+		{[]string{"deliver", "--install-app", "--box", "a￾b"}, "--box contains characters a generated launcher cannot carry"},
 		{[]string{"deliver", "--install-app", "--box", "a\xffb"}, "--box is not valid UTF-8"},
 		{[]string{"deliver", "--install-app", "--name", "a\xffb"}, "--name is not valid UTF-8"},
-		{[]string{"deliver", "--install-app", "ssh://h", "--remote-byre", "/x\n/y"}, "--remote-byre contains control characters"},
+		{[]string{"deliver", "--install-app", "ssh://h", "--remote-byre", "/x\n/y"}, "--remote-byre contains characters a generated launcher cannot carry"},
 		// --no-clip=false is still a supplied flag the exclusivity promise rejects.
 		{[]string{"deliver", "--install-app", "--no-clip=false"}, "takes an optional ssh:// target, --box, --name, and --remote-byre"},
 		{[]string{"deliver", "--install-app", "--proto", "1"}, "takes an optional ssh:// target, --box, --name, and --remote-byre"},
