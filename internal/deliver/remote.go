@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -90,9 +90,13 @@ func ParseSSHTarget(arg string) (t SSHTarget, isSSH bool, err error) {
 	// becomes host "a:b", port "22"); URL() would bracket that host and
 	// the bracketed form only re-parses as an IP literal — the generated
 	// deliver app would bake a target its own next parse rejects. A
-	// colon-bearing host must actually BE an IPv6 literal.
-	if strings.Contains(t.Host, ":") && net.ParseIP(t.Host) == nil {
-		return SSHTarget{}, true, fmt.Errorf("%q: a colon-bearing host must be a bracketed IPv6 literal", arg)
+	// colon-bearing host must actually BE an IPv6 literal. netip (not
+	// net.ParseIP) so a zoned address Hostname() decoded from
+	// ssh://[fe80::1%25en0] is accepted.
+	if strings.Contains(t.Host, ":") {
+		if _, err := netip.ParseAddr(t.Host); err != nil {
+			return SSHTarget{}, true, fmt.Errorf("%q: a colon-bearing host must be a bracketed IPv6 literal", arg)
+		}
 	}
 	if u.User != nil {
 		if _, has := u.User.Password(); has {

@@ -77,6 +77,7 @@ func TestParseSSHTarget(t *testing.T) {
 		{"ssh://far/", SSHTarget{Host: "far"}, true, false},
 		{"ssh://[2001:db8::1]", SSHTarget{Host: "2001:db8::1"}, true, false},
 		{"ssh://dev@[2001:db8::1]:2222", SSHTarget{User: "dev", Host: "2001:db8::1", Port: "2222"}, true, false},
+		{"ssh://[fe80::1%25en0]", SSHTarget{Host: "fe80::1%en0"}, true, false},
 		{"shot.png", SSHTarget{}, false, false},
 		{"./ssh://odd", SSHTarget{}, false, false},
 		{"ssh://", SSHTarget{}, true, true},
@@ -142,6 +143,7 @@ func TestSSHTargetURLRoundTrips(t *testing.T) {
 		{User: "dev/user", Host: "far"},
 		{User: "dev@odd", Host: "far"},
 		{User: "dev", Host: "2001:db8::1", Port: "22"},
+		{Host: "fe80::1%en0"},
 	} {
 		got, isSSH, err := ParseSSHTarget(tgt.URL())
 		if !isSSH || err != nil {

@@ -57,18 +57,30 @@ type appInstall struct {
 	slug       string // Linux filename fragment
 }
 
+// installNameMax is the byte cap on fsLabel and slug: a clean refusal
+// instead of ENAMETOOLONG mid-install.
+const installNameMax = 120
+
 // ValidateInstallName reports whether --name can label an install: it
 // must be valid UTF-8 (sanitization would otherwise silently rewrite
 // invalid bytes to U+FFFD, so the rerun hint no longer reproduces the
-// install), and after sanitization it must still name a file on both
-// platforms. Exported so the CLI can refuse before dispatch (usage
-// errors never dispatch).
+// install), and after sanitization it must still name a file. Exported
+// so the CLI can refuse before dispatch (usage errors never dispatch).
 func ValidateInstallName(name string) error {
 	if !utf8.ValidString(name) {
 		return fmt.Errorf("--name is not valid UTF-8")
 	}
-	if fsLabel(stripInvalidRunes(name)) == "" || linuxSlug(stripInvalidRunes(name)) == "" {
+	cleaned := stripInvalidRunes(name)
+	fl := fsLabel(cleaned)
+	if fl == "" {
 		return fmt.Errorf("--name has no usable characters")
+	}
+	slug := linuxSlug(cleaned)
+	if slug == "" {
+		slug = hash8(cleaned)
+	}
+	if len(fl) > installNameMax || len(slug) > installNameMax {
+		return fmt.Errorf("--name too long")
 	}
 	return nil
 }
@@ -115,8 +127,20 @@ func resolveInstall(byrePath string, o InstallAppOptions) (appInstall, error) {
 	a.display = "Byre Deliver (" + label + ")"
 	a.fsLabel = fsLabel(label)
 	a.slug = linuxSlug(label)
-	if a.fsLabel == "" || a.slug == "" {
+	if a.slug == "" {
+		a.slug = hash8(label)
+	}
+	if a.fsLabel == "" {
+		if a.name == "" {
+			return appInstall{}, fmt.Errorf("the ssh target yields no usable install label — pass --name")
+		}
 		return appInstall{}, fmt.Errorf("--name has no usable characters")
+	}
+	if len(a.fsLabel) > installNameMax || len(a.slug) > installNameMax {
+		if a.name == "" {
+			return appInstall{}, fmt.Errorf("the ssh target yields no usable install label — pass --name")
+		}
+		return appInstall{}, fmt.Errorf("--name too long")
 	}
 	return a, nil
 }
@@ -157,11 +181,13 @@ func linuxSlug(s string) string {
 }
 
 // InvalidArtifactRune reports a rune no generated artifact grammar can
-// carry: controls break line-oriented text, and U+FFFE/U+FFFF fall
-// outside XML 1.0's Char production entirely — no escape can represent
-// them in a plist. Exported for the CLI's pre-dispatch validation.
+// carry: controls break line-oriented text, U+2028/U+2029 are line
+// separators some parsers break on (Go's (?m) does not), and
+// U+FFFE/U+FFFF fall outside XML 1.0's Char production entirely — no
+// escape can represent them in a plist. Exported for the CLI's
+// pre-dispatch validation.
 func InvalidArtifactRune(r rune) bool {
-	return unicode.IsControl(r) || r == 0xFFFE || r == 0xFFFF
+	return unicode.IsControl(r) || r == '\u2028' || r == '\u2029' || r == 0xFFFE || r == 0xFFFF
 }
 
 // stripInvalidRunes drops runes InvalidArtifactRune rejects; everything
@@ -245,7 +271,7 @@ func (a appInstall) idLine() string {
 // as a label. installIDPrefixRe detects token-SHAPED lines so a
 // malformed one refuses rather than reading as unnamed.
 var (
-	installIDLineRe   = regexp.MustCompile(`(?m)^(?:(?:-- |# )byre-install-id:([0-9a-f]*)|<!-- byre-install-id:([0-9a-f]*) -->)$`)
+	installIDLineRe   = regexp.MustCompile(`(?m)^(?:(?:-- |# )byre-install-id:([0-9a-f]+)|<!-- byre-install-id:([0-9a-f]+) -->)$`)
 	installIDPrefixRe = regexp.MustCompile(`(?m)^(?:-- |# |<!-- )byre-install-id:`)
 )
 
@@ -268,6 +294,9 @@ func installIDOf(content []byte) (label string, ok bool) {
 	hexPart := strict[0][1]
 	if hexPart == nil {
 		hexPart = strict[0][2]
+	}
+	if len(hexPart) == 0 {
+		return "", false
 	}
 	decoded, err := hex.DecodeString(string(hexPart))
 	if err != nil {
@@ -297,8 +326,15 @@ func (a appInstall) iconName() string {
 	if a.ssh != "" {
 		kind = "ssh"
 	}
-	sum := sha256.Sum256([]byte(kind + "\x00" + a.label))
-	return "byre-deliver-" + a.slug + "-" + hex.EncodeToString(sum[:4])
+	return "byre-deliver-" + a.slug + "-" + hash8(kind+"\x00"+a.label)
+}
+
+// hash8 is the hex of sha256(s)[:4] — the 8-character identity suffix
+// shared by a hashed linuxSlug fallback and iconName (which keeps its
+// kind+NUL+label input).
+func hash8(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:4])
 }
 
 func (a appInstall) iconPNG() []byte {
@@ -315,9 +351,7 @@ func (a appInstall) appBase() string {
 	return "Byre Deliver (" + a.fsLabel + ")"
 }
 
-func (a appInstall) darwinAppName() string    { return a.appBase() + ".app" }
-func (a appInstall) darwinStagedName() string { return "." + a.appBase() + ".staged.app" }
-func (a appInstall) darwinBackupName() string { return "." + a.appBase() + ".previous.app" }
+func (a appInstall) darwinAppName() string { return a.appBase() + ".app" }
 
 func (a appInstall) darwinWorkflowName() string {
 	if a.label == "" {
@@ -666,12 +700,18 @@ func desktopValueEscape(s string) string {
 
 // desktopExecQuote quotes one Exec argument per the Desktop Entry spec.
 // % always doubles (a bare % is a field-code position regardless of quoting).
+// Two passes: the value-level escape (a literal backslash becomes two)
+// happens BEFORE quoting; inside a quoted argument, `"`, backtick, `$`,
+// and `\` are each escaped with a backslash — so a literal backslash is
+// \\\\ in the file and a literal $ is \$.
 func desktopExecQuote(s string) string {
 	s = strings.ReplaceAll(s, "%", "%%")
 	if !strings.ContainsAny(s, " \t\"'\\><~|&;$*?#()`") {
 		return s
 	}
-	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `\`, `\\\\`)
 	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "`", "\\`")
+	s = strings.ReplaceAll(s, `$`, `\$`)
 	return `"` + s + `"`
 }

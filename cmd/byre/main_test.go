@@ -125,6 +125,7 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"deliver", "--remote-byre", "/opt/byre", "ssh://far", "f"}, "deliver", "/proj   false false false false p0 /opt/byre ssh://far,f"},
 		{[]string{"deliver", "--install-app"}, "install-app", `"" "" "" ""`},
 		{[]string{"deliver", "--install-app", "--box", "abc"}, "install-app", `"abc" "" "" ""`},
+		{[]string{"deliver", "--install-app", "--name", "///"}, "install-app", `"" "///" "" ""`},
 		{[]string{"deliver", "--install-app", "ssh://u@h:2222", "--name", "n", "--remote-byre", "/x", "--box", "b"}, "install-app", `"b" "n" "/x" "ssh://u@h:2222"`},
 		{[]string{"grab", "out/report.pdf"}, "grab", "/proj  false out/report.pdf ."},
 		{[]string{"grab", "/workspace/a.txt", "~/dl"}, "grab", "/proj  false /workspace/a.txt ~/dl"},
@@ -250,9 +251,10 @@ func TestRunUsageErrors(t *testing.T) {
 		{[]string{"deliver", "--install-app", "ssh://u%0Ax@h"}, "decodes to characters a generated launcher cannot carry"},
 		{[]string{"deliver", "--install-app", "--name="}, "--name: blank value"},
 		{[]string{"deliver", "--install-app", "--name", "   "}, "--name: blank value"},
-		{[]string{"deliver", "--install-app", "--name", "///"}, "--name has no usable characters"},
+		{[]string{"deliver", "--install-app", "--name", strings.Repeat("a", 121)}, "--name too long"},
 		{[]string{"deliver", "--install-app", "--name", "a\nb"}, "--name contains characters a generated launcher cannot carry"},
 		{[]string{"deliver", "--install-app", "--box", "a\nb"}, "--box contains characters a generated launcher cannot carry"},
+		{[]string{"deliver", "--install-app", "--box", "a\u2028b"}, "--box contains characters a generated launcher cannot carry"},
 		// U+FFFE is valid UTF-8 and not a control rune, but XML 1.0 cannot
 		// represent it — no escape exists, so it must refuse up front.
 		{[]string{"deliver", "--install-app", "--box", "a￾b"}, "--box contains characters a generated launcher cannot carry"},

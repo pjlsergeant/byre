@@ -38,6 +38,12 @@
   onboard) to re-record. Existing arrays still parse and still prefill
   until then. (ADR 0049 amendment, 2026-08-23.)
 
+- **`byre deliver --install-app` now installs remote (`ssh://`) and named
+  (`--name`) drag targets.** Several can coexist — a remote install is
+  named for its target (or `--name`), with a distinct icon, and
+  `--remote-byre` is baked into the launcher when the remote binary isn't
+  on ssh's PATH. Unnamed local stays the singleton.
+
 - **`byre develop --agent <name>` (`-a`) runs a one-off session with a
   different agent.** On a configured project the flag overrides the
   `agent` key for that run exactly as if the config said so — the
