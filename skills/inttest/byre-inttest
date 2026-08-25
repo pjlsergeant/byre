@@ -86,7 +86,11 @@ fi
 # refuses; the key is ours, so keep it usable.
 chmod 600 "$KEY"
 
-SSH=(ssh -i "$KEY" -p "$VM_PORT" -o StrictHostKeyChecking=accept-new)
+# -4: host.docker.internal resolves IPv6-first (a fdc4:: ULA) on current
+# Docker Desktop and boxes have no IPv6 route -- without it every connect
+# dies "Network is unreachable" before reaching the forwarder
+# (field-found 2026-08-25).
+SSH=(ssh -4 -i "$KEY" -p "$VM_PORT" -o StrictHostKeyChecking=accept-new)
 VM="$VM_USER@$VM_HOST"
 # Per-worktree destination so concurrent sessions don't trample each other's
 # synced tree (BYRE_WORKTREE is per-worktree, = BYRE_PROJECT on a plain checkout).
