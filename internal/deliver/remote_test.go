@@ -113,6 +113,23 @@ func TestSSHTargetStringRebracketsIPv6(t *testing.T) {
 	}
 }
 
+func TestSSHTargetURL(t *testing.T) {
+	cases := []struct {
+		t    SSHTarget
+		want string
+	}{
+		{SSHTarget{Host: "far"}, "ssh://far"},
+		{SSHTarget{User: "dev", Host: "far"}, "ssh://dev@far"},
+		{SSHTarget{Host: "far", Port: "2222"}, "ssh://far:2222"},
+		{SSHTarget{User: "dev", Host: "2001:db8::1", Port: "2222"}, "ssh://dev@[2001:db8::1]:2222"},
+	}
+	for _, tc := range cases {
+		if got := tc.t.URL(); got != tc.want {
+			t.Errorf("%+v.URL() = %q, want %q", tc.t, got, tc.want)
+		}
+	}
+}
+
 func TestRemoteAutoPickSoleBox(t *testing.T) {
 	ssh := &fakeSSH{responses: []sshResponse{
 		{stdout: "abc123\tdocker\tproj\tproj\t\n"},

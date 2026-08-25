@@ -9,3 +9,10 @@ import _ "embed"
 //
 //go:embed assets/deliver-icon.png
 var deliverIconPNG []byte
+
+// deliverIconSSHPNG is the remote-delivery install's icon — same packing
+// rules as deliverIconPNG. Replace assets/deliver-icon-ssh.png to change
+// the art; local installs (named or not) keep deliverIconPNG.
+//
+//go:embed assets/deliver-icon-ssh.png
+var deliverIconSSHPNG []byte

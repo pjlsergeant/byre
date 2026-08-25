@@ -37,7 +37,7 @@ type app struct {
 	shell         func(s commands.Streams, dir string, skipUIDCheck bool) error
 	deliver       func(s commands.Streams, dir string, opts deliver.Options, paths []string) error
 	grab          func(s commands.Streams, dir string, opts deliver.Options, boxPath, hostPath string) error
-	installApp    func(s commands.Streams, box string) error
+	installApp    func(s commands.Streams, o commands.InstallAppOptions) error
 	worktree      func(s commands.Streams, dir, name, path, agent string, selfEdit bool, credMode commands.CredentialMode) error
 	rebuild       func(s commands.Streams, dir string) error
 	rehome        func(s commands.Streams, dir, oldID string) error
@@ -409,21 +409,45 @@ always the contract.
 "Byre Deliver" drag target (macOS: a Dock/Finder drop target plus a right-click
 "Deliver to Byre" Quick Action; Linux: a .desktop launcher). Drop files on
 it, or open it plain to deliver the clipboard; outcomes arrive as
-notifications. Re-run it after moving byre; --box bakes a fixed target in.`,
+notifications. An optional ssh:// target (plus --remote-byre when the remote
+binary isn't on ssh's PATH) installs a remote-delivery drag target with a
+distinct icon; --name labels an install so several can coexist
+("Byre Deliver (<label>)") — without --name a remote install is named for
+its target and a local install stays the singleton. Re-run after moving
+byre; --box bakes a fixed box (the remote's, when a target is given).`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if installApp {
 				// Changed(), not the parsed values: --no-clip=false is still
 				// a supplied flag the exclusivity promise rejects.
-				for _, f := range []string{"name", "skip-uid-check", "no-clip", "boxes", "tar", "proto", "remote-byre"} {
+				for _, f := range []string{"skip-uid-check", "no-clip", "boxes", "tar", "proto"} {
 					if cmd.Flags().Changed(f) {
-						return usageError("byre deliver --install-app: takes only an optional --box")
+						return usageError("byre deliver --install-app: takes an optional ssh:// target, --box, --name, and --remote-byre")
 					}
 				}
-				if len(args) > 0 {
-					return usageError("byre deliver --install-app: takes only an optional --box")
+				if len(args) > 1 {
+					return usageError("byre deliver --install-app: takes at most one argument")
 				}
-				return a.installApp(s, opts.Box)
+				var ssh string
+				if len(args) == 1 {
+					target, isSSH, err := deliver.ParseSSHTarget(args[0])
+					if !isSSH {
+						return usageError(fmt.Sprintf("byre deliver --install-app: the only allowed argument is an ssh:// target (%q)", args[0]))
+					}
+					if err != nil {
+						return usageError(err.Error())
+					}
+					ssh = target.URL()
+				}
+				if cmd.Flags().Changed("remote-byre") && ssh == "" {
+					return usageError("byre deliver --install-app: --remote-byre applies only to an ssh:// target")
+				}
+				return a.installApp(s, commands.InstallAppOptions{
+					Box:        opts.Box,
+					Name:       opts.Name,
+					RemoteByre: opts.RemoteByre,
+					SSH:        ssh,
+				})
 			}
 			// The remote-facing modes (ADR 0037) keep their surfaces frozen
 			// and small: --boxes answers exactly one question, --tar takes
@@ -464,7 +488,7 @@ notifications. Re-run it after moving byre; --box bakes a fixed target in.`,
 		},
 	}
 	c.Flags().StringVar(&opts.Box, "box", "", "deliver to this box (unique id or project prefix)")
-	c.Flags().StringVar(&opts.Name, "name", "", "landing filename for stdin ('-') content")
+	c.Flags().StringVar(&opts.Name, "name", "", "landing filename for stdin ('-') content; with --install-app, the deliver-app display name")
 	c.Flags().BoolVar(&opts.SkipUIDCheck, "skip-uid-check", false, "include (and permit) boxes owned by other users")
 	c.Flags().BoolVar(&opts.NoClip, "no-clip", false, "don't copy the landed paths to the clipboard")
 	c.Flags().BoolVar(&installApp, "install-app", false, "install the deliver app instead of delivering")

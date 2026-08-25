@@ -53,7 +53,9 @@ func recorderApp(calls map[string]string) app {
 			return note("grab", strings.Join([]string{dir, opts.Box,
 				boolStr(opts.SkipUIDCheck), boxPath, hostPath}, " "))
 		},
-		installApp: func(_ commands.Streams, box string) error { return note("install-app", box) },
+		installApp: func(_ commands.Streams, o commands.InstallAppOptions) error {
+			return note("install-app", fmt.Sprintf("%q %q %q %q", o.Box, o.Name, o.RemoteByre, o.SSH))
+		},
 		worktree: func(_ commands.Streams, dir, name, path, agent string, selfEdit bool, _ commands.CredentialMode) error {
 			return note("worktree", strings.Join([]string{dir, name, path, agent, boolStr(selfEdit)}, " "))
 		},
@@ -121,8 +123,9 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"deliver", "--tar", "--proto=1", "--box", "abc", "--no-clip", "-"}, "deliver", "/proj abc  false true false true p1  -"},
 		{[]string{"deliver", "ssh://dev@far", "shot.png"}, "deliver", "/proj   false false false false p0  ssh://dev@far,shot.png"},
 		{[]string{"deliver", "--remote-byre", "/opt/byre", "ssh://far", "f"}, "deliver", "/proj   false false false false p0 /opt/byre ssh://far,f"},
-		{[]string{"deliver", "--install-app"}, "install-app", ""},
-		{[]string{"deliver", "--install-app", "--box", "abc"}, "install-app", "abc"},
+		{[]string{"deliver", "--install-app"}, "install-app", `"" "" "" ""`},
+		{[]string{"deliver", "--install-app", "--box", "abc"}, "install-app", `"abc" "" "" ""`},
+		{[]string{"deliver", "--install-app", "ssh://u@h:2222", "--name", "n", "--remote-byre", "/x", "--box", "b"}, "install-app", `"b" "n" "/x" "ssh://u@h:2222"`},
 		{[]string{"grab", "out/report.pdf"}, "grab", "/proj  false out/report.pdf ."},
 		{[]string{"grab", "/workspace/a.txt", "~/dl"}, "grab", "/proj  false /workspace/a.txt ~/dl"},
 		{[]string{"grab", "--box", "x", "--skip-uid-check", "a.txt", "-"}, "grab", "/proj x true a.txt -"},
@@ -238,10 +241,17 @@ func TestRunUsageErrors(t *testing.T) {
 		{[]string{"worktree", "a", "b"}, `unexpected argument "b"`},
 		{[]string{"deliver", "--bogus"}, ""}, // unknown flag
 		{[]string{"deliver", "-", "x.txt"}, "cannot be mixed with path arguments"},
-		{[]string{"deliver", "--install-app", "x.txt"}, "takes only an optional --box"},
+		{[]string{"deliver", "--install-app", "x.txt"}, `the only allowed argument is an ssh:// target ("x.txt")`},
+		{[]string{"deliver", "--install-app", "ssh://h", "x.txt"}, "takes at most one argument"},
+		{[]string{"deliver", "--install-app", "--remote-byre", "/x"}, "--remote-byre applies only to an ssh:// target"},
+		{[]string{"deliver", "--install-app", "ssh://"}, "names no host"},
+		{[]string{"deliver", "--install-app", "ssh://u:p@h"}, "embeds a password"},
 		// --no-clip=false is still a supplied flag the exclusivity promise rejects.
-		{[]string{"deliver", "--install-app", "--no-clip=false"}, "takes only an optional --box"},
-		{[]string{"deliver", "--install-app", "--proto", "1"}, "takes only an optional --box"},
+		{[]string{"deliver", "--install-app", "--no-clip=false"}, "takes an optional ssh:// target, --box, --name, and --remote-byre"},
+		{[]string{"deliver", "--install-app", "--proto", "1"}, "takes an optional ssh:// target, --box, --name, and --remote-byre"},
+		{[]string{"deliver", "--install-app", "--tar", "-"}, "takes an optional ssh:// target, --box, --name, and --remote-byre"},
+		{[]string{"deliver", "--install-app", "--boxes"}, "takes an optional ssh:// target, --box, --name, and --remote-byre"},
+		{[]string{"deliver", "--install-app", "--skip-uid-check"}, "takes an optional ssh:// target, --box, --name, and --remote-byre"},
 		{[]string{"deliver", "--boxes", "x.txt"}, "--boxes: takes no paths"},
 		{[]string{"deliver", "--boxes", "--tar", "-"}, "takes only --proto and --skip-uid-check"},
 		{[]string{"deliver", "--boxes", "--box", "x"}, "takes only --proto and --skip-uid-check"},

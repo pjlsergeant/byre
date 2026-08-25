@@ -47,6 +47,17 @@ func (t SSHTarget) String() string {
 	return host
 }
 
+// URL is the canonical ssh:// argument form: "ssh://" plus String(), with
+// ":" + Port when Port is set. String() already re-brackets IPv6 hosts, so
+// the port suffix stays unambiguous.
+func (t SSHTarget) URL() string {
+	s := "ssh://" + t.String()
+	if t.Port != "" {
+		s += ":" + t.Port
+	}
+	return s
+}
+
 // ParseSSHTarget recognizes an ssh:// delivery target. isSSH reports whether
 // the argument is ssh-shaped at all (a false means "treat it as a path");
 // err reports an ssh-shaped argument byre cannot use.

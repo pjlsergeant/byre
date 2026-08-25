@@ -193,6 +193,18 @@ so no signing or notarization is ever involved), and re-running
 `--box <id>` bakes a fixed target box in. First use triggers macOS's
 one-time permission prompts. To uninstall, delete the printed paths.
 
+Remote and named installs share the same command:
+
+```
+$ byre deliver --install-app [ssh://[user@]host[:port]] [--box id] [--name label] [--remote-byre path]
+```
+
+An `ssh://` target installs a remote-delivery drag target (distinct
+icon; drops ship to that machine). `--name` sets the label so several
+installs can coexist as `Byre Deliver (<label>)`; without it a remote
+install is named for its target and a local install stays the singleton.
+`--box` on a remote install names the box on the *remote* machine.
+
 On **Linux**, `--install-app` writes a `.desktop` launcher instead. This
 is **experimental and unverified**: whether you can drop files onto a
 launcher (and whether a dropped-on launch reaches `/inbox`) depends

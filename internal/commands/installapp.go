@@ -7,6 +7,7 @@ import (
 	"image"
 	_ "image/png" // registered so icon dimensions can be decoded
 	"strings"
+	"unicode"
 
 	"github.com/pjlsergeant/byre/internal/gen"
 )
@@ -31,23 +32,213 @@ import (
 // Quick Action reported "no running byre boxes" with a box plainly running.
 const launchPATH = `PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin" `
 
+// InstallAppOptions is the --install-app surface. SSH is the canonical
+// ssh:// URL (empty = local); the commands package does not parse it.
+type InstallAppOptions struct {
+	Box, Name, RemoteByre, SSH string
+}
+
+// appInstall is one resolved install: display names, path fragments, and
+// the baked deliver argv. Unnamed local (empty label) keeps today's
+// singleton artifact names.
+type appInstall struct {
+	byrePath   string
+	box        string
+	name       string // --name as given (empty if derived from SSH)
+	remoteByre string
+	ssh        string
+	label      string // display label; empty = unnamed local singleton
+	display    string // "Byre Deliver" or "Byre Deliver (<label>)"
+	fsLabel    string // macOS path component
+	slug       string // Linux filename fragment
+}
+
+func resolveInstall(byrePath string, o InstallAppOptions) (appInstall, error) {
+	a := appInstall{
+		byrePath:   byrePath,
+		box:        o.Box,
+		remoteByre: o.RemoteByre,
+		ssh:        o.SSH,
+		display:    "Byre Deliver",
+	}
+	// The name reaches display strings (the .desktop Name= line, AppleScript
+	// title literals) and the rerun headers, where a control character is a
+	// structural break, not text — strip them before anything is derived.
+	a.name = stripControls(o.Name)
+	if o.Name != "" && a.name == "" {
+		return appInstall{}, fmt.Errorf("--name has no usable characters")
+	}
+	label := a.name
+	if label == "" && o.SSH != "" {
+		label = strings.TrimPrefix(o.SSH, "ssh://")
+	}
+	if label == "" {
+		return a, nil
+	}
+	a.label = label
+	a.display = "Byre Deliver (" + label + ")"
+	a.fsLabel = fsLabel(label)
+	a.slug = linuxSlug(label)
+	if a.fsLabel == "" || a.slug == "" {
+		return appInstall{}, fmt.Errorf("--name has no usable characters")
+	}
+	return a, nil
+}
+
+// fsLabel sanitizes a label for a macOS path component: / and : become
+// '-', controls are stripped, leading dots and surrounding whitespace go.
+func fsLabel(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r == '/' || r == ':':
+			b.WriteByte('-')
+		case unicode.IsControl(r):
+			// strip
+		default:
+			b.WriteRune(r)
+		}
+	}
+	out := strings.TrimSpace(b.String())
+	out = strings.TrimLeft(out, ".")
+	return strings.TrimSpace(out)
+}
+
+// linuxSlug sanitizes a label for a .desktop filename fragment: runes
+// outside [A-Za-z0-9._@-] become '-', then leading dots and dashes go.
+func linuxSlug(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if linuxSlugOK(r) {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	return strings.TrimLeft(b.String(), ".-")
+}
+
+// stripControls drops control runes; everything else passes through.
+func stripControls(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+func linuxSlugOK(r rune) bool {
+	switch {
+	case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		return true
+	case r == '.' || r == '_' || r == '@' || r == '-':
+		return true
+	}
+	return false
+}
+
+func (a appInstall) extra(quote func(string) string) string {
+	var b strings.Builder
+	if a.ssh != "" {
+		b.WriteByte(' ')
+		b.WriteString(quote(a.ssh))
+	}
+	if a.box != "" {
+		b.WriteString(" --box ")
+		b.WriteString(quote(a.box))
+	}
+	if a.remoteByre != "" {
+		b.WriteString(" --remote-byre ")
+		b.WriteString(quote(a.remoteByre))
+	}
+	return b.String()
+}
+
+func (a appInstall) rerun() string {
+	var b strings.Builder
+	b.WriteString("byre deliver --install-app")
+	if a.ssh != "" {
+		b.WriteByte(' ')
+		b.WriteString(gen.ShellQuote(a.ssh))
+	}
+	if a.box != "" {
+		b.WriteString(" --box ")
+		b.WriteString(gen.ShellQuote(a.box))
+	}
+	if a.name != "" {
+		b.WriteString(" --name ")
+		b.WriteString(gen.ShellQuote(a.name))
+	}
+	if a.remoteByre != "" {
+		b.WriteString(" --remote-byre ")
+		b.WriteString(gen.ShellQuote(a.remoteByre))
+	}
+	return b.String()
+}
+
+func (a appInstall) menuItem() string {
+	if a.label == "" {
+		return "Deliver to Byre"
+	}
+	return "Deliver to Byre (" + a.label + ")"
+}
+
+func (a appInstall) iconName() string {
+	if a.ssh != "" {
+		return "byre-deliver-ssh"
+	}
+	return "byre-deliver"
+}
+
+func (a appInstall) iconPNG() []byte {
+	if a.ssh != "" {
+		return deliverIconSSHPNG
+	}
+	return deliverIconPNG
+}
+
+func (a appInstall) appBase() string {
+	if a.label == "" {
+		return "Byre Deliver"
+	}
+	return "Byre Deliver (" + a.fsLabel + ")"
+}
+
+func (a appInstall) darwinAppName() string    { return a.appBase() + ".app" }
+func (a appInstall) darwinStagedName() string { return "." + a.appBase() + ".staged.app" }
+func (a appInstall) darwinBackupName() string { return "." + a.appBase() + ".previous.app" }
+
+func (a appInstall) darwinWorkflowName() string {
+	if a.label == "" {
+		return "Deliver to Byre.workflow"
+	}
+	return "Deliver to Byre (" + a.fsLabel + ").workflow"
+}
+
+func (a appInstall) linuxDesktopName() string {
+	if a.label == "" {
+		return "byre-deliver.desktop"
+	}
+	return "byre-deliver-" + a.slug + ".desktop"
+}
+
 // deliverAppSource is the AppleScript for the "Byre Deliver" app (the drag
 // target half of the deliver app -- GLOSSARY). The byre
 // path is baked at generation time (Finder launches carry a sparse PATH);
 // well-known locations are fallbacks, and byre-not-found is reported via
 // notification — a Dock launch has no terminal to print to.
-func deliverAppSource(byrePath, box string) string {
-	extra := ""
-	if box != "" {
-		extra = " --box " + gen.ShellQuote(box)
-	}
-	return `-- Generated by byre. Do not edit; re-run: byre deliver --install-app
+func deliverAppSource(a appInstall) string {
+	extra := a.extra(gen.ShellQuote)
+	return `-- Generated by byre. Do not edit; re-run: ` + a.rerun() + `
 -- Byre Deliver: drop files here to deliver them into your running byre
 -- box's /inbox; open it with nothing to deliver the CLIPBOARD instead.
 -- byre prints the landed path, copies it to your clipboard, and reports
 -- via notification. The binary below generated this app.
 
-property byrePath : "` + asQuote(byrePath) + `"
+property byrePath : "` + asQuote(a.byrePath) + `"
 
 on byreBinary()
 	set candidates to {byrePath, "/opt/homebrew/bin/byre", "/usr/local/bin/byre", (POSIX path of (path to home folder)) & ".local/bin/byre"}
@@ -57,7 +248,7 @@ on byreBinary()
 			return c as string
 		end try
 	end repeat
-	display dialog "byre not found — re-run 'byre deliver --install-app' after reinstalling byre" with title "Byre Deliver" buttons {"OK"} default button 1 with icon caution
+	display dialog "byre not found — re-run 'byre deliver --install-app' after reinstalling byre" with title "` + asQuote(a.display) + `" buttons {"OK"} default button 1 with icon caution
 	error "byre not found"
 end byreBinary
 
@@ -142,7 +333,7 @@ on runByre(args)
 	on error errMsg
 		-- byre shows its own outcomes; this catches byre failing to RUN.
 		-- A dialog, not a notification: banners are permission-gated.
-		display dialog errMsg with title "Byre Deliver" buttons {"OK"} default button 1 with icon caution
+		display dialog errMsg with title "` + asQuote(a.display) + `" buttons {"OK"} default button 1 with icon caution
 	end try
 end runByre
 `
@@ -150,12 +341,9 @@ end runByre
 
 // quickActionFiles is the Finder Quick Action ("Deliver to Byre"): an
 // Automator .workflow bundle — two plists, read by the OS as-is.
-func quickActionFiles(byrePath, box string) (infoPlist, documentWflow string) {
-	extra := ""
-	if box != "" {
-		extra = " --box " + gen.ShellQuote(box)
-	}
-	command := launchPATH + gen.ShellQuote(byrePath) + " deliver" + extra + ` "$@" </dev/null`
+func quickActionFiles(a appInstall) (infoPlist, documentWflow string) {
+	extra := a.extra(gen.ShellQuote)
+	command := launchPATH + gen.ShellQuote(a.byrePath) + " deliver" + extra + ` "$@" </dev/null`
 	infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -166,7 +354,7 @@ func quickActionFiles(byrePath, box string) (infoPlist, documentWflow string) {
 			<key>NSMenuItem</key>
 			<dict>
 				<key>default</key>
-				<string>Deliver to Byre</string>
+				<string>` + xmlEscape(a.menuItem()) + `</string>
 			</dict>
 			<key>NSMessage</key>
 			<string>runWorkflowAsService</string>
@@ -181,7 +369,11 @@ func quickActionFiles(byrePath, box string) (infoPlist, documentWflow string) {
 `
 	documentWflow = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Generated by byre. Do not edit; re-run: byre deliver --install-app -->
+<!-- Generated by byre. Do not edit; re-run: ` +
+		// xmlEscape here is not for entity fidelity (comments aren't entity-
+		// decoded) — it keeps a user-supplied value from ever containing a
+		// literal '>' so '-->' cannot close the comment into plist markup.
+		xmlEscape(a.rerun()) + ` -->
 <plist version="1.0">
 <dict>
 	<key>AMApplicationBuild</key>
@@ -290,18 +482,15 @@ func quickActionFiles(byrePath, box string) (infoPlist, documentWflow string) {
 // desktopEntry is the Linux launcher: every Exec argument is quoted per the
 // Desktop Entry spec, and % is doubled so user input can't smuggle a field
 // code — --box accepts arbitrary text, not just byre-shaped slugs.
-func desktopEntry(byrePath, box string) string {
-	extra := ""
-	if box != "" {
-		extra = " --box " + desktopExecQuote(box)
-	}
-	return `# Generated by byre. Do not edit; re-run: byre deliver --install-app
+func desktopEntry(a appInstall) string {
+	extra := a.extra(desktopExecQuote)
+	return `# Generated by byre. Do not edit; re-run: ` + a.rerun() + `
 [Desktop Entry]
 Type=Application
-Name=Byre Deliver
+Name=` + a.display + `
 Comment=Deliver files to your running byre box's /inbox (run with no files to deliver the clipboard)
-Exec=` + desktopExecQuote(byrePath) + ` deliver` + extra + ` %F
-Icon=byre-deliver
+Exec=` + desktopExecQuote(a.byrePath) + ` deliver` + extra + ` %F
+Icon=` + a.iconName() + `
 Terminal=false
 Categories=Utility;Development;
 `

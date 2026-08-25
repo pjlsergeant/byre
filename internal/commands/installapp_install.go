@@ -68,33 +68,39 @@ func realInstallDeps() (installDeps, error) {
 
 // InstallApp materializes the deliver app (ADR 0021): the "Byre Deliver"
 // drag-target app + "Deliver to Byre" Quick Action on macOS, the .desktop entry on
-// Linux. Idempotent regeneration of byre's OWN artifacts: an existing
-// artifact is only replaced when it carries the generated marker — a
-// same-named thing byre didn't write is refused, not clobbered.
-func InstallApp(s Streams, box string) error {
+// Linux. A label (from --name, or the ssh:// target) names a coexisting
+// install; unnamed local keeps the singleton artifact names. Idempotent
+// regeneration of byre's OWN artifacts: an existing artifact is only
+// replaced when it carries the generated marker — a same-named thing byre
+// didn't write is refused, not clobbered.
+func InstallApp(s Streams, o InstallAppOptions) error {
 	deps, err := realInstallDeps()
 	if err != nil {
 		return err
 	}
-	return installApp(s, box, deps)
+	return installApp(s, o, deps)
 }
 
-func installApp(s Streams, box string, d installDeps) error {
+func installApp(s Streams, o InstallAppOptions, d installDeps) error {
+	a, err := resolveInstall(d.exe, o)
+	if err != nil {
+		return err
+	}
 	switch d.goos {
 	case "darwin":
-		return installDarwin(s, box, d)
+		return installDarwin(s, a, d)
 	default:
-		return installLinux(s, box, d)
+		return installLinux(s, a, d)
 	}
 }
 
-func installDarwin(s Streams, box string, d installDeps) error {
+func installDarwin(s Streams, a appInstall, d installDeps) error {
 	appDir := filepath.Join(d.home, "Applications")
-	appPath := filepath.Join(appDir, "Byre Deliver.app")
+	appPath := filepath.Join(appDir, a.darwinAppName())
 	if err := hostopen.PlainMkdirAll(appDir, 0o755, hostopen.HostUserOwned); err != nil {
 		return err
 	}
-	source := deliverAppSource(d.exe, box)
+	source := deliverAppSource(a)
 
 	// Regenerate only what byre wrote: the shipped source inside the bundle
 	// is the marker. A same-named app WITHOUT it — or one whose state can't
@@ -116,7 +122,7 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	// instead of surfacing after the app half was already committed and
 	// announced (the failed command had half-happened,
 	// making the error unreliable to interpret and the retry misleading).
-	svcPath := filepath.Join(d.home, "Library", "Services", "Deliver to Byre.workflow")
+	svcPath := filepath.Join(d.home, "Library", "Services", a.darwinWorkflowName())
 	wflowPath := filepath.Join(svcPath, "Contents", "document.wflow")
 	switch _, err := hostopen.PlainStat(svcPath, hostopen.HostUserOwned); {
 	case err == nil:
@@ -139,7 +145,7 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	// Assemble into a STAGED bundle first: a broken osacompile, bad disk, or
 	// malformed source must never destroy the working app already installed.
 	// Same parent dir, so the final swap is one rename.
-	staged := filepath.Join(appDir, ".Byre Deliver.staged.app")
+	staged := filepath.Join(appDir, a.darwinStagedName())
 	_ = hostopen.PlainRemoveAll(staged, hostopen.HostUserOwned)
 	// osacompile assembles the bundle from Apple's signed applet stub — the
 	// whole "compile": no toolchain, no network, milliseconds (ADR 0021).
@@ -153,7 +159,7 @@ func installDarwin(s Streams, box string, d installDeps) error {
 		return err
 	}
 	// Icon: overwrite the stub's droplet/applet icns with ours.
-	if icns, err := packICNS(deliverIconPNG); err == nil {
+	if icns, err := packICNS(a.iconPNG()); err == nil {
 		for _, name := range []string{"droplet.icns", "applet.icns"} {
 			_ = hostopen.PlainWriteFile(filepath.Join(staged, "Contents", "Resources", name), icns, 0o644, hostopen.HostUserOwned)
 		}
@@ -171,7 +177,7 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	// one is actually in place — no window where a rename failure leaves
 	// NEITHER bundle installed.
 	if appExists {
-		backup := filepath.Join(appDir, ".Byre Deliver.previous.app")
+		backup := filepath.Join(appDir, a.darwinBackupName())
 		_ = hostopen.PlainRemoveAll(backup, hostopen.HostUserOwned)
 		if err := hostopen.PlainRename(appPath, backup, hostopen.HostUserOwned); err != nil {
 			_ = hostopen.PlainRemoveAll(staged, hostopen.HostUserOwned)
@@ -200,7 +206,7 @@ func installDarwin(s Streams, box string, d installDeps) error {
 	// The Finder Quick Action (right-click → Deliver to Byre). Ownership was
 	// preflighted above, before the app was touched; regeneration is gated
 	// on the explicit generated marker there.
-	info, wflow := quickActionFiles(d.exe, box)
+	info, wflow := quickActionFiles(a)
 	if err := hostopen.PlainMkdirAll(filepath.Join(svcPath, "Contents"), 0o755, hostopen.HostUserOwned); err != nil {
 		return err
 	}
@@ -211,16 +217,16 @@ func installDarwin(s Streams, box string, d installDeps) error {
 		return err
 	}
 	fmt.Fprintf(s.Out, "%s\n", svcPath)
-	fmt.Fprintf(s.Err, "byre: installed the Quick Action — right-click files in Finder → Quick Actions → Deliver to Byre\n")
+	fmt.Fprintf(s.Err, "byre: installed the Quick Action — right-click files in Finder → Quick Actions → %s\n", a.menuItem())
 	fmt.Fprintf(s.Err, "byre: first use asks macOS permission prompts once (Automation/notifications) — that's expected\n")
 	fmt.Fprintf(s.Err, "byre: to uninstall: delete the two paths above\n")
-	fmt.Fprintf(s.Err, "byre: to update (byre moved, new --box): re-run 'byre deliver --install-app'\n")
+	fmt.Fprintf(s.Err, "byre: to update (byre moved, new --box): re-run '%s'\n", a.rerun())
 	return nil
 }
 
-func installLinux(s Streams, box string, d installDeps) error {
+func installLinux(s Streams, a appInstall, d installDeps) error {
 	appsDir := filepath.Join(d.home, ".local", "share", "applications")
-	entryPath := filepath.Join(appsDir, "byre-deliver.desktop")
+	entryPath := filepath.Join(appsDir, a.linuxDesktopName())
 	switch prev, err := hostopen.PlainReadFile(entryPath, hostopen.HostUserOwned); {
 	case err == nil:
 		if !strings.Contains(string(prev), generatedMarker) {
@@ -232,18 +238,19 @@ func installLinux(s Streams, box string, d installDeps) error {
 	if err := hostopen.PlainMkdirAll(appsDir, 0o755, hostopen.HostUserOwned); err != nil {
 		return err
 	}
-	if err := hostopen.PlainWriteFile(entryPath, []byte(desktopEntry(d.exe, box)), 0o644, hostopen.HostUserOwned); err != nil {
+	if err := hostopen.PlainWriteFile(entryPath, []byte(desktopEntry(a)), 0o644, hostopen.HostUserOwned); err != nil {
 		return err
 	}
 	fmt.Fprintf(s.Out, "%s\n", entryPath)
 
 	// The icon lands in the hicolor theme at its actual size.
-	if cfg, _, err := image.DecodeConfig(bytes.NewReader(deliverIconPNG)); err == nil {
+	png := a.iconPNG()
+	if cfg, _, err := image.DecodeConfig(bytes.NewReader(png)); err == nil {
 		iconDir := filepath.Join(d.home, ".local", "share", "icons", "hicolor",
 			fmt.Sprintf("%dx%d", cfg.Width, cfg.Height), "apps")
 		if err := hostopen.PlainMkdirAll(iconDir, 0o755, hostopen.HostUserOwned); err == nil {
-			iconPath := filepath.Join(iconDir, "byre-deliver.png")
-			if err := hostopen.PlainWriteFile(iconPath, deliverIconPNG, 0o644, hostopen.HostUserOwned); err == nil {
+			iconPath := filepath.Join(iconDir, a.iconName()+".png")
+			if err := hostopen.PlainWriteFile(iconPath, png, 0o644, hostopen.HostUserOwned); err == nil {
 				fmt.Fprintf(s.Out, "%s\n", iconPath)
 			}
 		}
@@ -254,6 +261,6 @@ func installLinux(s Streams, box string, d installDeps) error {
 	fmt.Fprintf(s.Err, "byre:   desktop environments; some don't support launcher drops at all. The\n")
 	fmt.Fprintf(s.Err, "byre:   'byre deliver <file>' terminal flow is the supported path. Reports welcome.\n")
 	fmt.Fprintf(s.Err, "byre: to uninstall: delete the paths above\n")
-	fmt.Fprintf(s.Err, "byre: to update (byre moved, new --box): re-run 'byre deliver --install-app'\n")
+	fmt.Fprintf(s.Err, "byre: to update (byre moved, new --box): re-run '%s'\n", a.rerun())
 	return nil
 }
