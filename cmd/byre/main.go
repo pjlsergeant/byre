@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime/debug"
 	"strings"
+	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -411,8 +412,9 @@ always the contract.
 it, or open it plain to deliver the clipboard; outcomes arrive as
 notifications. An optional ssh:// target (plus --remote-byre when the remote
 binary isn't on ssh's PATH) installs a remote-delivery drag target with a
-distinct icon; --name labels an install so several can coexist
-("Byre Deliver (<label>)") — without --name a remote install is named for
+distinct icon; --name labels an install so several can coexist — the app
+becomes "Byre Deliver (<label>)" and the Quick Action "Deliver to Byre
+(<label>)" — without --name a remote install is named for
 its target and a local install stays the singleton. Re-run after moving
 byre; --box bakes a fixed box (the remote's, when a target is given).`,
 		Args: cobra.ArbitraryArgs,
@@ -437,10 +439,40 @@ byre; --box bakes a fixed box (the remote's, when a target is given).`,
 					if err != nil {
 						return usageError(err.Error())
 					}
+					// ParseSSHTarget percent-decodes userinfo, so a
+					// %0A-shaped target smuggles a decoded control
+					// character into every generated artifact. Garbage
+					// destination, loud refusal.
+					if strings.ContainsFunc(target.User+target.Host, unicode.IsControl) {
+						return usageError(fmt.Sprintf("byre deliver --install-app: %q decodes to control characters in its user or host", args[0]))
+					}
 					ssh = target.URL()
 				}
 				if cmd.Flags().Changed("remote-byre") && ssh == "" {
 					return usageError("byre deliver --install-app: --remote-byre applies only to an ssh:// target")
+				}
+				// `--name=` reads downstream as "flag absent" and would
+				// silently install the singleton — an explicitly given
+				// flag must never be silently ignored. Judged by presence
+				// (Changed), the --agent precedent.
+				if cmd.Flags().Changed("name") && strings.TrimSpace(opts.Name) == "" {
+					return usageError(`--name: blank value — label the install, or omit the flag for the default name`)
+				}
+				// Every baked value lands in line-oriented generated text
+				// (AppleScript comments and literals, .desktop lines) where
+				// a control character is a structural break shell quoting
+				// cannot contain.
+				for _, f := range []struct{ flag, v string }{
+					{"--box", opts.Box}, {"--name", opts.Name}, {"--remote-byre", opts.RemoteByre},
+				} {
+					if strings.ContainsFunc(f.v, unicode.IsControl) {
+						return usageError(fmt.Sprintf("byre deliver --install-app: %s contains control characters (%q)", f.flag, f.v))
+					}
+				}
+				if opts.Name != "" {
+					if err := commands.ValidateInstallName(opts.Name); err != nil {
+						return usageError("byre deliver --install-app: " + err.Error())
+					}
 				}
 				return a.installApp(s, commands.InstallAppOptions{
 					Box:        opts.Box,

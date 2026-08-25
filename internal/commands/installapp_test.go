@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -455,15 +456,17 @@ func TestGeneratorsSanitizeHostileLabelInFilenamesNotDisplay(t *testing.T) {
 }
 
 func TestGeneratorsNeutralizeStructuralLabelCharacters(t *testing.T) {
-	// A '>'-bearing name must not be able to form '-->' and close the
-	// wflow header comment into plist markup.
+	// User text never rides an XML comment (a comment may not contain
+	// "--" at all, and no escaping can fix that) — the rerun hint lives
+	// in the shell script string, where a '>'-bearing name is entity-
+	// escaped ordinary text.
 	a := specOf(t, "/usr/bin/byre", InstallAppOptions{Name: "a-->b"})
 	_, wflow := quickActionFiles(a)
 	if strings.Contains(wflow, "a-->b") {
-		t.Fatalf("raw '-->' survived into the wflow comment:\n%s", wflow)
+		t.Fatalf("raw '-->' survived into the wflow:\n%s", wflow)
 	}
 	if !strings.Contains(wflow, "a--&gt;b") {
-		t.Fatalf("escaped rerun missing from the wflow comment:\n%s", wflow)
+		t.Fatalf("escaped rerun missing from the wflow command string:\n%s", wflow)
 	}
 	// Control characters are stripped from the name before it reaches
 	// display strings — a newline would structurally break the .desktop
@@ -477,6 +480,61 @@ func TestGeneratorsNeutralizeStructuralLabelCharacters(t *testing.T) {
 	}
 	if src := deliverAppSource(a); !strings.Contains(src, `--name 'studio'`) {
 		t.Fatalf("rerun header should carry the stripped name:\n%s", src)
+	}
+}
+
+func TestQuickActionCommentsNeverCarryDoubleHyphen(t *testing.T) {
+	// XML comments must not contain "--" (strict well-formedness — a
+	// plain rerun like 'byre deliver --install-app' already violates it),
+	// so nothing rerun-shaped may land in one. The id token is hex for
+	// the same reason.
+	for _, o := range []InstallAppOptions{
+		{},
+		{Box: "proj-x"},
+		{Name: "a-->b", Box: "b", SSH: "ssh://u@h", RemoteByre: "/opt/byre"},
+	} {
+		_, wflow := quickActionFiles(specOf(t, "/usr/bin/byre", o))
+		for _, m := range regexp.MustCompile(`(?s)<!--(.*?)-->`).FindAllStringSubmatch(wflow, -1) {
+			if strings.Contains(m[1], "--") {
+				t.Errorf("XML comment carries '--' (%+v): %q", o, m[1])
+			}
+		}
+	}
+}
+
+func TestInstallRefusesSanitizationCollision(t *testing.T) {
+	// fsLabel/slug are many-to-one ('a/b' and 'a:b' both become 'a-b');
+	// the second install must refuse, not treat the first as its own
+	// regeneration — the artifact carries its label as an identity token.
+	d, _ := testDeps(t, "darwin")
+	s, _, _ := testStreams("", false)
+	if err := installApp(s, InstallAppOptions{Name: "a/b", Box: "first"}, d); err != nil {
+		t.Fatal(err)
+	}
+	err := installApp(s, InstallAppOptions{Name: "a:b", Box: "second"}, d)
+	if err == nil || !strings.Contains(err.Error(), `belongs to the install labeled "a/b"`) {
+		t.Fatalf("collision not refused: %v", err)
+	}
+	src, rerr := osReadFile(d.home + "/Applications/Byre Deliver (a-b).app/Contents/Resources/droplet.applescript")
+	if rerr != nil || !strings.Contains(string(src), "--box 'first'") {
+		t.Fatalf("victim install mutated: %v %q", rerr, src)
+	}
+	// Same label again: regeneration, not a collision.
+	if err := installApp(s, InstallAppOptions{Name: "a/b", Box: "third"}, d); err != nil {
+		t.Fatalf("same-label regeneration refused: %v", err)
+	}
+
+	dl, _ := testDeps(t, "linux")
+	if err := installApp(s, InstallAppOptions{Name: "a/b", Box: "first"}, dl); err != nil {
+		t.Fatal(err)
+	}
+	err = installApp(s, InstallAppOptions{Name: "a:b", Box: "second"}, dl)
+	if err == nil || !strings.Contains(err.Error(), `belongs to the install labeled "a/b"`) {
+		t.Fatalf("linux collision not refused: %v", err)
+	}
+	entry, rerr := osReadFile(dl.home + "/.local/share/applications/byre-deliver-a-b.desktop")
+	if rerr != nil || !strings.Contains(string(entry), "--box first") {
+		t.Fatalf("linux victim mutated: %v %q", rerr, entry)
 	}
 }
 

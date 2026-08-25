@@ -130,6 +130,30 @@ func TestSSHTargetURL(t *testing.T) {
 	}
 }
 
+func TestSSHTargetURLRoundTrips(t *testing.T) {
+	// URL() must re-encode what parsing decoded: a decoded space or slash
+	// in userinfo spliced back raw would be rejected or become a path on
+	// the next parse — and the generated deliver app replays URL() through
+	// ParseSSHTarget on every drop.
+	for _, tgt := range []SSHTarget{
+		{Host: "far"},
+		{User: "dev", Host: "far", Port: "2222"},
+		{User: "dev user", Host: "far"},
+		{User: "dev/user", Host: "far"},
+		{User: "dev@odd", Host: "far"},
+		{User: "dev", Host: "2001:db8::1", Port: "22"},
+	} {
+		got, isSSH, err := ParseSSHTarget(tgt.URL())
+		if !isSSH || err != nil {
+			t.Errorf("%+v.URL() = %q does not re-parse: %v", tgt, tgt.URL(), err)
+			continue
+		}
+		if got != tgt {
+			t.Errorf("round trip: %q parsed to %+v, want %+v", tgt.URL(), got, tgt)
+		}
+	}
+}
+
 func TestRemoteAutoPickSoleBox(t *testing.T) {
 	ssh := &fakeSSH{responses: []sshResponse{
 		{stdout: "abc123\tdocker\tproj\tproj\t\n"},

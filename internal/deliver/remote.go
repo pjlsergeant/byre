@@ -47,15 +47,24 @@ func (t SSHTarget) String() string {
 	return host
 }
 
-// URL is the canonical ssh:// argument form: "ssh://" plus String(), with
-// ":" + Port when Port is set. String() already re-brackets IPv6 hosts, so
-// the port suffix stays unambiguous.
+// URL is the canonical ssh:// argument form, percent-encoded so every
+// accepted target round-trips: ParseSSHTarget(t.URL()) yields t again.
+// String() stays decoded — it feeds ssh's argv, where encoding would be
+// wrong — but a decoded user spliced into a URL parses differently (a
+// space or slash in userinfo is rejected or becomes a path), so the URL
+// form re-encodes through net/url.
 func (t SSHTarget) URL() string {
-	s := "ssh://" + t.String()
-	if t.Port != "" {
-		s += ":" + t.Port
+	u := url.URL{Scheme: "ssh", Host: t.Host}
+	if strings.Contains(t.Host, ":") {
+		u.Host = "[" + t.Host + "]"
 	}
-	return s
+	if t.Port != "" {
+		u.Host += ":" + t.Port
+	}
+	if t.User != "" {
+		u.User = url.User(t.User)
+	}
+	return u.String()
 }
 
 // ParseSSHTarget recognizes an ssh:// delivery target. isSSH reports whether

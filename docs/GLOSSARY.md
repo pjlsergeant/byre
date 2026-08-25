@@ -116,7 +116,8 @@ The generated host-side drag target `byre deliver --install-app` writes:
 a readable macOS `.app` (display name "Byre Deliver", or a per-target
 named "Byre Deliver (<label>)" since 2026-08) or Linux `.desktop` entry
 whose only job is invoking `byre deliver` on what you drop. The Finder
-Quick Action is "Deliver to Byre". (ADR 0021)
+Quick Action is "Deliver to Byre" ("Deliver to Byre (<label>)" for a
+named install). (ADR 0021)
 _Avoid_: droplet (DigitalOcean owns it), materialize (reserved for
 built-in skill copies), shim.
 Exempt from the droplet avoidance: the `.app` bundle's INTERNAL

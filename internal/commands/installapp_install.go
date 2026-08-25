@@ -32,6 +32,15 @@ func errNotByreGenerated(path string) error {
 	return fmt.Errorf("%s exists and doesn't look byre-generated — remove it yourself and re-run", path)
 }
 
+// errWrongInstall refuses to regenerate an artifact that IS byre's but
+// belongs to a different install: filename sanitization is many-to-one,
+// so two labels can resolve to one path. Clobbering the first would
+// silently break the coexistence promise; the collision is the user's
+// to rename.
+func errWrongInstall(path, otherLabel string) error {
+	return fmt.Errorf("%s exists but belongs to the install labeled %q — pick a different --name", path, otherLabel)
+}
+
 func realInstallDeps() (installDeps, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -110,8 +119,12 @@ func installDarwin(s Streams, a appInstall, d installDeps) error {
 	switch _, err := hostopen.PlainStat(appPath, hostopen.HostUserOwned); {
 	case err == nil:
 		appExists = true
-		if prev, err := hostopen.PlainReadFile(marker, hostopen.HostUserOwned); err != nil || !strings.Contains(string(prev), generatedMarker) {
+		prev, rerr := hostopen.PlainReadFile(marker, hostopen.HostUserOwned)
+		if rerr != nil || !strings.Contains(string(prev), generatedMarker) {
 			return errNotByreGenerated(appPath)
+		}
+		if got := installIDOf(prev); got != a.label {
+			return errWrongInstall(appPath, got)
 		}
 	case !os.IsNotExist(err):
 		return fmt.Errorf("checking %s: %w", appPath, err)
@@ -126,8 +139,12 @@ func installDarwin(s Streams, a appInstall, d installDeps) error {
 	wflowPath := filepath.Join(svcPath, "Contents", "document.wflow")
 	switch _, err := hostopen.PlainStat(svcPath, hostopen.HostUserOwned); {
 	case err == nil:
-		if prev, err := hostopen.PlainReadFile(wflowPath, hostopen.HostUserOwned); err != nil || !strings.Contains(string(prev), generatedMarker) {
+		prev, rerr := hostopen.PlainReadFile(wflowPath, hostopen.HostUserOwned)
+		if rerr != nil || !strings.Contains(string(prev), generatedMarker) {
 			return errNotByreGenerated(svcPath)
+		}
+		if got := installIDOf(prev); got != a.label {
+			return errWrongInstall(svcPath, got)
 		}
 	case !os.IsNotExist(err):
 		return fmt.Errorf("checking %s: %w", svcPath, err)
@@ -231,6 +248,9 @@ func installLinux(s Streams, a appInstall, d installDeps) error {
 	case err == nil:
 		if !strings.Contains(string(prev), generatedMarker) {
 			return errNotByreGenerated(entryPath)
+		}
+		if got := installIDOf(prev); got != a.label {
+			return errWrongInstall(entryPath, got)
 		}
 	case !os.IsNotExist(err):
 		return fmt.Errorf("checking %s: %w", entryPath, err)
