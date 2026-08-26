@@ -180,9 +180,14 @@ Stated here so none of them is later "discovered" as a bug:
   (project resolution resolves any directory, so "/" arrived as the work
   tree and the deliver app declined both engines). The cost is a box
   someone deliberately runs on a project AT "/" -- its engine spawns go
-  unchecked. Accepted 2026-08-26: such a box mounts the whole host rw and
-  can replace any binary or dotfile directly, so the check defended
-  nothing there, and anyone running byre at "/" knows the risks.
+  unchecked, and not vacuously so: the box writes what the host user
+  writes, so root-owned binaries stay beyond it while user-owned PATH
+  entries do not. Accepted 2026-08-26, on user responsibility: a project
+  at "/" hands the box the user's entire writable surface by explicit
+  choice ("anyone running byre at / knows the risks"), byre does not
+  gate the user's own configuration (P1), and the pre-fix alternative
+  guarded nothing either -- it declined every binary, root-owned ones
+  included, refusing the configuration outright.
 - **Sibling worktrees are not in the box-writable root set.** The only
   listing of them lives in the common git dir, which the box writes, so
   trusting it would let an agent choose which host directories byre

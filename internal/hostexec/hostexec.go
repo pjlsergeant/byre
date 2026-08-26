@@ -49,8 +49,8 @@ type Roots struct{ dirs []string }
 // deliver app's Dock icon) hands byre cwd "/", project.Resolve resolves any
 // directory -- so "/" arrived here as WorkDir and Canonical, and both
 // engines were declined as "inside /". The trade is stated where the roots
-// are built (commands.boxWritableRoots): a box that genuinely mounts the
-// filesystem root rw loses the check, and loses nothing by it.
+// are built (commands.boxWritableRoots) and recorded in ADR 0047's
+// residuals: a box deliberately run on a project AT "/" loses the check.
 func NewRoots(dirs ...string) Roots {
 	var out []string
 	for _, d := range dirs {
