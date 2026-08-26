@@ -174,6 +174,15 @@ Stated here so none of them is later "discovered" as a bug:
 - **`byre shell` establishes no snapshot of its own**; its writes are
   covered only by the owning `develop` process.
 - **Detection, not prevention.** An unread report protects nobody.
+- **A project rooted at the filesystem root is outside the check.**
+  `hostexec.NewRoots` drops "/" from every root set: as a root it declines
+  every binary on the machine, and a Finder launch runs byre from cwd "/"
+  (project resolution resolves any directory, so "/" arrived as the work
+  tree and the deliver app declined both engines). The cost is a box
+  someone deliberately runs on a project AT "/" -- its engine spawns go
+  unchecked. Accepted 2026-08-26: such a box mounts the whole host rw and
+  can replace any binary or dotfile directly, so the check defended
+  nothing there, and anyone running byre at "/" knows the risks.
 - **Sibling worktrees are not in the box-writable root set.** The only
   listing of them lives in the common git dir, which the box writes, so
   trusting it would let an agent choose which host directories byre
