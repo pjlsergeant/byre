@@ -38,7 +38,8 @@ import (
 // runs byre from "/", Resolve happily treats "/" as a project, and a root of
 // "/" declines every binary on the machine — the deliver app shipped that
 // exact failure. The cost is a box someone deliberately runs on a project
-// AT "/": its engine spawns go unchecked, and that is NOT vacuous — the box
+// AT "/": the check loses its project-tree coverage there (the store root
+// below still guards), and that loss is NOT vacuous — the box
 // writes what the host user writes, so root-owned /usr/bin stays beyond it
 // while a user-owned PATH entry does not. Accepted on the record (ADR 0047
 // residuals): a project at "/" hands the box the user's entire writable

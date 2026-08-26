@@ -256,8 +256,9 @@ whole test. One directory is never treated as box-writable: the
 filesystem root. A project AT `/` would make every binary on the machine
 "inside" the box's tree and byre would decline to run anything at all --
 graphical launches actually start byre from `/`, which is how this
-shipped as a bug -- so a box you deliberately run on `/` gets no check
-on the host tools byre spawns. That is a real gap, not a vacuous one:
+shipped as a bug -- so for a box you deliberately run on `/`, the
+project-tree half of that check is gone (byre's own store for the
+project is still covered). That is a real gap, not a vacuous one:
 such a box writes whatever your user can write, PATH entries included.
 Running byre on `/` is handing the agent your whole writable surface,
 and byre takes you at your word.

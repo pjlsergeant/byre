@@ -179,10 +179,11 @@ Stated here so none of them is later "discovered" as a bug:
   every binary on the machine, and a Finder launch runs byre from cwd "/"
   (project resolution resolves any directory, so "/" arrived as the work
   tree and the deliver app declined both engines). The cost is a box
-  someone deliberately runs on a project AT "/" -- its engine spawns go
-  unchecked, and not vacuously so: the box writes what the host user
-  writes, so root-owned binaries stay beyond it while user-owned PATH
-  entries do not. Accepted 2026-08-26, on user responsibility: a project
+  someone deliberately runs on a project AT "/" -- the project-tree
+  coverage of the check is gone for it (the store root still guards),
+  and not vacuously so: the box writes what the host user writes, so
+  root-owned binaries stay beyond it while user-owned PATH entries do
+  not. Accepted 2026-08-26, on user responsibility: a project
   at "/" hands the box the user's entire writable surface by explicit
   choice ("anyone running byre at / knows the risks"), byre does not
   gate the user's own configuration (P1), and the pre-fix alternative
