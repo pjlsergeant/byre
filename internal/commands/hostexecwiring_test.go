@@ -325,12 +325,11 @@ func TestBoxWritableRootsForSurvivesAResolveFailure(t *testing.T) {
 	}
 }
 
-// The cwd fallback must not treat "/" as a box-writable root. A graphical
-// launch (drop on the deliver app's Dock icon, a .desktop entry) runs byre
-// from the filesystem root; the fallback of "the directory the caller is
-// standing in" then contains every binary on the machine and declined docker
-// and podman outright (field-found 2026-08-26). The set degrades to empty:
-// no project in hand, nothing to check against.
+// A cwd of "/" must not yield a box-writable root. A graphical launch (drop
+// on the deliver app's Dock icon, a .desktop entry) runs byre from the
+// filesystem root; Resolve treats "/" as a project, so WorkDir and Canonical
+// arrive as "/", every binary on the machine falls "inside" the root set,
+// and deliver declined docker and podman outright (field-found 2026-08-26).
 func TestBoxWritableRootsForFilesystemRootCwd(t *testing.T) {
 	roots := boxWritableRootsFor("/")
 	r := hostexec.NewResolver(func(string) (string, error) { return "/usr/local/bin/docker", nil })

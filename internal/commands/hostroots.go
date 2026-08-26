@@ -32,6 +32,16 @@ import (
 // untrusted party can aim is worse than the shadow it would close, and the
 // tree the user is standing in (WorkDir), the main tree and the common git dir
 // are the ones a PATH entry realistically points into.
+//
+// One directory never makes it into the set: NewRoots drops the filesystem
+// root. A graphical launch (the deliver app's Dock icon, a .desktop entry)
+// runs byre from "/", Resolve happily treats "/" as a project, and a root of
+// "/" declines every binary on the machine — the deliver app shipped that
+// exact failure. The cost is a box someone deliberately runs on a project
+// AT "/": its engine spawns go unchecked. Accepted, because such a box
+// mounts the whole host rw and can replace any binary or dotfile directly —
+// the shadow check defends a host that still has parts the box cannot
+// write, and that host no longer exists.
 func boxWritableRoots(paths project.Paths) hostexec.Roots {
 	return hostexec.NewRoots(paths.WorkDir, paths.Canonical, paths.CommonGitDirHost, paths.Dir)
 }
@@ -55,13 +65,9 @@ func boxWritableRoots(paths project.Paths) hostexec.Roots {
 // realistically points into is this one, and a narrower set is a smaller hole
 // than no set.
 //
-// "Narrower" inverts at one degenerate cwd: "/". A graphical launch (the
-// deliver app's Dock icon, a .desktop entry) runs byre from the filesystem
-// root, and a root of "/" contains every binary on the machine -- the check
-// becomes a refusal to run anything, aimed by nobody. NewRoots drops that
-// entry, so this fallback degrades to the empty set there: with no project
-// in hand and no real directory to name, no-check is the honest answer
-// (hostexec's own doctrine for a caller with nothing mounted rw).
+// A cwd of "/" does not reach this fallback -- Resolve resolves it, see
+// boxWritableRoots above -- but if it ever did (an unreadable "/.git"),
+// NewRoots drops the entry the same way and the set degrades to empty.
 func boxWritableRootsFor(projectDir string) hostexec.Roots {
 	if paths, err := project.Resolve(projectDir); err == nil {
 		return boxWritableRoots(paths)

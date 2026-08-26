@@ -43,12 +43,14 @@ type Roots struct{ dirs []string }
 
 // NewRoots returns the root set for dirs, dropping empty entries (Paths
 // carries "" for the fields that don't apply to a plain project) and the
-// filesystem root. "/" is never a directory a box writes -- no box mounts it
-// rw -- but as a root it would put every binary on the machine "inside" it
-// and turn the shadow check into a machine-wide refusal to run anything.
+// filesystem root. A root of "/" puts every binary on the machine "inside"
+// it and turns the shadow check into a machine-wide refusal to run anything.
 // The case is real, not defensive: a graphical launch (drop a file on the
-// deliver app's Dock icon) hands byre cwd "/", and the cwd fallback in
-// commands.boxWritableRootsFor would otherwise pass it straight in here.
+// deliver app's Dock icon) hands byre cwd "/", project.Resolve resolves any
+// directory -- so "/" arrived here as WorkDir and Canonical, and both
+// engines were declined as "inside /". The trade is stated where the roots
+// are built (commands.boxWritableRoots): a box that genuinely mounts the
+// filesystem root rw loses the check, and loses nothing by it.
 func NewRoots(dirs ...string) Roots {
 	var out []string
 	for _, d := range dirs {
