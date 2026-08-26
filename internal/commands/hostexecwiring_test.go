@@ -324,3 +324,17 @@ func TestBoxWritableRootsForSurvivesAResolveFailure(t *testing.T) {
 		t.Fatalf("err = %v, want *hostexec.ShadowError — a Resolve failure must not empty the root set", err)
 	}
 }
+
+// The cwd fallback must not treat "/" as a box-writable root. A graphical
+// launch (drop on the deliver app's Dock icon, a .desktop entry) runs byre
+// from the filesystem root; the fallback of "the directory the caller is
+// standing in" then contains every binary on the machine and declined docker
+// and podman outright (field-found 2026-08-26). The set degrades to empty:
+// no project in hand, nothing to check against.
+func TestBoxWritableRootsForFilesystemRootCwd(t *testing.T) {
+	roots := boxWritableRootsFor("/")
+	r := hostexec.NewResolver(func(string) (string, error) { return "/usr/local/bin/docker", nil })
+	if got, err := r.Look("docker", roots); err != nil || got != "/usr/local/bin/docker" {
+		t.Fatalf("Look = (%q, %v), want the system docker with no error", got, err)
+	}
+}

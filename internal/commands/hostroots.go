@@ -54,6 +54,14 @@ func boxWritableRoots(paths project.Paths) hostexec.Roots {
 // worktree-derived id would name the WRONG store -- but the tree a PATH entry
 // realistically points into is this one, and a narrower set is a smaller hole
 // than no set.
+//
+// "Narrower" inverts at one degenerate cwd: "/". A graphical launch (the
+// deliver app's Dock icon, a .desktop entry) runs byre from the filesystem
+// root, and a root of "/" contains every binary on the machine -- the check
+// becomes a refusal to run anything, aimed by nobody. NewRoots drops that
+// entry, so this fallback degrades to the empty set there: with no project
+// in hand and no real directory to name, no-check is the honest answer
+// (hostexec's own doctrine for a caller with nothing mounted rw).
 func boxWritableRootsFor(projectDir string) hostexec.Roots {
 	if paths, err := project.Resolve(projectDir); err == nil {
 		return boxWritableRoots(paths)

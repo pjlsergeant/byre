@@ -109,6 +109,26 @@ func TestLookPinsOutsideRoots(t *testing.T) {
 	}
 }
 
+// A root of "/" is dropped at construction: the filesystem root is never
+// box-writable, and as a root it would decline every binary on the machine
+// (field-found: a Dock-icon drop launches the deliver app with cwd "/", and
+// the cwd fallback declined docker AND podman as "inside /"). The lookup
+// must pin silently, exactly as an empty root set does.
+func TestNewRootsDropsFilesystemRoot(t *testing.T) {
+	sys := filepath.Join(t.TempDir(), "docker")
+	if err := os.WriteFile(sys, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	look, _ := fakeLook(map[string]string{"docker": sys})
+	r := NewResolver(look)
+	for _, roots := range []Roots{NewRoots("/"), NewRoots("//"), NewRoots("/", "")} {
+		got, err := r.Look("docker", roots)
+		if err != nil || got != sys {
+			t.Errorf("Look = (%q, %v), want (%q, nil)", got, err, sys)
+		}
+	}
+}
+
 // The resolution is pinned once per binary for the process: PATH is read one
 // time however many spawns follow, so the path byre checked is the path byre
 // runs. Failures pin too (installedEngines asks about both engines

@@ -29,6 +29,7 @@ package hostexec
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"sync"
 
 	"github.com/pjlsergeant/byre/internal/hostopen"
@@ -41,11 +42,17 @@ import (
 type Roots struct{ dirs []string }
 
 // NewRoots returns the root set for dirs, dropping empty entries (Paths
-// carries "" for the fields that don't apply to a plain project).
+// carries "" for the fields that don't apply to a plain project) and the
+// filesystem root. "/" is never a directory a box writes -- no box mounts it
+// rw -- but as a root it would put every binary on the machine "inside" it
+// and turn the shadow check into a machine-wide refusal to run anything.
+// The case is real, not defensive: a graphical launch (drop a file on the
+// deliver app's Dock icon) hands byre cwd "/", and the cwd fallback in
+// commands.boxWritableRootsFor would otherwise pass it straight in here.
 func NewRoots(dirs ...string) Roots {
 	var out []string
 	for _, d := range dirs {
-		if d == "" {
+		if d == "" || filepath.Clean(d) == string(filepath.Separator) {
 			continue
 		}
 		out = append(out, d)
