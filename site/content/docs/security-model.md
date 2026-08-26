@@ -252,7 +252,15 @@ binary your PATH answers with out of a directory that project's box can
 write is declined by name -- the tool, the path and the directory, so
 the fix is reordering PATH. It is no comment on your PATH, and no
 judgement of what is inside a binary; where byre resolved it from is the
-whole test.
+whole test. One directory is never treated as box-writable: the
+filesystem root. A project AT `/` would make every binary on the machine
+"inside" the box's tree and byre would decline to run anything at all --
+graphical launches actually start byre from `/`, which is how this
+shipped as a bug -- so a box you deliberately run on `/` gets no check
+on the host tools byre spawns. That is a real gap, not a vacuous one:
+such a box writes whatever your user can write, PATH entries included.
+Running byre on `/` is handing the agent your whole writable surface,
+and byre takes you at your word.
 
 **`--self-edit` is transitive trust of the agent with your host.** A
 self-edit agent authors the next develop's config -- mounts, run args,
