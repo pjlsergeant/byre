@@ -969,3 +969,44 @@ func TestEnvScreenTreatsUnparsableCredentialRowsAsCredentials(t *testing.T) {
 		}
 	})
 }
+
+// viewList opens its "— from skills —" heading at the first rowSkill and
+// never closes it, so on the env screen every row after that point must be
+// skill-sourced (skill env, or an env_docs suggestion). The first version of
+// envRows appended the passthrough block after the skill block, and a
+// credential passthrough set in this file rendered under the heading, reading
+// as skill payload (field report 2026-08-27).
+func TestEnvSkillRowsAreLast(t *testing.T) {
+	inh := Inherited{Skills: map[string]SkillRuntime{
+		"claude": {
+			Env:     map[string]string{"DEVCONTAINER": "true"},
+			EnvDocs: map[string]string{"SOME_TOKEN": "consumed if set"},
+		},
+	}}
+	cfg := config.Config{
+		Skills:      []string{"claude"},
+		Env:         map[string]string{"LOCAL": "1"},
+		EnvFromHost: map[string]string{"CLOUDFLARE_PERSONAL": "env:CLOUDFLARE_PERSONAL"},
+	}
+	m := newModel("t", "/tmp/x", cfg, nil, nil, []string{"claude"}, nil, inh, nil, TargetProject)
+
+	skillSeen := false
+	credSeen := false
+	for _, r := range m.fieldRows(fEnv) {
+		if r.kind == rowSkill {
+			skillSeen = true
+		}
+		if r.kind == rowHostEnv && r.ident == "CLOUDFLARE_PERSONAL" {
+			credSeen = true
+		}
+		if skillSeen && r.kind != rowSkill && r.kind != rowEnvDoc {
+			t.Errorf("non-skill row %q (kind %v) after the first skill row -- it renders under the skills heading", r.text, r.kind)
+		}
+	}
+	if !skillSeen {
+		t.Fatal("no skill env row at all; the test exercises nothing")
+	}
+	if !credSeen {
+		t.Fatal("no passthrough row for the set-here key; the test exercises nothing")
+	}
+}

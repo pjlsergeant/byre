@@ -763,27 +763,16 @@ func (m model) envRows() []listRow {
 			rows = append(rows, listRow{kind: rowLocal, text: kv.Key + "=" + kv.Value, idx: i})
 		}
 	}
-	for _, sk := range m.effectiveSkills() {
-		env := m.inh.Skills[sk].Env
-		// Which keys are byre's own is skills' question, not a prefix test
-		// restated here -- the same owner reservedEnvNow and status consult.
-		reserved := map[string]bool{}
-		for _, e := range skills.ReservedEnvOf(sk, env) {
-			reserved[e.Key] = true
-		}
-		for _, k := range slices.Sorted(maps.Keys(env)) {
-			r := listRow{kind: rowSkill, text: k + "=" + env[k], source: "skill:" + sk}
-			if reserved[k] {
-				r.skews = skills.ReservedEnvSkew(k)
-			}
-			rows = append(rows, r)
-		}
-	}
 	// The env_from_host passthrough (ADR 0026). It lands in the box's env, so
 	// it belongs wherever env is inspected — byre's own shipped git-identity
 	// defaults included — and it is EDITABLE here: a key set in this file
 	// carries an idx and gets Edit/Delete, an inherited one gets Override,
 	// and the picker's Inherit option is how a local pin comes back off.
+	// BEFORE the skill block: viewList opens its "— from skills —" heading at
+	// the first rowSkill and never closes it, so every skill-sourced row must
+	// come after every row that isn't — a "(set here)" credential passthrough
+	// rendered below that heading read as skill payload (field report
+	// 2026-08-27).
 	localHostIdx := map[string]int{}
 	for i, kv := range m.hostEnv {
 		localHostIdx[kv.Key] = i
@@ -832,6 +821,22 @@ func (m model) envRows() []listRow {
 			from = "byre default"
 		}
 		rows = append(rows, listRow{kind: rowHostEnv, text: hostEnvLine(k, hostEnv[k]), source: from, idx: -1, ident: k, vals: []string{k, hostEnv[k]}, closed: shadowed[k] && !off, disabled: off})
+	}
+	for _, sk := range m.effectiveSkills() {
+		env := m.inh.Skills[sk].Env
+		// Which keys are byre's own is skills' question, not a prefix test
+		// restated here -- the same owner reservedEnvNow and status consult.
+		reserved := map[string]bool{}
+		for _, e := range skills.ReservedEnvOf(sk, env) {
+			reserved[e.Key] = true
+		}
+		for _, k := range slices.Sorted(maps.Keys(env)) {
+			r := listRow{kind: rowSkill, text: k + "=" + env[k], source: "skill:" + sk}
+			if reserved[k] {
+				r.skews = skills.ReservedEnvSkew(k)
+			}
+			rows = append(rows, r)
+		}
 	}
 	// Skill-documented consumed vars (env_docs): a dim suggestion row per
 	// declared var NOTHING above provides — once any layer, skill, or the
