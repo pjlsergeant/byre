@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -16,6 +15,13 @@ import (
 // answer (a ref listing on a huge repo is hundreds of KB), fatal to a
 // hostile repo minting output faster than a timeout alone would stop.
 const gitProbeMaxOutput = 1 << 20
+
+const gitProbeTimeout = 5 * time.Second
+
+// gitProbeWaitDelay is how long a killed probe's output pipes may stay open
+// before the wait gives up on them. It is not clipWaitDelay: the probe's
+// whole budget is 5s and a wedged descendant must not turn it into 10s.
+const gitProbeWaitDelay = time.Second
 
 // errNoHostGit is what a probe returns when byre has no host git to run. The
 // callers that care are the ones that report a repo fact to the user
@@ -78,12 +84,18 @@ func hostGitForSession(roots hostexec.Roots) (exe, disclosure string) {
 // directory the box writes) and every probe fails immediately: that is the
 // same shape callers already handle for a host with no git at all.
 func gitProbe(exe string, args ...string) ([]byte, error) {
+	return gitProbeBounded(gitProbeTimeout, exe, args...)
+}
+
+// gitProbeBounded is gitProbe with the wall-clock bound as a parameter, so a
+// test can prove the group-kill deadline fires without waiting 5s.
+func gitProbeBounded(timeout time.Duration, exe string, args ...string) ([]byte, error) {
 	if exe == "" {
 		return nil, errNoHostGit
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, exe, args...)
+	cmd := processGroupCmd(ctx, gitProbeWaitDelay, exe, args...)
 	// Discard stderr: a probe of an agent-shaped repo must not let git spray
 	// the user's terminal (a hostile repo could emit for the full 5s window).
 	cmd.Stderr = io.Discard

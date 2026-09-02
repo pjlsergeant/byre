@@ -51,3 +51,32 @@ func TestGitProbeNormalAnswer(t *testing.T) {
 		t.Fatalf("out=%q err=%v", out, err)
 	}
 }
+
+// The deadline must reach the whole process GROUP. CommandContext kills the
+// direct child only, so a descendant holding the stdout pipe keeps the read
+// blocked past the deadline that was supposed to end it -- exactly the wedge
+// the bound exists to prevent.
+func TestGitProbeKillsTheWholeGroup(t *testing.T) {
+	dir := t.TempDir()
+	// The stub prints, then exits the wait only when the backgrounded sleep
+	// does; the sleep inherits stdout and would hold the pipe open for a minute.
+	stub := `#!/bin/sh
+echo x
+sleep 60 &
+wait
+`
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err := gitProbeBounded(150*time.Millisecond, filepath.Join(dir, "git"), "status")
+	if err == nil {
+		t.Fatal("a probe that outlives its deadline must be an error")
+	}
+	// Under gitProbeWaitDelay, not merely finite: a group that died closes the
+	// pipes at once, so a probe that takes the full delay to return is one
+	// WaitDelay rescued rather than the group kill.
+	if el := time.Since(start); el >= gitProbeWaitDelay {
+		t.Fatalf("the probe took %s to return: the group was not killed, WaitDelay was", el)
+	}
+}

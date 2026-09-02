@@ -91,24 +91,7 @@ var clipReadOut = func(name string, args ...string) ([]byte, error) {
 func clipReadBounded(timeout time.Duration, max int, name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
-	// Same reason clipRunOut does it: none of these tools read the tty, and a
-	// child in the foreground process group makes the terminal title flap.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	// The group exists, so cancel it as a GROUP. CommandContext's default kills
-	// the direct child only, which leaves the descendants these tools spawn
-	// (osascript's helpers) alive and holding the stdout pipe -- the read below
-	// then blocks past the deadline that was supposed to end it. Negative pid
-	// is the whole process group.
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	}
-	// And a second bound on the wait itself, for a descendant that outlives
-	// even the group kill (one that changed its own group).
-	cmd.WaitDelay = clipWaitDelay
+	cmd := processGroupCmd(ctx, clipWaitDelay, name, args...)
 	// Stderr is capped, not saved by exec: Output() populates ExitError.Stderr
 	// but this reads stdout through a pipe, so the diagnostic has to be kept
 	// here (runner.capBuffer's shape -- bounded, never blocking the child).
