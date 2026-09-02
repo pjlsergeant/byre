@@ -184,6 +184,23 @@ func TestValidateClaudeSkillDirRejects(t *testing.T) {
 		t.Fatalf("symlink at depth must name the path: %v", err)
 	}
 
+	// A valid skill dir reached through a top-level symlink is the user's
+	// own naming; refuse it with the interior walk's wording, not the
+	// swapped-root race.
+	realDir := filepath.Join(base, "realskilldir")
+	writeClaudeSkill(t, realDir, "linkdir", "")
+	linkDir := filepath.Join(base, "linkdir")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Fatal(err)
+	}
+	err = ValidateClaudeSkillDir(linkDir, "linkdir")
+	if err == nil || !strings.Contains(err.Error(), "not allowed in a claude skill dir") {
+		t.Fatalf("top-level symlink dir: %v", err)
+	}
+	if strings.Contains(err.Error(), "swapped") {
+		t.Fatalf("top-level symlink dir must not use the swapped-root wording: %v", err)
+	}
+
 	fifo := filepath.Join(base, "fifo")
 	writeClaudeSkill(t, fifo, "fifo", "")
 	if err := syscall.Mkfifo(filepath.Join(fifo, "pipe"), 0o644); err != nil {

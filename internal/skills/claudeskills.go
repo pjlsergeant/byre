@@ -97,6 +97,13 @@ const (
 // would refuse them anyway, less legibly). Runs for both homes at bake, and
 // for `byre claude-skill add` before it writes a declaration.
 func ValidateClaudeSkillDir(dir, name string) error {
+	// A user-named skill dir that is itself a symlink is the same refusal
+	// the interior walk names -- not ErrSymlinkRoot's "swapped" wording,
+	// which describes a race the user did not cause. The no-follow root
+	// below still enforces.
+	if li, lerr := hostopen.PlainLstat(dir, hostopen.UserNamed); lerr == nil && li.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("claude skill %s: symlink %s: not allowed in a claude skill dir (copy plain files)", name, dir)
+	}
 	info, err := hostopen.PlainStat(dir, hostopen.UserNamed)
 	if err != nil {
 		return fmt.Errorf("claude skill %s: %w", name, err)
