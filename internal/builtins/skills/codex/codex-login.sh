@@ -22,6 +22,9 @@ export CODEX_HOME="${CODEX_HOME:-/home/dev/.codex-home}"
 cred="$CODEX_HOME/auth.json"
 diag_dir="${BYRE_IDENTITY_BASE:-/home/dev/.byre-identity}/codex"
 diag_log="$diag_dir/byre-auth-diagnostic.log"
+# Seconds app-server gets to finish an in-place auth write before TERM, and
+# again before KILL. Default 1; tests shorten it.
+reap_grace="${BYRE_CODEX_REAP_GRACE:-1}"
 snapshot=""
 
 cleanup_snapshot() {
@@ -148,9 +151,9 @@ live_probe() {
   # EOF normally stops app-server. Give it time to finish any in-place auth
   # write before escalating, and target the dedicated session so plugin/git
   # children cannot outlive the credential lock.
-  sleep 1
+  sleep "$reap_grace"
   kill -TERM -- "-$rpc_pid" 2>/dev/null || kill "$rpc_pid" 2>/dev/null || true
-  sleep 1
+  sleep "$reap_grace"
   kill -KILL -- "-$rpc_pid" 2>/dev/null || kill -KILL "$rpc_pid" 2>/dev/null || true
   wait "$rpc_pid" 2>/dev/null || true
   rm -rf "$rpc_dir"

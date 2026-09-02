@@ -87,6 +87,13 @@ func runCodexSharedAuthHook(t *testing.T, identityBase, codexHome string) {
 	}
 }
 
+// codexLoginHookEnv is the environment every login-hook invocation uses.
+// Reap grace is shortened so live_probe's TERM/KILL escalation does not spend
+// two wall-clock seconds per call; production still defaults to 1.
+func codexLoginHookEnv(extra ...string) []string {
+	return append(append(os.Environ(), extra...), "BYRE_CODEX_REAP_GRACE=0.05")
+}
+
 // writeCodexSetsidShim supplies setsid on macOS; Linux uses util-linux.
 func writeCodexSetsidShim(t *testing.T, bin string) {
 	t.Helper()
@@ -708,7 +715,7 @@ func TestCodexLoginHookRejectsForeignSymlink(t *testing.T) {
 	run := func(codexHome string) {
 		t.Helper()
 		cmd := exec.Command("bash", hook)
-		cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+codexHome,
+		cmd.Env = codexLoginHookEnv("PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+codexHome,
 			"BYRE_CODEX_AUTH_RECONCILE=/nonexistent")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("hook failed: %v (%s)", err, out)
@@ -770,7 +777,7 @@ func TestCodexLoginHookPublishesSuccessfulDeviceLogin(t *testing.T) {
 	}
 
 	cmd := exec.Command("bash", loginHook)
-	cmd.Env = append(os.Environ(),
+	cmd.Env = codexLoginHookEnv(
 		"PATH="+bin+":/usr/bin:/bin",
 		"CODEX_HOME="+home,
 		"BYRE_IDENTITY_BASE="+base,
@@ -873,7 +880,7 @@ func TestCodexLoginHookColdStartProbe(t *testing.T) {
 			if tt.appServerBody != "" {
 				stub += "  printf '%s\\n' " + strconv.Quote(tt.appServerBody) + "\n"
 			}
-			stub += "  sleep 1; exit 0\nfi\n" +
+			stub += "  sleep 0.1; exit 0\nfi\n" +
 				"if [ \"$1 $2\" = 'login --device-auth' ]; then touch " + strconv.Quote(loginStamp) + "; exit 0; fi\n" +
 				"exit 1\n"
 			if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(stub), 0o755); err != nil {
@@ -881,7 +888,7 @@ func TestCodexLoginHookColdStartProbe(t *testing.T) {
 			}
 
 			cmd := exec.Command("bash", hook)
-			cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+			cmd.Env = codexLoginHookEnv("PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
 				"BYRE_CODEX_AUTH_RECONCILE=/nonexistent")
 			out, err := cmd.CombinedOutput()
 			if err != nil {
@@ -934,7 +941,7 @@ func TestCodexLoginHookReapsAppServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("bash", hook)
-	cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+	cmd.Env = codexLoginHookEnv("PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
 		"BYRE_CODEX_AUTH_RECONCILE=/nonexistent")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("hook failed: %v (%s)", err, out)
@@ -999,7 +1006,7 @@ func TestCodexLoginHookDetachesSharedLinkBeforeDeviceLogin(t *testing.T) {
 	fresh := `{"auth_mode":"chatgpt","tokens":{"access_token":"opaque","refresh_token":"fresh"},"last_refresh":"2030-01-01T00:00:00Z"}`
 	stub := "#!/bin/sh\n" +
 		"if [ \"$1 $2\" = 'login status' ]; then exit 0; fi\n" +
-		"if [ \"$1\" = app-server ]; then printf '%s\\n' '{\"id\":1,\"result\":{\"account\":null,\"requiresOpenaiAuth\":true}}'; sleep 1; exit 0; fi\n" +
+		"if [ \"$1\" = app-server ]; then printf '%s\\n' '{\"id\":1,\"result\":{\"account\":null,\"requiresOpenaiAuth\":true}}'; sleep 0.1; exit 0; fi\n" +
 		"if [ \"$1 $2\" = 'login --device-auth' ]; then\n" +
 		"  test ! -e \"$CODEX_HOME/auth.json\" && test ! -L \"$CODEX_HOME/auth.json\" || exit 41\n" +
 		"  test -s " + strconv.Quote(shared) + " || exit 42\n" +
@@ -1012,7 +1019,7 @@ func TestCodexLoginHookDetachesSharedLinkBeforeDeviceLogin(t *testing.T) {
 	}
 	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
 	cmd := exec.Command("bash", testHook)
-	cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+	cmd.Env = codexLoginHookEnv("PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
 		"BYRE_IDENTITY_BASE="+base, "BYRE_CODEX_AUTH_RECONCILE="+reconcile)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1072,7 +1079,7 @@ func TestCodexLoginHookAdoptsDelayedSiblingRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("bash", testHook)
-	cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+	cmd.Env = codexLoginHookEnv("PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
 		"BYRE_IDENTITY_BASE="+base, "CODEX_AUTH_DIAGNOSTIC_BYRE=1")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("hook failed: %v (%s)", err, out)
@@ -1125,7 +1132,7 @@ func TestCodexLoginHookRestoresSharedLinkAfterFailedLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("bash", testHook)
-	cmd.Env = append(os.Environ(), "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+	cmd.Env = codexLoginHookEnv("PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
 		"BYRE_IDENTITY_BASE="+base, "BYRE_CODEX_AUTH_RECONCILE=/nonexistent")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("hook failed: %v (%s)", err, out)
