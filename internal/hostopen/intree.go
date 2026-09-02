@@ -18,6 +18,12 @@ import (
 // resolve-then-containment check is the function, so a caller cannot forget
 // the second half or judge it by spelling.
 //
+// Containment is judged on the pathname returned, from that one lookup: a
+// second resolve between the two would let a swapped component make the
+// check pass on a different object than the name handed back. The returned
+// pathname is still a name, not a handle -- the same residual every byre
+// path-based open carries.
+//
 // A missing path returns an error for which errors.Is(err, fs.ErrNotExist)
 // holds. A resolved path that is not under the base returns ErrEscapes.
 func RealUnder(base, rel string) (string, error) {
@@ -33,7 +39,7 @@ func RealUnder(base, rel string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !identityUnder(wd, real) {
+	if !identityUnderResolved(wd, real) {
 		return "", ErrEscapes
 	}
 	return real, nil
@@ -86,6 +92,14 @@ func identityUnder(wd os.FileInfo, q string) bool {
 	if err != nil {
 		return false
 	}
+	return identityUnderResolved(wd, resolved)
+}
+
+// identityUnderResolved is the stat-chain half of identityUnder: resolved is
+// already canonical (EvalSymlinks'd), so walking filepath.Dir is walking the
+// real ancestor chain. RealUnder calls this on the pathname it returns, so
+// the containment judgment and the returned name are the same lookup.
+func identityUnderResolved(wd os.FileInfo, resolved string) bool {
 	for cur := resolved; ; {
 		if fi, ferr := PlainStat(cur, IdentityChecked); ferr == nil && os.SameFile(wd, fi) {
 			return true
