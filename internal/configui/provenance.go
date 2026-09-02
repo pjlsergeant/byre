@@ -111,12 +111,14 @@ type Inherited struct {
 }
 
 // lowerFold folds the lower layers (default ⊕ template ⊕ chain(root …
-// parent)) under the CURRENTLY selected template and extends values onto
-// base, threading the closure accumulator the way resolution does — the
-// editor's live re-merge must not drop closures, or the rows that render
-// closed-by state go silently wrong (P0).
-func (m model) lowerFold(base config.Config) (config.Config, config.Closures) {
-	lower, cl := config.MergeStep(base, config.Closures{}, m.inh.Default)
+// parent)) under the CURRENTLY selected template and extends values,
+// starting from config.CoreLayer unconditionally, threading the closure
+// accumulator the way resolution does — the editor's live re-merge must
+// not drop closures, or the rows that render closed-by state go silently
+// wrong (P0). The editor must fold the same base resolution uses, or a
+// core key would vanish from the inherited view.
+func (m model) lowerFold() (config.Config, config.Closures) {
+	lower, cl := config.MergeStep(config.CoreLayer(), config.Closures{}, m.inh.Default)
 	if t := m.templateNow(); t != "" {
 		lower, cl = config.MergeStep(lower, cl, m.inh.Templates[t])
 	}
@@ -132,7 +134,7 @@ func (m model) lowerNow() config.Merged {
 	if !m.inh.HasLower {
 		return config.Merged{}
 	}
-	c, cl := m.lowerFold(config.Config{})
+	c, cl := m.lowerFold()
 	return config.Merged{Config: c, Closures: cl}
 }
 
@@ -144,7 +146,7 @@ func (m model) lowerScalar(get func(config.Config) string, includeTemplate bool)
 	if !m.inh.HasLower {
 		return ""
 	}
-	lower, cl := config.MergeStep(config.Config{}, config.Closures{}, m.inh.Default)
+	lower, cl := config.MergeStep(config.CoreLayer(), config.Closures{}, m.inh.Default)
 	if includeTemplate {
 		// templateNow, not the raw row: with the template picker on its own
 		// inherit row the effective template is the inherited one, and an
@@ -225,9 +227,7 @@ func (m model) chainNow() []config.NamedLayer {
 // predicate; the shape mirrors a disabled mount, which is likewise shown and
 // separately tallied.
 func (m model) hostEnvNow() map[string]string {
-	// The core layer (byre's shipped git-identity passthrough) sits under
-	// the lower fold, the way resolution stacks it.
-	merged, _ := m.lowerFold(config.Config{EnvFromHost: config.CoreEnvFromHost()})
+	merged, _ := m.lowerFold()
 	out := map[string]string{}
 	for k, v := range merged.EnvFromHost {
 		out[k] = v

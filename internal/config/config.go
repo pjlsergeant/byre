@@ -564,12 +564,8 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Merged
 	def.Template = ""
 	def.Agent = ""
 
-	// The core layer sits under everything: byre's own shipped defaults,
-	// today only the host git identity passthrough. A real config layer (not
-	// hardcoded plumbing) so any higher layer can see, override, or disable
-	// it per key, and the legibility surfaces count it like the grant it is.
-	// The fold's closure accumulator starts here and threads every step.
-	lower, closures := mergeStep(Config{EnvFromHost: CoreEnvFromHost()}, Closures{}, def)
+	// Unconditional base: CoreLayer.
+	lower, closures := mergeStep(CoreLayer(), Closures{}, def)
 	def = lower
 
 	// The extends chain hangs off the PROJECT config (the chain's leaf).
@@ -1829,6 +1825,15 @@ func ListTemplatesCatalog(cat *packages.Catalog) []string {
 	}
 	sort.Strings(ts)
 	return ts
+}
+
+// CoreLayer sits under everything: byre's own shipped defaults, today only
+// the host git identity passthrough. A real config layer (not hardcoded
+// plumbing) so any higher layer can see, override, or disable it per key,
+// and the legibility surfaces count it like the grant it is. The fold's
+// closure accumulator starts here and threads every step.
+func CoreLayer() Config {
+	return Config{EnvFromHost: CoreEnvFromHost()}
 }
 
 // CoreEnvFromHost is byre's shipped env_from_host layer: the host git

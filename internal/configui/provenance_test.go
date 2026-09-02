@@ -1,6 +1,7 @@
 package configui
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -53,5 +54,19 @@ func TestLegacyRowDoesNotDisableBundledAlias(t *testing.T) {
 	}
 	if d := m.optDisabled("typo"); d == "" {
 		t.Fatal("broken local skill should be disabled-with-reason")
+	}
+}
+
+// The editor folds the same base resolution uses, so a core key can never
+// vanish from the inherited view.
+func TestEditorFoldsTheSameBaseResolutionUses(t *testing.T) {
+	m := newModel("t", "/tmp/x", config.Config{}, nil, nil, nil, nil, Inherited{HasLower: true}, nil, TargetProject)
+	got := m.lowerNow().Config.EnvFromHost
+	want := config.CoreLayer().EnvFromHost
+	if !maps.Equal(got, want) {
+		t.Fatalf("empty lower cascade EnvFromHost = %v, want CoreLayer %v", got, want)
+	}
+	if agent := m.lowerScalar(func(c config.Config) string { return c.Agent }, true); agent != "" {
+		t.Fatalf("core layer does not set agent, lowerScalar = %q", agent)
 	}
 }

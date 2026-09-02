@@ -1215,6 +1215,9 @@ func TestEnvFromHostCoreLayerAndValidation(t *testing.T) {
 	if cfg.EnvFromHost["GIT_AUTHOR_NAME"] != "git:user.name" || cfg.EnvFromHost["GIT_COMMITTER_EMAIL"] != "git:user.email" {
 		t.Fatalf("shipped core defaults must resolve on: %v", cfg.EnvFromHost)
 	}
+	if !reflect.DeepEqual(cfg.EnvFromHost, CoreLayer().EnvFromHost) {
+		t.Fatalf("empty cascade EnvFromHost must equal CoreLayer: %v", cfg.EnvFromHost)
+	}
 	if cfg.EnvFromHost["TERM"] != "env:TERM" || cfg.EnvFromHost["TZ"] != "tz:" {
 		t.Fatalf("shipped TERM/TZ passthrough must resolve on: %v", cfg.EnvFromHost)
 	}
