@@ -857,6 +857,7 @@ func TestCodexLoginHookColdStartProbe(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			home, bin := t.TempDir(), t.TempDir()
 			writeCodexSetsidShim(t, bin)
 			probeStamp := filepath.Join(home, "probe")
