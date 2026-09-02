@@ -33,6 +33,11 @@ var ErrNotRegular = errors.New("not a regular file")
 // language rewrap it via errors.Is.
 var ErrSymlinkRoot = errors.New("no longer the directory that was checked -- swapped for a symlink or another dir (refusing to anchor there)")
 
+// ErrEscapes reports that RealUnder's resolved path is not under the
+// resolved base by file identity. Callers with their own contract language
+// rewrap it via errors.Is.
+var ErrEscapes = errors.New("resolved path is not under the base")
+
 // OpenRegular opens path for reading and returns the file with its fstat
 // info. follow states whether a symlink AT path is followed — true when the
 // USER named the path (their explicit choice), false when the path came from

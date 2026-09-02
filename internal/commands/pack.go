@@ -72,14 +72,14 @@ func packOutGuard(dir, primary, outPath string) error {
 	if err != nil {
 		return nil
 	}
-	rdir, err := filepath.EvalSymlinks(absDir)
+	rdir, err := hostopen.PlainEvalSymlinks(absDir, hostopen.UserNamed)
 	if err != nil {
 		return nil
 	}
-	// Absolute FIRST, then resolve the WHOLE path: EvalSymlinks keeps a
-	// relative input relative, and filepath.Rel(absolute, relative) below
-	// errors — which the degrade arm would read as "outside the package",
-	// failing open for exactly the in-package spelling
+	// Absolute FIRST, then resolve the WHOLE path: a relative input stays
+	// relative through the resolve, and filepath.Rel(absolute, relative)
+	// below errors — which the degrade arm would read as "outside the
+	// package", failing open for exactly the in-package spelling
 	// (`cd repo && pack id -o README.md`). The final component matters too:
 	// a symlink to an in-package payload (following it at the write would
 	// overwrite the payload from a name outside the package), or an
@@ -90,9 +90,9 @@ func packOutGuard(dir, primary, outPath string) error {
 	if err != nil {
 		return nil
 	}
-	out, err := filepath.EvalSymlinks(absOut)
+	out, err := hostopen.PlainEvalSymlinks(absOut, hostopen.UserNamed)
 	if err != nil {
-		rparent, perr := filepath.EvalSymlinks(filepath.Dir(absOut))
+		rparent, perr := hostopen.PlainEvalSymlinks(filepath.Dir(absOut), hostopen.UserNamed)
 		if perr != nil {
 			return nil
 		}

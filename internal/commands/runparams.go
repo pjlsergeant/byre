@@ -149,7 +149,7 @@ func checkContainedHostSource(host, workDir string) error {
 	if !hostopen.InTreeByIdentity(workDir, host) {
 		return nil // genuinely outside the tree -- the user's own host path
 	}
-	resolved, err := filepath.EvalSymlinks(host)
+	resolved, err := hostopen.PlainEvalSymlinks(host, hostopen.IdentityChecked)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Nothing exists at host -- including a dangling symlink or a dangling

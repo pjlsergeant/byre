@@ -1,6 +1,8 @@
 package hostopen
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -56,5 +58,64 @@ func TestInTreeByIdentity(t *testing.T) {
 	gone := filepath.Join(t.TempDir(), "gone")
 	if !InTreeByIdentity(gone, filepath.Join(gone, "sub")) {
 		t.Error("lexical fallback must still classify a spelled-under path in-tree")
+	}
+}
+
+func TestRealUnder(t *testing.T) {
+	base := t.TempDir()
+	plain := filepath.Join(base, "file")
+	if err := os.WriteFile(plain, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := RealUnder(base, "file")
+	if err != nil {
+		t.Fatalf("contained plain file: %v", err)
+	}
+	want, err := filepath.EvalSymlinks(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("contained plain file: got %q want %q", got, want)
+	}
+
+	// A symlink inside the tree whose target is also inside: the resolved
+	// path is the target, still contained.
+	if err := os.Symlink("file", filepath.Join(base, "alias")); err != nil {
+		t.Fatal(err)
+	}
+	got, err = RealUnder(base, "alias")
+	if err != nil {
+		t.Fatalf("contained-via-in-tree-symlink: %v", err)
+	}
+	if got != want {
+		t.Fatalf("contained-via-in-tree-symlink: got %q want %q", got, want)
+	}
+
+	outside := filepath.Join(t.TempDir(), "out")
+	if err := os.WriteFile(outside, []byte("y"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(base, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RealUnder(base, "escape"); !errors.Is(err, ErrEscapes) {
+		t.Fatalf("escape via symlink to outside: err = %v, want ErrEscapes", err)
+	}
+
+	if _, err := RealUnder(base, "gone"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("missing target: err = %v, want fs.ErrNotExist", err)
+	}
+
+	aliasBase := filepath.Join(t.TempDir(), "basealias")
+	if err := os.Symlink(base, aliasBase); err != nil {
+		t.Fatal(err)
+	}
+	got, err = RealUnder(aliasBase, "file")
+	if err != nil {
+		t.Fatalf("base given through a symlink alias: %v", err)
+	}
+	if got != want {
+		t.Fatalf("base given through a symlink alias: got %q want %q", got, want)
 	}
 }

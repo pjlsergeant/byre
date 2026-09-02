@@ -212,7 +212,7 @@ func Cases() []Case {
 			Threat:    "the classic exfiltration shape, pointed at the source's own top level.",
 			Invariant: "outside content reaches the destination only on a route whose contract follows a user-named top-level symlink; where the route refuses, nothing outside lands.",
 			Expect: map[Route]Expect{
-				BuildStageCopy: {Outcome: Refusal, Why: "safeProjectPath EvalSymlinks the `files` source and rejects a resolution outside the project dir before any copy starts."},
+				BuildStageCopy: {Outcome: Refusal, Why: "safeProjectPath resolves the `files` source through RealUnder and rejects a resolution outside the project dir before any copy starts."},
 				BuildCopyPath:  {Outcome: Refusal, Why: "refused for being a symlink at all, one step before the question of where it points."},
 				DeliverLocal:   {Outcome: Success, Entry: DeliverPath, Why: "deliverPath has no containment root at the top level -- the path IS the user's argument, so there is nothing for it to escape from, and their link is followed like any other. Containment begins at deliverDir's interior."},
 			},
@@ -232,7 +232,7 @@ func Cases() []Case {
 			Threat:    "low on its own; it is the row that shows refusal-vs-skip is decided by WHO named the entry, not by how the open failed.",
 			Invariant: "nothing lands for the dangling name.",
 			Expect: map[Route]Expect{
-				BuildStageCopy: {Outcome: Refusal, Why: "safeProjectPath's EvalSymlinks fails and the missing `files` source is refused by name, with the remedy in the message."},
+				BuildStageCopy: {Outcome: Refusal, Why: "safeProjectPath's RealUnder fails on a missing `files` source, which is refused by name, with the remedy in the message."},
 				BuildCopyPath:  {Outcome: Refusal, Why: "StatNoFollow sees a symlink and refuses before the target is resolved at all -- refused for being a symlink, not for being broken."},
 				DeliverLocal:   {Outcome: Refusal, Entry: DeliverPath, Why: "deliverPath Stats the user's symlink to route it and reports the dangling target as a delivery failure: the user named exactly this path, so there is nothing to skip past."},
 			},

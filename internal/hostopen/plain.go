@@ -3,6 +3,7 @@ package hostopen
 import (
 	"io/fs"
 	"os"
+	"path/filepath"
 )
 
 // plain.go is the ESCAPE from this package, and it exists so that escaping is
@@ -31,8 +32,8 @@ import (
 // with the code instead of in a table forty files away, and a new call
 // cannot inherit an old call's reasoning.
 //
-// Raw os.* calls are refused outside this package by
-// TestHostOpenConformance.
+// Raw os.* calls, and path/filepath.EvalSymlinks/Walk/WalkDir, are
+// refused outside this package by TestHostOpenConformance.
 
 // REACH FOR A PRIMITIVE BEFORE REACHING FOR A REASON. A Reason says "this
 // plain call happens to be fine HERE"; a primitive in this package makes the
@@ -156,6 +157,8 @@ func PlainLstat(name string, _ Reason) (fs.FileInfo, error) { return os.Lstat(na
 func PlainReadDir(name string, _ Reason) ([]os.DirEntry, error) { return os.ReadDir(name) }
 
 func PlainReadlink(name string, _ Reason) (string, error) { return os.Readlink(name) }
+
+func PlainEvalSymlinks(path string, _ Reason) (string, error) { return filepath.EvalSymlinks(path) }
 
 func PlainRemove(name string, _ Reason) error { return os.Remove(name) }
 

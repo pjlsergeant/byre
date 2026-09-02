@@ -848,11 +848,7 @@ func safeProjectPath(projectDir, src string) (real, rel string, err error) {
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", "", fmt.Errorf("source %q escapes the project dir", src)
 	}
-	realDir, err := filepath.EvalSymlinks(projectDir)
-	if err != nil {
-		return "", "", err
-	}
-	real, err = filepath.EvalSymlinks(filepath.Join(realDir, clean))
+	real, err = hostopen.RealUnder(projectDir, clean)
 	if err != nil {
 		// A missing source is overwhelmingly the real cause here, and the
 		// raw lstat error named neither the entry nor a way out -- the
@@ -861,11 +857,10 @@ func safeProjectPath(projectDir, src string) (real, rel string, err error) {
 		if os.IsNotExist(err) {
 			return "", "", fmt.Errorf("source %q is not in the project (create it, or remove the entry)", src)
 		}
+		if errors.Is(err, hostopen.ErrEscapes) {
+			return "", "", fmt.Errorf("source %q escapes the project dir via symlink", src)
+		}
 		return "", "", err
-	}
-	within, err := filepath.Rel(realDir, real)
-	if err != nil || within == ".." || strings.HasPrefix(within, ".."+string(filepath.Separator)) {
-		return "", "", fmt.Errorf("source %q escapes the project dir via symlink", src)
 	}
 	return real, clean, nil
 }
@@ -959,7 +954,7 @@ func agentWritableRel(root, path string) (string, bool) {
 	if rel, ok := withinRoot(root, path); ok {
 		return rel, true
 	}
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+	if resolved, err := hostopen.PlainEvalSymlinks(path, hostopen.IdentityChecked); err == nil {
 		return withinRoot(root, resolved)
 	}
 	return "", false

@@ -45,7 +45,7 @@ func Canonicalize(path string) (string, error) {
 	}
 	// Resolve symlinks when the path exists; fall back to the cleaned absolute
 	// path otherwise, so an id can still be computed for a not-yet-created dir.
-	if resolved, rerr := filepath.EvalSymlinks(abs); rerr == nil {
+	if resolved, rerr := hostopen.PlainEvalSymlinks(abs, hostopen.UserNamed); rerr == nil {
 		abs = resolved
 	}
 	abs = filepath.Clean(abs)

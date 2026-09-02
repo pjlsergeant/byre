@@ -122,7 +122,9 @@ root; see `docs/BYRE-DEVELOPMENT.md`.)
 
 - Standard Go style; `gofmt` + `go vet` clean before every commit.
 - **Plain `os` filesystem calls are BANNED outside `internal/hostopen`** —
-  reads, writes and probes alike. Ask three questions of the path: can the
+  reads, writes and probes alike. `path/filepath.EvalSymlinks` (resolves an
+  agent-plantable symlink chain by pathname) and `Walk`/`WalkDir` (traverse
+  by pathname) are the same class. Ask three questions of the path: can the
   agent author the STRING, control a component of the ROUTE, or replace the
   TARGET? Any yes and the call rides hostopen's real functions (O_NONBLOCK
   so nothing hangs, type judged from the descriptor, bounded reads,

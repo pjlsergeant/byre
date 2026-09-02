@@ -314,7 +314,7 @@ func canonWorktreePath(p string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if resolved, rerr := filepath.EvalSymlinks(abs); rerr == nil {
+	if resolved, rerr := hostopen.PlainEvalSymlinks(abs, hostopen.UserNamed); rerr == nil {
 		return filepath.Clean(resolved), nil
 	}
 	parent, err := project.Canonicalize(filepath.Dir(abs))

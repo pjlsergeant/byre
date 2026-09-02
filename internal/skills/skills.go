@@ -1129,19 +1129,15 @@ func skillRelPath(dir, rel string) (string, error) {
 	}
 	clean := filepath.Clean(rel)
 
-	// Resolve symlinks on both sides and confirm the target is still contained,
-	// so a symlink inside the bundle can't read an arbitrary host file.
-	realDir, err := filepath.EvalSymlinks(dir)
+	// RealUnder resolves both sides and confirms the target is still
+	// contained by identity, so a symlink inside the bundle can't read an
+	// arbitrary host file.
+	realFull, err := hostopen.RealUnder(dir, clean)
 	if err != nil {
+		if errors.Is(err, hostopen.ErrEscapes) {
+			return "", fmt.Errorf("path escapes the skill dir via symlink: %q", rel)
+		}
 		return "", err
-	}
-	realFull, err := filepath.EvalSymlinks(filepath.Join(realDir, clean))
-	if err != nil {
-		return "", err
-	}
-	within, err := filepath.Rel(realDir, realFull)
-	if err != nil || within == ".." || strings.HasPrefix(within, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("path escapes the skill dir via symlink: %q", rel)
 	}
 	return realFull, nil
 }

@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,28 +115,49 @@ func ValidateClaudeSkillDir(dir, name string) error {
 		return fmt.Errorf("claude skill %s: SKILL.md frontmatter needs a non-empty description (it is what tells the agent when to use the skill)", name)
 	}
 
-	files, bytes := 0, int64(0)
-	err = filepath.Walk(dir, func(p string, fi os.FileInfo, werr error) error {
+	files, nbytes := 0, int64(0)
+	// Enumerate through a no-follow root, never by pathname: a swapped
+	// component cannot redirect the walk, and a DirEntry reports a symlink
+	// via ModeSymlink without following.
+	root, err := hostopen.OpenDirRootNoFollow(dir)
+	if err != nil {
+		return fmt.Errorf("claude skill %s: %s: %w", name, dir, err)
+	}
+	defer root.Close()
+	err = fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, werr error) error {
 		if werr != nil {
 			return werr
 		}
-		if fi.Mode()&os.ModeSymlink != 0 {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if d.Type()&fs.ModeSymlink != 0 {
 			return fmt.Errorf("symlink %s: not allowed in a claude skill dir (copy plain files)", p)
 		}
-		if fi.IsDir() {
+		if d.IsDir() {
+			return nil
+		}
+		// Type() can be unknown (zero) on some filesystems; Info() is the
+		// lstat mode, and a symlink reports ModeSymlink without following.
+		info, ierr := d.Info()
+		if ierr != nil {
+			return ierr
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("symlink %s: not allowed in a claude skill dir (copy plain files)", p)
+		}
+		if info.IsDir() {
 			return nil
 		}
 		// Only regular files stage: a FIFO would block the staging copy's
 		// os.Open indefinitely, and a device could dodge the size bound.
-		if !fi.Mode().IsRegular() {
+		if !info.Mode().IsRegular() {
 			return fmt.Errorf("%s: not a regular file — a claude skill dir holds plain files only", p)
 		}
 		files++
-		bytes += fi.Size()
+		nbytes += info.Size()
 		if files > MaxClaudeSkillFiles {
 			return fmt.Errorf("more than %d files — not stageable as a claude skill", MaxClaudeSkillFiles)
 		}
-		if bytes > MaxClaudeSkillBytes {
+		if nbytes > MaxClaudeSkillBytes {
 			return fmt.Errorf("more than %d bytes — not stageable as a claude skill", MaxClaudeSkillBytes)
 		}
 		return nil

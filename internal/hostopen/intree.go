@@ -12,6 +12,33 @@ import (
 // is that following a symlink is deliberate and the security property is the
 // os.SameFile comparison, not the lookup.
 
+// RealUnder resolves base, then base/rel, and returns the resolved path only
+// if that result is under the resolved base by file identity -- never by
+// lexical Rel, which misclassifies on a case-insensitive filesystem. The
+// resolve-then-containment check is the function, so a caller cannot forget
+// the second half or judge it by spelling.
+//
+// A missing path returns an error for which errors.Is(err, fs.ErrNotExist)
+// holds. A resolved path that is not under the base returns ErrEscapes.
+func RealUnder(base, rel string) (string, error) {
+	realBase, err := filepath.EvalSymlinks(base)
+	if err != nil {
+		return "", err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(realBase, rel))
+	if err != nil {
+		return "", err
+	}
+	wd, err := PlainStat(realBase, IdentityChecked)
+	if err != nil {
+		return "", err
+	}
+	if !identityUnder(wd, real) {
+		return "", ErrEscapes
+	}
+	return real, nil
+}
+
 // InTreeByIdentity reports whether p denotes tree or a descendant of it,
 // judged by FILE IDENTITY -- os.SameFile against tree over real ancestor
 // chains -- never by spelling. A lexical comparison misclassifies on a

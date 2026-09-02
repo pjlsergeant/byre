@@ -196,13 +196,12 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 	if err != nil {
 		return worktreeInfo{}, false, err
 	}
-	// Symlink-resolved source for the RW bind (see commonGitDirHost). Use
-	// EvalSymlinks directly, NOT Canonicalize: Canonicalize silently falls back
-	// to the un-resolved path when EvalSymlinks fails, which for a
-	// security-sensitive resolve would quietly reinstate the symlink-retarget
-	// race. Fail closed instead — an unresolvable common dir is a loud error,
-	// never a lenient mount. For a symlink-free path this returns structCommon
-	// unchanged.
+	// Symlink-resolved source for the RW bind (see commonGitDirHost). Resolve
+	// fail-closed, NOT Canonicalize: Canonicalize silently falls back to the
+	// un-resolved path when the resolve fails, which for a security-sensitive
+	// resolve would quietly reinstate the symlink-retarget race. Fail closed
+	// instead — an unresolvable common dir is a loud error, never a lenient
+	// mount. For a symlink-free path this returns structCommon unchanged.
 	//
 	// Residual (shared with EVERY byre path-based bind, WorkDir included): the
 	// RESULT is a pathname, not an inode-pinned handle, so an agent that can
@@ -210,13 +209,13 @@ func detectWorktree(dir string) (worktreeInfo, bool, error) {
 	// could still redirect the mount. Fully closing that means fd/inode-pinned
 	// mounting across all binds — an architecture change, not a per-mount fix;
 	// out of scope here.
-	hostCommon, err := filepath.EvalSymlinks(structCommon)
+	hostCommon, err := hostopen.PlainEvalSymlinks(structCommon, hostopen.IdentityChecked)
 	if err != nil {
 		return worktreeInfo{}, false, fmt.Errorf(
 			"%s: cannot resolve the common git dir %q for mounting: %w", dir, structCommon, err)
 	}
 	// Rebind the resolved result to the inode the structural check validated.
-	// EvalSymlinks re-walked structCommon, whose components an
+	// The resolve re-walked structCommon, whose components an
 	// agent can still flip, so its result is not automatically the directory
 	// SameFile approved above — without this, a symlink component retargeted
 	// between the check and the resolve would swap the mount source INSIDE this

@@ -166,6 +166,24 @@ func TestValidateClaudeSkillDirRejects(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
+	// A symlink at depth must be refused from the rooted walk, not followed,
+	// and the message must still name the path under the skill dir.
+	nested := filepath.Join(base, "nested")
+	writeClaudeSkill(t, nested, "nested", "")
+	if err := os.MkdirAll(filepath.Join(nested, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/etc/passwd", filepath.Join(nested, "sub", "steal")); err != nil {
+		t.Fatal(err)
+	}
+	err := ValidateClaudeSkillDir(nested, "nested")
+	if err == nil || !strings.Contains(err.Error(), "not allowed in a claude skill dir") {
+		t.Fatalf("symlink at depth: %v", err)
+	}
+	if !strings.Contains(err.Error(), filepath.Join(nested, "sub", "steal")) {
+		t.Fatalf("symlink at depth must name the path: %v", err)
+	}
+
 	fifo := filepath.Join(base, "fifo")
 	writeClaudeSkill(t, fifo, "fifo", "")
 	if err := syscall.Mkfifo(filepath.Join(fifo, "pipe"), 0o644); err != nil {

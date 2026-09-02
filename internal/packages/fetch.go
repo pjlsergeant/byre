@@ -111,7 +111,9 @@ func (f *Fetcher) fetchManifestFile(raw string) ([]byte, *Source, error) {
 		return nil, nil, fmt.Errorf("manifest exceeds %d bytes (limit)", MaxManifestBytes)
 	}
 	// Contain payloads to the manifest's real directory (symlinks resolved).
-	baseDir, err := filepath.EvalSymlinks(filepath.Dir(abs))
+	// The user named this path (install/inspect URI); fetchPayloadFile
+	// anchors an os.Root here rather than resolving rel itself.
+	baseDir, err := hostopen.PlainEvalSymlinks(filepath.Dir(abs), hostopen.HostUserOwned)
 	if err != nil {
 		return nil, nil, err
 	}
