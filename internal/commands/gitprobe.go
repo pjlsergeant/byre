@@ -106,6 +106,8 @@ func gitProbeBounded(timeout time.Duration, exe string, args ...string) ([]byte,
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+	stop := boundPipe(ctx, gitProbeWaitDelay, pipe)
+	defer stop()
 	out, rerr := io.ReadAll(io.LimitReader(pipe, gitProbeMaxOutput+1))
 	if len(out) > gitProbeMaxOutput || rerr != nil {
 		cancel() // kill the writer; a capped or broken read never waits it out

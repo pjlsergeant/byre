@@ -2,7 +2,9 @@ package commands
 
 import (
 	"context"
+	"io"
 	"os/exec"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -29,8 +31,42 @@ func processGroupCmd(ctx context.Context, waitDelay time.Duration, exe string, a
 		}
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
-	// And a second bound on the wait itself, for a descendant that outlives
-	// even the group kill (one that changed its own group).
+	// Three bounds, one each: Cancel's group SIGKILL for descendants still
+	// in the group; boundPipe's delayed close of the caller's stdout pipe
+	// for a descendant that left the group and holds stdout; WaitDelay for
+	// the post-exit unclosed-pipe case inside Wait. WaitDelay alone does
+	// not bound a ReadAll that runs before Wait.
 	cmd.WaitDelay = waitDelay
 	return cmd
+}
+
+// boundPipe closes pipe `delay` after ctx ends, unblocking a ReadAll that a
+// descendant holding stdout would otherwise keep blocked past the deadline.
+// Closing the read end gives the writer EPIPE. The returned stop cancels the
+// delayed close so a command that completed normally does not leak the
+// goroutine for the full delay. Closing an already-closed pipe is ignored.
+func boundPipe(ctx context.Context, delay time.Duration, pipe io.Closer) (stop func()) {
+	done := make(chan struct{})
+	var once sync.Once
+	stop = func() { once.Do(func() { close(done) }) }
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-done:
+			return
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-timer.C:
+			_ = pipe.Close()
+		case <-done:
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+		}
+	}()
+	return stop
 }

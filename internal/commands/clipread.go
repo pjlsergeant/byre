@@ -105,6 +105,8 @@ func clipReadBounded(timeout time.Duration, max int, name string, args ...string
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
+	stop := boundPipe(ctx, clipWaitDelay, pipe)
+	defer stop()
 	out, rerr := io.ReadAll(io.LimitReader(pipe, int64(max)+1))
 	over := len(out) > max
 	if over {

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // A hostile repo can mint output faster than any wall-clock bound stops it;
@@ -78,5 +80,28 @@ wait
 	// WaitDelay rescued rather than the group kill.
 	if el := time.Since(start); el >= gitProbeWaitDelay {
 		t.Fatalf("the probe took %s to return: the group was not killed, WaitDelay was", el)
+	}
+}
+
+// A descendant that leaves the group (setsid) and holds stdout is not
+// reached by the group SIGKILL; boundPipe's delayed close of the read end
+// is what unblocks the probe.
+func TestGitProbeBoundsADescendantThatLeftTheGroup(t *testing.T) {
+	testtools.NeedTool(t, "setsid")
+	dir := t.TempDir()
+	stub := `#!/bin/sh
+echo x
+setsid sh -c 'sleep 60'
+`
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err := gitProbeBounded(150*time.Millisecond, filepath.Join(dir, "git"), "status")
+	if err == nil {
+		t.Fatal("a probe whose descendant left the group and holds stdout must be an error")
+	}
+	if el := time.Since(start); el >= 2*gitProbeWaitDelay {
+		t.Fatalf("the probe took %s to return: the pipe close did not bound the escaped descendant", el)
 	}
 }
