@@ -68,7 +68,7 @@ func realInstallDeps() (installDeps, error) {
 	if err != nil {
 		return installDeps{}, fmt.Errorf("resolving the byre binary path: %w", err)
 	}
-	if resolved, err := hostopen.PlainEvalSymlinks(exe, hostopen.HostUserOwned); err == nil {
+	if resolved, err := hostopen.PlainEvalSymlinks(exe, hostopen.UserNamed); err == nil {
 		exe = resolved
 	}
 	return installDeps{

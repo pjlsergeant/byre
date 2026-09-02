@@ -954,7 +954,7 @@ func agentWritableRel(root, path string) (string, bool) {
 	if rel, ok := withinRoot(root, path); ok {
 		return rel, true
 	}
-	if resolved, err := hostopen.PlainEvalSymlinks(path, hostopen.IdentityChecked); err == nil {
+	if resolved, err := hostopen.PlainEvalSymlinks(path, hostopen.UserNamed); err == nil {
 		return withinRoot(root, resolved)
 	}
 	return "", false
