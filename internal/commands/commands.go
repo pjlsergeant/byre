@@ -23,7 +23,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/mattn/go-isatty"
+	xterm "github.com/charmbracelet/x/term"
 )
 
 // Streams is a command's stdio, under one convention: Out carries the
@@ -50,5 +50,5 @@ func StdStreams() Streams {
 // emit `docker run -t`, which the engine then rejects with "the input device is
 // not a TTY".
 func isTTY(f *os.File) bool {
-	return isatty.IsTerminal(f.Fd())
+	return xterm.IsTerminal(f.Fd())
 }
