@@ -139,9 +139,11 @@ func (m model) lowerNow() config.Merged {
 }
 
 // lowerScalar reports what the cascade BELOW this file provides for one scalar
-// field. The selected template counts as lower for agent/engine (a template may
-// set them); for the template field itself it must not, or the row would report
-// the very selection it describes.
+// field, sentinel included: a layer that says `agent = "none"` has made a
+// decision, and the inherit row names it ("(inherit: none)") rather than
+// reading as nothing below. The selected template counts as lower for
+// agent/engine (a template may set them); for the template field itself it
+// must not, or the row would report the very selection it describes.
 func (m model) lowerScalar(get func(config.Config) string, includeTemplate bool) string {
 	if !m.inh.HasLower {
 		return ""
@@ -159,24 +161,34 @@ func (m model) lowerScalar(get func(config.Config) string, includeTemplate bool)
 		lower, cl = config.MergeStep(lower, cl, nl.Config)
 	}
 	_ = cl // scalars only: closures have no scalar to contribute
-	v := config.FromNone(get(lower))
-	return v
+	return get(lower)
 }
 
 // templateNow, agentNow and engineNow are the EFFECTIVE selections: an
-// inherit row stands for the value it names, the sentinel row means off.
-// Readers that ask "what is in effect" use these; only the writer
-// (fromScalar) cares about the difference between inheriting and saying so.
+// inherit row stands for the value it names, the sentinel row means off --
+// and so does an inherit row that names the sentinel (a lower layer's
+// explicit off-switch), which is why the inherited value passes through
+// the same sentinel mapping. Readers that ask "what is in effect" use
+// these; only the writer (fromScalar) cares about the difference between
+// inheriting and saying so.
 func (m model) templateNow() string {
-	return effectiveScalar(m.tmplOpts, m.tmplSel, m.tmplInherit, noneOption)
+	return offIsEmpty(effectiveScalar(m.tmplOpts, m.tmplSel, m.tmplInherit, noneOption), noneOption)
 }
 
 func (m model) agentNow() string {
-	return effectiveScalar(m.agentOpts, m.agentSel, m.agentInherit, noneOption)
+	return offIsEmpty(effectiveScalar(m.agentOpts, m.agentSel, m.agentInherit, noneOption), noneOption)
 }
 
 func (m model) engineNow() string {
-	return effectiveScalar(m.engineOpts, m.engineSel, m.engineInherit, "auto")
+	return offIsEmpty(effectiveScalar(m.engineOpts, m.engineSel, m.engineInherit, "auto"), "auto")
+}
+
+// offIsEmpty maps a picker's sentinel to the empty effective value.
+func offIsEmpty(v, sentinel string) string {
+	if v == sentinel {
+		return ""
+	}
+	return v
 }
 
 // extendsNow is the currently selected parent layer ("" = none). The picker
