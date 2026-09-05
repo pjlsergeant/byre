@@ -217,9 +217,10 @@ func pickerFlipModel(cfg config.Config) model {
 			"go": {Engine: "podman"},
 		},
 		Layers: map[string]config.Config{
-			"team": {Agent: "codex", Engine: "podman"},
+			"team":  {Agent: "codex", Engine: "podman"},
+			"quiet": {Agent: config.NoneLabel, Engine: "auto"},
 		},
-		LayerNames: []string{"team"},
+		LayerNames: []string{"quiet", "team"},
 	}
 	return newModel("t", "/tmp/x", cfg, []string{"go"}, []string{"claude", "codex"}, nil, nil, inh, nil, TargetProject)
 }
@@ -434,5 +435,37 @@ func TestScalarPickersDeliberateNoneIsDirty(t *testing.T) {
 	cycleTo(t, &m, func() []string { return m.agentOpts }, func() int { return m.agentSel }, noneOption)
 	if m.dirty() {
 		t.Error("returning to the stored none is no change")
+	}
+}
+
+// A lower layer's explicit off-switch is a decision, and the inherit row
+// names it: "(inherit: none)" rather than a bare none that reads as nothing
+// below. Its effect is still off, choosing it still writes absent, and the
+// plain none row still writes the key.
+func TestScalarPickersInheritRowNamesALayersOffSwitch(t *testing.T) {
+	m := pickerFlipModel(config.Config{Extends: "quiet"})
+	if got := m.agentOpts[m.agentSel]; got != inheritRow(config.NoneLabel) {
+		t.Fatalf("absence under a layer saying none opens on its inherit row, got %q in %v", got, m.agentOpts)
+	}
+	if m.agentNow() != "" || m.assemble().Agent != "" {
+		t.Errorf("inheriting an off-switch is off and writes nothing: now=%q writes %q", m.agentNow(), m.assemble().Agent)
+	}
+	if got := m.engineOpts[m.engineSel]; got != inheritRow("auto") || m.engineNow() != "" {
+		t.Errorf("engine reads the same way: row %q now %q", got, m.engineNow())
+	}
+	focusOn(t, &m, fAgent)
+	cycleTo(t, &m, func() []string { return m.agentOpts }, func() int { return m.agentSel }, noneOption)
+	if got := m.assemble().Agent; got != config.NoneLabel {
+		t.Errorf("this file's own none is still a written key, got %q", got)
+	}
+	cycleTo(t, &m, func() []string { return m.agentOpts }, func() int { return m.agentSel }, "claude")
+	if m.agentNow() != "claude" {
+		t.Errorf("a concrete pick over the layer's none is that pick, got %q", m.agentNow())
+	}
+	// Attribution follows the flip like every other lower value.
+	focusOn(t, &m, fExtends)
+	cycleTo(t, &m, func() []string { return m.extOpts }, func() int { return m.extSel }, "team")
+	if !contains(m.agentOpts, inheritRow("codex")) || contains(m.agentOpts, inheritRow(config.NoneLabel)) {
+		t.Errorf("the inherit row follows the selected layer: %v", m.agentOpts)
 	}
 }
