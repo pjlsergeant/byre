@@ -484,3 +484,38 @@ func TestLocalShadowsInstalled(t *testing.T) {
 		t.Fatalf("kind mismatch must stay a conflict row, got ok=%v ent=%+v", ok, ent3)
 	}
 }
+
+// The scoping check rides local ingest: the misplaced key makes the dir an
+// INVALID row whose reason names it, instead of a loadable skill whose
+// contribution silently vanished. An agent-shaped skill keeps its place in
+// the agent picker, disabled with that reason, like every stage-2 failure.
+func TestLocalStrayPackageKeyIsInvalid(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, "skills", "failhook")
+	mustMkdirAll(t, dir, 0o755)
+	mustWriteFile(t, filepath.Join(dir, "skill.toml"), []byte("description = \"qa\"\n[package]\nid = \"failhook\"\nkind = \"skill\"\nfiles = { \"hook.sh\" = \"/etc/byre/firstrun.d/50-qa.sh\" }\n[agent]\ncommand = \"x\"\n"), 0o644)
+	cat, err := LoadCatalog(home, nil, "v0.2.0", "0.2.0", Stage2Hooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ent *Entry
+	for _, e := range cat.List(KindSkill) {
+		if e.ID == "failhook" {
+			ent = e
+		}
+	}
+	if ent == nil || ent.Provenance != ProvInvalid {
+		t.Fatalf("want an INVALID row, got %+v", ent)
+	}
+	for _, w := range []string{"[package]", "files", "move it above"} {
+		if !strings.Contains(ent.Reason, w) {
+			t.Errorf("reason lacks %q: %q", w, ent.Reason)
+		}
+	}
+	if !ent.LooksLikeAgent {
+		t.Error("an agent-shaped skill keeps its agent-picker standing while invalid")
+	}
+	if _, err := cat.ResolveName("failhook"); err == nil || !strings.Contains(err.Error(), "is invalid") {
+		t.Fatalf("resolve must hard-error on the row, got %v", err)
+	}
+}

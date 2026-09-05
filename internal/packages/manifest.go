@@ -2,6 +2,7 @@ package packages
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	toml "github.com/pelletier/go-toml/v2"
@@ -131,6 +132,57 @@ func RequiredManifestFields(m Manifest) error {
 		return fmt.Errorf("[package] missing required field(s): %s", strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+// knownManifestKeys are the keys the [package] table defines: the frozen
+// core (Manifest) and the pack tool's [[package.files]] list.
+var knownManifestKeys = map[string]bool{
+	"id": true, "version": true, "kind": true, "package_api": true,
+	"requires_byre": true, "description": true, "files": true,
+}
+
+// CheckPackageScoping refuses a LOCAL package whose [package] table carries
+// keys it does not define. TOML scopes a bare key to the most recent table
+// header, so a body key written below the [package] header -- a
+// `files = {...}` meant for [build], an `apt` list meant for the template
+// body -- is package.<key>: StripPackageTable removes it with the tree and
+// the strict stage-2 parse never sees it, so the contribution vanished
+// while validate said ok. `files` counts as defined only in the pack tool's
+// shape, an array of tables; an inline table there is [build]'s map,
+// misplaced.
+//
+// Local only. Stage 1 is lenient for installed and bundled packages by
+// decision (ParseManifestCore: a newer publisher may add [package] fields
+// this byre does not know), and pack never emits a stray, so the author of
+// a local dir is the one person holding the pen that wrote one. Bytes that
+// do not parse are not this check's to report: stage 1 already did.
+func CheckPackageScoping(kind Kind, content []byte) error {
+	var root struct {
+		Package map[string]any `toml:"package"`
+	}
+	if err := toml.Unmarshal(content, &root); err != nil {
+		return nil
+	}
+	var stray []string
+	for k, v := range root.Package {
+		if !knownManifestKeys[k] {
+			stray = append(stray, k)
+			continue
+		}
+		if _, ok := v.([]any); k == "files" && !ok {
+			stray = append(stray, k)
+		}
+	}
+	if len(stray) == 0 {
+		return nil
+	}
+	sort.Strings(stray)
+	where := "or under the table it belongs to ([build] files, [runtime] env, ...)"
+	if kind == KindTemplate {
+		where = "where template.config keys live"
+	}
+	return fmt.Errorf("[package] carries key(s) it does not define: %s -- TOML scopes a bare key to the most recent table header, so a key written below [package] is package.%s, not the %s's, and is dropped with the header; move it above [package], %s",
+		strings.Join(stray, ", "), stray[0], kind, where)
 }
 
 // StripPackageTable returns content with the whole package tree removed so
