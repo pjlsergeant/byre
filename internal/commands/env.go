@@ -89,11 +89,15 @@ func resolveHostEnv(cfg config.Config, gitExe string) []hostEnvResult {
 // dataf (P4). The commit consequence is claimed only for the core identity
 // rows (CoreEnvFromHost's GIT_* keys on their shipped sources): a custom
 // `git:` mapping that resolved empty has no bearing on commits, and saying
-// it does would be the untruthful claim P4 forbids.
-func warnHostEnvEmpty(w io.Writer, hostEnv []hostEnvResult) {
+// it does would be the untruthful claim P4 forbids. provided is the skill
+// runtime env (applied before the passthrough, which only overwrites on
+// delivery): a key a skill sets is IN the box whatever the host said, so it
+// is not warned about at all -- the line would claim an absence that is
+// not there.
+func warnHostEnvEmpty(w io.Writer, hostEnv []hostEnvResult, provided map[string]string) {
 	bySource := map[string][]string{}
 	for _, r := range hostEnv {
-		if r.State == hostEnvEmpty {
+		if _, fromSkill := provided[r.Key]; r.State == hostEnvEmpty && !fromSkill {
 			bySource[r.Source] = append(bySource[r.Source], r.Key)
 		}
 	}

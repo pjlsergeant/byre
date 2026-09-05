@@ -395,9 +395,9 @@ type Config struct {
 	// onboarding runs, never configuration of a box. The whole section is
 	// stripped from every resolved config -- one structural rule, rather
 	// than the per-key strip shared_auth used to need. Template and agent
-	// "defaults" are deliberately NOT here: they are the plain `template`
-	// and `agent` keys, real cascade values that apply to every project,
-	// and the picker pre-selects them because they ARE the inherited value.
+	// favourites are deliberately NOT here: they are the plain `template`
+	// and `agent` keys, kept where they have always lived, and stripped
+	// from every project by StripFavourites -- favourites all the same.
 	Defaults Defaults `toml:"defaults,omitempty"`
 
 	// SharedAuthLegacy is the pre-2026-07-28 top-level spelling, which
