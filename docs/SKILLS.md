@@ -203,6 +203,13 @@ review of exactly what changed. Prefer `-o` over a shell redirect: `-o`
 writes only after every read, so the manifest may be its own output
 target; `pack id > skill.toml` truncates the target before byre runs.
 
+Mind TOML's scoping around that header: a bare key belongs to the most
+recent table header, so `files = {...}` written below `[package]` is
+`package.files`, not `[build]`'s map. byre refuses a local package whose
+`[package]` carries a key the table does not define, naming the key and
+the move (above the header, or under its own table); `pack` keeps your
+leading bare keys above the header for the same reason.
+
 **Publishing from another machine (the round trip).** The catalog on a
 fresh machine knows your published package only as *installed* --
 immutable, not packable. `byre skill adopt <dir>` re-establishes the

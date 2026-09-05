@@ -307,3 +307,50 @@ apt = ["a"]
 		t.Fatalf("body damaged:\n%s", out)
 	}
 }
+
+// A body key written below the [package] header is package.<key> by TOML's
+// scoping, stripped with the tree before stage 2 sees it: the check names
+// the key and the move, and stays quiet for everything the table defines,
+// for header-shaped text that is data, and for bytes stage 1 already
+// refused.
+func TestCheckPackageScoping(t *testing.T) {
+	hdr := "[package]\nid = \"pete/x\"\nversion = \"1.0.0\"\nkind = \"skill\"\ndescription = \"d\"\n"
+	cases := []struct {
+		name    string
+		kind    Kind
+		content string
+		want    []string // fragments of the refusal; nil = must pass
+	}{
+		{"defined keys only", KindSkill, hdr, nil},
+		{"the pack tool's files list", KindSkill, hdr + "[[package.files]]\nsrc = \"a\"\ndest = \"a\"\nsha256 = \"00\"\n", nil},
+		{"no package table", KindSkill, "description = \"d\"\n[build]\nfiles = { \"a\" = \"/b\" }\n", nil},
+		{"body keys above the header", KindSkill, "companion_for = \"claude\"\n" + hdr, nil},
+		{"header-shaped text inside a string", KindSkill, hdr + "[build]\ndockerfile = [\"\"\"\n[package]\nfiles = 1\n\"\"\"]\n", nil},
+		{"multiline array continuation", KindTemplate, "[package]\nid = \"pete/t\"\nkind = \"template\"\n[env]\nX = \"\"\"\n[package]\napt = 1\n\"\"\"\n", nil},
+		{"unparseable is stage 1's", KindSkill, "[package\n", nil},
+		{"an inline files map", KindSkill, hdr + "files = { \"hook.sh\" = \"/etc/byre/firstrun.d/50-x.sh\" }\n", []string{"files", "package.files", "move it above [package]", "[build] files"}},
+		{"a template body key", KindTemplate, "[package]\nid = \"pete/t\"\nkind = \"template\"\napt = [\"jq\"]\n", []string{"apt", "package.apt", "template", "move it above [package]"}},
+		{"a quoted header", KindSkill, "[\"package\"]\nid = \"pete/x\"\nfiles = { \"a\" = \"/b\" }\n", []string{"files"}},
+		{"a dotted key", KindSkill, "description = \"d\"\npackage.id = \"pete/x\"\npackage.apt = [\"jq\"]\n", []string{"apt"}},
+		{"several, sorted", KindSkill, hdr + "runtime = 1\napt = 1\n", []string{"apt, runtime"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := CheckPackageScoping(c.kind, []byte(c.content))
+			if c.want == nil {
+				if err != nil {
+					t.Fatalf("must pass, got: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("must refuse")
+			}
+			for _, w := range c.want {
+				if !strings.Contains(err.Error(), w) {
+					t.Errorf("refusal lacks %q: %v", w, err)
+				}
+			}
+		})
+	}
+}

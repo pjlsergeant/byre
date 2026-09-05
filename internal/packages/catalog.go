@@ -432,6 +432,13 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 				fmt.Sprintf("declared kind %q does not match store location (%s)", m.Kind, kind), dir)
 			return nil
 		}
+		// A body key scoped under [package] by a misplaced header would
+		// vanish with the tree before stage 2 sees it; the author is local,
+		// so the refusal names the key and the move.
+		if err := CheckPackageScoping(kind, raw); err != nil {
+			c.addProblemAgent(id, kind, ProvInvalid, err.Error(), dir, kind == KindSkill && looksLikeAgent(raw))
+			return nil
+		}
 	}
 	// ID defaults to store-relative path.
 	canon := id

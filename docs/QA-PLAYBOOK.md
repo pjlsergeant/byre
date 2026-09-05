@@ -410,8 +410,8 @@ the contract.
 1. Local skill shipping a failing hook: `skill.toml` with `[package]`
    (id/kind) and `[build]` `files = { "hook.sh" =
    "/etc/byre/firstrun.d/50-qa-failhook.sh" }` (the files map goes under
-   `[build]` -- a bare `files` line below `[package]` is silently
-   consumed as `package.files`; see the TODO finding until it warns).
+   `[build]` -- a bare `files` line below `[package]` is `package.files`,
+   and the catalog refuses the local package naming the key and the move).
    `hook.sh`: echo something, `exit 7`.
 2. Enable it (`skills = ["qa/failhook"]` in the STORE config), develop
    (template/agent none). Expect, between the network banner and the
