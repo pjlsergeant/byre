@@ -59,6 +59,16 @@ the rationale lives.
   container rails the resolver establishes: read that design for whether it
   already generalises before writing a sidecar design.
 
+- [ ] (S) **Exclusive volume vs a sibling launched BEFORE the declaration**
+  (field QA 2026-08-14, reproduced 2026-09-05): QA-PLAYBOOK worktrees 5a
+  says main develop must REFUSE while a live worktree box exists after an
+  `exclusive` volume is added; byre allows it when that sibling's launch
+  record predates the volume (it does not mount it), and refuses only once
+  the sibling relaunches with the new cascade. Pete rules: either the recipe
+  gains a "relaunch the sibling after the edit" precondition, or develop
+  treats a live sibling as a prospective holder (ADR 0054 reads records,
+  never config -- that is the line to weigh).
+
 - [ ] (M) **Site demos: make them look right, then wire them back in**
   (parked 2026-07-18, Pete: "quite far from how I want them to look";
   the rest of the site is done). The pipeline is BUILT and in-tree --
