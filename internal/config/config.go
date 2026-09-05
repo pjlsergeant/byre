@@ -533,6 +533,20 @@ func ResolveProposed(proj Config) (Merged, error) {
 	return resolveWith(home, proj)
 }
 
+// StripFavourites blanks default.config's `template` and `agent`: they are
+// the first-run picker's PRE-SELECTED options only and must not silently
+// cascade into a project's resolved config (a project's template/agent come
+// from its own byre.config, which the picker writes). default.config still
+// contributes base/apt/env/etc. The picker reads the favourites from the file
+// directly (onboard.Favourites). Every fold of the default layer -- resolution
+// and the config editor's inherited view alike -- goes through this, so the
+// editor cannot show an inherit row resolution would not honour.
+func StripFavourites(def Config) Config {
+	def.Template = ""
+	def.Agent = ""
+	return def
+}
+
 // resolveWith applies the cascade default ⊕ template ⊕ proj.
 //
 // Package references (skills, agent, template, !markers) are canonicalized
@@ -556,13 +570,7 @@ func resolveWithCatalog(home string, proj Config, cat *packages.Catalog) (Merged
 	if err != nil {
 		return Merged{}, err
 	}
-	// default.config's `template`/`agent` are the first-run picker's PRE-SELECTED
-	// options only — they must not silently cascade into a project's resolved
-	// config (a project's template/agent come from its own byre.config, which the
-	// picker writes). default.config still contributes base/apt/env/etc. The
-	// picker reads the favourites from the file directly (onboard.Favourites).
-	def.Template = ""
-	def.Agent = ""
+	def = StripFavourites(def)
 
 	// Unconditional base: CoreLayer.
 	lower, closures := mergeStep(CoreLayer(), Closures{}, def)

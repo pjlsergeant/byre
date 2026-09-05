@@ -215,9 +215,15 @@ type model struct {
 	// selecting inherit means the EFFECTIVE value is the inherited one, and
 	// every reader of "what is selected" needs that, not the row text.
 	tmplInherit, agentInherit, engineInherit string
-	// Whether the FILE said the sentinel literally (`agent = "none"`,
-	// `engine = "auto"`). Onboarding writes both axes explicitly so an
-	// explicit no beats a later template; a save must give that back.
+	// Whether the sentinel is a DELIBERATE answer: the FILE said it
+	// literally (`agent = "none"`, `engine = "auto"`), or the user rested
+	// the picker on it this session. Onboarding writes both axes explicitly
+	// so an explicit no beats a layer added later; a save must give that
+	// back, and a no chosen in the editor earns the same standing -- with
+	// nothing below at the moment of choice the sentinel row is also how
+	// absence displays, so without this bit the choice is indistinguishable
+	// from never having been made, and a later extends flip would show it
+	// as inheriting the layer's agent.
 	tmplStored, agentStored, engineStored bool
 	extOpts                               []string // EXTENDS picker (named layers + none)
 	extSel                                int
@@ -510,39 +516,19 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 func (m model) loadConfig(cfg config.Config) model {
 	m.base = cfg
 	m.ti.SetValue(cfg.Base)
-	// Template first, and its selection with it: the agent/engine inherit rows
-	// consult the selected template as part of the lower cascade.
-	tmplLower := m.lowerScalar(func(c config.Config) string { return c.Template }, false)
-	m.tmplInherit, m.tmplStored = tmplLower, cfg.Template == noneOption
-	m.tmplOpts = scalarOpts(m.templates, cfg.Template, tmplLower, noneOption, false)
-	m.tmplOpts = appendPickerProblems(m.tmplOpts, m.inh.Catalog, packages.KindTemplate, false)
-	m.tmplSel = scalarSel(m.tmplOpts, cfg.Template, noneOption)
-
-	agentLower := m.lowerScalar(func(c config.Config) string { return c.Agent }, true)
-	m.agentInherit, m.agentStored = agentLower, cfg.Agent == noneOption
-	m.agentOpts = scalarOpts(m.agents, cfg.Agent, agentLower, noneOption, false)
-	// Problem rows appear in pickers disabled-with-reason.
-	m.agentOpts = appendPickerProblems(m.agentOpts, m.inh.Catalog, packages.KindSkill, true)
-
-	engineLower := m.lowerScalar(func(c config.Config) string { return c.Engine }, true)
-	m.engineInherit, m.engineStored = engineLower, cfg.Engine == "auto"
-	m.engineOpts = scalarOpts([]string{"docker", "podman"}, cfg.Engine, engineLower, "auto", true)
-	if cfg.Engine != "" && cfg.Engine != "auto" && !contains(m.engineOpts, cfg.Engine) {
-		m.engineOpts = append(m.engineOpts, cfg.Engine)
-	}
-	// The initial selection stays on the stored value EVEN when it is a
-	// disabled problem row: the form writes whatever is selected on save, so
-	// moving the selection here would silently swap the user's template/agent
-	// just by opening the editor. Cycling away skips disabled rows (and can't
-	// come back) — changing off a broken value is deliberate, keeping it isn't
-	// a choice the editor makes for you.
-	m.agentSel = scalarSel(m.agentOpts, cfg.Agent, noneOption)
-	m.engineSel = scalarSel(m.engineOpts, cfg.Engine, "auto")
-	// The EXTENDS picker: loadable layers plus, like every picker, the stored
-	// value even when it isn't offerable (a dangling extends must survive an
-	// unrelated open-and-save, and fail loudly at develop instead).
+	// Whether the FILE said each sentinel literally; the pickers below read
+	// these on every save, and a mid-session rebuild must not lose them.
+	m.tmplStored = cfg.Template == noneOption
+	m.agentStored = cfg.Agent == noneOption
+	m.engineStored = cfg.Engine == "auto"
+	// The EXTENDS picker first: loadable layers plus, like every picker, the
+	// stored value even when it isn't offerable (a dangling extends must
+	// survive an unrelated open-and-save, and fail loudly at develop instead).
+	// It is set before the scalar pickers because their inherit rows fold the
+	// chain it names -- a layer's agent is genuinely below this file.
 	m.extOpts = pickerOpts(m.inh.LayerNames, cfg.Extends)
 	m.extSel = indexOf(m.extOpts, config.OrNone(cfg.Extends))
+	m = m.scalarPickers(cfg.Template, cfg.Agent, cfg.Engine)
 	m.apt = append([]string{}, cfg.Apt...)
 	m.env = envItems(cfg.Env)
 	m.files = envItems(cfg.Files)
@@ -575,6 +561,64 @@ func (m model) loadConfig(cfg config.Config) model {
 	}
 	m.savedSig = m.sig()
 	return m
+}
+
+// scalarPickers (re)builds the template, agent and engine pickers -- options,
+// inherit rows and selections -- from the lower cascade under the CURRENT
+// extends and template selections. tmpl, agent and engine are this file's own
+// instructions as WRITTEN: "" (absent: inherit), the sentinel (the off-switch),
+// or a concrete value. loadConfig passes the file's values; reinherit passes
+// what each picker would write right now, so a mid-session flip of the
+// template or extends picker changes what the rows MEAN (the inherit row
+// names the new lower value; absence lands on it) and never what the file
+// says. Selections are rebuilt from those written values, not carried by
+// index: the option list itself changes shape when an inherit row appears or
+// goes.
+//
+// Template first, and its selection with it: the agent/engine inherit rows
+// consult the selected template as part of the lower cascade.
+func (m model) scalarPickers(tmpl, agent, engine string) model {
+	tmplLower := m.lowerScalar(func(c config.Config) string { return c.Template }, false)
+	m.tmplInherit = tmplLower
+	m.tmplOpts = scalarOpts(m.templates, tmpl, tmplLower, noneOption, false)
+	m.tmplOpts = appendPickerProblems(m.tmplOpts, m.inh.Catalog, packages.KindTemplate, false)
+	m.tmplSel = scalarSel(m.tmplOpts, tmpl, noneOption)
+
+	agentLower := m.lowerScalar(func(c config.Config) string { return c.Agent }, true)
+	m.agentInherit = agentLower
+	m.agentOpts = scalarOpts(m.agents, agent, agentLower, noneOption, false)
+	// Problem rows appear in pickers disabled-with-reason.
+	m.agentOpts = appendPickerProblems(m.agentOpts, m.inh.Catalog, packages.KindSkill, true)
+	// The selection stays on the stored value EVEN when it is a disabled
+	// problem row: the form writes whatever is selected on save, so moving the
+	// selection here would silently swap the user's template/agent just by
+	// opening the editor. Cycling away skips disabled rows (and can't come
+	// back) -- changing off a broken value is deliberate, keeping it isn't a
+	// choice the editor makes for you.
+	m.agentSel = scalarSel(m.agentOpts, agent, noneOption)
+
+	engineLower := m.lowerScalar(func(c config.Config) string { return c.Engine }, true)
+	m.engineInherit = engineLower
+	m.engineOpts = scalarOpts([]string{"docker", "podman"}, engine, engineLower, "auto", true)
+	m.engineSel = scalarSel(m.engineOpts, engine, "auto")
+	return m
+}
+
+// reinherit rebuilds the scalar pickers after the template or extends
+// selection moved. Their inherit rows describe the cascade BELOW this file,
+// and that cascade just changed under them: baked once at open, the agent
+// picker kept offering "none" with no inherit row after a template that sets
+// an agent was picked, so "none" wrote absent (nothing to be told apart
+// from) and the next develop handed the box the template's agent despite the
+// explicit no -- the editor misreporting effective state, which P0 ranks
+// with an engine defect. Each picker is re-seeded from what it would WRITE,
+// so the file's instruction survives the flip and only its meaning updates.
+func (m model) reinherit() model {
+	return m.scalarPickers(
+		fromScalar(m.tmplOpts, m.tmplSel, noneOption, m.tmplStored),
+		fromScalar(m.agentOpts, m.agentSel, noneOption, m.agentStored),
+		fromScalar(m.engineOpts, m.engineSel, "auto", m.engineStored),
+	)
 }
 
 // seedPrefsOpts are the tri-state's rows, in picker order. Inherit comes last,
@@ -825,12 +869,17 @@ func (m *model) cycle(dir int) {
 		m.seedPrefsSel = wrap(m.seedPrefsSel+dir, len(seedPrefsOpts))
 	case fTemplate:
 		m.tmplSel = m.skipDisabled(m.tmplOpts, wrap(m.tmplSel+dir, len(m.tmplOpts)), dir)
+		m.tmplStored = m.tmplStored || m.tmplOpts[m.tmplSel] == noneOption
+		*m = m.reinherit()
 	case fExtends:
 		m.extSel = wrap(m.extSel+dir, len(m.extOpts))
+		*m = m.reinherit()
 	case fAgent:
 		m.agentSel = m.skipDisabled(m.agentOpts, wrap(m.agentSel+dir, len(m.agentOpts)), dir)
+		m.agentStored = m.agentStored || m.agentOpts[m.agentSel] == noneOption
 	case fEngine:
 		m.engineSel = wrap(m.engineSel+dir, len(m.engineOpts))
+		m.engineStored = m.engineStored || m.engineOpts[m.engineSel] == "auto"
 	default:
 		if in := m.focusedInput(); in != nil {
 			*in, _ = in.Update(tea.KeyMsg{Type: keyArrow(dir)})
