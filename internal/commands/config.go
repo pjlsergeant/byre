@@ -102,71 +102,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	// the base layer. A layer editor's lower is default ⊕ its ancestors —
 	// deliberately NOT any template (layers can't select shapes) and NOT the
 	// projects extending it (descendants are out of view by design).
-	inh := configui.Inherited{Skills: map[string]configui.SkillRuntime{}, Catalog: cat}
-	if target != configui.TargetGlobal {
-		inh.HasLower = true
-		if def, derr := config.ParseFile(filepath.Join(home, "default.config"), true); derr == nil {
-			inh.Default = def
-		}
-		inh.Templates = map[string]config.Config{}
-		if cat != nil {
-			for _, t := range templates {
-				if ent, ok := cat.Lookup(t); ok && ent.Kind == packages.KindTemplate {
-					// Load template body as a Config for inheritance marks.
-					if raw, rerr := ent.ReadPrimary(); rerr == nil {
-						body := packages.StripPackageTable(raw)
-						if tc, terr := config.Parse(body); terr == nil {
-							inh.Templates[t] = tc
-						}
-					}
-				}
-			}
-		}
-		// Named layers feed the EXTENDS picker and the live chain walk. The
-		// picker offers loadable layers only — minus, in a layer editor, the
-		// layer itself and anything whose chain runs through it (choosing
-		// either would create the cycle the resolver hard-errors on).
-		inh.Layers, _ = config.LoadableLayers(home, cat)
-		for name := range inh.Layers {
-			if layer != "" && (name == layer || chainContains(inh.Layers, name, layer)) {
-				continue
-			}
-			inh.LayerNames = append(inh.LayerNames, name)
-		}
-		sort.Strings(inh.LayerNames)
-	}
-	for _, n := range skillOpts {
-		if sk, serr := skills.Load(cat, n); serr == nil {
-			// Key by display name (what the picker lists) and canonical ID.
-			rt := configui.SkillRuntime{
-				Mounts:        sk.File.Runtime.Mounts,
-				Volumes:       sk.File.Volumes,
-				Env:           sk.File.Runtime.Env,
-				Files:         sk.File.Build.Files,
-				EnvDocs:       sk.File.Runtime.EnvDocs,
-				Egress:        sk.File.Runtime.Egress,
-				Offered:       sk.File.Runtime.EgressOffered,
-				MCPs:          sk.File.MCPs,
-				ClaudeSkills:  sk.File.ClaudeSkills,
-				Posture:       sk.File.Runtime.NetworkPosture,
-				Containment:   sk.File.Runtime.Containment,
-				CompanionFor:  sk.File.CompanionAgent(),
-				SharedAuthFor: sk.File.SharedAuthFor,
-				Provenance:    "",
-			}
-			if cat != nil {
-				if ent, ok := cat.Lookup(n); ok {
-					rt.Provenance = string(ent.Provenance)
-					rt.ProvLabel = ent.ProvenanceLabel()
-					if ent.Provenance == "invalid" || ent.Provenance == "conflict" || ent.Provenance == "legacy" {
-						rt.DisabledReason = ent.Reason
-					}
-				}
-			}
-			inh.Skills[n] = rt
-			inh.Skills[sk.Name] = rt
-		}
-	}
+	inh := editorInherited(home, cat, templates, skillOpts, target, layer)
 
 	var path, title string
 	// The editor's ^e handoff execs a shell; a project edit hands it that
@@ -499,4 +435,83 @@ func (a *volumeAdmin) runnerFor(engine string) engineRunner {
 		}
 	}
 	return a.rs[0]
+}
+
+// editorInherited builds the editor's provenance input (ADR 0018): the raw
+// lower layers under a project or layer editor, the loadable named layers,
+// and each offered skill's runtime contribution. Degrades on error (a broken
+// template or skill just loses its marks); the --global editor gets no lower
+// -- it IS the base layer. A layer editor's lower is default ⊕ its ancestors
+// -- deliberately NOT any template (layers can't select shapes) and NOT the
+// projects extending it (descendants are out of view by design).
+func editorInherited(home string, cat *packages.Catalog, templates, skillOpts []string, target configui.Target, layer string) configui.Inherited {
+	inh := configui.Inherited{Skills: map[string]configui.SkillRuntime{}, Catalog: cat}
+	if target != configui.TargetGlobal {
+		inh.HasLower = true
+		if def, derr := config.ParseFile(filepath.Join(home, "default.config"), true); derr == nil {
+			// The same strip resolution applies: default.config's template and
+			// agent are onboarding favourites, and an inherit row naming one
+			// would promise an agent develop never delivers.
+			inh.Default = config.StripFavourites(def)
+		}
+		inh.Templates = map[string]config.Config{}
+		if cat != nil {
+			for _, t := range templates {
+				if ent, ok := cat.Lookup(t); ok && ent.Kind == packages.KindTemplate {
+					// Load template body as a Config for inheritance marks.
+					if raw, rerr := ent.ReadPrimary(); rerr == nil {
+						body := packages.StripPackageTable(raw)
+						if tc, terr := config.Parse(body); terr == nil {
+							inh.Templates[t] = tc
+						}
+					}
+				}
+			}
+		}
+		// Named layers feed the EXTENDS picker and the live chain walk. The
+		// picker offers loadable layers only — minus, in a layer editor, the
+		// layer itself and anything whose chain runs through it (choosing
+		// either would create the cycle the resolver hard-errors on).
+		inh.Layers, _ = config.LoadableLayers(home, cat)
+		for name := range inh.Layers {
+			if layer != "" && (name == layer || chainContains(inh.Layers, name, layer)) {
+				continue
+			}
+			inh.LayerNames = append(inh.LayerNames, name)
+		}
+		sort.Strings(inh.LayerNames)
+	}
+	for _, n := range skillOpts {
+		if sk, serr := skills.Load(cat, n); serr == nil {
+			// Key by display name (what the picker lists) and canonical ID.
+			rt := configui.SkillRuntime{
+				Mounts:        sk.File.Runtime.Mounts,
+				Volumes:       sk.File.Volumes,
+				Env:           sk.File.Runtime.Env,
+				Files:         sk.File.Build.Files,
+				EnvDocs:       sk.File.Runtime.EnvDocs,
+				Egress:        sk.File.Runtime.Egress,
+				Offered:       sk.File.Runtime.EgressOffered,
+				MCPs:          sk.File.MCPs,
+				ClaudeSkills:  sk.File.ClaudeSkills,
+				Posture:       sk.File.Runtime.NetworkPosture,
+				Containment:   sk.File.Runtime.Containment,
+				CompanionFor:  sk.File.CompanionAgent(),
+				SharedAuthFor: sk.File.SharedAuthFor,
+				Provenance:    "",
+			}
+			if cat != nil {
+				if ent, ok := cat.Lookup(n); ok {
+					rt.Provenance = string(ent.Provenance)
+					rt.ProvLabel = ent.ProvenanceLabel()
+					if ent.Provenance == "invalid" || ent.Provenance == "conflict" || ent.Provenance == "legacy" {
+						rt.DisabledReason = ent.Reason
+					}
+				}
+			}
+			inh.Skills[n] = rt
+			inh.Skills[sk.Name] = rt
+		}
+	}
+	return inh
 }

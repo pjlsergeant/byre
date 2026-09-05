@@ -204,3 +204,190 @@ func TestLayerEditorRefusesToSaveTemplate(t *testing.T) {
 		t.Errorf("file must be untouched, got: %s (%v)", b, err)
 	}
 }
+
+// pickerFlipModel is the scalar-picker test bed: a layer that sets the agent
+// and engine, a template that sets the engine, and a project saying nothing
+// about any of them. Only a layer can put an agent below a project (templates
+// are banned from composition keys; the resolver blanks default.config's
+// favourites), so that is the axis the agent rows are tested on.
+func pickerFlipModel(cfg config.Config) model {
+	inh := Inherited{
+		HasLower: true,
+		Templates: map[string]config.Config{
+			"go": {Engine: "podman"},
+		},
+		Layers: map[string]config.Config{
+			"team": {Agent: "codex", Engine: "podman"},
+		},
+		LayerNames: []string{"team"},
+	}
+	return newModel("t", "/tmp/x", cfg, []string{"go"}, []string{"claude", "codex"}, nil, nil, inh, nil, TargetProject)
+}
+
+// focusOn puts the form cursor on field f so cycle drives that picker.
+func focusOn(t *testing.T, m *model, f fieldID) {
+	t.Helper()
+	i := indexOfField(m.order, f)
+	if i < 0 {
+		t.Fatalf("field %v is not in the focus order %v", f, m.order)
+	}
+	m.setFocus(i)
+}
+
+// cycleTo drives the focused picker with the arrow keys until it reads want.
+func cycleTo(t *testing.T, m *model, opts func() []string, sel func() int, want string) {
+	t.Helper()
+	for range len(opts()) + 1 {
+		if opts()[sel()] == want {
+			return
+		}
+		m.cycle(1)
+	}
+	t.Fatalf("could not cycle to %q in %v", want, opts())
+}
+
+// The scalar pickers' inherit rows describe the cascade BELOW this file, and
+// the extends and template pickers CHANGE that cascade mid-session. Baked
+// once at open, the agent picker kept offering "none" with no inherit row
+// after a layer that sets an agent was picked, so "none" wrote absent and
+// the next develop handed the box the layer's agent despite the explicit no
+// (the editor misreporting effective state -- P0).
+func TestScalarPickersFollowExtendsFlip(t *testing.T) {
+	m := pickerFlipModel(config.Config{})
+	if hasInheritRow(m.agentOpts) || m.agentNow() != "" {
+		t.Fatalf("nothing below sets an agent yet: opts=%v now=%q", m.agentOpts, m.agentNow())
+	}
+	agentOpts := func() []string { return m.agentOpts }
+	agentSel := func() int { return m.agentSel }
+
+	// Pick the layer: the agent picker grows an inherit row naming the
+	// layer's agent, absence lands on it, and the effective agent follows.
+	focusOn(t, &m, fExtends)
+	cycleTo(t, &m, func() []string { return m.extOpts }, func() int { return m.extSel }, "team")
+	if !isInheritRow(m.agentOpts[m.agentSel]) || !strings.Contains(m.agentOpts[m.agentSel], "codex") {
+		t.Fatalf("after picking a layer that sets the agent, absence must sit on its inherit row: %q in %v", m.agentOpts[m.agentSel], m.agentOpts)
+	}
+	if m.agentNow() != "codex" {
+		t.Errorf("effective agent must follow the flip, got %q", m.agentNow())
+	}
+	if !isInheritRow(m.engineOpts[m.engineSel]) || m.engineNow() != "podman" {
+		t.Errorf("the engine row must follow the same flip: %q / %q", m.engineOpts[m.engineSel], m.engineNow())
+	}
+
+	// The reported data loss: choosing none against the freshly inherited
+	// agent must WRITE the off-switch, so the next develop keeps it.
+	focusOn(t, &m, fAgent)
+	cycleTo(t, &m, agentOpts, agentSel, noneOption)
+	if got := m.assemble().Agent; got != config.NoneLabel {
+		t.Fatalf("none over a layer's agent must write %q, got %q", config.NoneLabel, got)
+	}
+	if m.agentNow() != "" {
+		t.Errorf("the effective agent under none is empty, got %q", m.agentNow())
+	}
+
+	// A deliberate none survives the layer going away and coming back, and
+	// so does a concrete pick: the flip changes what the rows mean, never
+	// what this file says.
+	focusOn(t, &m, fExtends)
+	cycleTo(t, &m, func() []string { return m.extOpts }, func() int { return m.extSel }, noneOption)
+	if hasInheritRow(m.agentOpts) {
+		t.Errorf("no layer, no inherit row: %v", m.agentOpts)
+	}
+	if m.agentOpts[m.agentSel] != noneOption {
+		t.Errorf("a chosen none stays on none when the lower value goes: %q", m.agentOpts[m.agentSel])
+	}
+	cycleTo(t, &m, func() []string { return m.extOpts }, func() int { return m.extSel }, "team")
+	if m.agentOpts[m.agentSel] != noneOption || m.assemble().Agent != config.NoneLabel {
+		t.Errorf("a chosen none must survive the layer's return: %q writes %q", m.agentOpts[m.agentSel], m.assemble().Agent)
+	}
+	focusOn(t, &m, fAgent)
+	cycleTo(t, &m, agentOpts, agentSel, "claude")
+	focusOn(t, &m, fExtends)
+	cycleTo(t, &m, func() []string { return m.extOpts }, func() int { return m.extSel }, noneOption)
+	if m.agentOpts[m.agentSel] != "claude" {
+		t.Errorf("a concrete pick must survive the flip: %q", m.agentOpts[m.agentSel])
+	}
+}
+
+// Absence stays absence across a flip: a file that says nothing about the
+// agent keeps saying nothing, whichever row now displays that, and a flip
+// there and back leaves the form clean.
+func TestScalarPickersAbsenceSurvivesFlipRoundTrip(t *testing.T) {
+	m := pickerFlipModel(config.Config{Extends: "team"})
+	if !isInheritRow(m.agentOpts[m.agentSel]) {
+		t.Fatalf("absent agent under a layer that sets one opens on inherit, got %q in %v", m.agentOpts[m.agentSel], m.agentOpts)
+	}
+	before := m.sig()
+	focusOn(t, &m, fExtends)
+	cycleTo(t, &m, func() []string { return m.extOpts }, func() int { return m.extSel }, noneOption)
+	if m.agentOpts[m.agentSel] != noneOption || m.assemble().Agent != "" {
+		t.Errorf("with nothing below, absence shows as none and still writes absent: %q writes %q", m.agentOpts[m.agentSel], m.assemble().Agent)
+	}
+	cycleTo(t, &m, func() []string { return m.extOpts }, func() int { return m.extSel }, "team")
+	if !isInheritRow(m.agentOpts[m.agentSel]) || m.assemble().Agent != "" {
+		t.Errorf("absence returns to the inherit row and writes nothing: %q writes %q", m.agentOpts[m.agentSel], m.assemble().Agent)
+	}
+	if m.sig() != before {
+		t.Errorf("a flip there and back must leave the form clean")
+	}
+}
+
+// The template picker moves the engine's lower value the same way.
+func TestScalarPickersFollowTemplateFlip(t *testing.T) {
+	m := pickerFlipModel(config.Config{})
+	if hasInheritRow(m.engineOpts) {
+		t.Fatalf("no template selected: no inherited engine, got %v", m.engineOpts)
+	}
+	focusOn(t, &m, fTemplate)
+	cycleTo(t, &m, func() []string { return m.tmplOpts }, func() int { return m.tmplSel }, "go")
+	if !isInheritRow(m.engineOpts[m.engineSel]) || m.engineNow() != "podman" {
+		t.Fatalf("picking a template that sets the engine must surface it: %q / %q", m.engineOpts[m.engineSel], m.engineNow())
+	}
+	focusOn(t, &m, fEngine)
+	cycleTo(t, &m, func() []string { return m.engineOpts }, func() int { return m.engineSel }, "auto")
+	if got := m.assemble().Engine; got != "auto" {
+		t.Errorf("auto over a template's engine must write itself, got %q", got)
+	}
+}
+
+// A layer's agent is below the project from the moment the editor opens,
+// not only after the extends picker moves: the chain is part of the lower
+// fold the inherit rows are computed from.
+func TestScalarPickersFoldTheChainAtOpen(t *testing.T) {
+	m := pickerFlipModel(config.Config{Extends: "team"})
+	if m.agentNow() != "codex" || !strings.Contains(m.agentOpts[m.agentSel], "codex") {
+		t.Fatalf("a layer's agent must be inherited at open: now=%q row=%q", m.agentNow(), m.agentOpts[m.agentSel])
+	}
+	// The explicit off-switch opens on none and keeps writing itself.
+	m = pickerFlipModel(config.Config{Extends: "team", Agent: config.NoneLabel})
+	if m.agentOpts[m.agentSel] != noneOption || m.assemble().Agent != config.NoneLabel {
+		t.Errorf("a stored none opens on none and round-trips: %q writes %q", m.agentOpts[m.agentSel], m.assemble().Agent)
+	}
+}
+
+// A none the user rests the picker on is a deliberate answer and writes the
+// sentinel even with nothing below -- the standing onboarding gives its own
+// explicit no -- where a zero-edit save of an unstated key keeps writing
+// absent (TestScalarPickersPreserveAStoredSentinelWithNothingBelow). Without
+// it a none chosen before the extends picker moves reads as never chosen.
+func TestScalarPickersChosenNoneIsExplicit(t *testing.T) {
+	m := pickerFlipModel(config.Config{})
+	if m.agentOpts[m.agentSel] != noneOption || m.assemble().Agent != "" {
+		t.Fatalf("an unstated agent with nothing below displays as none and writes absent: %q writes %q", m.agentOpts[m.agentSel], m.assemble().Agent)
+	}
+	focusOn(t, &m, fAgent)
+	m.cycle(1) // off none...
+	if m.agentOpts[m.agentSel] == noneOption {
+		t.Fatalf("cycle did not move: %v", m.agentOpts)
+	}
+	cycleTo(t, &m, func() []string { return m.agentOpts }, func() int { return m.agentSel }, noneOption) // ...and back by hand
+	if got := m.assemble().Agent; got != config.NoneLabel {
+		t.Fatalf("a none the user chose must be written, got %q", got)
+	}
+	// And it holds against a layer picked afterwards.
+	focusOn(t, &m, fExtends)
+	cycleTo(t, &m, func() []string { return m.extOpts }, func() int { return m.extSel }, "team")
+	if m.agentOpts[m.agentSel] != noneOption || m.agentNow() != "" {
+		t.Errorf("a chosen none must not turn into the layer's agent: row %q now %q", m.agentOpts[m.agentSel], m.agentNow())
+	}
+}
