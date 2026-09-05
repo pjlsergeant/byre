@@ -30,6 +30,35 @@ the rationale lives.
   shape as the `INTTEST_*` rename. It is why status shows the devlog skill's
   scratch path as a cautiously-treated reserved key.
 
+- [ ] (S) **Claude agent-contract canary** (security-gap review 2026-09-05):
+  the flagship agent is installed by an unpinned live installer and byre
+  leans on its CLI flags and state layout, yet the scheduled agent-contract
+  matrix (.github/workflows/agents.yml) covers opencode/codex/gemini/grok
+  and not Claude. Add the loginless `TestAgentContractClaude` beside the
+  four, in the matrix.
+
+- [ ] (S) **GitHub build attestation on releases** (Pete, 2026-09-05): pull
+  ADR 0051's deferred trigger early -- the no-key-management option the ADR
+  itself names. Checksum wording stays honest (transport integrity); this
+  adds provenance. Signing/SBOM remain not done.
+
+- [ ] (L) **Filtering DNS resolver sidecar** (Pete, 2026-07-14; promoted to
+  Open 2026-09-05): a resolver byre runs in the box's DNS path, so denials
+  are seen as NAMES, not IPs -- it closes the documented DNS-tunneling hole
+  (firewall.sh v1 note) and is where denial VISIBILITY (a `byre denials`
+  view, counts in status) lands. Design: `wip/filtering-resolver.md` (v11,
+  unratified); NEXT STEP is its build-gating probes (Docker Desktop wiring,
+  Podman log rotation), not the build. An interim counter-reading tier
+  (iptables -vnxL via a post-hoc root helper) was considered and REJECTED
+  2026-07-14 -- don't re-propose it; build this instead.
+
+- [ ] (L) **Service sidecars** (Pete, 2026-07-12; promoted 2026-09-05): config
+  declares containers byre runs beside the box (postgres, redis, ...) and
+  networks in -- the agent gets endpoints, never the daemon. Covers the
+  compose-deps case without the docker-host grant. Rides the companion-
+  container rails the resolver establishes: read that design for whether it
+  already generalises before writing a sidecar design.
+
 - [ ] (M) **Site demos: make them look right, then wire them back in**
   (parked 2026-07-18, Pete: "quite far from how I want them to look";
   the rest of the site is done). The pipeline is BUILT and in-tree --
@@ -71,10 +100,6 @@ Disciplines and tripwires, not tasks.
     inventory when they revive: config-tui-walk, quickstart-picker-status,
     deliver-paste-flow, completion-tab-walk (internal/tuitest/
     demos_test.go); VM-recorded tier (hero, firewall, worktrees) after.
-- **Post-launch H1 tripwire:** the H1 is a safety idiom, not a scope
-  statement; the plain what-it-is sentence under it is mandatory mitigation.
-  If cold readers bounce post-launch, revisit
-  (docs/marketing/positioning.md "Voice rules").
 - **Post-launch why-not tripwire (2026-07-29):** the comparisons live
   on getbyre.com/why-not; README and landing carry only the one-line
   thesis + pointer strip. If "how is this different from X" becomes the
@@ -107,21 +132,6 @@ plan to get to any time soon:
   ergonomics. Needs a design pass: path translation, outside paths as a
   grant question, per-terminal drop behavior.
 
-- [ ] (L) **Service sidecars** (Pete, 2026-07-12): config declares containers
-  byre runs beside the box (postgres, redis, ...) and networks in -- the
-  agent gets endpoints, never the daemon. Covers the compose-deps case
-  without the docker-host grant.
-
-- [ ] (L) **Filtering DNS resolver sidecar** (Pete, 2026-07-14): a resolver
-  byre runs in the box's DNS path, so denials are seen as NAMES, not IPs --
-  it closes the documented DNS-tunneling hole (firewall.sh v1 note) and is
-  where denial VISIBILITY (a `byre denials` view, counts in status) lands.
-  An interim counter-reading tier (iptables -vnxL via a post-hoc root helper)
-  was considered and REJECTED 2026-07-14: most of the machinery (recorded-ID
-  targeting, a privileged read on byre's passive commands) for packet counts
-  with no names/timestamps -- and interim scaffolding toward the companion
-  service byre deliberately doesn't run yet. Don't re-propose the counter
-  tier; build this instead. Not urgent; fine if it waits months.
 
 ## Parked / consciously not doing
 
@@ -161,3 +171,8 @@ the docs cited and in git history.
   sharp"; Pete runs byre on `~/.byre` itself.
 - **claude-pod feature steals** -- reviewed, nothing adopted, no public
   mention.
+- **Qualifying the README headline** ("without risking the farm") -- Pete,
+  2026-09-05: the H1 stays, permanently. It is a safety idiom; the plain
+  what-it-is sentence under it and the security-model page carry the
+  contract. Reviewers WILL re-find the "promise exceeds threat model" class
+  -- don't re-raise, don't hedge the line.
