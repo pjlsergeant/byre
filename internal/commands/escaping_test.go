@@ -208,7 +208,7 @@ func TestStatusDevelopWarningsEscapeExternalValues(t *testing.T) {
 
 	// The empty-source warning prints config-authored keys and sources.
 	var hostEnv bytes.Buffer
-	warnHostEnvEmpty(&hostEnv, []hostEnvResult{{Key: "K" + escOSC, Source: "env:V" + escCSI, State: hostEnvEmpty}})
+	warnHostEnvEmpty(&hostEnv, []hostEnvResult{{Key: "K" + escOSC, Source: "env:V" + escCSI, State: hostEnvEmpty}}, nil)
 	assertNoESC(t, "warnHostEnvEmpty", hostEnv.String())
 	assertKept(t, "warnHostEnvEmpty", hostEnv.String(), "resolved empty", "env:V")
 

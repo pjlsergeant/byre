@@ -223,10 +223,12 @@ exceptions noted inline.
     standing consent for that; `byre develop` says out loud when it
     acted on it.
 
-  Template and agent "defaults" are deliberately NOT here: they are the
-  plain `template` and `agent` keys in `default.config`, real cascade
-  values that apply to every project. The picker pre-selects them
-  because they *are* the inherited value.
+  Template and agent favourites are deliberately NOT here: they are the
+  plain `template` and `agent` keys in `default.config`, kept where they
+  have always lived. They are favourites all the same -- resolution
+  strips both from every project (a project's shape comes from its own
+  `byre.config`, which the picker writes from them), so they pre-select
+  the picker and shape no box.
 
 ## Presets: `byre.preset`
 

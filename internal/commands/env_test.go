@@ -161,7 +161,8 @@ func TestWarnHostEnvEmptyGroupsBySourceAndNamesTheGitRemedy(t *testing.T) {
 		{Key: "PASSED", Source: "env:BYRE_TEST_HOSTVAL", Value: "v", State: hostEnvDelivered},
 		{Key: "SECRET", Source: "encrypted:AAAA", State: hostEnvEncrypted},
 		{Key: "TERM", Source: "env:TERM", State: hostEnvEmpty},
-	})
+		{Key: "SKILLSET", Source: "env:NOPE", State: hostEnvEmpty},
+	}, map[string]string{"SKILLSET": "from-a-skill"})
 	out := b.String()
 	if n := strings.Count(out, "\n"); n != 2 {
 		t.Fatalf("one line per empty source, got %d:\n%s", n, out)
@@ -175,23 +176,32 @@ func TestWarnHostEnvEmptyGroupsBySourceAndNamesTheGitRemedy(t *testing.T) {
 			t.Errorf("missing %q:\n%s", w, out)
 		}
 	}
-	for _, no := range []string{"OFF", "PASSED", "SECRET"} {
+	for _, no := range []string{"OFF", "PASSED", "SECRET", "SKILLSET"} {
 		if strings.Contains(out, no) {
 			t.Errorf("%q is not news:\n%s", no, out)
 		}
+	}
+	// The identity rows a skill provides are in the box: no commit claim.
+	b.Reset()
+	warnHostEnvEmpty(&b, []hostEnvResult{
+		{Key: "GIT_AUTHOR_NAME", Source: "git:user.name", State: hostEnvEmpty},
+		{Key: "GIT_AUTHOR_EMAIL", Source: "git:user.email", State: hostEnvEmpty},
+	}, map[string]string{"GIT_AUTHOR_NAME": "Bot", "GIT_AUTHOR_EMAIL": "bot@x"})
+	if b.Len() != 0 {
+		t.Errorf("skill-provided identity is not absent, got %q", b.String())
 	}
 
 	// A custom git: mapping is not the identity: it gets the git remedy
 	// without the commit claim, which would be untrue of it.
 	b.Reset()
-	warnHostEnvEmpty(&b, []hostEnvResult{{Key: "REVIEWER", Source: "git:review.name", State: hostEnvEmpty}})
+	warnHostEnvEmpty(&b, []hostEnvResult{{Key: "REVIEWER", Source: "git:review.name", State: hostEnvEmpty}}, nil)
 	out = b.String()
 	if !strings.Contains(out, "git config --global review.name") || strings.Contains(out, "commits in the box will fail") {
 		t.Errorf("a custom git: source names the remedy and makes no commit claim:\n%s", out)
 	}
 
 	b.Reset()
-	warnHostEnvEmpty(&b, []hostEnvResult{{Key: "PASSED", Source: "env:X", Value: "v", State: hostEnvDelivered}})
+	warnHostEnvEmpty(&b, []hostEnvResult{{Key: "PASSED", Source: "env:X", Value: "v", State: hostEnvDelivered}}, nil)
 	if b.Len() != 0 {
 		t.Errorf("nothing empty must print nothing, got %q", b.String())
 	}
