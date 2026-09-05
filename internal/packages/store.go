@@ -231,10 +231,12 @@ func mirrorPrimary(embedPath string, raw []byte, byreVer string) []byte {
 	id := BundledID(bare)
 	desc := peekDescription(raw)
 	body := StripPackageTable(raw)
-	// Also strip a top-level description that moved into [package], to avoid
-	// duplicate keys when the body still carries one -- leave body as-is;
-	// stage-2 skill parse still accepts top-level description. Mirror is
-	// display-only; both is fine.
+	// The body keeps its own top-level description beside the generated
+	// package.description -- distinct keys, and stage 2 accepts both. The
+	// header goes below the body's leading bare keys (a template's base): a
+	// mirror is display-only, but it is also what a reader copies to start a
+	// local package from, and copied with base under [package] it would
+	// land INVALID under the scoping refusal.
 	hdr := GenerateBundledHeader(id, string(kind), byreVer, desc)
-	return append([]byte(hdr), body...)
+	return HeaderAfterPreamble(hdr, body)
 }
