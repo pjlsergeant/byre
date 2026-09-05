@@ -140,17 +140,25 @@ func assembleManifest(m Manifest, kind Kind, raw []byte, entries []FileEntry) []
 		}
 	}
 
-	// The body's leading top-level lines — bare keys like companion_for /
-	// shared_auth_for and their comments — must stay BEFORE the [package]
-	// header: TOML scopes a bare key to the most recent table header, so the
-	// same line emitted after it would read as a package.* key, which
-	// StripPackageTable removes before the stage-2 parse ever sees it.
-	pre, tables := splitLeadingTopLevel(body)
+	return append(HeaderAfterPreamble(hdr.String(), []byte(body)), files.String()...)
+}
+
+// HeaderAfterPreamble writes a [package] header over body the one way that
+// keeps every body key the body's: below the leading top-level lines (bare
+// keys like companion_for / base and their comments) and above the first
+// table header. TOML scopes a bare key to the most recent table header, so
+// the same line under [package] is package.<key>, which StripPackageTable
+// removes before the stage-2 parse ever sees it -- and CheckPackageScoping
+// refuses on a local dir. Every byre writer that lays a header over a body
+// (pack, fork) goes through here; header should end with a blank line. A
+// body with no table header is all preamble.
+func HeaderAfterPreamble(header string, body []byte) []byte {
+	pre, tables := splitLeadingTopLevel(string(body))
 	pre = strings.TrimRight(pre, " \t\r\n")
 	if pre != "" {
 		pre += "\n\n"
 	}
-	return []byte(pre + hdr.String() + tables + files.String())
+	return []byte(pre + header + tables)
 }
 
 // splitLeadingTopLevel splits body at its first REAL table header -- the
