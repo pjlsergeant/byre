@@ -1,6 +1,6 @@
 # Changes
 
-## v1.9.0 — 2026-08-25
+## v1.9.0 — 2026-09-05
 
 - **`byre deliver --install-app` now installs remote (`ssh://`) and named
   (`--name`) drag targets.** Several can coexist — a remote install is
@@ -16,6 +16,79 @@
   literals like `ssh://[fe80::1%25en0]` now work — and `--install-app`
   refuses values (control characters, XML noncharacters, invalid UTF-8)
   that no generated launcher grammar can carry.
+
+- **A Dock-icon drop on the deliver app no longer declines docker and
+  podman.** Finder launches the applet from the filesystem root, and
+  deliver's cwd fallback then named `/` as the box-writable root, so every
+  binary on the machine fell "inside" it. `/` is never a directory a box
+  writes and is dropped from the roots. The one residual, recorded in
+  ADR 0047 and on the security-model page: a project deliberately rooted
+  at `/` loses project-tree coverage of the shadow check (the store root
+  still declines).
+
+- **The Env screen's "— from skills —" heading tells the truth.** The
+  `env_from_host` block rendered after the skill block, so a credential
+  passthrough set in this file, and byre's own shipped defaults, read as
+  skill payload. Passthrough rows now sit above the skill rows.
+
+- **The config editor's Template, Agent and Engine pickers follow a
+  mid-session change of Extends or Template.** Their inherit rows were
+  computed once at open, so after picking a layer that sets an agent the
+  Agent picker still offered a bare `none` with nothing to be told apart
+  from; choosing it wrote no key, and the next develop handed the box the
+  layer's agent despite the explicit no. The pickers now rebuild from the
+  live selection. A `none`/`auto` you rest a picker on is written
+  explicitly (as onboarding always did), so it beats a layer added later;
+  choosing the inherit row withdraws it. A lower layer's own off-switch
+  shows as `(inherit: none)` rather than reading as nothing below, and the
+  editor's inherited view now folds byre's core layer and the extends
+  chain from the moment it opens.
+
+- **default.config's `template` and `agent` no longer show as inherited
+  in a project's editor.** They are the first-run picker's favourites and
+  resolution has always stripped them; the editor folded the raw file and
+  could paint an `(inherit: claude)` row for an agent no develop would
+  deliver. Both folds now go through one strip, and the global editor's
+  DEFAULTS label no longer calls them "real config, not just prefill" --
+  the opposite of what its own FAVOURITES header says.
+
+- **A body key written under `[package]` makes a local package INVALID,
+  naming the key and the move.** TOML gives a bare key to the most recent
+  table header, so `files = {...}` below `[package]` was `package.files`,
+  stripped with the package tree before the strict parse ever saw it: the
+  contribution vanished silently while `skill validate` said ok. Local
+  ingest now refuses it (`move it above [package], or under the table it
+  belongs to`); installed and bundled packages stay lenient. byre's own
+  writers were bitten: the `template init` scaffold put `base` below the
+  header (every scaffolded template was built from the default base), and
+  `fork` prepended the header to the body (forked bundled templates lost
+  `base`/`egress_offered`, forked shared-auth companions lost
+  `companion_for`). `pack`, `fork`, `init` and the bundled mirror now
+  place the header below the leading bare keys. An existing scaffolded or
+  forked local dir may list INVALID with the remedy; the fix is the move
+  it names.
+
+- **`byre develop` says which `env_from_host` rows resolved empty.**
+  One warning per source, keys grouped; the git identity rows name the
+  remedy (`git config --global user.name "..."`) and the consequence
+  (commits in the box fail until it is set). Status already carried the
+  outcome, but the first symptom used to be a failed commit mid-session.
+  Legibility only; the launch proceeds.
+
+- **Host-side path handling: two agent-reachable wedges and the audit's
+  blind spots closed.** A git hook, pager or credential helper inheriting
+  the exit-report probe's stdout could hold `develop` past its deadline;
+  the probe (and the clipboard reader) now kills the whole process group
+  and closes the pipe a beat after the deadline. `filepath.EvalSymlinks`
+  and `Walk` joined the plain-`os` conformance watch (fourteen resolves
+  and one walk had gone unaudited; the Claude Skills directory walk now
+  runs through a no-follow root, and a top-level symlink there is refused
+  by name with the remedy). Containment judgments that resolved a path
+  twice now judge the one pathname they return.
+
+- **Smaller:** the codex login hook's TERM→KILL grace is
+  `BYRE_CODEX_REAP_GRACE` (default unchanged, one second); the
+  `go-isatty` dependency is gone (`x/term` already provided the call).
 
 ## v1.8.0 — 2026-08-24
 
