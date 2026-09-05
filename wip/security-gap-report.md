@@ -4,6 +4,14 @@ Status: implementation handoff, 2026-09-05. This is a point-in-time review,
 not settled project doctrine. Absorb shipped decisions into the relevant ADRs,
 docs, and `TODO.md`, then delete this file per `wip/README.md`.
 
+Progress, 2026-09-05: recommended-order items 1-3 shipped (commits 4dca7809
+through e3d998ab; TODO items removed). Item 1's stated scenario was not
+reachable as written -- templates may not carry `agent` -- the real axis is
+an extends flip to a layer that sets one; the same work also fixed the
+editor showing default.config's favourite agent as inherited, and item 2's
+refusal exposed `template init` and `fork` laying `[package]` over body
+keys (now placed like `pack`). Items 4-7 remain and need the maintainer.
+
 ## Executive verdict
 
 byre is a thoughtfully engineered personal tool with unusually honest
