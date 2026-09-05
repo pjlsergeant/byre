@@ -460,9 +460,13 @@ func newModel(title, filePath string, cfg config.Config, templates, agents, skil
 			// refuse" whenever a global default is actually inherited).
 			{"WORKTREES — where `byre worktree` creates them", []fieldID{fWorktreeSibling, fWorktreeBase}},
 			// [defaults]: picker state. Template and Agent are NOT here on
-			// purpose -- they are real cascade keys above, which is exactly
-			// what a reader of a one-member section wants told.
-			{"DEFAULTS — picker state; Template and Agent above are real config, not just prefill", []fieldID{fSkipQuestions, fSharedAuth}},
+			// purpose -- they are plain top-level keys, kept where they have
+			// always lived -- but they are favourites all the same: resolution
+			// strips both from every project (config.StripFavourites), so the
+			// label must not promise they shape boxes. It once said "real
+			// config, not just prefill", the opposite of the FAVOURITES header
+			// two sections up.
+			{"DEFAULTS — picker state; Template and Agent above are favourites too, kept as plain keys", []fieldID{fSkipQuestions, fSharedAuth}},
 		}
 	case TargetLayer:
 		// A layer carries the full vocabulary EXCEPT template (shape selection
