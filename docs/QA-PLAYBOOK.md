@@ -64,8 +64,12 @@ The full first-contact flow, wizard to working agent.
    (opencode's status line says "0 MCP" — that counts CONNECTED servers;
    an echo stub can't handshake. Not a failure.)
 3. `byre status` from the project dir.
-   Expect: `qa-probe — local: echo hi  (config)` and
+   Expect: `qa-probe — local: echo hi  (config)  — delivered`; with
+   `--full` the verdict expands to
    `-> the agent session receives: qa-probe  (injected via /etc/byre/mcp.json)`.
+   PID 1 is byre's launcher until the agent execs, so read the injected
+   env from the agent's process, not from PID 1 while the firstrun login
+   gate is still up.
 4. TEARDOWN: rm box.
 
 ## Journey: deliver flows
@@ -119,7 +123,9 @@ No engine needed until step 5.
 4. Size tiers (develop-time, both forms): ≥100 KiB note, ≥500 KiB ⚠,
    ≥1 MiB 🛑 suggesting a skill — develop PROCEEDS through all three; a
    >16 MiB file refuses with "not agent-memory-sized" (fstat-judged; a
-   sparse file stages it cheaply).
+   sparse file stages it cheaply). `byre dockerfile` does NOT exercise
+   the tiers; a non-tty `byre develop </dev/null` prints them before it
+   stops at attach, which is enough to read them without a box.
 5. develop (agent none suffices): /etc/byre/agent-context.md carries the
    merged prose, cascade order (layer before project), after byre's own
    and the skills' context.
@@ -232,7 +238,10 @@ The 2026-07-16 field-failure regression check.
 
 ## Journey: rude inputs
 
-- Ctrl-C at the wizard: process dies on SIGINT, store gains NO config.
+- Ctrl-C at the wizard: process dies on SIGINT (rc 130), store gains NO
+  config. An enrolment stub does remain (`projects/<id>/` with `path`,
+  `lock`, an empty `context/`) -- that is the store's shape, not a
+  written answer; the next develop re-runs the wizard.
 - Ctrl-C mid-build: buildx prints CANCELED/context canceled; develop
   exits 130; no stray containers; next develop skips onboarding and
   rebuilds clean. (Window is short on cached bases — use a fresh
@@ -254,7 +263,9 @@ The 2026-07-16 field-failure regression check.
    makes $? tail's; echo rc in a separate send (Ctrl-C also aborts the
    whole `cmd; echo rc=$?` line, so a compound never prints after an
    interrupt).
-3. reset with the session down: kill-list enumerated with engine suffix
+3. reset with the session down (on a project that HAS volumes -- an
+   agent project; an agentless one prints `no volumes to reset` and
+   proves nothing here): kill-list enumerated with engine suffix
    `[docker]`, re-auth warning, default No; y → per-project volumes
    removed, machine-wide identity volumes NAMED as not-touched with the
    deliberate-delete path. rc=0.
@@ -297,8 +308,10 @@ Needs a real engine; the split only shows against a live container.
    `byre status --data` says `"subject": "running_box"` and carries the
    same line under `changes_on_next_launch`.
 5. `byre config` while the box runs: the exposure headline ends
-   "· box running -- changes apply at next launch"; ctrl+s reports
-   "— a box is running; changes apply at the next develop."
+   "· box running -- changes apply at next launch"; the footer says
+   `Saved ✓` on ctrl+s and the quit-time write report carries
+   "— a box is running; changes apply at the next develop." (a dirty
+   save -- a clean form's ctrl+s writes nothing to report).
 6. Edit one byte of the record file host-side, `byre status` again.
    Expect: no subject line; the ⚠ qualifier says the record "does NOT
    match its own address" and the rows describe the CURRENT CONFIG.
@@ -357,6 +370,24 @@ remedy, and creates nothing.
    integration suite can stage two live boxes -- this is the journey that
    proves the refusal against a real engine.
 6. TEARDOWN: exit both; `git worktree remove` on the host if re-running.
+
+## Journey: config UI, pickers follow an Extends flip
+
+New in v1.9.0. The scalar pickers' inherit rows are rebuilt when the
+Extends (or Template) picker moves; a none chosen against the freshly
+inherited agent is what develop gets.
+
+1. `byre layer new qateam`, append `agent = "claude"`; a fresh project
+   with an empty config. `byre config` -> Down to Extends (16 rows) ->
+   Left: `[qateam]` selected and the Agent row, on the spot, grows
+   `[(inherit: claude)]` with the selection on it.
+2. Up to Agent (10 rows), Left -> `[none]`. ctrl+s -> `Saved ✓`; quit.
+   The file carries `agent = "none"` beside `extends = "qateam"`, and
+   `byre status` says `Agent: (none)`. (Pinned:
+   TestIntegrationTUIConfigNoneBeatsALayerAgentPickedMidSession.)
+3. Variant: a layer saying `agent = "none"` shows as `[(inherit: none)]`,
+   not a bare none -- the layer's decision, named.
+4. TEARDOWN: rm the layer + project.
 
 ## Journey: config UI ^e round-trip
 
@@ -433,7 +464,21 @@ No engine needed. New in v1.5.0 (the scanner-family kill).
    [package]: ..."), rc 1 -- and if a corruption ever slips past
    resolve, the fork-time strip guard refuses before publishing rather
    than shipping a double `[package]`.
-3. TEARDOWN: rm the fork dirs from the store.
+3. Body key under `[package]` (new in v1.9.0): a local `skill.toml` with
+   `files = { ... }` written BELOW the `[package]` header -> `skill
+   validate` refuses, rc 1, naming the key and the move (`[package]
+   carries key(s) it does not define: files ... move it above [package],
+   or under the table it belongs to`); `skill list` shows the dir INVALID
+   with the same reason; the same key above the header loads. A template
+   with `base` below `[package]` refuses the same way. Installed and
+   bundled packages are NOT checked (stage 1 stays lenient).
+4. byre's own writers place the header correctly (v1.9.0): `template
+   fork go qa/tgo` keeps `base`/`egress_offered` ABOVE the fork's
+   `[package]` and validates; `skill fork gemini-shared-auth qa/gsa`
+   keeps `companion_for` above it; `template init` / `skill init`
+   scaffolds validate as written (the template scaffold's `base` is above
+   the header).
+5. TEARDOWN: rm the fork dirs from the store.
 
 ## Journey: skill authoring round trip (adopt / pack / shadow)
 
@@ -589,6 +634,25 @@ source alone (the grok-v1 lesson). Tracked in TODO.md ("Maybe someday").
    accepts the refreshed pair end to end.
 
 ## Harness lessons (carry between passes)
+
+- `/workspace` in the box IS the project dir, bind-mounted: a file
+  planted there with `docker exec` appears on the host, and a host-side
+  `rm` of it before `grab` makes grab report "no such path" (2026-09-05,
+  a whole grab leg failed for that). Plant grab fixtures under `/tmp` in
+  the box.
+- A blanket `docker rm -f $(docker ps -q --filter label=byre.project)`
+  in one journey's teardown kills every OTHER journey's box on the VM;
+  byre reports it faithfully (`exit status 137 (SIGKILL -- the box was
+  killed out from under the session ...)`), which is how the collision
+  was found. Filter by the journey's own project id.
+- Seeding a config by appending `agent = "none"` AFTER a `[[context]]`
+  table writes `context.agent` -- the TOML-scoping footgun byre now
+  refuses in packages -- and `byre config` refuses the file. Put bare
+  keys first, or write the whole file.
+- A wait pattern that names the agent (`grok`, `codex`) matches the
+  BUILD log long before the firstrun prompt; one such wait sent a Ctrl-C
+  into a build. Wait for login-specific text (`one-time code`, `Open
+  this link`), and use `grep -E` when the pattern alternates.
 
 - Never pipe the measured command when capturing an exit code, and never
   chain `; echo rc=$?` on a line you might Ctrl-C — send the echo as its
