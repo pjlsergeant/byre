@@ -1,21 +1,6 @@
 # Changes
 
-## v1.9.0 — 2026-09-05
-
-- **`byre deliver --install-app` now installs remote (`ssh://`) and named
-  (`--name`) drag targets.** Several can coexist — a remote install is
-  named for its target (or `--name`), with a distinct icon, and
-  `--remote-byre` is baked into the launcher when the remote binary isn't
-  on ssh's PATH. Unnamed local stays the singleton. Every named artifact
-  carries an identity token, so two labels that sanitize to the same
-  filename refuse rather than overwrite each other; regeneration headers
-  carry the exact re-run invocation.
-
-- **Remote-target parsing is stricter and round-trip-safe.** A
-  colon-bearing host must be a real (bracketed) IPv6 literal — zoned
-  literals like `ssh://[fe80::1%25en0]` now work — and `--install-app`
-  refuses values (control characters, XML noncharacters, invalid UTF-8)
-  that no generated launcher grammar can carry.
+## v1.10.0 — 2026-09-05
 
 - **A Dock-icon drop on the deliver app no longer declines docker and
   podman.** Finder launches the applet from the filesystem root, and
@@ -89,6 +74,23 @@
 - **Smaller:** the codex login hook's TERM→KILL grace is
   `BYRE_CODEX_REAP_GRACE` (default unchanged, one second); the
   `go-isatty` dependency is gone (`x/term` already provided the call).
+
+## v1.9.0 — 2026-08-25
+
+- **`byre deliver --install-app` now installs remote (`ssh://`) and named
+  (`--name`) drag targets.** Several can coexist — a remote install is
+  named for its target (or `--name`), with a distinct icon, and
+  `--remote-byre` is baked into the launcher when the remote binary isn't
+  on ssh's PATH. Unnamed local stays the singleton. Every named artifact
+  carries an identity token, so two labels that sanitize to the same
+  filename refuse rather than overwrite each other; regeneration headers
+  carry the exact re-run invocation.
+
+- **Remote-target parsing is stricter and round-trip-safe.** A
+  colon-bearing host must be a real (bracketed) IPv6 literal — zoned
+  literals like `ssh://[fe80::1%25en0]` now work — and `--install-app`
+  refuses values (control characters, XML noncharacters, invalid UTF-8)
+  that no generated launcher grammar can carry.
 
 ## v1.8.0 — 2026-08-24
 

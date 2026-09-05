@@ -373,7 +373,7 @@ remedy, and creates nothing.
 
 ## Journey: config UI, pickers follow an Extends flip
 
-New in v1.9.0. The scalar pickers' inherit rows are rebuilt when the
+New in v1.10.0. The scalar pickers' inherit rows are rebuilt when the
 Extends (or Template) picker moves; a none chosen against the freshly
 inherited agent is what develop gets.
 
@@ -464,7 +464,7 @@ No engine needed. New in v1.5.0 (the scanner-family kill).
    [package]: ..."), rc 1 -- and if a corruption ever slips past
    resolve, the fork-time strip guard refuses before publishing rather
    than shipping a double `[package]`.
-3. Body key under `[package]` (new in v1.9.0): a local `skill.toml` with
+3. Body key under `[package]` (new in v1.10.0): a local `skill.toml` with
    `files = { ... }` written BELOW the `[package]` header -> `skill
    validate` refuses, rc 1, naming the key and the move (`[package]
    carries key(s) it does not define: files ... move it above [package],
@@ -472,7 +472,7 @@ No engine needed. New in v1.5.0 (the scanner-family kill).
    with the same reason; the same key above the header loads. A template
    with `base` below `[package]` refuses the same way. Installed and
    bundled packages are NOT checked (stage 1 stays lenient).
-4. byre's own writers place the header correctly (v1.9.0): `template
+4. byre's own writers place the header correctly (v1.10.0): `template
    fork go qa/tgo` keeps `base`/`egress_offered` ABOVE the fork's
    `[package]` and validates; `skill fork gemini-shared-auth qa/gsa`
    keeps `companion_for` above it; `template init` / `skill init`
