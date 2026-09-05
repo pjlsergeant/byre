@@ -580,3 +580,23 @@ apt = ["python3"]
 		t.Errorf("re-pack changed the digest: %s -> %s", digest1, digest2)
 	}
 }
+
+// A header laid over a body lands below the body's leading bare keys and
+// above its first table, so no body key becomes package.<key>; a body with
+// no table is all preamble, and an empty body is just the header.
+func TestHeaderAfterPreambleKeepsBodyKeysOutOfPackage(t *testing.T) {
+	hdr := "[package]\nid = \"pete/x\"\n\n"
+	got := string(HeaderAfterPreamble(hdr, []byte("# note\nbase = \"debian\"\n\n[env]\nX = \"1\"\n")))
+	if got != "# note\nbase = \"debian\"\n\n"+hdr+"[env]\nX = \"1\"\n" {
+		t.Fatalf("placement:\n%s", got)
+	}
+	if err := CheckPackageScoping(KindTemplate, []byte(got)); err != nil {
+		t.Fatalf("placed output must pass the scoping check: %v", err)
+	}
+	if got := string(HeaderAfterPreamble(hdr, []byte("companion_for = \"claude\"\n"))); got != "companion_for = \"claude\"\n\n"+hdr {
+		t.Fatalf("no-table body is all preamble:\n%s", got)
+	}
+	if got := string(HeaderAfterPreamble(hdr, nil)); got != hdr {
+		t.Fatalf("empty body is the header alone: %q", got)
+	}
+}

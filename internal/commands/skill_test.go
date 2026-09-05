@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"github.com/pjlsergeant/byre/internal/builtins"
+	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/testtools"
 	"os"
@@ -162,5 +164,82 @@ description = "inspect quoting fixture"
 	want := packages.ShellArg(manifest)
 	if !strings.Contains(out.String(), "install "+want+" ") {
 		t.Errorf("the pasted install line must carry the quoted source %s:\n%s", want, out.String())
+	}
+}
+
+// A fork of a body whose leading keys are bare (every bundled template's
+// base, a companion's companion_for) keeps them the body's: the [package]
+// table goes below them. Before this, the fork of a template silently lost
+// its base to package.base, and the scoping check now refuses that shape.
+func TestForkKeepsLeadingBareKeysAboveThePackageHeader(t *testing.T) {
+	home := installHome(t)
+	srcDir := filepath.Join(home, "templates", "pete", "shape")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "template.config"), []byte("# shape\nbase = \"debian:13\"\negress_offered = [\"proxy.golang.org\"]\n\n[env]\nX = \"1\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, _, _ := testStreams("", false)
+	if err := PackageFork(s, packages.KindTemplate, "pete/shape", "me/shape"); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(home, "templates", "me", "shape", "template.config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(b), "# Forked from pete/shape") {
+		t.Errorf("the provenance comment leads the file:\n%s", b)
+	}
+	if err := packages.CheckPackageScoping(packages.KindTemplate, b); err != nil {
+		t.Fatalf("the fork must pass the scoping check: %v\n%s", err, b)
+	}
+	tc, err := config.ParseTemplateBody(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tc.Base != "debian:13" || len(tc.EgressOffered) != 1 || tc.Env["X"] != "1" {
+		t.Errorf("the fork must keep the body's keys: %+v", tc)
+	}
+	cat, err := builtins.LoadCatalogRaw(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cat.ResolveName("me/shape"); err != nil {
+		t.Errorf("the fork must load: %v", err)
+	}
+}
+
+// The scaffolds `init` writes must be loadable as written: the template
+// scaffold's base sat below [package] and was package.base -- a fresh
+// template built from gen's default base, not the one on the page.
+func TestInitScaffoldsAreLoadableWithTheirKeys(t *testing.T) {
+	home := installHome(t)
+	s, _, _ := testStreams("", false)
+	if err := PackageInit(s, packages.KindTemplate, "pete/tpl"); err != nil {
+		t.Fatal(err)
+	}
+	if err := PackageInit(s, packages.KindSkill, "pete/sk"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(home, "templates", "pete", "tpl", "template.config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tc, err := config.ParseTemplateBody(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tc.Base != "debian:bookworm-slim" {
+		t.Errorf("the scaffold's base must reach the template, got %q", tc.Base)
+	}
+	cat, err := builtins.LoadCatalogRaw(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"pete/tpl", "pete/sk"} {
+		if _, err := cat.ResolveName(id); err != nil {
+			t.Errorf("scaffold %s must load: %v", id, err)
+		}
 	}
 }

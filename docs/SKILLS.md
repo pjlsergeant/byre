@@ -207,8 +207,9 @@ Mind TOML's scoping around that header: a bare key belongs to the most
 recent table header, so `files = {...}` written below `[package]` is
 `package.files`, not `[build]`'s map. byre refuses a local package whose
 `[package]` carries a key the table does not define, naming the key and
-the move (above the header, or under its own table); `pack` keeps your
-leading bare keys above the header for the same reason.
+the move (above the header, or under its own table); `pack`, `fork` and
+the `init` scaffolds place the header below your leading bare keys for
+the same reason.
 
 **Publishing from another machine (the round trip).** The catalog on a
 fresh machine knows your published package only as *installed* --

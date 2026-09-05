@@ -465,11 +465,17 @@ func PackageFork(s Streams, kind packages.Kind, id, newID string) error {
 	if _, ok, err := packages.ParseManifestCore(body); err != nil || ok {
 		return fmt.Errorf("forking %s: its primary is unreadable or still declares [package] after the strip — the fork would carry the source's package table under its new header; fix the source package first", src.ID)
 	}
-	header := fmt.Sprintf(
-		"# Forked from %s@%s\n# Informational only: byre never reads this for resolution, updates, or trust.\n\n[package]\nid = %q\nkind = %q\n\n",
-		src.ID, src.Version, newID, kind,
+	// The provenance comment leads the file; the [package] table goes BELOW
+	// the body's leading bare keys (a template's base, a companion's
+	// companion_for), or those keys would become package.* and vanish --
+	// every forked bundled template silently lost its base this way.
+	provenance := fmt.Sprintf(
+		"# Forked from %s@%s\n# Informational only: byre never reads this for resolution, updates, or trust.\n\n",
+		src.ID, src.Version,
 	)
-	if err := hostopen.PlainWriteFile(primPath, append([]byte(header), body...), 0o644, hostopen.ByreCreated); err != nil {
+	pkg := fmt.Sprintf("[package]\nid = %q\nkind = %q\n\n", newID, kind)
+	out := append([]byte(provenance), packages.HeaderAfterPreamble(pkg, body)...)
+	if err := hostopen.PlainWriteFile(primPath, out, 0o644, hostopen.ByreCreated); err != nil {
 		return err
 	}
 	// Publish. Rename refuses an existing destination directory, so a
@@ -602,7 +608,9 @@ func PackageInit(s Streams, kind packages.Kind, name string) error {
 
 func skillInitExample(id string) string {
 	return fmt.Sprintf(`# Local skill scaffold. [package] is optional for local packages (id
-# defaults to the store path). Uncomment and edit.
+# defaults to the store path). Uncomment and edit. Bare keys (description,
+# companion_for, ...) go ABOVE [package]: TOML gives a bare key to the most
+# recent table header, and byre refuses a package.* key it does not define.
 
 [package]
 id = %q
@@ -633,15 +641,17 @@ description = "TODO: one-line summary"
 
 func templateInitExample(id string) string {
 	return fmt.Sprintf(`# Local template scaffold. Templates are SHAPE only — no skills, agent, or
-# [sources] (composition belongs in a preset).
+# [sources] (composition belongs in a preset). Bare keys stay ABOVE
+# [package]: TOML gives a bare key to the most recent table header, and byre
+# refuses a package.* key it does not define.
+
+base = "debian:bookworm-slim"
+# egress_offered = []
 
 [package]
 id = %q
 kind = "template"
 description = "TODO: one-line summary"
-
-base = "debian:bookworm-slim"
-# egress_offered = []
 `, id)
 }
 
