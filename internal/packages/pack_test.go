@@ -600,3 +600,23 @@ func TestHeaderAfterPreambleKeepsBodyKeysOutOfPackage(t *testing.T) {
 		t.Fatalf("empty body is the header alone: %q", got)
 	}
 }
+
+// The bundled mirror lays the generated header the same way: a mirrored
+// template keeps base as its own key, so a copy of the mirror is a valid
+// local package rather than one whose base became package.base.
+func TestMirrorPrimaryKeepsBodyKeysOutOfPackage(t *testing.T) {
+	out := mirrorPrimary("templates/go/template.config", []byte("# Go.\nbase = \"golang:1.26\"\negress_offered = [\"proxy.golang.org\"]\n"), "v1.0.0")
+	if err := CheckPackageScoping(KindTemplate, out); err != nil {
+		t.Fatalf("mirror must pass the scoping check: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "[package]\nid = \"byre/go\"") || !strings.HasPrefix(string(out), "# Go.\nbase = ") {
+		t.Fatalf("header below the body's bare keys:\n%s", out)
+	}
+	sk := mirrorPrimary("skills/claude/skill.toml", []byte("description = \"Claude\"\n[agent]\ncommand = \"claude\"\n"), "v1.0.0")
+	if err := CheckPackageScoping(KindSkill, sk); err != nil {
+		t.Fatalf("skill mirror must pass the scoping check: %v\n%s", err, sk)
+	}
+	if _, ok, err := ParseManifestCore(sk); err != nil || !ok {
+		t.Fatalf("skill mirror must parse as a package: ok=%v err=%v\n%s", ok, err, sk)
+	}
+}
