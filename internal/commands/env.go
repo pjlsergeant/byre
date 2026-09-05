@@ -86,7 +86,10 @@ func resolveHostEnv(cfg config.Config, gitExe string) []hostEnvResult {
 // its remedy because its consequence is the one the user cannot see coming;
 // the others say what is not crossing and where the row is switched off.
 // Rendered text carries config-authored keys and sources, so the line rides
-// dataf (P4).
+// dataf (P4). The commit consequence is claimed only for the core identity
+// rows (CoreEnvFromHost's GIT_* keys on their shipped sources): a custom
+// `git:` mapping that resolved empty has no bearing on commits, and saying
+// it does would be the untruthful claim P4 forbids.
 func warnHostEnvEmpty(w io.Writer, hostEnv []hostEnvResult) {
 	bySource := map[string][]string{}
 	for _, r := range hostEnv {
@@ -94,13 +97,22 @@ func warnHostEnvEmpty(w io.Writer, hostEnv []hostEnvResult) {
 			bySource[r.Source] = append(bySource[r.Source], r.Key)
 		}
 	}
+	core := config.CoreEnvFromHost()
 	for _, src := range slices.Sorted(maps.Keys(bySource)) {
 		keys := strings.Join(bySource[src], ", ")
-		if gitKey, ok := strings.CutPrefix(src, "git:"); ok {
-			dataf(w, "byre: warning: %s <- %s resolved empty -- NOT passed; commits in the box will fail until it is set: git config --global %s \"...\"\n", keys, src, gitKey)
-			continue
+		gitKey, isGit := strings.CutPrefix(src, "git:")
+		identity := false
+		for _, k := range bySource[src] {
+			identity = identity || (isGit && core[k] == src)
 		}
-		dataf(w, "byre: warning: %s <- %s resolved empty -- NOT passed (set it on the host, or switch the row off: byre config -> Env vars)\n", keys, src)
+		switch {
+		case identity:
+			dataf(w, "byre: warning: %s <- %s resolved empty -- NOT passed; commits in the box will fail until it is set: git config --global %s \"...\"\n", keys, src, gitKey)
+		case isGit:
+			dataf(w, "byre: warning: %s <- %s resolved empty -- NOT passed (set it on the host: git config --global %s \"...\", or switch the row off: byre config -> Env vars)\n", keys, src, gitKey)
+		default:
+			dataf(w, "byre: warning: %s <- %s resolved empty -- NOT passed (set it on the host, or switch the row off: byre config -> Env vars)\n", keys, src)
+		}
 	}
 }
 

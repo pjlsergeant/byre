@@ -169,7 +169,7 @@ func CheckPackageScoping(kind Kind, content []byte) error {
 			stray = append(stray, k)
 			continue
 		}
-		if _, ok := v.([]any); k == "files" && !ok {
+		if k == "files" && !isArrayOfTables(v) {
 			stray = append(stray, k)
 		}
 	}
@@ -183,6 +183,23 @@ func CheckPackageScoping(kind Kind, content []byte) error {
 	}
 	return fmt.Errorf("[package] carries key(s) it does not define: %s -- TOML scopes a bare key to the most recent table header, so a key written below [package] is package.%s, not the %s's, and is dropped with the header; move it above [package], %s",
 		strings.Join(stray, ", "), stray[0], kind, where)
+}
+
+// isArrayOfTables reports whether a generically decoded value is the shape
+// [[package.files]] produces: an array whose every element is a table. A
+// bare array of strings decodes as []any too, and would otherwise pass as
+// the pack tool's list while carrying nothing it reads.
+func isArrayOfTables(v any) bool {
+	arr, ok := v.([]any)
+	if !ok {
+		return false
+	}
+	for _, e := range arr {
+		if _, ok := e.(map[string]any); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // StripPackageTable returns content with the whole package tree removed so
