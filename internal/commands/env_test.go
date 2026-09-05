@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
@@ -143,5 +145,45 @@ func TestResolveHostEnvExcludesCredentialRows(t *testing.T) {
 		if r.Key == "STRIPE_KEY" && r.State != hostEnvEncrypted {
 			t.Fatalf("damaged credential row state = %v", r.State)
 		}
+	}
+}
+
+// An env_from_host row that resolved empty is said at develop, grouped by
+// source, so a missing host git identity is a ten-second fix instead of a
+// failed commit mid-session; a delivered, disabled or credential row is not
+// news, and nothing empty means nothing printed.
+func TestWarnHostEnvEmptyGroupsBySourceAndNamesTheGitRemedy(t *testing.T) {
+	var b bytes.Buffer
+	warnHostEnvEmpty(&b, []hostEnvResult{
+		{Key: "GIT_AUTHOR_NAME", Source: "git:user.name", State: hostEnvEmpty},
+		{Key: "GIT_COMMITTER_NAME", Source: "git:user.name", State: hostEnvEmpty},
+		{Key: "OFF", Source: "", State: hostEnvDisabled},
+		{Key: "PASSED", Source: "env:BYRE_TEST_HOSTVAL", Value: "v", State: hostEnvDelivered},
+		{Key: "SECRET", Source: "encrypted:AAAA", State: hostEnvEncrypted},
+		{Key: "TERM", Source: "env:TERM", State: hostEnvEmpty},
+	})
+	out := b.String()
+	if n := strings.Count(out, "\n"); n != 2 {
+		t.Fatalf("one line per empty source, got %d:\n%s", n, out)
+	}
+	for _, w := range []string{
+		"GIT_AUTHOR_NAME, GIT_COMMITTER_NAME <- git:user.name resolved empty",
+		"git config --global user.name",
+		"TERM <- env:TERM resolved empty",
+	} {
+		if !strings.Contains(out, w) {
+			t.Errorf("missing %q:\n%s", w, out)
+		}
+	}
+	for _, no := range []string{"OFF", "PASSED", "SECRET"} {
+		if strings.Contains(out, no) {
+			t.Errorf("%q is not news:\n%s", no, out)
+		}
+	}
+
+	b.Reset()
+	warnHostEnvEmpty(&b, []hostEnvResult{{Key: "PASSED", Source: "env:X", Value: "v", State: hostEnvDelivered}})
+	if b.Len() != 0 {
+		t.Errorf("nothing empty must print nothing, got %q", b.String())
 	}
 }

@@ -22,23 +22,6 @@ the rationale lives.
   channel shipped 2026-08-23; the array and top-level parse arms
   warn-and-keep-working until Pete calls the drop per path.
 
-- [ ] (S) **Bare keys after `[package]` are silently swallowed** (QA pass
-  2026-07-29): a skill author writing `files = {...}` (or any bare key)
-  below the `[package]` header has authored `package.files` -- stripped
-  with the package tree before stage 2 ever sees it, so the entry
-  vanishes without a word while `skill validate` says ok. The same key
-  top-level is loudly refused ("unknown key(s)"). A validate-time note
-  ("bare key under [package] -- move it above the header, or under its
-  real table") turns a silent no-op into a ten-second fix; pack.go
-  already documents this exact TOML-scoping footgun for its own output.
-
-- [ ] (XS) **Warn when an `env_from_host` source resolves empty** (2026-07-20).
-  A devbox with no global git identity got no `GIT_AUTHOR_*` in the box, but
-  `byre status` still showed `<- git:user.email` as if delivery were assured;
-  first symptom was a failed commit mid-session. A develop-time note ("resolved
-  empty -- box commits will fail until set") turns that into a ten-second fix.
-  Degrade-not-block stays; this is legibility only.
-
 - [ ] (XS) **`BYRE_SCRATCH` -> prefix-free rename** in
   `/home/dev/pjlsergeant-byre-skills` (2026-07-29, the out-of-tree remainder of
   the shipped state-model worklist): two sites (`skills/devlog/skill.toml:15`,
