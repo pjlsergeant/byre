@@ -329,6 +329,8 @@ func TestCheckPackageScoping(t *testing.T) {
 		{"multiline array continuation", KindTemplate, "[package]\nid = \"pete/t\"\nkind = \"template\"\n[env]\nX = \"\"\"\n[package]\napt = 1\n\"\"\"\n", nil},
 		{"unparseable is stage 1's", KindSkill, "[package\n", nil},
 		{"an inline files map", KindSkill, hdr + "files = { \"hook.sh\" = \"/etc/byre/firstrun.d/50-x.sh\" }\n", []string{"files", "package.files", "move it above [package]", "[build] files"}},
+		{"a files array of strings", KindSkill, hdr + "files = [\"hook.sh\"]\n", []string{"files"}},
+		{"an empty files list", KindSkill, hdr + "files = []\n", nil},
 		{"a template body key", KindTemplate, "[package]\nid = \"pete/t\"\nkind = \"template\"\napt = [\"jq\"]\n", []string{"apt", "package.apt", "template", "move it above [package]"}},
 		{"a quoted header", KindSkill, "[\"package\"]\nid = \"pete/x\"\nfiles = { \"a\" = \"/b\" }\n", []string{"files"}},
 		{"a dotted key", KindSkill, "description = \"d\"\npackage.id = \"pete/x\"\npackage.apt = [\"jq\"]\n", []string{"apt"}},

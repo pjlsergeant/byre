@@ -181,6 +181,15 @@ func TestWarnHostEnvEmptyGroupsBySourceAndNamesTheGitRemedy(t *testing.T) {
 		}
 	}
 
+	// A custom git: mapping is not the identity: it gets the git remedy
+	// without the commit claim, which would be untrue of it.
+	b.Reset()
+	warnHostEnvEmpty(&b, []hostEnvResult{{Key: "REVIEWER", Source: "git:review.name", State: hostEnvEmpty}})
+	out = b.String()
+	if !strings.Contains(out, "git config --global review.name") || strings.Contains(out, "commits in the box will fail") {
+		t.Errorf("a custom git: source names the remedy and makes no commit claim:\n%s", out)
+	}
+
 	b.Reset()
 	warnHostEnvEmpty(&b, []hostEnvResult{{Key: "PASSED", Source: "env:X", Value: "v", State: hostEnvDelivered}})
 	if b.Len() != 0 {
