@@ -345,6 +345,9 @@ func (m model) sig() string {
 	parts := []string{
 		m.ti.Value(),
 		m.tmplOpts[m.tmplSel], m.agentOpts[m.agentSel], m.engineOpts[m.engineSel],
+		// The deliberate-sentinel bits decide what a sentinel row WRITES
+		// (fromScalar), so a move that only flips one is a change to save.
+		fmt.Sprintf("stored:%t/%t/%t", m.tmplStored, m.agentStored, m.engineStored),
 		"ext:" + m.extOpts[m.extSel],
 		"apt:" + strings.Join(m.apt, ","),
 	}

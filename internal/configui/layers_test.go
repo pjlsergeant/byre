@@ -391,3 +391,48 @@ func TestScalarPickersChosenNoneIsExplicit(t *testing.T) {
 		t.Errorf("a chosen none must not turn into the layer's agent: row %q now %q", m.agentOpts[m.agentSel], m.agentNow())
 	}
 }
+
+// The deliberate-sentinel bit follows the user's LAST move: choosing
+// inherit withdraws a stored none, so dropping the layer afterwards leaves
+// absence, not a resurrected off-switch.
+func TestScalarPickersInheritWithdrawsAStoredNone(t *testing.T) {
+	m := pickerFlipModel(config.Config{Extends: "team", Agent: config.NoneLabel})
+	focusOn(t, &m, fAgent)
+	cycleTo(t, &m, func() []string { return m.agentOpts }, func() int { return m.agentSel }, inheritRow("codex"))
+	if got := m.assemble().Agent; got != "" {
+		t.Fatalf("inherit writes nothing, got %q", got)
+	}
+	focusOn(t, &m, fExtends)
+	cycleTo(t, &m, func() []string { return m.extOpts }, func() int { return m.extSel }, noneOption)
+	if got := m.assemble().Agent; got != "" {
+		t.Errorf("the layer going away must not bring the withdrawn none back, got %q", got)
+	}
+	cycleTo(t, &m, func() []string { return m.extOpts }, func() int { return m.extSel }, "team")
+	if !isInheritRow(m.agentOpts[m.agentSel]) {
+		t.Errorf("and with the layer back, absence is inherit again: %q", m.agentOpts[m.agentSel])
+	}
+}
+
+// Marking a sentinel deliberate changes what a save writes, so it is a
+// change the form must own up to: away from a displayed none and back
+// again is dirty, because ctrl+s would now write the key.
+func TestScalarPickersDeliberateNoneIsDirty(t *testing.T) {
+	m := pickerFlipModel(config.Config{})
+	if m.dirty() {
+		t.Fatal("a fresh open is clean")
+	}
+	focusOn(t, &m, fAgent)
+	m.cycle(1)
+	cycleTo(t, &m, func() []string { return m.agentOpts }, func() int { return m.agentSel }, noneOption)
+	if !m.dirty() {
+		t.Errorf("the row reads as it opened, but a save now writes %q: the form must be dirty", m.assemble().Agent)
+	}
+	// A stored none cycled off and back on is the file as opened: clean.
+	m = pickerFlipModel(config.Config{Agent: config.NoneLabel})
+	focusOn(t, &m, fAgent)
+	m.cycle(1)
+	cycleTo(t, &m, func() []string { return m.agentOpts }, func() int { return m.agentSel }, noneOption)
+	if m.dirty() {
+		t.Error("returning to the stored none is no change")
+	}
+}
