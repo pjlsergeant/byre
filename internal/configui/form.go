@@ -216,14 +216,18 @@ type model struct {
 	// every reader of "what is selected" needs that, not the row text.
 	tmplInherit, agentInherit, engineInherit string
 	// Whether the sentinel is a DELIBERATE answer: the FILE said it
-	// literally (`agent = "none"`, `engine = "auto"`), or the user rested
-	// the picker on it this session. Onboarding writes both axes explicitly
-	// so an explicit no beats a layer added later; a save must give that
-	// back, and a no chosen in the editor earns the same standing -- with
-	// nothing below at the moment of choice the sentinel row is also how
-	// absence displays, so without this bit the choice is indistinguishable
-	// from never having been made, and a later extends flip would show it
-	// as inheriting the layer's agent.
+	// literally (`agent = "none"`, `engine = "auto"`), or the user's LAST
+	// move on the picker landed on it. Onboarding writes both axes
+	// explicitly so an explicit no beats a layer added later; a save must
+	// give that back, and a no chosen in the editor earns the same standing
+	// -- with nothing below at the moment of choice the sentinel row is also
+	// how absence displays, so without this bit the choice is
+	// indistinguishable from never having been made, and a later extends
+	// flip would show it as inheriting the layer's agent. It follows the
+	// user's last move, never accumulates: a stored none the user moves off
+	// to inherit is withdrawn, or dropping the layer afterwards would write
+	// the none back and undo the choice. Part of sig(), because it changes
+	// what a save writes.
 	tmplStored, agentStored, engineStored bool
 	extOpts                               []string // EXTENDS picker (named layers + none)
 	extSel                                int
@@ -869,17 +873,17 @@ func (m *model) cycle(dir int) {
 		m.seedPrefsSel = wrap(m.seedPrefsSel+dir, len(seedPrefsOpts))
 	case fTemplate:
 		m.tmplSel = m.skipDisabled(m.tmplOpts, wrap(m.tmplSel+dir, len(m.tmplOpts)), dir)
-		m.tmplStored = m.tmplStored || m.tmplOpts[m.tmplSel] == noneOption
+		m.tmplStored = m.tmplOpts[m.tmplSel] == noneOption
 		*m = m.reinherit()
 	case fExtends:
 		m.extSel = wrap(m.extSel+dir, len(m.extOpts))
 		*m = m.reinherit()
 	case fAgent:
 		m.agentSel = m.skipDisabled(m.agentOpts, wrap(m.agentSel+dir, len(m.agentOpts)), dir)
-		m.agentStored = m.agentStored || m.agentOpts[m.agentSel] == noneOption
+		m.agentStored = m.agentOpts[m.agentSel] == noneOption
 	case fEngine:
 		m.engineSel = wrap(m.engineSel+dir, len(m.engineOpts))
-		m.engineStored = m.engineStored || m.engineOpts[m.engineSel] == "auto"
+		m.engineStored = m.engineOpts[m.engineSel] == "auto"
 	default:
 		if in := m.focusedInput(); in != nil {
 			*in, _ = in.Update(tea.KeyMsg{Type: keyArrow(dir)})
