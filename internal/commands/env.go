@@ -1,7 +1,10 @@
 package commands
 
 import (
+	"io"
+	"maps"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -72,6 +75,33 @@ func resolveHostEnv(cfg config.Config, gitExe string) []hostEnvResult {
 		out = append(out, r)
 	}
 	return out
+}
+
+// warnHostEnvEmpty says at develop which env_from_host rows resolved EMPTY
+// and so put nothing in the box -- one line per source, keys grouped.
+// Status carries the same outcome, but nobody reads status before their
+// first commit: a devbox with no global git identity got no GIT_* in the
+// box and the first symptom was a failed commit mid-session. Legibility
+// only, the launch proceeds (degrade, never block). A `git:` source names
+// its remedy because its consequence is the one the user cannot see coming;
+// the others say what is not crossing and where the row is switched off.
+// Rendered text carries config-authored keys and sources, so the line rides
+// dataf (P4).
+func warnHostEnvEmpty(w io.Writer, hostEnv []hostEnvResult) {
+	bySource := map[string][]string{}
+	for _, r := range hostEnv {
+		if r.State == hostEnvEmpty {
+			bySource[r.Source] = append(bySource[r.Source], r.Key)
+		}
+	}
+	for _, src := range slices.Sorted(maps.Keys(bySource)) {
+		keys := strings.Join(bySource[src], ", ")
+		if gitKey, ok := strings.CutPrefix(src, "git:"); ok {
+			dataf(w, "byre: warning: %s <- %s resolved empty -- NOT passed; commits in the box will fail until it is set: git config --global %s \"...\"\n", keys, src, gitKey)
+			continue
+		}
+		dataf(w, "byre: warning: %s <- %s resolved empty -- NOT passed (set it on the host, or switch the row off: byre config -> Env vars)\n", keys, src)
+	}
 }
 
 // addEnvFromHost applies the passthrough (ADR 0026): only a delivered

@@ -206,6 +206,12 @@ func TestStatusDevelopWarningsEscapeExternalValues(t *testing.T) {
 	assertNoESC(t, "warnManagedPathShadows", shadow.String())
 	assertKept(t, "warnManagedPathShadows", shadow.String(), "cannot re-assert over a runtime mount", "greedy")
 
+	// The empty-source warning prints config-authored keys and sources.
+	var hostEnv bytes.Buffer
+	warnHostEnvEmpty(&hostEnv, []hostEnvResult{{Key: "K" + escOSC, Source: "env:V" + escCSI, State: hostEnvEmpty}})
+	assertNoESC(t, "warnHostEnvEmpty", hostEnv.String())
+	assertKept(t, "warnHostEnvEmpty", hostEnv.String(), "resolved empty", "env:V")
+
 	// The compat warning prints config-authored agent names and store paths
 	// at develop, outside renderStatus's row funnel: it rides dataf, and this
 	// arm is what keeps a later edit from printing around it (P4). Raw
