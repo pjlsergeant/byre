@@ -35,6 +35,12 @@ the rationale lives.
   multiline value, including on a file's first credential, while preserving
   file bytes and keeping values out of argv and terminal echo. ADR 0057.
 
+- [ ] (S) **Understand skill-required environment values** (Pete, 2026-09-08):
+  trace and document how a skill can currently say that an environment value
+  must be supplied, including what `[runtime].env` and `[runtime.env_docs]`
+  actually guarantee. Bring any gap and design choices back to Pete before
+  specifying or implementing a change.
+
 - [ ] (S) **Claude agent-contract canary** (security-gap review 2026-09-05):
   the flagship agent is installed by an unpinned live installer and byre
   leans on its CLI flags and state layout, yet the scheduled agent-contract
