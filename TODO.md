@@ -68,7 +68,8 @@ the rationale lives.
 - [ ] (L) **Box export / import** (Pete, 2026-09-08): design and ship a portable
   box hand-off, with explicit inclusion rules for config/layers/packages,
   credentials, and persistent state rather than silently exporting either too
-  little to restore or machine-bound secrets. Start with the design boundary.
+  little to restore or machine-bound secrets. Design: `wip/box-export-import.md`
+  (v1 reviewed, unratified; shared-volume mapping and review corrections next).
 
 - [ ] (L) **SSH-agent-backed project credentials** (Pete, 2026-09-08): let a
   credentials identity be keyed to a specific key offered by the user's SSH
