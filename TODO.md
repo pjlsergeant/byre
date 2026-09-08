@@ -30,6 +30,11 @@ the rationale lives.
   shape as the `INTTEST_*` rename. It is why status shows the devlog skill's
   scratch path as a cautiously-treated reserved key.
 
+- [ ] (M) **First-class multiline credentials (especially SSH private keys)**
+  (Pete, 2026-09-08): terminal and Env-editor entry must accept a whole
+  multiline value, including on a file's first credential, while preserving
+  file bytes and keeping values out of argv and terminal echo. ADR 0057.
+
 - [ ] (S) **Claude agent-contract canary** (security-gap review 2026-09-05):
   the flagship agent is installed by an unpinned live installer and byre
   leans on its CLI flags and state layout, yet the scheduled agent-contract
@@ -58,6 +63,16 @@ the rationale lives.
   compose-deps case without the docker-host grant. Rides the companion-
   container rails the resolver establishes: read that design for whether it
   already generalises before writing a sidecar design.
+
+- [ ] (L) **Box export / import** (Pete, 2026-09-08): design and ship a portable
+  box hand-off, with explicit inclusion rules for config/layers/packages,
+  credentials, and persistent state rather than silently exporting either too
+  little to restore or machine-bound secrets. Start with the design boundary.
+
+- [ ] (L) **SSH-agent-backed project credentials** (Pete, 2026-09-08): let a
+  credentials identity be keyed to a specific key offered by the user's SSH
+  agent, without copying the private key into byre custody. Specify selection,
+  missing-agent/key behavior, rotation, and passphrase coexistence. ADR 0057.
 
 - [ ] (S) **Exclusive volume vs a sibling launched BEFORE the declaration**
   (field QA 2026-08-14, reproduced 2026-09-05): QA-PLAYBOOK worktrees 5a
