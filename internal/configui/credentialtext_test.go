@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 
 	"github.com/pjlsergeant/byre/internal/credentials"
 )
@@ -377,5 +379,30 @@ func TestCredentialVisibilityNoticeAndResize(t *testing.T) {
 	m = credKey(m, tea.KeyCtrlS)
 	if !strings.Contains(m.View(), "Not saved yet") || !strings.Contains(m.View(), "hidden") {
 		t.Fatal("narrow form must keep the unsaved/hidden draft summary visible")
+	}
+}
+
+func TestCredentialRefusalIsOneRedError(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+	for _, width := range []int{60, 80} {
+		m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+		m.width, m.height = width, 24
+		m.focusItem(2)
+		m = credKey(credPaste(m, "secret\nvalue"), tea.KeyCtrlS)
+		view := m.View()
+		if !strings.Contains(view, m.errLine(credentialSingleLineWarning)) || !strings.Contains(view, "31m") {
+			t.Fatalf("width %d: refusal must use the red error renderer", width)
+		}
+		plain := ansi.Strip(view)
+		if strings.Count(plain, "✗") != 1 || strings.Contains(plain, credentialInputNote) || strings.Contains(plain, "secret\nvalue") {
+			t.Fatal("refusal must not repeat guidance, stack errors, or echo the rejected value")
+		}
+		for _, fragment := range []string{"whole value", "64 KiB", "^e", "save credential only", "esc"} {
+			if !strings.Contains(plain, fragment) {
+				t.Fatalf("width %d: missing %q", width, fragment)
+			}
+		}
 	}
 }

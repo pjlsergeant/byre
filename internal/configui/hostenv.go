@@ -130,7 +130,7 @@ func hostEnvArgHint(scheme int) string {
 	case schemeDisabled:
 		return "the key is passed through to nothing"
 	case schemeCredential:
-		return "typed hidden, encrypted into this file"
+		return "Single-line value (hidden)"
 	}
 	return "the value comes from the cascade"
 }

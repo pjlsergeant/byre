@@ -1956,13 +1956,17 @@ func (m model) viewItem() string {
 		b.WriteString("\n" + proseBlock(m.itemProse, "^e to view and edit", m.width))
 	}
 
-	if m.itemErr != "" {
-		b.WriteString("\n" + m.errLine(m.itemErr))
+	itemErr := m.itemErr
+	if m.credentialItem() && m.credInputWarning != "" {
+		itemErr = m.credInputWarning
+	}
+	if itemErr != "" {
+		b.WriteString("\n" + m.errLine(itemErr))
 	}
 	hint := helpLine("tab", "next", "enter", "accept", "^s", "save", "esc", "cancel")
 	switch {
 	case m.listField == fEnv && isCredentialScheme(m.itemMode):
-		hint = helpLine("tab", "next", "^e", "multiline (visible)", "^s", "encrypt + save", "esc", "cancel")
+		hint = helpLine("tab", "next", "^e", "multiline", "^s", "save credential only", "esc", "cancel")
 	case m.listField == fMounts:
 		hint = helpLine("tab", "next", "→", "accept suggestion", "←/→", "mode", "enter", "accept", "^s", "save", "esc", "cancel")
 	case m.itemHasMode2:

@@ -103,7 +103,7 @@ func (m model) credentialDraftSummary() string {
 	return fmt.Sprintf("Not saved yet · %d lines · hidden", strings.Count(m.credDraft, "\n")+1)
 }
 
-const credentialSingleLineWarning = "This field cannot accept newlines or control characters. Nothing was saved. Open ^e and enter the whole replacement again."
+const credentialSingleLineWarning = "This field cannot accept newlines or control characters.\nNothing saved. Use ^e to re-enter the whole value."
 
 // Refuse before any widget can echo/sanitize a paste. Latch Value's newline
 // refusal so later unbracketed chunks cannot leave a saveable partial value.

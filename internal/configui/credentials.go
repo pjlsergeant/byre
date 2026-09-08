@@ -121,8 +121,7 @@ type pendingCredential struct {
 	envIdx int
 }
 
-// credentialWriteNote discloses the form's durable action before entry.
-const credentialWriteNote = "Single-line value; use bracketed paste. ^s saves only this credential; Enter never saves."
+const credentialInputNote = "Use bracketed paste. Enter never saves."
 
 // canWriteCredentials reports whether this editor has a credential write path.
 // In production that is false for exactly one target: --global, whose
@@ -320,7 +319,9 @@ func (m model) envItemNotes() []string {
 	if d := m.creds.Disclosure(); d != "" {
 		notes = append(notes, "⚠ "+d)
 	}
-	notes = append(notes, credentialWriteNote)
+	if !m.credMultiline && m.credInputWarning == "" {
+		notes = append(notes, credentialInputNote)
+	}
 	switch {
 	case m.credProbeErr != "":
 		notes = append(notes, "⚠ "+m.credProbeErr)
@@ -334,9 +335,6 @@ func (m model) envItemNotes() []string {
 	if editingCredential {
 		notes = append(notes, "Stored value stays hidden — empty keeps it, new text replaces it.")
 	}
-	if m.credInputWarning != "" {
-		notes = append(notes, "⚠ "+m.credInputWarning)
-	}
 	return append(notes, credentialKindNote(m.itemMode2))
 }
 
@@ -345,9 +343,9 @@ func (m model) envItemNotes() []string {
 // value is typed instead of first in a refusal.
 func credentialKindNote(sel int) string {
 	if sel == credKindFile {
-		return fmt.Sprintf("file: written to the box's session tmpfs, its path in the key; up to %d KiB", credentials.MaxValue>>10)
+		return fmt.Sprintf("Delivered as a tmpfs file path; up to %d KiB.", credentials.MaxValue>>10)
 	}
-	return fmt.Sprintf("env var: exported under this key; no NUL bytes, up to %d KiB", credentials.MaxEnvValue>>10)
+	return fmt.Sprintf("Up to %d KiB; no NUL bytes.", credentials.MaxEnvValue>>10)
 }
 
 // canRekey reports whether the Env list should offer the rekey surface: a
