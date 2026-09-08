@@ -7,6 +7,7 @@
   Enter no longer saves the credential value form. `^e` opens an in-memory
   editor after a visible-secret warning; its `^s` returns a hidden, unsaved draft, and the
   form's `^s` encrypts and saves it. Tabs and trailing newlines are preserved.
+  Blue whitespace guides show line breaks and tab spacing without changing bytes.
   Stored credentials are never loaded into the editor.
   A file's first credential still needs passphrase confirmation to complete
   the requested save.

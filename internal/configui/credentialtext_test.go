@@ -230,6 +230,76 @@ func TestCredentialTextCapRejectsWholeInsertion(t *testing.T) {
 	}
 }
 
+func TestCredentialWhitespaceLayout(t *testing.T) {
+	for _, tt := range []struct {
+		value string
+		width int
+		want  string
+		lines string
+	}{
+		{"a\rb\r", 80, "a␍\nb␍\n∎", "3 lines"},
+		{"a\r\nb\n", 80, "a␍↵\nb↵\n∎", "3 lines"},
+		{"\r\n\r\n", 80, "␍↵\n␍↵\n∎", "3 lines"},
+		{"a\tB\t", 80, "a──────⇥B──────⇥∎", "1 line"},
+		{"界\tX", 80, "界─────⇥X∎", "1 line"},
+		{"1234567\r\nx", 8, "1234567\n␍↵\nx∎", "2 lines"},
+		{"123456789\tX", 10, "123456789\n───────⇥X∎", "1 line"},
+	} {
+		e := credentialText{value: tt.value, pos: len([]rune(tt.value))}
+		rows, cursor := e.rows(tt.width)
+		if got := ansi.Strip(strings.Join(rows, "\n")); got != tt.want || cursor != len(rows)-1 {
+			t.Fatalf("%q: rows %q, cursor row %d; want %q", tt.value, got, cursor, tt.want)
+		}
+		if e.value != tt.value || credentialLines(e.value) != tt.lines {
+			t.Fatalf("%q: value changed or line count incorrect", tt.value)
+		}
+		for _, row := range rows {
+			if ansi.StringWidth(row) > tt.width {
+				t.Fatalf("%q: rendered row exceeds width %d", tt.value, tt.width)
+			}
+		}
+	}
+}
+
+func TestCredentialHelpersAreBlueButLiteralMarkersAreNot(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+	e := credentialText{value: "\tA\r\n⇥", pos: 5}
+	rows, _ := e.rows(80)
+	for _, marker := range []string{"───────⇥", "␍", "↵"} {
+		if !strings.Contains(rows[0], credentialMarkerStyle.Render(marker)) || !strings.Contains(rows[0], "94m") {
+			t.Fatalf("%q must be blue", marker)
+		}
+	}
+	if rows[1] != "⇥"+credentialMarkerStyle.Reverse(true).Render("∎") {
+		t.Fatal("literal marker must stay uncoloured; end marker must keep its blue cursor")
+	}
+}
+
+func TestCredentialNavigationRecognizesEveryLineEnding(t *testing.T) {
+	for _, sep := range []string{"\r", "\n", "\r\n"} {
+		value := strings.Join([]string{"abc", "def", "xy"}, sep)
+		e := credentialText{value: value, pos: 1}
+		e = e.update(tea.KeyMsg{Type: tea.KeyDown})
+		if e.pos != 4+len(sep) {
+			t.Fatalf("%q: down reached %d", sep, e.pos)
+		}
+		e = e.update(tea.KeyMsg{Type: tea.KeyHome})
+		if e.pos != 3+len(sep) {
+			t.Fatalf("%q: home reached %d", sep, e.pos)
+		}
+		e = e.update(tea.KeyMsg{Type: tea.KeyEnd})
+		if e.pos != 6+len(sep) {
+			t.Fatalf("%q: end reached %d", sep, e.pos)
+		}
+		e = e.update(tea.KeyMsg{Type: tea.KeyUp})
+		if e.pos != 3 || e.value != value {
+			t.Fatalf("%q: up reached %d or navigation changed bytes", sep, e.pos)
+		}
+	}
+}
+
 func TestCredentialRuneBatchesAreNotShortcuts(t *testing.T) {
 	for _, word := range []string{"esc", "enter", "ctrl+s", "ctrl+e", "home", "end", "left", "up", "tab", "backspace"} {
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(word)}

@@ -104,6 +104,8 @@ exceptions noted inline.
   not Ctrl-V's host clipboard lookup.
   Check the LF (`↵`) and CR (`␍`) markers: terminals can change pasted line
   endings before byre receives them; the editor does not normalize them.
+  Blue markers display CR/LF as line breaks (CRLF once) and tabs as guides
+  to eight-column stops, without changing the stored bytes.
   For byte-exact **file-kind** input, use `byre credentials set KEY --file < path`.
   `--file` selects file-kind delivery (KEY holds a tmpfs path), not just
   reading from a file. For env-kind CLI input, omit `--file`; the CLI removes

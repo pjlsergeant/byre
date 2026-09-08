@@ -24,6 +24,18 @@ type credentialText struct {
 	err   string
 }
 
+const credentialTabWidth = 8
+
+var credentialMarkerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))
+
+func credentialLines(value string) string {
+	n := strings.Count(value, "\n") + strings.Count(value, "\r") - strings.Count(value, "\r\n") + 1
+	if n == 1 {
+		return "1 line"
+	}
+	return fmt.Sprintf("%d lines", n)
+}
+
 type credentialTextTransition int
 
 const (
@@ -100,7 +112,7 @@ func (m model) credentialDraftSummary() string {
 	if m.credDraft == "" {
 		return "No replacement entered"
 	}
-	return fmt.Sprintf("Not saved yet · %d lines · hidden", strings.Count(m.credDraft, "\n")+1)
+	return fmt.Sprintf("Not saved yet · %s · hidden", credentialLines(m.credDraft))
 }
 
 const credentialSingleLineWarning = "This field cannot accept newlines or control characters.\nNothing saved. Use ^e to re-enter the whole value."
@@ -215,13 +227,16 @@ func (e credentialText) update(msg tea.KeyMsg) credentialText {
 	r := []rune(e.value)
 	p := e.pos
 	start := func(p int) int {
-		for p > 0 && r[p-1] != '\n' {
+		for p > 0 {
+			if r[p-1] == '\n' || (r[p-1] == '\r' && (p == len(r) || r[p] != '\n')) {
+				break
+			}
 			p--
 		}
 		return p
 	}
 	end := func(p int) int {
-		for p < len(r) && r[p] != '\n' {
+		for p < len(r) && r[p] != '\n' && r[p] != '\r' {
 			p++
 		}
 		return p
@@ -239,12 +254,20 @@ func (e credentialText) update(msg tea.KeyMsg) credentialText {
 	case tea.KeyUp:
 		s := start(p)
 		if s > 0 {
-			e.pos = min(s-1, start(s-1)+p-s)
+			previousEnd := s - 1
+			if r[previousEnd] == '\n' && previousEnd > 0 && r[previousEnd-1] == '\r' {
+				previousEnd--
+			}
+			e.pos = min(previousEnd, start(previousEnd)+p-s)
 		}
 	case tea.KeyDown:
 		n := end(p)
 		if n < len(r) {
-			e.pos = min(end(n+1), n+1+p-start(p))
+			next := n + 1
+			if r[n] == '\r' && next < len(r) && r[next] == '\n' {
+				next++
+			}
+			e.pos = min(end(next), next+p-start(p))
 		}
 	case tea.KeyBackspace, tea.KeyCtrlH:
 		if p > 0 {
@@ -308,9 +331,9 @@ func (m model) viewCredText() string {
 	var b strings.Builder
 	b.WriteString("VISIBLE replacement — not saved\n")
 	b.WriteString("Stored credential NOT loaded.\n")
-	b.WriteString("Tabs: ⇥  CR: ␍  LF: ↵  End: ∎ (markers are not inserted)\n\n")
+	b.WriteString(credentialMarkerStyle.Render("Tabs: ⇥ (8 cols)  CR: ␍  LF: ↵  End: ∎") + " (display only)\n\n")
 	b.WriteString(strings.Join(rows[from:to], "\n"))
-	fmt.Fprintf(&b, "\n%d bytes · %d lines · view %d–%d/%d\n", len(m.credText.value), strings.Count(m.credText.value, "\n")+1, from+1, to, len(rows))
+	fmt.Fprintf(&b, "\n%d bytes · %s · view %d–%d/%d\n", len(m.credText.value), credentialLines(m.credText.value), from+1, to, len(rows))
 	if m.credText.err != "" {
 		b.WriteString(m.errLine(m.credText.err) + "\n")
 		b.WriteString("^s blocked until another edit or cursor move. Esc cancels.\n")
@@ -335,30 +358,48 @@ func (e credentialText) rows(width int) ([]string, int) {
 	r := []rune(e.value)
 	for i := 0; i <= len(r); i++ {
 		cell := "∎"
-		newline := false
+		newline, marker, crlf := false, true, false
 		if i < len(r) {
 			switch r[i] {
 			case '\n':
 				cell, newline = "↵", true
 			case '\r':
 				cell = "␍"
+				crlf = i+1 < len(r) && r[i+1] == '\n'
+				newline = !crlf
 			case '\t':
-				cell = "⇥"
+				cell = strings.Repeat("─", credentialTabWidth-col%credentialTabWidth-1) + "⇥"
 			default:
 				cell = string(r[i])
-				if !unicode.IsPrint(r[i]) {
+				marker = !unicode.IsPrint(r[i])
+				if marker {
 					cell = strings.Trim(strconv.QuoteRune(r[i]), "'")
 				}
 			}
 		}
 		w := ansi.StringWidth(cell)
-		if col+w > width {
+		wrapWidth := w
+		if crlf {
+			wrapWidth++ // keep both CRLF markers on the same display row
+		}
+		if col+wrapWidth > width {
 			rows = append(rows, "")
 			col = 0
+			if i < len(r) && r[i] == '\t' {
+				cell = strings.Repeat("─", credentialTabWidth-1) + "⇥"
+				w = credentialTabWidth
+			}
 		}
-		if i == e.pos {
-			cursorRow = len(rows) - 1
-			cell = lipgloss.NewStyle().Reverse(true).Render(cell)
+		if marker || i == e.pos {
+			style := credentialMarkerStyle
+			if !marker {
+				style = lipgloss.NewStyle()
+			}
+			if i == e.pos {
+				cursorRow = len(rows) - 1
+				style = style.Reverse(true)
+			}
+			cell = style.Render(cell)
 		}
 		rows[len(rows)-1] += cell
 		col += w

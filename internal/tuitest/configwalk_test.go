@@ -88,7 +88,7 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	s.WaitForAfter(e, "without masking")
 	e = s.Keys("C-e")
 	s.WaitForAfter(e, "VISIBLE replacement")
-	e = s.Paste("not-a-secret\nsecond-line\n")
+	e = s.Paste("not-a-secret\rsecond-line\r\n")
 	s.WaitForAfter(e, "second-line")
 	s.WaitFor("3 lines")
 	e = s.Type("typed space")
