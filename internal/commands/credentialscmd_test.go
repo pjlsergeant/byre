@@ -134,11 +134,14 @@ func TestCredentialsSetFileKind(t *testing.T) {
 	_, proj := testPaths(t)
 	var errBuf bytes.Buffer
 	passphraseSeam(t, "pw", "pw")
-	piped := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("-----END CERT-----\n"), TTY: false}
+	fileValue := "-----END CERT-----\n\xff\x00\ufffd\r\n"
+	piped := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader(fileValue), TTY: false}
 	tty := ttyStreams(&errBuf)
-	// Minting needs a terminal, so seed the identity with a TTY set first.
+	// The documented binary-input bootstrap: mint with a temporary text
+	// value, then replace that SAME key through piped stdin. Include bytes
+	// that the terminal input decoder cannot preserve, as well as final LF.
 	passphraseSeam(t, "pw", "pw", "seed")
-	if err := CredentialsSet(tty, proj, "SEED", false, ""); err != nil {
+	if err := CredentialsSet(tty, proj, "TLS_CERT", true, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := CredentialsSet(piped, proj, "TLS_CERT", true, ""); err != nil {
@@ -148,7 +151,7 @@ func TestCredentialsSetFileKind(t *testing.T) {
 	// A file value is arbitrary bytes: the env newline courtesy must not
 	// mutate a PEM's final newline.
 	value, kind := openCredRow(t, path, "pw", "TLS_CERT")
-	if string(value) != "-----END CERT-----\n" || kind != credentials.KindFile {
+	if string(value) != fileValue || kind != credentials.KindFile {
 		t.Fatalf("file-kind bytes: %q %s", value, kind)
 	}
 	raw, _ := os.ReadFile(path)

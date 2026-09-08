@@ -1,5 +1,16 @@
 # Changes
 
+## Unreleased
+
+- **Credentials have an explicit multiline editor.** The Env screen refuses
+  pasted newlines in its masked single-line field instead of flattening them.
+  Enter no longer saves the credential value form. `^e` opens an in-memory
+  editor after a visible-secret warning; its `^s` returns a hidden, unsaved draft, and the
+  form's `^s` encrypts and saves it. Tabs and trailing newlines are preserved.
+  Stored credentials are never loaded into the editor.
+  A file's first credential still needs passphrase confirmation to complete
+  the requested save.
+
 ## v1.10.0 — 2026-09-05
 
 - **A Dock-icon drop on the deliver app no longer declines docker and

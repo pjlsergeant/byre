@@ -501,6 +501,7 @@ func (m *model) deleteItem(f fieldID, i int) {
 // startItem opens the item editor for the current list field. idx < 0 adds a new
 // item; otherwise it edits the existing one at idx.
 func (m model) startItem(idx int) model {
+	m.clearCredentialDraft()
 	m.editIndex = idx
 	m.itemErr = ""
 	m.itemFocus = 0
@@ -809,6 +810,16 @@ func (m *model) onModePicker() bool {
 func (m *model) onMode2Picker() bool { return m.itemHasMode2 && m.itemFocus == m.mode2Control() }
 
 func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.credentialItem() {
+		// Rune batches such as "enter" are text, not named keys. Bracketing
+		// their String form also protects the downstream Bubbles keymap.
+		if msg.Type == tea.KeyRunes && !msg.Alt {
+			msg.Paste = true
+		}
+		if next, cmd, handled := m.credentialItemKey(msg); handled {
+			return next, cmd
+		}
+	}
 	switch msg.String() {
 	case "esc", "ctrl+c", "ctrl+q":
 		m.mode = modeList
@@ -847,9 +858,8 @@ func (m model) updateItem(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if next.itemErr != "" {
 			return next, nil
 		}
-		if next.mode == modeCredPass {
-			// The item was accepted and is now waiting on a passphrase; the
-			// save belongs after that decision, not underneath its modal.
+		if m.credentialItem() {
+			// The seam owns this write; leave unrelated edits unsaved.
 			return next, nil
 		}
 		return next.save(), nil
@@ -1913,6 +1923,9 @@ func (m model) viewItem() string {
 	for i, in := range m.inputs {
 		cursor := "  "
 		val := in.View()
+		if m.credentialItem() && i == 1 && m.credMultiline {
+			val = m.credentialDraftSummary()
+		}
 		if i == m.itemInputIndex() {
 			cursor = cursorStyle.Render("▸ ")
 			val += dimStyle.Render(m.ghostSuffix()) // autocomplete/suggestion ghost
@@ -1948,9 +1961,8 @@ func (m model) viewItem() string {
 	}
 	hint := helpLine("tab", "next", "enter", "accept", "^s", "save", "esc", "cancel")
 	switch {
-	// "accept" would understate it on a credential: enter is the write.
 	case m.listField == fEnv && isCredentialScheme(m.itemMode):
-		hint = helpLine("tab", "next", "←/→", "source", "enter", "encrypt + write", "^s", "save", "esc", "cancel")
+		hint = helpLine("tab", "next", "^e", "multiline (visible)", "^s", "encrypt + save", "esc", "cancel")
 	case m.listField == fMounts:
 		hint = helpLine("tab", "next", "→", "accept suggestion", "←/→", "mode", "enter", "accept", "^s", "save", "esc", "cancel")
 	case m.itemHasMode2:
@@ -2194,6 +2206,11 @@ func (m *model) maskCredentialInput() {
 		return
 	}
 	m.inputs[1].SetValue("")
+	m.clearCredentialDraft()
+	// Clipboard commands bypass key validation. Use terminal paste here.
+	for i := range m.inputs {
+		m.inputs[i].KeyMap.Paste.SetEnabled(!want)
+	}
 	if want {
 		m.inputs[1].EchoMode = textinput.EchoPassword
 		m.inputs[1].EchoCharacter = '•'

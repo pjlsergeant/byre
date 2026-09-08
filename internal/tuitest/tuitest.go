@@ -381,7 +381,9 @@ func (s *Session) Paste(text string) Epoch {
 	s.t.Helper()
 	e := Epoch{before: s.CaptureNow()}
 	s.tmux("set-buffer", "--", text)
-	s.tmux("paste-buffer", "-p", "-t", "main")
+	// -r preserves LF bytes; tmux otherwise translates LF to Return even
+	// inside a bracketed paste. A fidelity test must send the supplied bytes.
+	s.tmux("paste-buffer", "-p", "-r", "-t", "main")
 	return e
 }
 

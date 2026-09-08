@@ -91,9 +91,27 @@ exceptions noted inline.
   `KEY = "encrypted-file:<blob>"` arrives as a file on the session
   tmpfs with `KEY` holding its path. You never type those rows: `byre
   credentials set KEY` writes one; its input is a single-line masked terminal
-  prompt or whole piped stdin for multiline values, never a command-line
+  prompt or piped stdin, never a command-line
   argument. The configuration editor's Env screen writes the same encrypted
-  row through its own single-line masked field. `KEY = ""` in a nearer layer disables an
+  row through a masked single-line field; `^e` opens an **unmasked** multiline
+  draft after a warning. It preserves tabs, CRs and trailing newlines without
+  plaintext editor files. Enter inserts a newline in the editor and never
+  saves the value form. Editor `^s` returns a hidden draft; Esc discards
+  editor changes. Form `^s` saves only that credential, with passphrase
+  confirmation on a file's first credential. Use terminal bracketed paste,
+  not Ctrl-V's host clipboard lookup.
+  Check the LF (`↵`) and CR (`␍`) markers: terminals can change pasted line
+  endings before byre receives them; the editor does not normalize them.
+  For byte-exact **file-kind** input, use `byre credentials set KEY --file < path`.
+  `--file` selects file-kind delivery (KEY holds a tmpfs path), not just
+  reading from a file. For env-kind CLI input, omit `--file`; the CLI removes
+  one trailing LF from piped env values. The Env editor preserves it instead.
+  This needs an identity in the target file already. If absent, first save
+  a temporary text value under the intended KEY in that file's Env editor,
+  completing the passphrase prompt; then run the piped command to replace
+  that same KEY before launching. For a layer, add `--layer NAME` to the
+  piped command so it targets the same file.
+  `KEY = ""` in a nearer layer disables an
   inherited credential like any other row. An env-kind value must be
   NUL-free and at most 64 KiB; the file-kind ceiling is 256 KiB.
 - `[credentials]` -- written by `byre credentials`, not by hand: the

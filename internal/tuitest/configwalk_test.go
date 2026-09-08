@@ -77,6 +77,27 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	// (Nothing is typed, so nothing is written — esc leaves the form.)
 	e = s.Keys("Right", "Right", "Right")
 	s.WaitForAfter(e, "Delivered as")
+	e = s.Paste("not-a-secret\nrefused-on-picker\n")
+	s.WaitForAfter(e, "Paste rejected")
+	if strings.Contains(s.CaptureNow(), "refused-on-picker") {
+		t.Fatal("refused paste was echoed")
+	}
+	// The visible credential editor has its own consent screen. Paste through
+	// terminal bracketed paste, accept only a draft, then leave without saving.
+	e = s.Keys("C-e")
+	s.WaitForAfter(e, "without masking")
+	e = s.Keys("C-e")
+	s.WaitForAfter(e, "VISIBLE replacement")
+	e = s.Paste("not-a-secret\nsecond-line\n")
+	s.WaitForAfter(e, "second-line")
+	s.WaitFor("3 lines")
+	e = s.Type("typed space")
+	s.WaitForAfter(e, "typed space")
+	e = s.Keys("C-s")
+	s.WaitForAfter(e, "Not saved yet")
+	if strings.Contains(s.CaptureNow(), "not-a-secret") {
+		t.Fatal("accepted credential draft remained visible outside the editor")
+	}
 	e = s.Keys("Escape")
 	s.WaitForAfter(e, "a add")
 	e = s.Keys("Escape")

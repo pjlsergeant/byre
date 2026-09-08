@@ -263,7 +263,7 @@ the standing limit of a review gate, not of credentials.
   including mint/swap/transplant/replay in those words.
 - The editor is where these are authored (P0): credential rows show on the Env
   screen, the Source picker
-  carries both kinds, the Value input is masked and never echoed, and saving a
+  carries both kinds, the single-line Value input is masked, and saving a
   value through the form IS the `set` path — same CAS, same file lock, same
   write-target disclosure, reached through a seam (`configui.CredentialAdmin`)
   rather than a second spelling. Rekey is an editor surface too (the Env
@@ -271,11 +271,26 @@ the standing limit of a review gate, not of credentials.
   per-file passphrase modal. Boundaries taken deliberately: the credential
   kinds appear only where a credentials verb can target the file (project
   config, layer — not `default.config`); a damaged or reserved-key row refuses
-  and names the CLI; the value lands on ACCEPT rather than at `^s`, and the
+  and names the CLI; the form's `^s` encrypts and writes the value, and the
   form says so before a value is typed; a credential row's key cannot be
   renamed in place, since the payload is stamped with the key; and a file whose
   identity is gone gets told the truth about its orphaned rows rather than a
   modal claiming it holds no credentials.
+- Multiline editor (2026-09-08): Enter never saves the value form. Bracketed
+  newline/control-containing pastes are refused before sanitization. Return
+  in Value requires explicit re-entry (`^e`): typed and pasted Return cannot
+  be distinguished. `^e` warns before displaying a replacement in memory,
+  without plaintext editor files; stored credentials are never loaded.
+  Text/newlines are preserved. Editor `^s` returns a hidden unsaved draft;
+  Esc discards editor changes. Form `^s` uses `set`, with first-file
+  passphrase confirmation as before, leaving unrelated edits unsaved.
+  Empty keeps the stored value. Residuals: viewers/recorders can read the
+  visible draft; unbracketed controls can act as shortcuts; Key-field text
+  is visible; terminals may translate pasted LF to CR, and the decoder
+  drops invalid UTF-8 and U+FFFD. The
+  creation/rekey passphrase widgets are unchanged and may normalize pasted
+  controls. The configuration reference owns the
+  binary file-kind CLI/bootstrap instructions and CLI trailing-LF difference.
 - Sibling amendments: 0007 (project credentials are user-declared values, not
   agent-login seeding), 0009/0032 (credential state is the config cascade's,
   not the store's — worktrees share the project config and the setup lock;

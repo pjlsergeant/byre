@@ -50,8 +50,8 @@ with kernel exploits.
 
 ## Specific facts worth knowing
 
-**Project credentials protect the disk, not the running box.** A
-credential is an age-encrypted value stored inline in your config files
+**Project credentials protect the disk, not the running box.** A credential
+is an age-encrypted value stored inline in your config files
 — an `encrypted:` or `encrypted-file:` row in `[env_from_host]`, opened
 by the identity in that file's own `[credentials]` block, which is
 itself wrapped under a passphrase with scrypt
@@ -101,6 +101,15 @@ What it deliberately does NOT do:
   backups and any synced dotfiles carry the ciphertext, so the
   passphrase is what stands between a copied config file and the value
   inside it.
+
+Multiline editing exposes the replacement to viewers/recorders after a warning;
+stored values are never loaded and no plaintext editor file is created.
+Terminal paste may translate LF to CR or drop invalid UTF-8/U+FFFD;
+unbracketed controls can act as
+shortcuts, and text pasted into the Key field is visible. Passphrase widgets
+remain single-line and can normalize pasted controls. For binary file-kind
+input, follow the [CLI instructions](../configuration-reference/) (an existing
+identity is required).
 
 `--self-edit` hands the agent authorship of your config files along
 with the rest of the store — its own warning covers that. There is no

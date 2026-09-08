@@ -30,11 +30,6 @@ the rationale lives.
   shape as the `INTTEST_*` rename. It is why status shows the devlog skill's
   scratch path as a cautiously-treated reserved key.
 
-- [ ] (M) **First-class multiline credentials (especially SSH private keys)**
-  (Pete, 2026-09-08): terminal and Env-editor entry must accept a whole
-  multiline value, including on a file's first credential, while preserving
-  file bytes and keeping values out of argv and terminal echo. ADR 0057.
-
 - [ ] (S) **Understand skill-required environment values** (Pete, 2026-09-08):
   trace and document how a skill can currently say that an environment value
   must be supplied, including what `[runtime].env` and `[runtime.env_docs]`

@@ -7,16 +7,14 @@ package configui
 //
 // Two things about this screen are unlike every other field here.
 //
-// It WRITES ON ACCEPT. Every other edit lands in the working state and reaches
-// disk at ^s; a credential value cannot, because encrypting it means holding
-// the plaintext until then and the row it becomes is the write path's to
-// produce -- compare-and-swap, the file's own lock, and (on a file's first
-// credential) the identity landing in the same generation as the row it opens.
-// So enter runs the same write `byre credentials set` runs, and the form says
-// so before the value is typed. The rest of the screen still saves at ^s.
+// The form's ^s encrypts and writes through the same path as `credentials set`:
+// compare-and-swap, the file's own lock, and (on a file's first credential)
+// the identity landing in the same generation as the row it opens. Accepting
+// the multiline editor's draft does NOT invoke that path.
 //
-// And the VALUE is never shown. Not in the input (masked), not in the row
-// (the ciphertext elides), not in a status line or an error. An existing row
+// The single-line VALUE is masked. The explicit in-memory multiline editor
+// shows only the replacement draft, after a visibility warning. No value is
+// shown in the row (the ciphertext elides), a status line or an error. An existing row
 // opens with an empty Value field meaning "unchanged": the stored value is not
 // readable from here at all -- this file's identity is passphrase-wrapped, and
 // the editor holds no passphrase.
@@ -109,8 +107,8 @@ type CredentialResult struct {
 
 // pendingCredential is a value the form has accepted and not yet written: the
 // passphrase modal sits between the two on a file's first credential. The
-// plaintext is held HERE and nowhere else -- never in a field the view renders
-// once the modal is up, never in a status line, never in an error.
+// plaintext stays in memory (also in the form's retry draft), never in a field
+// the view renders once the modal is up, a status line, or an error.
 type pendingCredential struct {
 	key   string
 	kind  credentials.Kind
@@ -123,9 +121,8 @@ type pendingCredential struct {
 	envIdx int
 }
 
-// credentialWriteNote is what enter does here, stated before the value is
-// typed: this one field does not wait for ^s.
-const credentialWriteNote = "enter encrypts and writes this value now (the rest of the screen still saves with ^s)"
+// credentialWriteNote discloses the form's durable action before entry.
+const credentialWriteNote = "Single-line value; use bracketed paste. ^s saves only this credential; Enter never saves."
 
 // canWriteCredentials reports whether this editor has a credential write path.
 // In production that is false for exactly one target: --global, whose
@@ -181,6 +178,9 @@ func (m model) commitCredentialRow(orig model, key string, moving bool) model {
 	}
 
 	value := []byte(m.inputs[1].Value())
+	if m.credMultiline {
+		value = []byte(m.credDraft)
+	}
 	if len(value) == 0 {
 		return m.commitCredentialUnchanged(orig, was)
 	}
@@ -289,6 +289,7 @@ func (m model) writeCredential(p pendingCredential, passphrase string) model {
 	// re-rendered after this, and holding it would keep a secret alive in a
 	// screen the user has left.
 	m.inputs[1].SetValue("")
+	m.clearCredentialDraft()
 	m.credPending = nil
 	m.itemErr = ""
 	m.errMsg = ""
@@ -300,7 +301,7 @@ func (m model) writeCredential(p pendingCredential, passphrase string) model {
 // envItemNotes is the Env item editor's guidance. The ordinary schemes explain
 // themselves through the picker and the placeholder (hostEnvArgHint); a
 // credential carries consequences a placeholder cannot hold — where the write
-// lands, that enter writes it now, what an empty box means, and the caps its
+// lands, that ^s writes it now, what an empty box means, and the caps its
 // kind enforces — so the form states them BEFORE a value is typed, the way the
 // CLI prints them before it prompts.
 func (m model) envItemNotes() []string {
@@ -326,12 +327,15 @@ func (m model) envItemNotes() []string {
 	case !m.credHasIdentity && m.orphanCredentialRows() > 0:
 		// Same falsehood the modal refuses to tell, one screen earlier: rows
 		// are listed and the file has no identity for them.
-		notes = append(notes, "⚠ this file's credential rows have no identity — enter asks for a new passphrase, which will not open them")
+		notes = append(notes, "⚠ this file's credential rows have no identity — ^s asks for a new passphrase, which will not open them")
 	case !m.credHasIdentity:
-		notes = append(notes, "this file has no credentials yet — enter asks for a new passphrase")
+		notes = append(notes, "this file has no credentials yet — ^s asks for a new passphrase")
 	}
 	if editingCredential {
-		notes = append(notes, "the stored value is never shown — empty keeps it, a new one replaces it")
+		notes = append(notes, "Stored value stays hidden — empty keeps it, new text replaces it.")
+	}
+	if m.credInputWarning != "" {
+		notes = append(notes, "⚠ "+m.credInputWarning)
 	}
 	return append(notes, credentialKindNote(m.itemMode2))
 }

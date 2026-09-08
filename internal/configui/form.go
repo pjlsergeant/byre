@@ -164,6 +164,7 @@ const (
 	modeSkills
 	modeCredPass  // the per-file passphrase modal, before a file's first credential
 	modeCredRekey // the passphrase-rotation modal, over a file that already has an identity
+	modeCredText  // explicit, visible, in-memory credential draft editor
 )
 
 type kvItem struct{ Key, Value string }
@@ -346,7 +347,14 @@ type model struct {
 	credPassErr    string
 	// credPending is the accepted value waiting on that passphrase; nil
 	// whenever the modal is not the reason the editor is here.
-	credPending *pendingCredential
+	credPending        *pendingCredential
+	credDraft          string // hidden draft accepted by the multiline editor
+	credMultiline      bool
+	credText           credentialText
+	credTextVisible    bool // visibility warning acknowledged
+	credTextTransition credentialTextTransition
+	credTextKeys       []tea.KeyMsg // retain fast typing while entering the visible editor
+	credInputWarning   string       // persistent until the editor is explicitly opened
 	// modeCredRekey (rotate the passphrase on a file that already has an identity)
 	credRekeyInputs [3]textinput.Model
 	credRekeyFocus  int
@@ -680,6 +688,8 @@ func (m model) Init() tea.Cmd { return textinput.Blink }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case credentialRevealMsg, credentialHiddenMsg, credentialClosedMsg:
+		return m.credentialTextTransitionMsg(msg)
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -713,6 +723,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateCredPass(msg)
 		case modeCredRekey:
 			return m.updateCredRekey(msg)
+		case modeCredText:
+			return m.updateCredText(msg)
 		default:
 			return m.updateForm(msg)
 		}
@@ -722,6 +734,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch {
 	case m.mode == modeText:
 		m.ta, cmd = m.ta.Update(msg)
+	case m.mode == modeItem && m.credentialItem():
+		// Only blink the cursor. A late clipboard result from another input
+		// must not bypass the credential form's key-level refusal.
+		if fi := m.itemInputIndex(); fi >= 0 {
+			m.inputs[fi].Cursor, cmd = m.inputs[fi].Cursor.Update(msg)
+		}
 	case m.mode == modeItem && len(m.inputs) > 0 && m.itemFocus < len(m.inputs):
 		m.inputs[m.itemFocus], cmd = m.inputs[m.itemFocus].Update(msg)
 	case m.mode == modeCredPass:
@@ -988,6 +1006,8 @@ func (m model) View() string {
 		v = m.viewCredPass()
 	case modeCredRekey:
 		v = m.viewCredRekey()
+	case modeCredText:
+		v = m.viewCredText()
 	default:
 		v = m.viewForm()
 	}
