@@ -69,7 +69,7 @@ the rationale lives.
   box hand-off, with explicit inclusion rules for config/layers/packages,
   credentials, and persistent state rather than silently exporting either too
   little to restore or machine-bound secrets. Design: `wip/box-export-import.md`
-  (v1 reviewed, unratified; shared-volume mapping and review corrections next).
+  (v4 after two fresh three-reviewer rounds and two grills; all three reviewers build-ready with conditions on v3, conditions folded; Pete to ratify).
 
 - [ ] (L) **SSH-agent-backed project credentials** (Pete, 2026-09-08): let a
   credentials identity be keyed to a specific key offered by the user's SSH

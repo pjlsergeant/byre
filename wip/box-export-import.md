@@ -1,412 +1,644 @@
 # Box export / import
 
-Status: v1 design draft, 2026-09-08. Independently reviewed; corrections and
-scope decisions remain before ratification. Not authorization to implement.
-TODO.md owns task status. The proposals below remain as reviewed, including
-the rejected claim that config can override skill-declared volume scope.
+Status: v4 design draft, 2026-09-08. v2 was reviewed fresh by Grok, Z.AI
+and Claude (two BUILD-READY WITH CONDITIONS, one NOT BUILD-READY); v3
+folded every verified finding and four further rulings from the same
+evening's grill; v3 was reviewed fresh by the same three (all BUILD-READY
+WITH CONDITIONS, no operator decision requested) and v4 folds those
+conditions. Every ruling below is Pete's; every mechanism is a proposal awaiting
+a fresh external review. Not authorization to implement. TODO.md owns task
+status. Ships as ONE unit. wip/ lifecycle: absorbed into an ADR and the
+docs on ship, then deleted.
 
-## Purpose and operator decisions
+Provenance: [RULING] = Pete's, settled, do not reopen to close a finding.
+[CODE] = verified against the tree. [PROPOSED] = this draft's mechanism.
 
-Transfer a box's setup, optionally with its workspace and persistent data, to
-another machine or another person. One interactive selection flow serves both
-migration and sharing. Import creates a box that byre builds and manages normally.
+## What this is
 
-The following are Pete's rulings, not questions for reviewers to restart:
+Transfer a box's setup, optionally with its state volumes and its workspace,
+to another machine or another person, as one ordinary file. Import writes a
+project byre builds and manages normally. Nothing engine-side exists on the
+destination until the first `byre develop`.
 
-- Export requires a completely still box. All project/worktree sessions and all
-  other holders of selected volumes must be stopped, throughout the copy.
-  Refusals name each blocking container and print its actual engine's attach
-  and stop commands. Byre does not stop sessions on the user's behalf.
-- No built images and no ephemeral container filesystem, even as options.
-  Normal byre containers use `--rm`; import rebuilds through byre.
-- Import preserves the source effective setup independently of destination
-  defaults. Destination changes are explicitly reviewed. Other projects are
-  left untouched.
-- Export configuration and dependencies by default. Workspace and volume data
-  are optional and unchecked initially; volumes are individually selectable.
-- Selecting workspace means everything, including ignored and untracked files.
-  No Git filtering and no file-exclusion picker. Helper text: "Includes
-  everything in the workspace, including ignored and untracked files. Leave
-  unchecked if you'll transfer the project separately, for example through Git."
-- Workspace restores require a new or empty destination. Setup-only imports
-  may target an existing checkout.
-- Extra host bind mounts travel as declarations only, never copied directory
-  contents. Import remaps their paths or explicitly disables them. Export
-  names the reconnection requirements.
-- "Include encrypted credentials" is checked by default. Ciphertexts and
-  file-local wrapped identities retain their existing passphrases; export
-  doesn't decrypt. Unchecking removes encrypted rows and identity blocks from
-  exported copies and lists omitted names. Source config files are untouched.
-- No archive encryption feature in v1. The operator protects the resulting
-  ordinary file. The credential checkbox is not a claim that arbitrary
-  workspace or volume data contains no secrets.
+## Rulings
 
-Everything below is a proposed implementation/design choice. Reviewers should
-challenge it where it fails a ruling, doctrine, or proportionality.
+Carried from the earlier grill (2026-09-08, morning):
 
-## Current mechanisms and the gaps this design must close
+- [RULING] Export requires a completely still box: no container for this
+  project in any state, no other box holding a selected shared volume, and
+  the stillness holds for the whole copy. Refusals print the actual engine's
+  attach and stop commands (reportRunning in develop.go already has the
+  shape [CODE]). byre never stops a session on the user's behalf.
+- [RULING] No built image and no ephemeral container filesystem travel,
+  not even as options. Import rebuilds through byre; unpinned build inputs
+  may resolve to different versions.
+- [RULING] Workspace inclusion means EVERYTHING, ignored and untracked files
+  included, no exclusion picker. Helper text: "Includes everything in the
+  workspace, including ignored and untracked files. Leave unchecked if you'll
+  transfer the project separately, for example through Git."
+- [RULING] An archive carrying a workspace imports only into a new or empty
+  directory. An archive without one may target an existing checkout. No
+  merge, no overwrite.
+- [RULING] Extra host bind mounts travel as declarations only. Import remaps
+  or disables each; export names the reconnection needs.
+- [RULING] "Include encrypted credentials" is checked by default.
+- [RULING] No archive encryption. The user protects the file with their own
+  tools. Selected workspace and volume contents may contain plaintext
+  secrets and the credential checkbox makes no claim about them.
 
-`internal/config/config.go:resolveWithCatalog` folds CoreLayer, machine default,
-template, named layers and project; a merged Config alone loses closure state,
-layer attribution and file-local credential identities. `CascadeFiles` is a
-best-effort display walk and cannot be used as a complete export inventory.
-`internal/config/cascadefile.go` and commands/credentials.go already distinguish
-raw files from effective values. Preserve that distinction.
+From today's grill:
 
-The package catalog resolves bundled, installed and local entries, including
-local-over-installed shadowing. `packages.Pack` requires publication metadata
-and cannot simply package every local working skill. Bundled bytes must still
-come from the destination executable's embed.FS (ADR 0029).
+- [RULING] Shared (machine-scoped) volumes may be selected. A selected one
+  lands on the destination as a PROJECT-scoped volume, private to the
+  imported project. Export warns loudly. There is no import-time option to
+  reuse the destination's shared volume instead; the choice is made at
+  export.
+- [RULING] The narrowing mechanism is re-declaration: the imported config
+  carries the skill's volume under the same logical name with
+  `scope = "project"`, and resolution treats that as a scope override.
+- [RULING] Skills, the agent and templates are references, exactly like
+  external mounts: "these must exist on the destination". Nothing is
+  carried or installed. The archive carries `[sources]` hints. An installed
+  package at a different digest is used as is, with a warning naming both
+  digests.
+- [RULING] The source cascade is flattened into ONE project config. The
+  destination's own machine default applies underneath it.
+- [RULING] Export prompts for the contributing files' passphrases and
+  re-encrypts every credential row into the one flattened file. If one
+  passphrase opened every contributing file, the flattened file's identity
+  is wrapped under that same passphrase. If more than one was needed,
+  export asks for a fresh passphrase for the flattened file.
+- [RULING] Unchecked credentials: the rows are dropped, the archive lists
+  the omitted key names, the import review shows them with the remedies.
+- [RULING] Scope is the preset, the selected state volumes and the optional
+  workspace; the agent's state volume is checked by default, other state
+  volumes offered unchecked, caches never offered.
+- [RULING] Volume restoration is deferred to the first develop through the
+  seed path. Import is host-side only.
+- [RULING] An existing destination volume of the same name is kept; the
+  review says the archived copy is dropped.
+- [RULING] Stillness rides a machine-wide barrier lock: shared by develop
+  through container Create, exclusive by export. The disclosed residual is
+  a hand-driven engine command.
+- [RULING] Linked worktrees and separate git dirs are refused at export.
+  Import carries no `.git/worktrees/` registrations (skipped at unpack;
+  no git runs on the host) and says so.
+- [RULING] Export is an editor-style form with mirroring flags. Import is
+  the preset review extended with the archive sections and one confirm.
+- [RULING] One gzip tar, manifest first, nested payload tars, SHA-256 per
+  payload in the manifest. Glossary term: "box archive".
+- [RULING] Verbs: `byre preset export`, `byre export`, `byre import`.
+- [RULING] One shipping unit, one review loop, one engine-side run.
+- [RULING] Only the SOURCE engine must answer the stillness check; another
+  installed engine that cannot be queried is skipped and disclosed (ADR
+  0004's shape), because a volume belongs to one engine.
+- [RULING] `engine` and `worktree_base` are stripped from the flattened
+  preset; the manifest records the source engine as information only.
+- [RULING] Entries an archive cannot carry (sockets, devices, FIFOs) are
+  listed and the export asks "These files can't be archived and will be
+  skipped. Continue anyway?"; the skipped paths go into the manifest and
+  the import review. The flag form needs an explicit skip flag or fails
+  with the same list.
 
-Project identity derives from the destination canonical path; linked worktrees
-share their main project's config and volumes. `rehome` has same-engine volume
-copy and rollback, but neither a cross-machine archive nor durable multi-resource
-import recovery. Existing setup locks are per-project and released before start;
-the created container is the ownership marker. They do not coordinate a machine
-volume shared by different projects. An initial `ps` check is insufficient.
+## What already exists [CODE]
 
-## CLI and interactive flow
+- A preset is a complete config proposal with a `[sources]` table.
+  `byre preset apply` (internal/commands/preset.go) refuses off a TTY,
+  resolves the extends chain, reports every missing package with the exact
+  install command from the hint, chauffeurs each install under its own
+  consent, then renders the composed box's grant review with a diff against
+  the current store and writes the project config on confirm. A declined
+  install leaves the reference in place and develop fails loudly later.
+- ADR 0057's preset bridge: a preset may carry a `[credentials]` block and
+  encrypted rows; the review annotates any credential change and any
+  identity change at warning weight. So a flattened preset with credentials
+  lands through existing, reviewed machinery.
+- Credential unlock (ADR 0057): a plan line names the contributing files
+  and counts, then one prompt per still-locked file, root-most first, each
+  passphrase tried against every remaining identity, three attempts.
+  Identity unwrap runs before any lock is taken. The recipient is cleartext,
+  so encrypting to it needs no passphrase.
+- Volume naming (internal/commands/naming.go): project scope gives
+  `byre-<id>-<name>`, machine scope gives `byre-machine-u<uid>-<name>`,
+  chosen by `Volume.MachineScoped()` alone. Resolution (resolve.go
+  `combine`) appends config volumes to skill volumes and `validate` refuses
+  a duplicate logical name with an attributed message. The grant review
+  (`skillGrantSummary`) walks the SKILL's own declarations, and runParams
+  emits one mount per resolved volume.
+- The cascade fold (config.go `mergeStep`, mergestate.go): scalars are
+  non-empty-wins, maps (`env`, `env_from_host`, `files`, `sources`) union
+  with the later layer winning per key, string lists union, identity lists
+  replace by identity. `!name` closures for egress, MCP and Claude Skills
+  are NOT in the merged Config: they live in `Merged.Closures` and are
+  subtracted after the skill union (ADR 0030). A removal marker acts only
+  from the layer that carries it (`mergeStrings` collects removals from
+  the overlay alone): a destination-default `!skill` is spent folding the
+  default over CoreLayer and cannot remove a skill the later preset names,
+  and a later plain egress entry reopens a base closure.
+- Preset reads are bounded by `packages.MaxManifestBytes` (256 KiB), the
+  package-manifest cap; config files by `config.MaxConfigBytes` (1 MiB).
+  ADR 0057 allows one file credential of 256 KiB plaintext.
+- Preset inspect and the passive drift probe read through the same
+  256 KiB reader as apply.
+- The applied-preset marker records the preset's content hash and source
+  string only; there is no per-package receipt. Installed packages carry
+  their source URI and digest in the install record; bundled packages have
+  a display digest and no `[sources]` entry (a hint requires a URI).
+- Seeding (internal/commands/seed.go, runner SeedVolume/SeedFiles/
+  SeedLiteral): one-time, fresh volumes only, an existing volume is left
+  alone, a failed seed removes the volume it created. The copy runs in the
+  project's BUILT image as root inside the box's userns and finishes with a
+  recursive chown to the box identity. Host-path seeds are containment-
+  checked against the workspace (runparams.go checkContainedHostSource).
+- The setup lock (internal/lock): one `flock` per project store with an
+  inode requeue so a lock file deleted under a waiter cannot split the
+  lock. Exclusive only today. Noisy waiter line. Develop prompts for
+  credentials BEFORE taking it and takes it twice (resolution, then the
+  prepare-and-Create span). The editor's volume Clear removes a volume
+  under the project lock alone.
+- Nested-archive hygiene already exists in internal/deliver/tar.go: no
+  `..`, no empty components, anchored writes (ADR 0040); its name splitter
+  STRIPS a leading `/` rather than refusing, and its consumer handles
+  directories and regular files only and never validates a hardlink's
+  Linkname.
+- `SeedLiteral` already streams content into a seed container over stdin
+  with no host bind. `resolveWithCatalog` folds CoreLayer first.
+- ADR 0057 states byre writes decrypted plaintext to exactly one place and
+  never into a host file or volume content; the security-model page says
+  the same.
+- Sessions are found by engine labels (ADR 0004); reportRunning prints
+  attach/shell/stop remedies for the engine in use.
+- `byre reset` wipes all of a project's named volumes after a prompt and
+  refuses while a session runs.
 
-Proposed commands: `byre export [--output FILE]`, `byre import FILE [--directory DIR]`.
-Both use terminal forms by default. Export starts from the current project;
-import chooses a destination (current directory prefilled where appropriate).
-There is no automatic build, launch, Git checkout, source deletion or archive
-upload. Successful import ends with the destination and `byre develop` remedy.
+## The archive [PROPOSED]
 
-Export presents setup, encrypted-credential toggle, workspace toggle, and each
-resolved volume with logical name, target, role, scope, engine, existence and
-estimated bytes. Missing volumes say "not created" and have no data to select;
-orphan engine volumes not declared by the current setup are not silently swept
-in. A declared volume present on multiple engines requires selecting its source
-engine explicitly. The source is the current persisted setup, not a previous
-launch record or an old command-line agent override.
+One gzip-compressed tar, conventional name `<project>.byre.tar.gz`. Entry
+order is fixed and import refuses any other:
 
-The final preview names included contents, omitted credential keys, volume data
-that may contain logins, external mounts and other host references, raw blocks
-that cannot be translated, and source/destination compatibility requirements.
-Sizes are estimates before capture and actual byte counts afterwards. Review
-terminal strings as data using existing escaping; never print credential values.
+1. `manifest.toml`: `format = 1`, the writing byre version, the project
+   name, the source engine (information only), a `preset` row (byte count,
+   sha256), one `[[volumes]]` row per included volume (logical name, role,
+   original scope, target, byte count, sha256), one `[[volumes_unselected]]`
+   row per offered shared volume that was NOT selected (so the import
+   review can say which destination shared volume the box will bind), a
+   `workspace` row (present or absent, byte count, sha256, the list of
+   skipped unarchivable paths), a `[credentials]` summary (`included`, the
+   omitted key names when false, and when true whether the passphrase is
+   the source's or a fresh one), and one `[[packages]]` provenance row per
+   referenced package (id, kind, origin: bundled/installed/local, digest
+   where one exists) separate from the `[sources]` acquisition hints.
+2. `byre.preset`: the flattened config (next section).
+3. `volumes/<name>.tar`: one plain tar per included volume, the volume root
+   as the tar root.
+4. `workspace.tar`: the workspace directory as a plain tar, when selected.
 
-No secret classifiers or per-agent token parsers. Ordinary config literals,
-comments, local package files, workspace files and volumes may contain plaintext.
-Selecting encrypted credentials preserves only the existing inline scheme; it
-neither selects agent-login volumes nor encrypts those other contents.
+Writing: every payload is produced into a private staging directory and
+hashed there FIRST; only then is the gzip tar written manifest-first.
+Nothing is hashed on the fly into a stream whose manifest is already out.
+The volume `tar` runs inside the box with `--numeric-owner` and the host
+unpack DISCARDS ownership (the seed chown is the ownership step); logical
+volume names must match `volumeNameRe`.
 
-For automation, propose `--non-interactive` with explicit output/destination,
-`--workspace`, repeatable `--volume NAME@ENGINE`, `--without-encrypted-credentials`
-and import path mappings; absent data flags mean no data. Import also requires
-`--accept` for its displayed plan. Missing choices fail with an actionable list,
-not a terminal prompt. Exact flag spelling can follow the Cobra conventions.
-`--inspect` validates an archive and prints its inventory without adoption.
-Cancellation before applying leaves final outputs/destination state unchanged.
+Import reads the manifest first (bounded like a config file), refuses an
+unknown `format` naming the required byre version, then verifies every
+payload's length and sha256, the preset included, before writing anything
+to its final place. One read budget: the outer decompressed stream is
+bounded by the manifest's declared totals plus a stated tar-overhead
+allowance, the entry count is bounded, staged bytes are checked
+cumulatively against those totals and against free disk before staging,
+and duplicate, extra or missing outer entries and nonzero trailing data
+are refused. Digests detect corruption, not authorship, and the review
+says so. One nested-tar validator serves both payload kinds: `Name` AND
+`Linkname` relative, a leading `/` refused (not stripped), no `..`, no
+empty components, regular files, directories and symlinks-as-links only,
+hardlinks only to an already-materialised regular entry of the same
+payload, anything else refused BY NAME, sizes bounded by the manifest.
+Every archive-derived string a review or error prints (names, paths,
+digests, skipped entries) goes through the existing terminal-data funnels
+(P4). The published archive and its staging are mode 0600; the archive is
+a plaintext artefact of whatever the user selected. Host writes go through hostopen's anchored
+operations, no-follow parents, into private staging; nothing is published
+under its final name until the whole archive has been verified. The
+archive is never written into a selected input tree, including through a
+symlink alias. Preset reads for `byre.preset`, in apply and in import, use
+`config.MaxConfigBytes`, not the package-manifest cap.
 
-## Capturing configuration without changing other projects
+## The flattened preset [PROPOSED]
 
-Propose a project-owned captured setup, rather than copying source default.config
-over the recipient's default or flattening several credential identities into one.
-This is the largest addition and should be judged explicitly by reviewers.
+`byre preset export [--output PATH] [--no-credentials]` writes the project's
+effective cascade as one preset. It is the config half of `byre export` and
+usable alone: a bare preset is a better thing to send someone than an
+archive containing only one. Alone it is config-only: a plain
+`byre preset apply` of it does no mount or seed remapping, so the sender's
+host paths land as written and the apply review's mount lines are where
+the recipient sees them; the full `byre import` is the flow with remap.
 
-The imported `byre.config` remains the editable project layer in the host store.
-A new project-only `setup = "captured"` selector names a fixed sibling `setup/`
-directory, never an archive-supplied absolute path. Absence means today's live
-machine setup. `setup/` holds a captured default, named-layer chain, non-bundled
-package entries and supporting inputs. For a captured project, resolution is:
+Flattening is the cascade merge byre already runs at every load
+(default ⊕ template ⊕ chain ⊕ project) started from the EMPTY config, not
+CoreLayer (which the destination folds in itself), with these differences
+from a merged Config:
 
-    current CoreLayer + captured default + selected template
-      + captured named layers + editable project config
+- Removal markers for identity lists and string lists are applied and
+  gone. Surviving CLOSURES (`Merged.Closures`: egress, MCP, Claude Skills,
+  contexts) are RE-EMITTED as `!name` entries in the corresponding list of
+  the preset, because they are subtracted after the skill union and a
+  merged Config alone does not carry them (ADR 0030). `extends` is gone.
+  `template` is gone, its contribution folded in, so no template package
+  needs to exist on the destination. Skills and agent stay as references.
+- Picker and onboarding-only state is stripped exactly as resolution strips
+  it today. `engine` and `worktree_base` are stripped too [RULING]: they
+  describe the sender's machine, not the box.
+- Export preflights the rendered preset against `config.MaxConfigBytes`
+  and refuses naming the rows that push it over; it never emits a file
+  apply cannot read.
+- Raw blocks travel verbatim in their resolved order. They are not parsed.
+- Every credential row from every contributing file travels re-encrypted
+  to ONE `[credentials]` block. Export runs an export-specific variant of
+  the standard unlock: same plan line, one prompt per still-locked file,
+  root-most first, reuse tried, but it RETAINS the one passphrase string
+  when a single passphrase opened every file (nil once a second one was
+  needed), since the existing unlock returns identities only. Rows are
+  decrypted in memory and encrypted to the flattened file's recipient.
+  Passphrase rule per the ruling: one passphrase opened everything, the
+  flattened identity is wrapped under it; otherwise export prompts for a
+  fresh passphrase (entered twice) and the manifest says so. In stdin
+  mode the fresh passphrase is one extra trailing line, read only when a
+  fresh wrap is needed. The passphrase is never logged.
+- Consistency: the prompts run before any lock, as develop's do. After the
+  barrier, export takes the project setup lock, re-reads every
+  contributing file, and refuses if the raw bytes, the credential rows or
+  identities, or the resolved volume set differ from what the form
+  reviewed and the plan line counted (ADR 0057's consented-set bound; the
+  same refresh develop runs at resolve.go). Decrypts only rows the plan
+  counted.
+- `--no-credentials`: no prompts, no ciphertext, no `[credentials]` block.
+  Every omitted credential key is written as an explicit EMPTY row
+  (`KEY = ""`), the idiomatic disable: it carries no value and wins over
+  any destination-default row under the same key (env_from_host merges as
+  a map, later wins per key). An empty row does not say WHY it is empty
+  (the review's host-env lines skip empty sources), so the import review
+  takes the omitted names from the manifest, and a standalone apply lists
+  empty env_from_host keys as "disabled" without claiming they were
+  credentials. No live config key carries the omitted list.
+- `[sources]`: for every referenced package the merged cascade's
+  `[sources]` entry where one exists, else the installed package's
+  recorded source URI and digest. Only https hints travel; a path or file
+  hint is treated as no hint, and a package with no hint travels as a bare
+  reference the review names as "not carried; the source had it as a
+  local install". There is no preset receipt to read.
+- Package provenance rides the manifest's `[[packages]]` rows (bundled
+  display digest, installed digest, or local/unknown). Import compares
+  each with the destination catalog and warns naming both digests
+  [RULING]; where the source row has no digest, or the kind/origin differs
+  (a local source package resolved by a bundled or installed destination
+  one, ADR 0055's shadow class), the review prints "version cannot be
+  verified; the grants below are the destination package's" instead.
+  `missingRefs` stays acquisition-only.
 
-Source CoreLayer and referenced bundled package digests are compatibility facts,
-not executable archive payloads. Import compares them with the current binary.
-If they differ, show the actual resulting setup/grant differences and require an
-explicit choice to adopt those differences or use a matching byre release.
-Never claim an old bundled package is running while using newer embedded bytes.
-Unsupported archive/schema versions fail with the required version named.
-Unpinned apt/install scripts/base tags may change upon rebuilding; no exact
-software-version or offline-build guarantee is made.
+The destination's own machine default sits underneath the imported preset
+with ordinary cascade semantics, which are NOT changed by this design: a
+non-empty scalar in the preset wins, an EMPTY one inherits the
+destination's; maps union with the preset winning per key; lists union; a
+destination-default removal marker is spent at its own layer and cannot
+remove a name the preset carries; the default's surviving CLOSURES still
+subtract after the skill union unless the preset reopens them. So the
+default can add (empty scalars, missing map keys, list entries, raw-block
+lines) and can subtract only through closures the preset does not reopen.
+The apply review diffs file bytes and prints the composed grant summary;
+that does not show this delta. Import therefore adds one IMPORT-SPECIFIC
+review section computed by the SAME resolver, never an approximation:
+resolve the source-effective config (CoreLayer ⊕ preset) and the
+destination-effective proposal (CoreLayer ⊕ destination default ⊕
+preset), and list every difference at review weight: additions, closures
+that subtract, empty-scalar inheritance, map fallbacks, raw-block
+additions. That section is the evidence the round-trip claim rests on.
 
-The captured default is a distinct default slot, preserving template ordering.
-Layers retain individual files, comments, removal markers and credentials;
-`extends` still means one named parent within this project's captured root.
-The physical files stay live and editable, but edits affect this project only.
-The copied default omits onboarding-only preferences; those are not box setup.
-Every exported file is independently parsed/validated through a strict inventory
-before calculating the effective setup. Preserve dormant declarations too, and
-show that encrypted-credential inclusion covers all copied config files.
+## Volumes [PROPOSED]
 
-Captured non-bundled package entries win for their exact IDs within this project;
-they never write to or replace machine installs. New explicitly selected IDs may
-resolve through the ordinary machine catalog. Preserve original local/installed
-ordering for raw blocks; provenance displays "captured from local/installed",
-not a false publication version. Installed packages retain validated manifests
-and payloads. Local packages are copied as local source trees with independently
-hashed bytes, without inventing publishing metadata. Bundled IDs never get an
-archive overlay. A missing captured entry errors rather than falling back to a
-different machine version of that same ID. Removal markers and inactive package
-references retain their strings; only the actually needed package closure is
-guaranteed present, with missing inactive references disclosed in inventory.
+Export offers each resolved state-role volume that exists on the source
+engine, the agent's own state volume checked by default. Cache-role volumes
+are not offered; the preview says caches are rebuilt. A shared volume row
+carries the warning: "Shared with every project on this machine. The
+archive takes a copy; on the destination it becomes private to the imported
+project. Login tokens inside keep working here too." An offered shared
+volume left UNCHECKED is also named in the preview and the import review:
+"not carried; on the destination the box binds that machine's shared
+<name> volume (its login, or a fresh empty one)", because the skill's
+machine-scope declaration stays in force when nothing narrows it.
 
-The selector must be wired through config loading, strict raw cascade walking,
-credential writes/unlock, skill resolution, proposed-config/preset review,
-status and the config editor. Do not fix only develop's resolver. Import mode
-is a flow-owned TUI row ("Setup: captured; managed by import"). The editor can
-open the captured default/layers in this project's context; file-local writers
-take their physical file's locks. Global layer management still means global.
-Users may hand-edit the selector; absent payload is a named error, never fallback.
-An ordinary preset cannot activate a captured setup unless that project already
-has the complete reviewed payload. Re-export traverses the captured root.
-Rehome/forget carry or remove it as project-owned state. No other project's
-layer or package index changes. `--self-edit` can affect this project's captured
-setup, which does not propagate to other projects; disclose this scope extension.
+Streaming out: for each selected volume, a short-lived container from the
+project's built image (the same image seeding uses), the volume mounted
+read-only at one path, no network, no host bind, entrypoint overridden to
+`tar --numeric-owner` on stdout, fixed argv, into staging (hashed there,
+see The archive). If the built image is absent on the source (never
+built, or pruned; volumes outlive images) the export refuses naming
+`byre rebuild` as the remedy.
 
-## Supporting inputs and destination bindings
+Narrowing on import: for each shared volume in the archive, the flattened
+preset gains a `[[volumes]]` entry equal to the skill's declaration in
+EVERY field (name, target, role, seed, sharing) except `scope = "project"`.
+Resolution: `combine` is the dedupe point and yields ONE resolved volume,
+the config entry, tagged with provenance "narrows skill X's machine
+volume"; the attributed collision scan exempts an exact narrowing and
+refuses any other difference as today; widening (project to machine) is
+refused. Every downstream reader (runParams, the grant review's volume
+lines, status, volume admin, the exclusive-volume check) reads the
+resolved set, so no surface reports the skill's machine scope for a
+narrowed volume (P4); the inventory of readers to convert includes
+`skillGrantSummary`, `managedPathShadows` in status, and the editor's
+`volumeRows`/`volumeLine`, all of which walk skill declarations directly
+today. Import runs combine plus validate over the destination-effective
+proposal BEFORE confirm, so a destination skill whose declaration differs
+from the copied one (another digest with another target or sharing) is
+refused at the review naming the skill, the field and both digests, not
+at first develop with a stage waiting. Editor (P0/P6): the skill's
+read-only volume row gains one action, "Narrow to this project", which
+copies the skill struct field for field (empty `sharing` stays empty);
+the skill row then reads as "narrowed by this project", not as an active
+machine volume; the resulting local row carries a visible marker naming
+the skill it narrows, and deleting the row is the off-switch. A narrowed
+volume is project state and `byre reset` sweeps it; the shared-volume
+warning says so. Hand-editing
+the same entry is the defended right, not the interface. ADR 0017 gets
+the amendment; the doctrine index line changes with it.
 
-Inventory typed build inputs using existing field-specific readers: `[files]`,
-context `file`, Claude Skill paths and package payloads. Copy only inputs the
-resolved setup actually consumes, preserving their source-to-input association.
-Build input files are separate from optional workspace transfer, so a setup-only
-export can still include files it needs to build. This is not permission to
-follow every string that resembles a path or copy a directory mounted at runtime.
+Restoration on import: each archived volume the review did not mark as
+existing is STAGED as its verified payload tar, unmodified, under the
+project store's staged-seeds directory, addressed by logical volume name,
+never by a path from the archive. Beside it import writes ONE stage
+receipt per project (a small TOML, outside the config): per volume the
+logical name, the destination scope, the engine and physical name the
+restore is for, the archive identity, the payload's byte count and
+sha256, and a state. Status and develop read the RECEIPT, not directory
+presence, so "never staged" and "staged and vanished" are distinguishable.
+The written config gains nothing for it; the seed step learns a
+store-owned seed source kind beside host-path and literal.
 
-For workspace-relative `[files]`, imported captured-input metadata resolves a
-logical source to a private captured copy when no workspace source is present.
-If workspace contents are restored, the real workspace remains the live input.
-For setup-only import into an existing checkout, compare any corresponding live
-input with the captured bytes; differing input is an explicit import choice,
-never silent precedence. Persist that choice (live workspace or captured copy)
-in the setup input map and show it in the config editor's Files screen. The
-input map resolves only inventoried inputs, not arbitrary paths. Host context
-and Claude Skill paths are rewritten in staged config copies to the selected
-destination's private captured input paths. Preserve file-local credentials
-while splicing only these reviewed fields with tomldoc.
+At first develop, after the image builds, per state volume in the
+resolved set: if the receipt names it, develop opens the payload no-follow
+through hostopen (a symlink or non-file is refused), verifies length and
+sha256 against the receipt, and only if the receipt's physical name is
+still absent on the engine develop is running on, creates the volume and
+STREAMS the tar into a seed container over stdin, as SeedLiteral already
+does, so no directory under `~/.byre` is ever bind-mounted (the store is
+the self-edit rw root, and a daemon resolves a pathname). The existing
+recursive chown finishes it. The ordinary config/skill seed is suppressed
+for that first fill; `seed_prefs` runs AFTER, so a restored agent volume
+is left alone. If the volume already exists at develop, the stage is
+DISCARDED with one banner line ("<name> already exists here; the archived
+copy was dropped"), matching the ruling. A receipt entry whose volume is
+no longer in the resolved set, or whose recorded physical name no longer
+matches the resolved one (the user un-narrowed before first develop), is
+disclosed and discarded, never retargeted: a stage is only ever written to
+the exact volume it was recorded for. A payload missing or failing its
+digest where the receipt records one is an error, never "start empty".
+The banner names each volume filled from the import; a consumed stage and
+its receipt entry are removed after the seed succeeds; a failed seed rolls
+the volume back and keeps both for the retry. A later import atomically
+replaces the receipt and removes stages it no longer lists. `forget`
+sweeps stages with the store; `reset` leaves them (import-owned pending
+state, not box state); `byre import --discard-staged` removes them on
+request; status counts them: "N volumes waiting to be restored on first
+develop".
 
-Runtime host mounts are never followed. Import requires an explicit binding or
-disable decision even if the original absolute path happens to exist. Keep
-target, mode and disabled status visible. `env:`/`git:`/`tz:` sources retain their
-semantics but fetch nothing on export; preview names what the destination must
-provide. No new required-env mechanism is introduced. Seed host paths and
-`seed_prefs` are destination actions: explicitly confirm/remap or disable them,
-and do not run seeding during import. Worktree-base paths get the same review.
+Existing volume on the destination (setup-only import into an existing
+project): the review lists it as "exists here; the archived copy is
+dropped" [RULING]; there is no remedy sentence: dropped means dropped.
+The import-time existence check is best-effort on the engine the next
+develop would pick (detection from the destination default, since
+`engine` is stripped): reachable, the review states exists/absent per
+volume; unreachable, the review says so and the stage is still written.
+The AUTHORITATIVE keep-or-fill is the first develop's exists check on the
+engine it actually runs on (below).
 
-Raw Dockerfile blocks, raw run_args, MCP command argv and arbitrary script text
-are not parsed or rewritten. Show their verbatim escaped text, disclose external
-dependencies may remain, and let the user edit or deliberately retain them.
-No promise that arbitrary trusted code is portable. Import grants are recomputed
-from the actual adapted config and skills using the existing review semantics,
-including raw-block, managed-path and credential annotations; no archive claim
-or launch record can stand in for this computation.
+Every host-path-bearing key in the flattened preset gets the same
+remap-or-disable review line as external mounts, since the path is the
+sender's: `[[mounts]].host`, volume `seed.host`, `[[context]].file` and
+`[[claude_skills]].path` (the latter two are read and staged at build
+time from the host, so a coincidental destination path would bake a
+stranger's file into the box). Their off-switches are the existing
+`disabled`/`!name` spellings.
 
-## Stillness and capture protocol
+Copied login state: ADR 0007 forbids byre copying HOST credentials into a
+box; it says nothing about a user deliberately carrying a box's own login
+state to another box. The ADR is amended to say so, and the residual
+(two valid token holders, no revocation, re-login if both are used) goes on
+the security-model page in the same unit.
 
-Propose one advisory lifecycle transfer barrier per byre home, shared for ordinary
-engine-mutating setup operations and exclusive during export/import copying.
-Extend internal/lock with shared locking using its inode-identity checks; lock
-files live in the host store, never the workspace. Lock order is barrier first,
-then project setup locks in lexical order, then contributing config-file locks
-in lexical order. No human prompt or credential unwrap while holding it.
+## Stillness [PROPOSED]
 
-Develop holds the shared barrier through preparation and container Create, not
-through the interactive session. Worktree helpers, seed/volume helpers, rebuild,
-reset/forget/rehome, volume clear and import all participate before any relevant
-mutation. The container created before releasing a shared lock blocks an export
-even before it starts. Export must not dissolve that ownership marker and then
-claim the concurrent launch was safe. Refuse all non-removed project markers;
-running/paused/restarting boxes and other containers referencing selected volumes
-also block. Report created/stopped markers accurately, with state-appropriate
-cleanup guidance; for live sessions print actual engine attach and stop commands.
+One barrier lock file under the byre home, `transfer.lock`. `lock` gains a
+shared mode (`LOCK_SH` in place of `LOCK_EX`; the inode requeue is
+unchanged), exposed as one outermost helper every engine-mutating path
+calls BEFORE its project or file locks. Develop takes it shared AFTER its
+credential and onboarding prompts, around its second setup-lock span
+(prepare through container Create), and releases it before the
+interactive session. The inventory of other callers: worktree helpers,
+seeding, rebuild, reset, forget, rehome, import, and the editor's volume
+Clear. Reset and forget keep their fail-fast shape against the barrier.
+Export takes it exclusive after the choices are confirmed and the
+passphrases are entered, and holds it until the archive is published.
+Lock order is barrier first, then the project setup lock, then any
+config-file lock. No prompt runs under it.
 
-Export first collects choices and reads the candidate setup. After confirmation,
-take the exclusive barrier and project/file locks, enumerate all accessible
-installed engines through pinned hostexec, and inspect actual container mounts
-for each selected physical volume (including unlabelled holders). Scan all of
-this project's worktrees regardless of volume selection. A declined engine,
-failed query or unreadable mount inventory is uncertainty and refuses capture.
-Multiple source-engine volumes are captured as distinct resources; logical
-mapping cannot silently collapse two selected sources onto one imported volume.
+Under the barrier export checks the SOURCE engine once: no container
+labelled for this project in any state (ps -a by label, ADR 0004), and for
+each selected shared volume no container mounting that physical name. A
+hit prints reportRunning's remedies for that engine and the export stops.
+The source engine unreachable is a refusal (nothing to stream from). Any
+OTHER installed engine that cannot be queried is skipped and disclosed
+[RULING]: "podman could not be queried; a box on it cannot be holding
+these docker volumes".
 
-Under these locks, strictly re-read/compare configuration and dependencies with
-the reviewed plan. Any change requires a new preview. Copy host inputs and volume
-data to private staging, verifying source identities and changes during reads.
-Copy volume bytes through short-lived, fixed-argv engine helpers with one selected
-volume mounted read-only, no network, no host filesystem bind and no agent entry
-point. Helpers are identifiable transfer helpers, not byre sessions. The exclusive
-barrier blocks even new projects attempting machine-volume mounts. Cancellation
-terminates helpers before releasing the barrier. Hold through final source
-verification and successful archive publication; don't release after the first
-volume merely because the remaining copy is slow.
+Waiters behind an exclusive holder print "waiting for a byre export to
+finish (ctrl-C to stop waiting)"; an export waiting behind shared holders
+prints "waiting for another byre setup to finish" (a flock cannot count
+its holders). The barrier is cooperative: a hand-run
+`docker start` or `docker run -v <name>` does not take it. That residual is
+named in the export preview and on the security page. It is the same
+residual a check-and-refuse design would have, so the barrier strictly
+narrows the window.
 
-This coordinates cooperating byre commands under that home. Direct engine users,
-other BYRE_HOME instances, older byre binaries and ordinary host editors do not
-obey the lock. Inspect such existing container holders, disclose that external
-writers must remain stopped, and detect observed source changes; do not claim a
-general filesystem snapshot or a daemon-wide write fence. No host filesystem
-snapshot service or daemon is proposed. Reviewers should judge whether that
-honest boundary satisfies "completely still" under byre's operator threat model.
+## Workspace [PROPOSED]
 
-## Volumes, ownership and agent logins
+Selected means the project directory as bytes: regular files, directories,
+symlinks copied as links, hardlinks resolved within the payload, modes and
+mtimes kept, ownership not recorded (destination files belong to the
+importer). Entries no archive can carry (sockets, device nodes, FIFOs) are
+listed and the export asks "These files can't be archived and will be
+skipped. Continue anyway?" [RULING]; the skipped paths are recorded in the
+manifest and printed in the import review. The flag form needs
+`--skip-unarchivable` or fails with the same list.
 
-An archive records logical volume name, role, target, source scope/engine and
-source in-container UID/GID, never treating the source physical name as a restore
-destination. Import derives project identity and physical names at the destination.
-No source volume is deleted or invalidated: export is a copy, not `rehome`.
+Git: the source must be a main checkout whose `.git` is a directory; a
+linked worktree (`.git` file) or a separate git dir is refused with
+"export from the main checkout, or export without the workspace". `.git`
+travels as is EXCEPT `.git/worktrees/`: on a directory the import just
+created every registration is stale by construction, so import skips
+those entries at unpack and the summary says "worktree registrations from
+the source were not carried" [RULING]. No git runs on the host (ADR 0009
+stands without an exception); `git worktree add` recreates the directory.
 
-Project-volume restores require fresh physical destinations. No merging into,
-clearing or overwriting existing data. If a destination already exists, explicitly
-keep its contents (skip the archived payload) or abort and choose another project.
-Declaring a volume without selecting its data leaves normal later creation/seed
-behavior, as reviewed. Never restore orphan volumes just because their names match.
+Import target: with a workspace payload, `--directory DIR` (default cwd)
+must not exist or must be an empty directory; the review names it. A
+target that is a linked worktree is refused. If the target does not exist,
+import creates it. Unpacking goes into the target itself under an anchored
+directory root (never a rename over a pre-existing directory, which would
+strand a shell whose cwd it is); on failure import removes what it wrote
+under that root and leaves the directory as it found it (absent, or
+empty). Project identity is derived from the created directory, so the
+store is written LAST; a failure after the store write rolls the store
+back. Without a workspace payload, the target may be an existing checkout
+and the import writes only the project store.
 
-For selected machine-scoped data, propose a project-scoped restored copy by
-default, with the scope change prominently reviewed; this leaves other projects
-untouched. Alternatively the user may choose an existing destination shared
-volume and discard the archived payload. Import never overwrites or populates
-the destination machine-scoped namespace. Scope overrides ride normal volume
-identity merging; prove companion skills still work with that target/mapping.
-This adaptation is a review target, not a ratified change to ADR 0017.
+## The two verbs [PROPOSED]
 
-Opaque agent state commonly mixes history and rotating OAuth tokens. Copying it
-creates independent token holders: export cannot promise both source and imported
-login continue to work. Show this when selecting state data, advise re-login if
-both copies will be used, and do not implement agent-specific scrubbing or automatic
-source revocation. ADR 0007 needs an explicit amendment for deliberate selected
-volume transfer; this does not resurrect host credential seeding. Reviewers must
-judge whether disclosure is sufficient for this deliberate import/export operation.
+`byre export [--output PATH] [--workspace] [--no-credentials]
+             [--volume NAME]... [--no-volume NAME]... [--skip-unarchivable]`
+Interactive: an editor-style form (configui) with the output path field
+(default: `<project>.byre.tar.gz` in the project's PARENT directory, so
+the default is never inside a selected workspace; a path inside the
+selected tree, including through a symlink alias, is refused), the
+credentials checkbox, the workspace checkbox with its helper text, one
+checkbox per offered state volume with the shared-volume warning inline,
+and a live preview panel:
+what travels, estimated bytes, omitted credential names, unselected shared
+volumes and what they bind on the destination, external mounts to
+reconnect, referenced packages, unarchivable entries, the stillness
+requirement. Confirm leads to the passphrase prompts, then the barrier, the
+engine check, the stream, the publication, and a summary with actual bytes
+and the file name. Flags mirror checkboxes exactly: `--output` alone never
+skips the form; any checkbox flag skips it, and unspecified checkboxes keep
+the form defaults (credentials on, agent state volume on, others off).
+`--volume` adds a volume, `--no-volume` removes one (the way to leave the
+agent's out); unknown or duplicate names are refused against the offered
+set. Off a TTY the form cannot render, so export is flags-only with the
+form defaults, and requires `--no-credentials` or the existing stdin
+passphrase mode (`--credentials=stdin`, one line per still-locked file, a
+final line for the fresh passphrase when one is needed). Cancel leaves no
+file.
 
-Restore via a fixed networkless helper into fresh volume roots. Map entries owned
-by the source box's normal dev UID/GID to the destination box's normal dev IDs
-(including rootless Podman's container IDs); retain other numeric owners where
-representable and report/refuse unrepresentable ownership. No blanket recursive
-chown of every owner and no runtime launcher repair. Unknown ownership under raw
-`--user`/`--userns` is an explicit numeric mapping choice or a refusal, not guessed.
-Cross-engine, cross-UID and rootless restore are gated probes before build ratification.
-Cross-architecture binaries/databases inside selected data may need regeneration;
-volumes are byte transfer, not application migration.
+`byre import FILE [--directory DIR]`
+Interactive, TTY-only like preset apply, which it extends. Sections in
+order: archive identity (format, writer version, project name, source
+engine as information); packages (each missing one with its install
+command, chauffeured as apply does; each present-at-other-digest one with
+the two digests); credentials (included and which passphrase to use, or
+the omitted names with `byre credentials set` and `--credentials=skip` as
+remedies, and "version cannot be verified" where it applies); volumes
+(each carried one, its landing scope, "will be restored on first develop",
+"exists here; archived copy dropped", or "could not check; decided at
+first develop"; each uncarried shared one and the destination volume it
+binds; the narrowing validation result); workspace (target
+directory, empty requirement, the skipped-entries list, the worktree
+registrations note); host paths (mounts, seeds, context files, Claude
+Skill paths, each with a remap or disable choice); the import-specific
+effective delta (what the destination default adds or closes); a line
+that archive authorship is not proven and that carried workspace and
+volume bytes may be agent-authored and shape the next agent; then the
+composed grant review with the credential annotations and one confirm.
+Import needs the destination engine only for the best-effort existence
+lines; unreachable is disclosed, not refused. After confirm:
+unpack the workspace, stage the seeds, write the store config last, print
+`byre develop` as the next step. Declining writes no store config, stages
+nothing and leaves the target as found; packages chauffeured before the
+review stay installed, as apply already does.
 
-## Archive, workspace and import publication
+`byre export --inspect FILE` is not proposed; `tar tzf` and the manifest
+serve, and the import review is the inspection.
 
-Propose a versioned uncompressed tar container with a bounded TOML index first,
-setup payloads, optional workspace payload and separately indexed volume streams.
-Use Go archive handling for host-side validation, not `tar -xf` on the host.
-Each object has expected length, kind, mode and SHA-256; reject duplicate names,
-unknown required features, truncated bodies, unexpected entries and digest
-mismatches. Digests detect corruption, not sender authenticity. Limits apply to
-metadata and parser allocations; large file data streams. Inventory carries total
-bytes/entries for explicit capacity checks, not a tiny arbitrary workspace cap.
+## Doctrine
 
-Archive names never choose a host path. Host writes use hostopen/os.Root-anchored
-operations, no-follow parent traversal, fresh staging and no-clobber publication.
-Hardlinks must reference an inventoried regular entry inside the same payload;
-symlinks are copied as links, never traversed to gather external data or extract
-later entries. Preserve their text, flag absolute/outside-workspace link targets
-as external dependencies and create links after regular entries. No `.gitignore`,
-hidden-file or nested-repository filtering. Do not run repo Git, hooks or filters
-on the host during export/import. No `.byre-devlog` special case: everything in
-the selected workspace travels, including its ignored files.
+- New ADR: box archive (this design), citing P1, P4, P5, P6.
+- 0017 amended: config may narrow a skill-declared volume from machine to
+  project scope by exact re-declaration; never widen.
+- 0007 amended: deliberate transfer of a box's own login state through a
+  box archive is the user's choice, disclosed; host credential seeding
+  stays forbidden.
+- 0057: the flattened preset is a new writer of `[credentials]` blocks;
+  file locality holds (one file, one block); export is a reader of every
+  contributing file's block under the standard unlock, with the under-lock
+  re-read as develop's. AMENDED: the "plaintext in exactly one place"
+  clause gains the box archive as a user-selected copy of workspace and
+  volume bytes that may contain plaintext, credential rows staying
+  encrypted; the security page carries it.
+- 0055: a source package the destination cannot verify is announced as
+  such.
+- 0004 and 0054: the barrier is an addition to session discovery, not a
+  replacement; exclusive-volume checks are unchanged.
+- 0009: linked worktrees refused at export; `.git/worktrees/` skipped at
+  unpack; no host git, no exception to the ADR.
+- 0030: closures are re-emitted as markers in the flattened preset, so the
+  imported allowlist equals the source's.
+- 0047: import spawns no host tool over the imported tree.
+- 0029: no package bytes travel; hints only.
+- 0040: archive-supplied names never choose a host path; nested payloads
+  ride the deliver tar rules.
+- 0051: digests are integrity, not authenticity, and the design says so.
+- P0: the export form is the editor surface; narrowing is authorable
+  from the skill row ("Narrow to this project") and marked on the local
+  row; staged seeds are flow-owned state named in status ("N volumes
+  waiting to be restored on first develop").
+- Security-model page: copied login state, the cooperative barrier,
+  imported executable workspace content, the archive as an unencrypted
+  0600 plaintext artefact, and archive authorship being unproven.
+- GLOSSARY: "box archive"; "narrowing" under volumes.
 
-Normal directories, regular files, symlinks and hardlinks are supported. Preserve
-file bytes, executable bits, ordinary modes and timestamps; destination workspace
-files belong to the importing user. Privileged mode bits, ACLs/xattrs, device
-nodes, FIFOs and live sockets require an explicit representability decision:
-v1 refuses an unsupported entry with its path rather than silently skipping it
-or publishing a supposedly complete workspace. Probe macOS case/normalization
-collisions and sparse-file behavior; preflight refuses lossy target mappings.
+## Evidence before done
 
-A linked Git worktree contains an external `.git` pointer. Proposed v1 boundary:
-workspace-bearing export requires the main checkout with self-contained Git
-metadata; linked worktrees/external gitdirs get a clear refusal suggesting the
-main checkout or setup-only export. Do not archive a dangling pointer and call it
-portable, nor silently include sibling checkouts. This is a material scope limit
-for reviewers to assess; portable worktree reconstruction could replace it if
-there is a small contained implementation. Detect ordinary repos with external
-alternates/gitdirs too using bounded metadata reads, not mutating host Git.
-
-Output must not reside in any selected input tree (including an alias through a
-symlink); reject rather than silently exclude the output from "everything".
-Temporary archive files are private (0600), outside selected inputs, on the
-output filesystem for atomic no-clobber publication. Disk-full/interruption
-never publishes a partial archive under the requested final name.
-
-Import validates the whole archive in private staging before adoption, then shows
-the resulting grants and all mappings. Archive file contents cannot run scripts
-or package hooks during validation/review. Setup-only import may replace an
-enrolled destination's config only after a full before/after review and stillness
-checks. Captured payloads are private to the destination project; existing volumes
-and unrelated project/machine state remain untouched.
-
-After approval, take the barrier/project locks, recheck target identity, emptiness,
-config bytes and selected mappings, and make a small import journal in the host
-store. Record only roots/engine IDs created by this attempt and inode identities;
-no secrets, arbitrary cleanup paths or shell commands. Restore fresh volumes and
-stage setup/workspace, then publish configuration last. A pending-import marker
-blocks launch and conflicting lifecycle changes until completion or recovery;
-the next import can finish or remove only that attempt's provably owned artifacts.
-Existing setup is backed up privately for rollback on a setup-only replacement.
-Never delete an existing empty destination directory on failure, nor user-created
-files after an interrupted operation. Recovery must refuse uncertainty rather
-than recursively deleting a path from an untrusted journal. Journals and partial
-archives are not returned as successes. Existing source files are never modified.
-No restored launch records, applied-preset receipts, engine labels or setup locks:
-those describe the old machine/session and are regenerated by normal operations.
-
-## Implementation boundaries, doctrine and validation
-
-Production work is not authorized by this draft. Once ratified, keep command
-handlers as Streams adapters. Put inventory/format/planning in a focused transfer
-domain package, engine streaming behind runner, captured resolution in config/
-packages and anchored I/O in hostopen. Reuse tomldoc, grant review and terminal
-form patterns; no generic transaction framework, secret scanner, image transport,
-background service or dependency-package publisher.
-
-ADRs needing explicit extensions: 0003/0018/0035 for project-owned captured
-resolution and editor attribution; 0029/0041/0055 for private captured catalog
-precedence without bundled overrides; 0004/0054 for the transfer barrier and
-holder checks; 0007/0017 for selected login-data copies and shared-volume mapping;
-0008/0032 for restore-time ownership mapping, not launch-time chown; 0040 for
-archive hostile-path handling; 0057 for export omission and preserving file-local
-identities. 0009 limits workspace worktree handling. 0014 still forbids image/
-Dockerfile replacement; 0044, 0047, 0050, 0052, 0053 and P0-P6 apply to saves,
-host execution, claims, reviews, records and reachable editor surfaces. Raw blocks
-retain P3 behavior. Export never grants host authority based on a launch record.
-
-Required evidence before calling the implementation done:
-
-- Round-trip effective config including contradictory destination defaults,
-  egress closures, canonical aliases, multiple credential identities, disabled
-  mounts, tri-state fields, raw block order, local package shadows and re-export.
-  Removing encrypted credentials must not expose a lower-layer fallback value
-  or retain an identity/ciphertext in the copied setup by accident. If a lower
-  noncredential row would reappear, add an explicit empty off-switch in the
-  exported winning layer and disclose the omitted key; never a fake value.
-- Real terminal export/import flows: defaults and labels above, all workspace
-  files, omitted credential inventory, scope/mount mappings, cancel/back,
-  destination collision, review and success/failure summaries; no secret echo.
-- Concurrency regressions: created-before-start marker, sibling across engines,
-  new unrelated project using selected machine volume, volume clear/reset/rehome,
-  snapshot config changes, helper failure/cancellation and uncertain engine.
-- Hostile archive regressions: traversal and symlink-parent/link races, hardlink
-  escapes, duplicate names, control-character names, forged journal, source/output
-  overlap, changed destination, size/digest mismatch, metadata exhaustion,
-  disk-full, interruption at each publish boundary and source preservation.
-- Sacrificial integration: Docker and rootless Podman volume streaming, metadata
-  and ownership round-trip at differing IDs, actual mount-holder enumeration,
-  no helper network, fresh-volume cleanup, crash recovery and terminal walk.
-  Cross-platform archive fixtures plus macOS probes for destination names/modes.
-- No full container image comparison as proof of rebuild reproducibility: build
-  inputs can fetch changing upstream software. Verify captured setup and selected
-  data instead. Format/compatibility refusal and builtin-change review are tested.
-
-Build-gating probes: shared-lock participation and create/start race; captured
-resolution through both editor and credentials; rootless restore ownership and
-metadata; machine-scope-to-project-scope companion behavior. Record measured
-results before turning their assumptions into guarantees. The draft contains no
-claim that those probes have already run.
-
-## Questions for the independent reviewers
-
-Give a build-readiness verdict. Identify material defects or disproportionate
-machinery, supported by code/ADR references. In particular: is captured setup the
-smallest complete answer to source isolation and credential file locality; can
-the barrier achieve the agreed stillness with its named residual; are machine
-volume mapping, copied agent logins and the workspace/worktree limit acceptable
-or do they need Pete's ruling? Separate required product decisions from technical
-details the implementer should settle. Do not turn every detail into a question
-for Pete. Propose smaller concrete replacements where rejecting machinery.
+- Round trip of the effective config through export and apply, including
+  removal markers, surviving egress/MCP/Claude Skill closures (the ENFORCED
+  allowlist compared on both sides), a template, a chain, tri-state
+  fields, raw block order, engine and worktree_base stripped, and three
+  credential identities under one and under two passphrases.
+- `--no-credentials` never leaves a ciphertext or an identity, and every
+  omitted key is an explicit empty row that beats a destination-default
+  row under the same key.
+- The import delta names a destination-default surviving egress closure,
+  an empty-scalar inheritance and a map fallback, and shows that a
+  destination-default `!skill` does NOT remove a preset-named skill.
+- Preset size preflight refuses at export; apply, inspect and the passive
+  drift probe all read a 1 MiB preset (one bound, three readers).
+- Export under the lock refuses when a contributing file changed between
+  the form and the stream.
+- Every host-path key (mount, seed, context file, Claude Skill path) gets
+  its remap line; unremapped ones are disabled, never read from the
+  destination path.
+- Narrowing: exact match on every field but scope narrows, any field
+  difference (sharing included) is the attributed collision, widening
+  refused, one resolved volume, one mount, grant review and status show
+  project scope with the skill named, the editor action writes it.
+- Seeding from a staged payload: receipt drives it, payload verified
+  before use, streamed over stdin with no store bind, stage beats config
+  seed, seed_prefs runs after, fresh volume filled and chowned, stage and
+  receipt entry removed, failed seed rolls back and keeps both, missing or
+  mismatched payload is an error, existing-at-develop discards with a
+  line, un-narrowed or unresolved entry discards with a line, never
+  retargets, later import replaces the receipt, forget sweeps, reset
+  keeps, `--discard-staged` removes, status counts, payload symlink
+  refused.
+- Unselected shared volume named with its destination binding.
+- Barrier: develop holds shared through Create and only after its
+  prompts; volume Clear participates; export exclusive blocks a concurrent
+  develop with the waiting line; a container created before the export's
+  check refuses it; a shared volume mounted by another project's box
+  refuses it with the engine remedies; an unreachable non-source engine
+  is disclosed, an unreachable source engine refuses.
+- Archive: payloads hashed before the manifest is written, manifest-first
+  order, format refusal, digest mismatch refusal for every payload
+  including the preset, hostile Name and Linkname in nested tars, leading
+  `/` refused, special entry refusal at unpack, ownership discarded, read
+  budget (manifest bound, decompressed bound, entry count, cumulative
+  bytes, trailing data, duplicates), 0600 modes, escaped archive strings,
+  output inside the input tree refused, default output in the parent,
+  path-source hints dropped, provenance rows compared and unverifiable
+  ones announced.
+- Workspace: unarchivable entries listed and confirmed, empty-target
+  requirement, created target removed on failure, store written last and
+  rolled back, linked worktree refusal at export and as target,
+  `.git/worktrees/` absent after unpack, flag grammar (`--output` alone
+  keeps the form, `--no-volume`, non-TTY passphrase mode).
+- Gated (byre-inttest, Docker and rootless Podman): stream out and restore
+  of a real state volume, narrowing of a companion skill's machine volume,
+  and the TUI walk of the export form and the import review.
