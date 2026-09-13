@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Builds require Go 1.27.1 or newer.** CI and release builds use the
+  patched toolchain declared in `go.mod`; the site build follows it too.
+
 - **Credentials have an explicit multiline editor.** The Env screen refuses
   pasted newlines in its masked single-line field instead of flattening them.
   Enter no longer saves the credential value form. `^e` opens an in-memory

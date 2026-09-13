@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - "go.mod"
       - "site/**"
       - ".github/workflows/site.yml"
   workflow_dispatch:
@@ -25,11 +26,9 @@ jobs:
       # Actions SHA-pinned (version noted alongside), same posture as
       # ci.yml/release.yml; Dependabot keeps the pins fresh.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Explicit Go version: hugo v0.164.0 needs go >= 1.26, which is
-      # newer than byre's own go.mod -- this job builds the site, not byre.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.x"
+          go-version-file: go.mod
       # go install verifies the module against the public checksum
       # database -- no third-party action, no hand-pinned tarball hash.
       - name: install hugo

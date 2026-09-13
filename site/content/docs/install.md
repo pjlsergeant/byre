@@ -6,7 +6,7 @@ description: go install, curl, Homebrew, or build from source
 
 **⚠️ byre is a young project. I spend all day, every day inside it, for literally all of my work. All the major planned features have been added, so the interface should be pretty stable at this point.**
 
-byre is a single Go binary. With Go 1.25+ on your machine:
+byre is a single Go binary. With Go 1.27.1+ on your machine:
 
 ```sh
 go install github.com/pjlsergeant/byre/cmd/byre@latest
