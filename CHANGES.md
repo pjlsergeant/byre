@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## v1.11.0 — 2026-09-13
 
 - **Builds require Go 1.27.1 or newer.** CI and release builds use the
   patched toolchain declared in `go.mod`; the site build follows it too.
