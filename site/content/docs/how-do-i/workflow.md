@@ -7,7 +7,7 @@ description: parallel agents, review loops, delivering files, remote SSH, comple
 ## Run parallel agents on the same repo?
 
 tldr: `byre worktree <branch>` -- a linked git worktree plus a second
-boxed session in it, one command.
+boxed session in it.
 
 <!-- demo-placeholder: worktree-parallel-session -->
 
@@ -20,9 +20,7 @@ worktrees live, shared state, blast radius -- are on the
 
 ## Set up two agents in a review loop?
 
-tldr: keep one agent as `agent`, enable a second agent's skill as a
-ride-along -- byre's own box runs Claude with codex beside it as the
-independent reviewer.
+tldr: keep one agent as `agent`, enable a second agent's skill too -- byre's developed in a box that runs Claude with codex beside it as an independent reviewer.
 
 More than one agent skill can be enabled in a box; the config's `agent`
 key decides which one launches, and the rest install their CLI and keep
@@ -76,8 +74,7 @@ piping from stdin:
 
 ## Get files back out of the box?
 
-tldr: `byre grab <box-path>` -- the file lands in your current
-directory, never overwriting anything.
+tldr: `byre grab <box-path>`.
 
 The agent made you something -- a PDF, a chart, a patch --
 `byre grab out/report.pdf` copies it out and prints where it landed.

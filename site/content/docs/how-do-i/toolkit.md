@@ -7,7 +7,7 @@ description: writing and sharing skills, templates, layers, presets
 ## Write my own skill?
 
 tldr: `byre skill init <name>`, edit its `skill.toml`, enable it in a
-box.
+box. I'd recommend asking an agent to do it for you
 
 A skill can install packages, ship files into the image, declare
 volumes and network endpoints, and carry agent context --
@@ -46,7 +46,7 @@ catalog label says so), then `pack -o` the manifest inside it.
 
 tldr: `byre layer new torn`, put the shared config in it
 (`byre config --layer torn`), then `extends = "torn"` in each project
-(the **Extends** section of `byre config`).
+(the **Extends** section of the config TUI).
 
 A **named layer** is a config file any project (or another layer --
 chains work) pulls in with `extends`; it slots between the template and

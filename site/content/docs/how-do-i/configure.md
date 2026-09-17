@@ -100,7 +100,7 @@ it.
 
 ## Expose a port to see the box's dev server?
 
-tldr: the **Ports** section of `byre config`.
+tldr: the **Ports** section of the TUI (`byre config`).
 
 Published ports bind `127.0.0.1` by default -- your browser reaches the
 box, your LAN doesn't; opening a wider interface is an explicit,
@@ -135,7 +135,7 @@ launch machinery; to set one deliberately use
 ## Use my API key instead of an agent login?
 
 tldr: pass it at runtime -- `[env_from_host]` with
-`OPENAI_API_KEY = "env:OPENAI_API_KEY"` -- never `[env]`, which bakes
+`OPENAI_API_KEY = "env:OPENAI_API_KEY"` -- don't use `[env]`, which bakes
 it into the image.
 
 The agents' own login flows are still the better default: the
@@ -161,7 +161,7 @@ images, status -- reads identically across engines.
 
 ## Mount other folders from the host?
 
-tldr: the **Mounts** section of `byre config`.
+tldr: the **Mounts** section of the TUI (`byre config`).
 
 Each mount is a host path, an in-box path, and a read-only/read-write
 choice (read-only is the default); every mount shows up in `byre
@@ -169,9 +169,7 @@ status` under "Host mounts".
 
 ## Bring my dotfiles and shell setup into every box?
 
-tldr: mount them read-only under **Mounts** in `byre config --global`
--- the box's target mirrors your home path, so they land where the
-agent looks.
+tldr: don't do this. But if you have to, you can mount them in the TUI as read-only.
 
 A home-relative host path (`~/.config/starship.toml`) suggests the
 matching `/home/dev/...` target automatically. Symlinks into a dotfiles
@@ -185,9 +183,7 @@ file has to live in the project.
 
 ## Give my agent standing instructions in every box?
 
-tldr: `byre context add house-rules` opens your $EDITOR -- `--global`
-for every box on the machine, plain for just this project; also the
-**Instructions** section of `byre config`.
+tldr: in the TUI see the **Instructions** section:
 
 Write the prose, save, quit -- the git-commit shape. The scope is the
 layer you write: `--global` reaches every box on the machine, a named
