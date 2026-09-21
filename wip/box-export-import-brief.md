@@ -1,8 +1,8 @@
 # Box export / import: implementation brief
 
 Hand-off for the implementer. The design is `wip/box-export-import.md`
-(v4, commit 61a21ed9); this page says how to read it and what the repo
-expects of you. Delete both files when the feature ships (wip/README.md).
+(v5); this page says how to read it and what the repo expects of you.
+Delete both files when the feature ships (wip/README.md).
 
 ## Read, in this order
 
@@ -27,16 +27,13 @@ expects of you. Delete both files when the feature ships (wip/README.md).
 4. `docs/adr/README.md`, then the ADRs the design's Doctrine section
    names: 0004, 0007, 0009, 0017, 0029, 0030, 0040, 0051, 0054, 0055,
    0057, and principles P0 to P6. You write one new ADR (box archive) and
-   amend 0007, 0017 and 0057 as the design states; each amendment changes
-   its README one-liner in the same commit
-   (`TestDoctrineIndexCoversCorpus`).
-5. `docs/GLOSSARY.md`: binding vocabulary. Add "box archive" and
-   "narrowing" (under volumes) there before using the words in
-   user-facing strings.
+   amend 0007 and 0057 as the design states; each amendment changes its
+   README one-liner in the same commit (`TestDoctrineIndexCoversCorpus`).
+5. `docs/GLOSSARY.md`: binding vocabulary. Add "box archive" there before
+   using the word in user-facing strings.
 6. `docs/BYRE-DEVELOPMENT.md` for `byre-inttest`, the sacrificial engine
-   runner. The volume stream, the narrowing of a companion skill's
-   machine volume, the receipt-driven seed and the export form all need
-   the gated run before "done".
+   runner. The volume stream, the receipt-driven seed and the export form
+   all need the gated run before "done".
 
 ## The code the design reuses
 
@@ -48,13 +45,8 @@ All named in the design's "What already exists" section:
 - `internal/config/config.go` (mergeStep, mergeStrings, mergeMap,
   Volume/Seed, validateVolumeShape) and `mergestate.go` (Closures: the
   flattener re-emits them as `!name` entries)
-- `internal/commands/resolve.go` (combine is the narrowing dedupe point;
-  attributedCollisions exempts an exact narrowing)
-- `internal/commands/review.go` (skillGrantSummary walks skill
-  declarations today; it must read the resolved set)
-- `internal/commands/status.go` (managedPathShadows, same conversion)
-- `internal/configui/effective.go`, `listitem.go`, `volumes.go` (skill
-  volume rows; the "Narrow to this project" action)
+- `internal/commands/resolve.go` (combine and validate over the resolved
+  volume set)
 - `internal/commands/seed.go` and `internal/runner/runner.go`
   (SeedLiteral streams over stdin: the shape for the receipt-driven
   restore; no bind of `~/.byre`, ever)
@@ -64,8 +56,8 @@ All named in the design's "What already exists" section:
 - `internal/commands/credentials.go` (unlock; export needs a variant
   that retains the single successful passphrase)
 - `internal/deliver/tar.go` (nested-tar name rules; note its splitter
-  strips a leading `/` where you must refuse, and it never validates
-  Linkname)
+  strips a leading `/` where you must refuse; it never validates
+  Linkname, which the symlink ruling makes the correct behaviour)
 - `internal/hostopen` (anchored writes, PublishFile with an explicit
   0600)
 
@@ -78,8 +70,8 @@ handlers stay Streams adapters in `internal/commands`; cobra wiring in
 
 - **One unit, one branch.** `byre preset export`, `byre export`,
   `byre import`, the export form, the seed source kind, the barrier, the
-  narrowing rule, the new ADR and the three amendments, the GLOSSARY and
-  security-model page entries all land together. No "preset export
+  new ADR and the two amendments, the GLOSSARY and security-model page
+  entries all land together. No "preset export
   first" split; Pete ruled it.
 - **Commit per coherent piece** on that branch (lock mode + tests;
   flattener + tests; ...). No commit trailers of any kind.
@@ -107,8 +99,6 @@ git. The recurring classes, in case a reviewer raises them again:
 - A removal marker acts only from the layer that carries it. A
   destination-default `!skill` cannot remove a preset-named skill; the
   import delta must not claim otherwise.
-- Narrowing touches every reader of skill volumes, not just validation;
-  otherwise the grant review and status lie about scope.
 - A stage without a receipt cannot tell "never staged" from "vanished".
   The receipt is the source of truth; never retarget a stage.
 - Export must re-read under the project lock after the barrier, as
