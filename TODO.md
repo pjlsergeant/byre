@@ -68,8 +68,11 @@ the rationale lives.
 - [ ] (L) **Box export / import** (Pete, 2026-09-08): design and ship a portable
   box hand-off, with explicit inclusion rules for config/layers/packages,
   credentials, and persistent state rather than silently exporting either too
-  little to restore or machine-bound secrets. Design: `wip/box-export-import.md`
-  (v5: third three-reviewer round 2026-09-21, machine-scoped volumes cut, remaining findings being ruled on).
+  little to restore or machine-bound secrets. Design: `wip/backup-restore.md`
+  (restarted 2026-10-01 as `byre backup` / `byre restore`: config byte-for-byte,
+  agent volume plus `--volume`, restore pours volumes from the base image and
+  builds nothing; v5 export/import design retired, in git history; Pete to
+  ratify v1, then build).
 
 - [ ] (L) **SSH-agent-backed project credentials** (Pete, 2026-09-08): let a
   credentials identity be keyed to a specific key offered by the user's SSH
