@@ -1,6 +1,6 @@
 # byre backup / byre restore
 
-Status: v1 design, 2026-10-01, revised 2026-10-02 after seven reviewer
+Status: v1 design, 2026-10-01, revised 2026-10-02 after eight reviewer
 sign-off rounds (Codex, Grok, Z.AI; every verdict NOT READY so far, each
 round narrower than the last; findings in the review log). This replaces the box export/import design
 (v5, `wip/box-export-import.md`, deleted in commit a1edcc20; git history
@@ -15,7 +15,7 @@ Provenance: [RULING] = Pete's, settled, do not reopen to close a finding.
 [RULING 2026-10-01] = Pete's, given while working through the sign-off
 findings. [DESIGN CALL] = chosen by the designer to close a finding,
 flagged to Pete, overridable. [CODE] = verified against the tree on
-2026-10-02, after seven rounds of reviewer corrections. [REPRODUCED] = a tool
+2026-10-02, after eight rounds of reviewer corrections. [REPRODUCED] = a tool
 behaviour (GNU tar, coreutils, Go's archive/tar) a reviewer ran in a
 box, not a fact in this tree. [PROPOSED] = this
 design's mechanism. [VERIFY] = a claim about an engine the box cannot
@@ -71,10 +71,14 @@ backup is your own box coming back to you.
   restore with `byre credentials rekey`. Backup never decrypts anything.
   "Include credentials" is on by default. A config can legally hold
   encrypted rows with no `[credentials]` identity (a row copied without
-  its block; develop refuses it with a remedy) [CODE
-  credentialrow.go]: backup carries it as it is and the review states
-  that third case plainly. `--no-credentials` deletes the rows and the
-  block, a zero-row block included.
+  its block [CODE credentialrow.go]; develop refuses it with a remedy
+  when those rows are effective and credentials are requested, and not
+  when `[env]` shadows them or `--credentials=skip` is given [CODE
+  credentials.go]), or an identity block with no rows. Backup carries
+  the file as it is and the review states which of the four cases it
+  is: rows with identity, rows without identity, identity without rows,
+  none. `--no-credentials` deletes the rows and the block, a zero-row
+  block included.
 - [RULING] Layers (`extends`), templates, skills and the agent are
   references: they must exist on the destination. A layer is a plain
   file the user sends alongside the backup (ADR 0035's distribution
@@ -110,7 +114,13 @@ backup is your own box coming back to you.
   declares machine-scoped is not poured, because develop here would
   mount the machine volume and the poured project volume would be an
   orphan nobody reads; the review says so by name and the payload stays
-  in the file. Nothing the backup
+  in the file. A restored volume that is EMPTY (an empty source, or one
+  whose only entries were dropped specials) is populated at the first
+  develop from the box image's directory at its mount point, exactly as
+  a fresh volume is today (the generator relies on that copy-up for
+  ownership): the pour keeps helper-image bytes out, the session mount
+  behaves as it always has, and the review says so for an empty
+  payload. Nothing the backup
   carries waits for the first develop. A volume the config declares that
   the backup does not carry is handled by the first develop exactly as
   today (seeded or started empty).
@@ -214,7 +224,10 @@ backup is your own box coming back to you.
   directory path; a linked worktree is its main tree's project), so
   there is no lookup by name. Usage errors exit 2 (ADR 0022); refusals,
   the off-terminal restore refusal included, exit 1 as `preset apply`'s
-  does; declining a prompt exits 0, as apply's decline does.
+  does; declining the backup preview or the restore review exits 0, as
+  apply's decline does; declining an offered package install is not a
+  clean end, it is the reason the package is still missing, so restore
+  then stops as for any missing package, exit 1.
 - [RULING] Default output is `<folder>-<YYYY-MM-DD>.byre-backup.tar.gz`
   in the current directory, `<folder>` being the base name of the
   project's main directory (the canonical path, so a backup taken from a
@@ -244,8 +257,8 @@ backup is your own box coming back to you.
   `*-shared-auth` companion and this repo's inttest skill declare a
   machine-scoped identity volume under `/home/dev/.byre-identity/`. No
   bundled skill declares a cache-role volume (the node template does;
-  a skill may). Claude's memory, transcripts, Codex's sessions and
-  history all live in the project-scoped volume. Physical names: project
+  a skill may).  Claude's user memory and Codex's auth, sessions and config live in
+  those volumes, per the skills' own comments. Physical names: project
   `byre-<id>-<name>`, machine `byre-machine-u<uid>-<name>`
   (`scopedVolumeName`, naming.go, branching on `Volume.MachineScoped()`
   in config.go); names carry no engine component and volumes carry no
@@ -326,10 +339,10 @@ backup is your own box coming back to you.
 - Named layers live at `~/.byre/layers/<name>/layer.config`, under their
   own lock (layers.go), so a layer can change while a project's setup
   lock is held; a missing one fails every strict load naming the layer
-  and the path to create (layers.go:146), `status` included. The config
-  editor degrades instead: the volume screen is hidden when resolution
-  or `lifecycleEngines` fails (a declined engine is printed as the
-  reason), inheritance marks are dropped for a broken template or skill.
+  and the path to create (layers.go:146), `status` included. The config  editor degrades
+  instead: the volume screen is hidden when resolution or
+  `lifecycleEngines` fails (silently, except that a declined engine is
+  printed as the reason), inheritance marks are dropped for a broken template or skill.
 - Host paths at develop: a mount rides `--mount type=bind`, which the
   engine refuses when the source is missing (runparams.go:157 relies on
   it); a `[[context]]` file is read at bake and a missing one fails the
@@ -367,7 +380,8 @@ backup is your own box coming back to you.
   commands' never-refusing fallback (keep-id 1000 where supported, host
   numeric ids without keep-id otherwise). `imageTagCandidates` returns
   the identity's tag, the generic rootless tag on a rootless engine, the
-  host uid/gid tag always, and the legacy tag.
+  host uid/gid tag (deduplicated, so not always a distinct entry), and
+  the legacy tag.
 - The generated Dockerfile (gen.go): `FROM <base>` (default
   `debian:bookworm`), then the template's raw pre-block, then the
   constant core block whose `apt-get install` adds `gosu`. Nothing
@@ -431,7 +445,9 @@ backup is your own box coming back to you.
   `removeIn(dir, name)` (forget.go) is an anchored single-entry removal
   local to that command.
 - Session containers carry `byre.launch=<sha256 of the launch record>`
-  and the record lives in the store (ADR 0053, whose body and index line
+  when the record was written (a failed record write degrades to no
+  label and the launch continues, so discovery never relies on it) and
+  the record lives in the store (ADR 0053, whose body and index line
   both say "every container"); seed containers and the worktree helper
   (runner/worktree.go) carry nothing and write no record. ADR 0054's exclusive-volume scan
   reads live boxes' launch records.
@@ -440,8 +456,8 @@ backup is your own box coming back to you.
   refuses, and only regular files and directories written; links and
   specials are skipped by name. It is not a precedent for materialising
   links.
-- `version.String()` (internal/version; `Semver()` is the other export)
-  is the version string:
+- `version.String()` (internal/version; `Semver()` and the `Version`
+  variable are the other exports) is the version string:
   stamped tag, else build info, else `(devel)` plus the VCS revision
   when known, else the bare `(devel)`; never a faked release tag.
 - [REPRODUCED] GNU tar 1.34 stores a FIFO and exits 0; it omits a socket, prints
@@ -489,7 +505,7 @@ other:
    [config]
    bytes = 0
    sha256 = "..."
-   credentials = "rows"        # "rows" | "rows-no-identity" | "none"
+   credentials = "rows"        # "rows" | "rows-no-identity" | "identity-only" | "none"
    [[volumes]]
    name = ".claude"            # logical name, outer member volumes/.claude.tar
    bytes = 0
@@ -505,7 +521,8 @@ other:
    claude_skills = ["..."]
    seeds = ["..."]             # host seed paths
    engine = ""                 # the config's own key, "" when unset
-   base = ""                   # the source's effective base, "" when unset
+   base = "debian:bookworm"    # the source's effective base; never "", the
+                               # generator's default when the key is unset
    worktree_base = ""
    ```
 
@@ -535,9 +552,11 @@ other:
 Staging. Every payload is produced into a private staging directory
 (0700; payload files 0600) opened through an anchored root so no
 file-supplied name can choose a path, named per invocation so two verbs
-never share one: for backup `.byre-backup-<run id>/` under the output
-file's directory, for restore `~/.byre/staging/<run id>/` (created if
-absent, the way the store's bootstrap creates it). A crash that runs no
+never share one: `~/.byre/staging/<run id>/` for both verbs (created if
+absent, the way the store's bootstrap creates it), never under the
+output directory, which by default is the project tree the next box
+mounts; the outer file's temp lives beside the output path, as
+publish's own temp does. The disk check covers both filesystems. A crash that runs no
 cleanup leaves that directory, and it holds volume bytes, plaintext
 secrets included; a later backup or restore that finds a stale one of
 that shape names it and leaves it (security-model page). The disk check is on that filesystem and
@@ -589,7 +608,10 @@ restore, naming the volume and the entry. Rules:
   directory entry; an ancestor that is a symlink, a regular file or a
   hardlink refuses the payload, so no entry is ever written through a
   link or onto a file. An ancestor that does not appear at all is fine
-  (tar creates it).
+  (tar creates it), but a path that an earlier entry's implicit
+  parents created as a directory is a directory from then on: a later
+  entry naming that path as a symlink, regular file or hardlink refuses
+  the payload (the reverse-order variant of the rule above).
 - Kinds: regular files, directories, symlinks and hardlinks are carried.
   A symlink's `Linkname` is verbatim and never resolved. A hardlink's
   `Linkname` passes the `Name` grammar (the `./` prefix included) and
@@ -640,8 +662,12 @@ entrypoint overridden, `-u 0:0` in the identity's userns, no network, no
 host bind, no `run_args`, and with the tool environment pinned: `-e
 TAR_OPTIONS=` (empty) on capture, preflight and pour, so nothing the
 image's `ENV` carries can change what tar does. The volume is mounted
-at a per-run path (`/.byre-helper-<run id>`), so an image-declared
-`VOLUME` (which Docker turns into an anonymous mount and Podman into an
+at a per-run path, MNT = `/.byre-helper-<run id>`, the one value used
+by the mount, the capture's `-C`, the pour's `-C`, the chown and both
+preflights; both tar commands name their archive explicitly (`-f -`),
+because GNU tar otherwise reads the `TAPE` variable, which an image can
+set, and would silently archive or extract something else. An
+image-declared `VOLUME` (which Docker turns into an anonymous mount and Podman into an
 image volume) can never sit under or over it and hide or divert files;
 on Podman the helper also passes `--image-volume=ignore` [VERIFY]. The
 generator emits no `VOLUME` lines; a base or a skill's raw lines may.
@@ -662,9 +688,11 @@ beside it. Every path that mounts or mutates a project volume runs the
 `byre.helper=<project id>` query and refuses on a hit, each naming the
 leftover with its `rm -f` line: backup (step 4, every installed
 engine), restore (step 3 and again under the lock, destination engine),
-develop (under the setup lock where its cross-engine check runs, before
-seed and create, never on the pre-lock fast path, so a develop that
-arrived during a backup or restore still waits and then runs), reset
+develop (under the setup lock where its cross-engine check runs, but
+always on the engine it is about to use, whatever the engine record
+says; before seed and create; never on the pre-lock fast path, so a
+develop that arrived during a backup or restore still waits and then
+runs), reset
 and forget (every installed engine), rehome (both the old and the new
 id, every installed engine), and the config editor's volume Clear (its
 engine). 0054's scan reads launch records and cannot see a helper, so
@@ -745,8 +773,8 @@ with a base that has files at the mount path proves both.
 5. Still under the lock: apply `--no-credentials` to a copy if asked,
    write the copy to staging and hash it. For each carried volume, run a
    helper from the helper image, the volume mounted read-only with
-   copy-up disabled at one path, `TAR_OPTIONS=` cleared, `tar
-   --format=posix --numeric-owner -cf - -C /vol .` on stdout, into staging,
+   copy-up disabled at MNT, `TAR_OPTIONS=` cleared, `tar --format=posix
+   --numeric-owner -c -f - -C MNT .` on stdout, into staging,
    hashed there, headers inspected on the way through to record each
    payload's absolute and traversing symlink targets and its entry
    count. tar's stderr is captured and printed through the funnel in the
@@ -805,7 +833,9 @@ exits 1 saying so. The output path never holds a partial file.
    (`resolveIdentity`), the base image, the declared volumes, the
    enabled mounts. Query the destination engine for a leftover
    `byre.helper` container of this project and refuse on a hit with its
-   `rm -f` line. Join each carried logical name to this project's prefix
+   `rm -f` line; query it by project label too and refuse on any
+   container (a box can outlive a hand-deleted config, and a linked
+   worktree's box shares the id). Join each carried logical name to this project's prefix
    and check ownership in both directions, computed as if THIS project
    were not enrolled (`projectVolumes`' longest-id rule hands a disputed
    name to the longer id, so once this id has a store directory, on a
@@ -848,17 +878,18 @@ exits 1 saying so. The output path never holds a partial file.
    and the line that the file's authorship is not proven. One y/n.
 5. On confirm, in order, one critical section: pull the base image if
    absent and prove it by running the pour command itself (entrypoint
-   overridden, the complete helper command with `tar -x --no-same-owner
-   --delay-directory-restore` and the chown into a scratch directory, fed
-   a valid empty archive, after the GNU tar check; failure refuses with no project state written
+   overridden, the complete helper command with `tar -x -f -
+   --no-same-owner --delay-directory-restore -C` a scratch directory and
+   the chown of it, fed a valid empty archive, after the GNU tar check; failure refuses with no project state written
    and the pulled image left as any pull leaves it); bootstrap the
    store; take the project setup lock, waiting as develop does; under
    it, first `requireRecorded`
    (a forget that won the lock meanwhile is cancellation, not permission
    to write into an emptied store; no second bootstrap), then re-resolve
-   the set and refuse on any change to anything the review displayed
-   (engine, identity, base, declared volumes, requirements) ("changed
-   while you were reviewing; re-run byre restore"), re-check that the store still has no config,
+   the set, re-render the review text the user answered, and refuse if
+   it is not byte-identical (so a grant-only change in a layer, egress
+   or network posture say, refuses like a volume change) ("changed while
+   you were reviewing; re-run byre restore"), re-check that the store still has no config,
    that every create-set volume is still absent and every keep-set
    volume still present, that the ownership check above still passes in
    both directions, and that no `byre.helper` container for this project
@@ -869,9 +900,9 @@ exits 1 saying so. The output path never holds a partial file.
    entry point callable under a held lock; restore writes no `applied`
    marker, because no preset was applied); then for each create-set
    volume: create it and replay its rebuilt stream into a pour helper
-   (`SeedLiteral`'s shape taking a reader, copy-up disabled,
-   `TAR_OPTIONS=` cleared, `tar -x --no-same-owner
-   --delay-directory-restore`, then the recursive chown to this   machine's box identity; the run is synchronous, so the helper has
+   (`SeedLiteral`'s shape taking a reader, copy-up disabled,   `TAR_OPTIONS=` cleared, `tar -x -f - --no-same-owner
+   --delay-directory-restore -C MNT`, then the recursive chown of MNT to
+   this machine's box identity; the run is synchronous, so the helper has
    exited when the call returns). Release the lock after the last pour,
    so a develop that arrived meanwhile sees the config and every poured
    volume together.
@@ -940,9 +971,12 @@ installed during the review stays installed, as apply already has it.
 - 0008 and 0032: the pour and the capture are one-shot root-in-userns
   helpers with no host bind, the seeding shape, under `resolveIdentity`
   and `appendUserns` exactly as develop and seeding select them; the new
-  ADR names seeding as the precedent, and 0008 gets an amendment note
-  saying its ban is the session launcher's chown, not a one-shot
-  helper's, the standard 0007 is held to.
+  ADR names seeding as the precedent, and 0008 is amended to the 0007
+  standard: its title ("no runtime chown, no root at runtime") and its
+  consequence sentence ("nothing runs as root after PID 1") both gain
+  "in a session"; a new sentence names the one-shot helpers (seeding,
+  backup's capture, restore's pour) that run as root in the box's
+  userns with no host bind and exit before any session starts.
 - 0009: worktrees allowed at backup; restore refuses a linked worktree
   and runs no git.
 - 0013: a declared volume the backup does not carry is handled by the
@@ -1028,7 +1062,8 @@ installed during the review stays installed, as apply already has it.
   layer can change under its own lock during a copy; a crash byre cannot
   catch runs no cleanup and can leave a staging directory holding volume
   bytes; a same-named project volume on an engine restore did not pick
-  is not consulted.
+  is not consulted; a project enrolled after restore's ownership
+  re-check is outside it.
 - GLOSSARY: "backup" (the file and the verb pair).
 
 ## Evidence before done
@@ -1097,8 +1132,12 @@ Each arm asserts contents and surviving resources, not only the message.
   container, no staging, and no entry at the output path; the helper
   carries `byre.helper` plus a run id and not the project label, and
   its argv (fake runner) pins no network, no host bind, `-u 0:0`, the
-  identity's userns, the entrypoint override, `TAR_OPTIONS=` cleared,
-  read-only plus nocopy on the capture mount; a built image whose `ENV`
+  identity's userns, the entrypoint override,  `TAR_OPTIONS=` cleared, `-f -` on both tar commands, MNT as the mount
+  path and the `-C` argument of capture, pour, chown and preflights,
+  read-only plus nocopy on the capture mount; an image whose `ENV` sets
+  `TAPE` to another archive still yields the volume's bytes on capture
+  and the payload's on pour; sentinel files at `/vol` in the image never
+  enter a backup; a built image whose `ENV`
   sets `TAR_OPTIONS=--exclude=memory` or `--dereference` still yields a
   complete capture with the symlink intact;  a seed or migrate helper
   left running by a killed byre refuses the next backup, reset, forget,
@@ -1136,8 +1175,9 @@ Each arm asserts contents and surviving resources, not only the message.
   asserts nothing from it.
 - Nested-tar contract, each refused before any project state is written:
   leading `/`, `..` or `.` component, empty component, duplicate name
-  (with and without trailing slash), an entry under an earlier symlink,
-  an entry under an earlier regular file, a hardlink to a missing or
+  (with and without trailing slash),  an entry under an earlier symlink,
+  an entry under an earlier regular file, a symlink or file at a path an
+  earlier entry's implicit parents made a directory, a hardlink to a missing or
   non-regular or later target, a sparse entry, a socket header, a
   contiguous-file header, an unknown type flag, an entry count over the
   declared one. Accepted and proven: the `./` root header replayed (an
@@ -1171,8 +1211,13 @@ Each arm asserts contents and surviving resources, not only the message.
   error that is not a missing package stops restore before any prompt;
   a symlink at DIR refuses; a declined prompt exits 0; encrypted rows
   without an identity show the third credential line and the first
-  develop refuses as today; `--no-credentials` removes a zero-row
-  identity block;
+  develop refuses as today;  `--no-credentials` removes a zero-row
+  identity block, and such a block reads "identity-only" in the index
+  and the review; an orphan row shadowed by `[env]` is classified by
+  the file and develop still starts; declining an offered install stops
+  restore with exit 1 and the missing-package line; `references.base`
+  is `debian:bookworm` when the key is unset; declining the review pulls
+  nothing;
   the engine down refuses naming the engine; a declined destination
   engine refuses; rootless Podman without keep-id refuses as develop
   does; the review names the engine when `engine` is unset and states
@@ -1203,8 +1248,10 @@ Each arm asserts contents and surviving resources, not only the message.
   restored and is listed with the reason; one the destination declares
   cache is poured and noted; a keep-set volume is reported as not
   seeded; a helper appearing between the review and the lock refuses
-  with the re-run line; a layer edit that changes only a requirement
-  row refuses with the re-run line.
+  with the re-run line;  a layer edit that changes only a requirement
+  row, or only a grant (egress, network posture), refuses with the
+  re-run line; a session container on the destination engine refuses
+  restore.
 - Restore failure: a pour failing after one volume poured whole removes
   the failing volume and the config, keeps the first volume, prints the
   re-run line, and a plain `byre restore` then succeeds with the first
@@ -1233,7 +1280,9 @@ Each arm asserts contents and surviving resources, not only the message.
 - Gated (byre-inttest): Docker to rootless Podman and Podman to Docker,
   with a payload whose archived numeric owner is outside the
   destination's user namespace, a base image that has files at the
-  helper's mount path and a `VOLUME` declared under it, an empty volume,
+  helper's mount path and a `VOLUME` declared under it, an empty volume
+  (restored empty, then populated by the box image at the first develop
+  exactly as a fresh one is, on both engines),
   a setgid directory, a file with
   a sub-second mtime, a symlink and a hardlink: the restored tree
   equals the source's under the stated transformation (special bits
