@@ -481,6 +481,27 @@ for the first develop.
   may be missing or unconfigured has no good answer. Backup FROM a linked
   worktree stays allowed -- it is a backup of the project, named for the main
   directory.
+- **The target must be an empty directory or the clean root of a git
+  checkout**, and anything else refuses before the file is opened: "byre
+  restore expects an empty directory or the clean root of a git checkout.
+  <DIR> is neither: <reason>". Restore with no DIR takes the current
+  directory, and the field report is what that cost -- run from HOME, it made
+  the home directory the project and created six volumes under its id. Empty
+  means no entries at all, dotfiles counted (a directory restore itself just
+  created is empty by construction). A clean root means DIR IS the top level
+  of a working tree (`git -C DIR rev-parse --show-toplevel` resolving to DIR
+  by file identity, never by string) and `git -C DIR status --porcelain`
+  printing nothing; a subdirectory of a checkout is not a root, and the
+  refusal names the root it found. The git probes ride the standing host-git
+  shape (pinned resolver, 5s bound, capped output), and no git, a probe that
+  fails and a probe that times out all land where a dirty tree does: byre
+  cannot prove the tree clean, so it refuses and says that is why.
+  **`--allow-nonempty` is the switch** -- the refusal protects byre's own
+  guess about where the project is, and a refusal that protects a claim hands
+  over the switch (PRINCIPLES.md P1). With it restore proceeds and STATES what
+  it would have refused over, in the review above the "Names this machine must
+  satisfy" block and again in the summary ("restoring into <DIR>, which is not
+  empty (--allow-nonempty): <reason>").
 - **It creates DIR first**, before resolving the project's identity, because
   identity is computed from the real directory and `Canonicalize` falls back
   to the cleaned pathname for a path that does not exist -- an alias path
@@ -524,7 +545,10 @@ for the first develop.
 - **Restore is terminal-only**, like `byre preset apply`, which it extends.
   Its screen IS the apply review, plus three sections before the grant
   summary: "Names this machine must satisfy" (from the destination's resolved
-  set, each with what reads it and how it fails), "What the source saw" (the
+  set, each with what reads it and how it fails, and each MARKED "(missing on
+  this machine now)" when a degrading probe says the path is not there -- a
+  mark, not a gate: restore still refuses on none of them, and a probe that
+  could not answer marks nothing), "What the source saw" (the
   index's references table, printed as such), and "From the backup" (every
   volume in play by logical name, the credential state of the carried file,
   each payload's absolute and traversing symlink targets as agent-authored

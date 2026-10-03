@@ -194,7 +194,7 @@ target = "/home/dev/blank"
 	if rt.beforeRestore != nil {
 		rt.beforeRestore()
 	}
-	if err := Restore(rs, out, dstDir); err != nil {
+	if err := Restore(rs, out, dstDir, RestoreOptions{}); err != nil {
 		t.Fatalf("restore on %s: %v\n%s", rt.dst.Engine(), err, restoreLog.String())
 	}
 	t.Logf("restore review and summary:\n%s", restoreLog.String())

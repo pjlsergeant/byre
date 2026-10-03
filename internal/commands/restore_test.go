@@ -16,6 +16,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/backup"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
+	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/lock"
 	"github.com/pjlsergeant/byre/internal/project"
@@ -223,7 +224,7 @@ const claudeVolumeConfig = "[[volumes]]\nname = \".claude\"\nrole = \"state\"\nt
 
 func TestRestoreRefusesOffATerminal(t *testing.T) {
 	s, _, _ := testStreams("", false)
-	err := Restore(s, "/nope.byre-backup.tar.gz", t.TempDir())
+	err := Restore(s, "/nope.byre-backup.tar.gz", t.TempDir(), RestoreOptions{})
 	if err == nil || !strings.Contains(err.Error(), "interactive") {
 		t.Fatalf("off-terminal restore error = %v, want the interactive-only refusal", err)
 	}
@@ -1016,6 +1017,9 @@ func TestRestoreSummaryNamesAPresetInTheCheckout(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(fx.dir, PresetName), []byte("base = \"debian:bookworm\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// The preset makes the target non-empty and it is no git checkout, so this
+	// fixture rides the switch; the summary line it adds is pinned elsewhere.
+	fx.rr.allowNonempty = true
 	if err := fx.run(); err != nil {
 		t.Fatal(err)
 	}
@@ -1685,3 +1689,244 @@ func TestRestoreCancellationBeforeTheCommitLeavesNothing(t *testing.T) {
 type readerFunc func([]byte) (int, error)
 
 func (f readerFunc) Read(p []byte) (int, error) { return f(p) }
+
+// ------------------------------------------- where restore may be run at all
+
+// The rule: the target must be an empty directory or the clean root of a git
+// checkout. The field report is a `byre restore FILE` with no DIR, run from
+// HOME, which made the home directory the project.
+
+func TestRestoreProceedsInAnEmptyTarget(t *testing.T) {
+	f := &fakeRunner{}
+	fx := restoreHarness(t, f, restoreOpts{cfg: claudeVolumeConfig, in: "y\n"})
+	if err := fx.run(); err != nil {
+		t.Fatal(err)
+	}
+	if storeConfig(t, fx.paths) == "" {
+		t.Error("an empty target did not proceed to the config write")
+	}
+}
+
+// A directory restore itself just created is empty by construction, so the
+// no-DIR-into-a-fresh-path flow is unaffected by the rule.
+func TestRestoreTargetItCreatedIsEmpty(t *testing.T) {
+	t.Setenv("BYRE_HOME", t.TempDir())
+	target, created, err := restoreTarget(filepath.Join(t.TempDir(), "fresh"))
+	if err != nil || !created {
+		t.Fatalf("restoreTarget = %v, created=%v", err, created)
+	}
+	paths, err := project.Resolve(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reason, err := restoreTargetState(target, paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reason != "" {
+		t.Errorf("a directory restore just created was judged %q", reason)
+	}
+}
+
+func TestRestoreRefusesANonEmptyNonCheckoutBeforeReadingTheFile(t *testing.T) {
+	dir := t.TempDir()
+	// A dotfile counts: the field report's HOME was "empty" by every listing
+	// that hides them.
+	for _, name := range []string{".bash_history", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := &fakeRunner{}
+	fx := restoreHarness(t, f, restoreOpts{cfg: claudeVolumeConfig, in: "y\n", dir: dir})
+	err := fx.run()
+	if err == nil {
+		t.Fatal("restore accepted a directory that is neither empty nor a checkout")
+	}
+	for _, want := range []string{
+		"empty directory or the clean root of a git checkout",
+		"it holds 2 entries and is not a git checkout",
+		"--allow-nonempty",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want %q in it", err, want)
+		}
+	}
+	// The pin that the refusal lands before any reading: staging is created the
+	// moment restore opens the file, and its parent directory survives the
+	// run's own cleanup, so its ABSENCE means backup.NewStaging never ran.
+	if _, serr := os.Stat(filepath.Join(fx.paths.Home, backup.StagingDirName)); !os.IsNotExist(serr) {
+		t.Errorf("staging exists (%v): the file was read before the target was judged", serr)
+	}
+}
+
+func TestRestoreProceedsInACleanGitRoot(t *testing.T) {
+	repo := initRepo(t)
+	f := &fakeRunner{}
+	fx := restoreHarness(t, f, restoreOpts{cfg: claudeVolumeConfig, in: "y\n", dir: repo})
+	if err := fx.run(); err != nil {
+		t.Fatal(err)
+	}
+	if storeConfig(t, fx.paths) == "" {
+		t.Error("a clean git root did not proceed to the config write")
+	}
+}
+
+func TestRestoreRefusesADirtyGitRoot(t *testing.T) {
+	repo := initRepo(t)
+	if err := os.WriteFile(filepath.Join(repo, "scratch.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeRunner{}
+	fx := restoreHarness(t, f, restoreOpts{cfg: claudeVolumeConfig, in: "y\n", dir: repo})
+	err := fx.run()
+	if err == nil {
+		t.Fatal("restore accepted a checkout with uncommitted changes")
+	}
+	if !strings.Contains(err.Error(), "it is a git checkout with uncommitted changes (1 files)") {
+		t.Errorf("error = %v, want the dirty-tree rule with the count", err)
+	}
+}
+
+func TestRestoreRefusesASubdirectoryOfACheckout(t *testing.T) {
+	repo := initRepo(t)
+	sub := filepath.Join(repo, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "file.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeRunner{}
+	fx := restoreHarness(t, f, restoreOpts{cfg: claudeVolumeConfig, in: "y\n", dir: sub})
+	err := fx.run()
+	if err == nil {
+		t.Fatal("restore accepted a subdirectory of a checkout as its root")
+	}
+	// git prints its own resolution of the root, which is what the refusal
+	// names: the test resolves the fixture the same way rather than assuming
+	// the temp path contains no symlink.
+	root, rerr := filepath.EvalSymlinks(repo)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if !strings.Contains(err.Error(), "it is inside a git checkout whose root is "+root) {
+		t.Errorf("error = %v, want the enclosing root named (%s)", err, root)
+	}
+}
+
+// No git to run is not "clean": byre cannot prove the tree clean, so it refuses
+// the same way and says that is why.
+func TestRestoreRefusesWhenGitCannotAnswer(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeRunner{}
+	fx := restoreHarness(t, f, restoreOpts{cfg: claudeVolumeConfig, in: "y\n", dir: dir})
+	// The pinned resolver finds no git at all. The pin set is process-wide and
+	// an earlier test may have pinned git already, so it is cleared both ways.
+	t.Setenv("PATH", "")
+	hostexec.ResetPins()
+	t.Cleanup(hostexec.ResetPins)
+	err := fx.run()
+	if err == nil {
+		t.Fatal("restore accepted a directory it could not check")
+	}
+	if !strings.Contains(err.Error(), "byre could not check it with git (") {
+		t.Errorf("error = %v, want the could-not-check reason", err)
+	}
+	if !strings.Contains(err.Error(), "--allow-nonempty") {
+		t.Errorf("error = %v, want the switch named", err)
+	}
+}
+
+// --allow-nonempty proceeds on every refusing case, and the run states the
+// reason the refusal would have given -- in the review, before the y/n, and
+// again in the summary.
+func TestRestoreAllowNonemptyProceedsAndStatesTheReason(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(t *testing.T) (dir, reason string)
+	}{
+		{"not a checkout", func(t *testing.T) (string, string) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return dir, "it holds 1 entries and is not a git checkout"
+		}},
+		{"dirty checkout", func(t *testing.T) (string, string) {
+			repo := initRepo(t)
+			if err := os.WriteFile(filepath.Join(repo, "scratch.txt"), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return repo, "it is a git checkout with uncommitted changes (1 files)"
+		}},
+		{"inside a checkout", func(t *testing.T) (string, string) {
+			repo := initRepo(t)
+			sub := filepath.Join(repo, "sub")
+			if err := os.Mkdir(sub, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(sub, "file.txt"), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			root, rerr := filepath.EvalSymlinks(repo)
+			if rerr != nil {
+				t.Fatal(rerr)
+			}
+			return sub, "it is inside a git checkout whose root is " + root
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, reason := tc.setup(t)
+			f := &fakeRunner{}
+			fx := restoreHarness(t, f, restoreOpts{cfg: claudeVolumeConfig, in: "y\n", dir: dir})
+			fx.rr.allowNonempty = true
+			if err := fx.run(); err != nil {
+				t.Fatal(err)
+			}
+			if storeConfig(t, fx.paths) == "" {
+				t.Error("--allow-nonempty did not proceed to the config write")
+			}
+			want := restoreNonEmptyLine(dir, reason)
+			if n := strings.Count(fx.errb.String(), want); n != 2 {
+				t.Errorf("the line %q appears %d times, want it in the review AND the summary:\n%s", want, n, fx.errb.String())
+			}
+		})
+	}
+}
+
+// The review MARKS a host name that is not on this machine now. A mark, not a
+// gate: restore refuses on none of them.
+func TestRestoreReviewMarksHostNamesMissingNow(t *testing.T) {
+	present := t.TempDir()
+	absent := filepath.Join(t.TempDir(), "gone")
+	cfg := fmt.Sprintf("[[mounts]]\nhost = %q\ntarget = \"/here\"\n\n[[mounts]]\nhost = %q\ntarget = \"/gone\"\n", present, absent)
+	f := &fakeRunner{}
+	fx := restoreHarness(t, f, restoreOpts{cfg: cfg, in: "n\n"})
+	if err := fx.run(); err != nil {
+		t.Fatal(err)
+	}
+	const mark = "(missing on this machine now)"
+	var marked, clean bool
+	for _, line := range strings.Split(fx.errb.String(), "\n") {
+		if !strings.Contains(line, "- mount ") {
+			continue
+		}
+		switch {
+		case strings.Contains(line, absent):
+			marked = strings.Contains(line, mark)
+		case strings.Contains(line, present):
+			clean = !strings.Contains(line, mark)
+		}
+	}
+	if !marked {
+		t.Errorf("the absent mount host carries no mark:\n%s", fx.errb.String())
+	}
+	if !clean {
+		t.Errorf("a host that IS here was marked missing:\n%s", fx.errb.String())
+	}
+}

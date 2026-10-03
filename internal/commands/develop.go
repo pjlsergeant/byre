@@ -484,6 +484,16 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	if err != nil {
 		return none, err
 	}
+	// Every enabled mount's host path, before anything is built or asked for.
+	// The engine does refuse a missing bind source -- that is what makes
+	// checkContainedHostSource's absent-path branch safe -- but it refuses deep
+	// in container create, with its own wording, naming ONE path, after a build
+	// the user has already waited through. A restored config naming nine absent
+	// `~/dev/...` mounts is the field report (2026-10-03): byre knows all nine
+	// now, so it says all nine now.
+	if err := refuseMissingMountHosts(r, s.Err, rv.mounts); err != nil {
+		return none, err
+	}
 	// Credential decrypt (launch step 2) — under the lock, against the
 	// authoritative cascade re-read. A deliverable set adds the session
 	// tmpfs and arms the launcher's bounded fail-CLOSED wait; a failure
@@ -675,6 +685,58 @@ func decodeAgentExit(runErr error) error {
 		}
 	}
 	return runErr
+}
+
+// refuseMissingMountHosts refuses the launch, before the build, when an enabled
+// mount names a host path that is not on this machine -- in one message naming
+// every one of them and the three ways out. A mount's host path is the user's
+// own arrangement and byre does not nanny it (P1); what it does is tell the
+// user, once, while the information is still cheap to act on.
+//
+// Under Docker Desktop this WARNS instead: binds resolve inside Desktop's VM,
+// where a path the host cannot stat can still be served, so a host probe there
+// is a false negative and the engine stays the authority. warnSockSources
+// softens the same way for the same reason.
+//
+// A disabled mount is skipped -- switching one off is exactly how a user keeps
+// an absent host path from blocking develop (ADR 0015) -- and a probe that is
+// not a plain absence is no evidence at all (hostPathMissing).
+func refuseMissingMountHosts(r sessionRunner, w io.Writer, mounts []config.Mount) error {
+	var missing []string
+	for _, m := range mounts {
+		if m.Disabled {
+			continue
+		}
+		host, err := expandHostPath(m.Host)
+		if err != nil {
+			// runParams judged this value already and failed the launch on it;
+			// an unexpandable path is that rule's to report, not this one's.
+			continue
+		}
+		if hostPathMissing(host) {
+			missing = append(missing, fmt.Sprintf("%s -> %s", host, m.Target))
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	if desktop, derr := r.IsDockerDesktop(); derr == nil && desktop {
+		dataf(w, "byre: warning: %d mount host path(s) are not on this host:\n", len(missing))
+		for _, m := range missing {
+			dataf(w, "byre:   - %s\n", m)
+		}
+		fmt.Fprintln(w, "byre: Docker Desktop resolves binds inside its VM, so a path this host cannot see may still be served -- launching anyway; the engine is the authority.")
+		return nil
+	}
+	// One error carrying the whole list: the funnel that prints it escapes
+	// line by line (EscapeMultiline), so the paths stay readable AND data.
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d mount host path(s) do not exist on this machine:", len(missing))
+	for _, m := range missing {
+		fmt.Fprintf(&b, "\n  - %s", m)
+	}
+	b.WriteString("\ncreate the directory, disable the mount in `byre config` (Mounts), or remove it; a mount's host path must exist on this machine before the box can start")
+	return errors.New(b.String())
 }
 
 // buildImageWarn generates the build context and builds the project's image,

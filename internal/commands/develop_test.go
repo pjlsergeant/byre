@@ -369,7 +369,10 @@ func TestDevelopOpensWithExposureLines(t *testing.T) {
 	p, _ := testPaths(t)
 	cfg := config.Config{
 		Mounts: []config.Mount{
-			{Host: "/h/notes", Target: "/notes", Mode: "ro"},
+			// A real host path: an enabled mount whose host is absent now
+			// refuses before the build. The DISABLED one stays fictional, which
+			// is the arrangement that refusal deliberately ignores.
+			{Host: t.TempDir(), Target: "/notes", Mode: "ro"},
 			{Host: "/h/data", Target: "/data", Mode: "rw", Disabled: true},
 		},
 		Ports: []config.Port{{Container: 8080}},
@@ -1217,5 +1220,109 @@ func TestDevelopSelfEditSharingLineIsWorktreeOnly(t *testing.T) {
 	}
 	if strings.Contains(stderr.String(), "REPO's") {
 		t.Errorf("a plain project should not claim its store is shared:\n%s", stderr.String())
+	}
+}
+
+// --------------------------------------------- mount hosts, before the build
+
+// Every missing mount host in ONE message, before anything is built. The field
+// report is a restored config naming nine absent `~/dev/...` paths: the engine
+// refused at container create, naming one of them, after the build.
+func TestDevelopRefusesMissingMountHostsBeforeBuilding(t *testing.T) {
+	p, _ := testPaths(t)
+	first := filepath.Join(t.TempDir(), "notes")
+	second := filepath.Join(t.TempDir(), "data")
+	off := filepath.Join(t.TempDir(), "switched-off")
+	cfg := config.Config{Mounts: []config.Mount{
+		{Host: first, Target: "/notes", Mode: "ro"},
+		{Host: second, Target: "/data", Mode: "rw"},
+		// Disabled: switching a mount off is how a user keeps an absent host
+		// path from blocking develop, so this one is not in the refusal.
+		{Host: off, Target: "/off", Mode: "rw", Disabled: true},
+	}}
+	f := &fakeRunner{}
+	s, _, _ := testStreams("", false)
+	err := develop(f, s, p, combine(merged(cfg), skills.Resolved{}), false, CredentialAsk)
+	if err == nil {
+		t.Fatal("develop launched with two mount hosts that do not exist")
+	}
+	for _, want := range []string{
+		"2 mount host path(s) do not exist on this machine",
+		first + " -> /notes",
+		second + " -> /data",
+		"disable the mount in `byre config` (Mounts)",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want %q in it", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), off) {
+		t.Errorf("the disabled mount is in the refusal: %v", err)
+	}
+	if len(f.builds) != 0 || len(f.creates) != 0 {
+		t.Fatalf("nothing may be built or created: builds=%v creates=%v", f.builds, f.creates)
+	}
+}
+
+// Under Docker Desktop a bind resolves inside the VM, so a host stat can be a
+// false negative: the same list is a warning and the engine stays the authority.
+func TestDevelopWarnsAboutMissingMountHostsUnderDockerDesktop(t *testing.T) {
+	p, _ := testPaths(t)
+	gone := filepath.Join(t.TempDir(), "notes")
+	cfg := config.Config{Mounts: []config.Mount{{Host: gone, Target: "/notes", Mode: "ro"}}}
+	f := &fakeRunner{desktop: true}
+	s, _, stderr := testStreams("", false)
+	if err := develop(f, s, p, combine(merged(cfg), skills.Resolved{}), false, CredentialAsk); err != nil {
+		t.Fatal(err)
+	}
+	out := stderr.String()
+	if !strings.Contains(out, gone+" -> /notes") || !strings.Contains(out, "Docker Desktop") {
+		t.Errorf("expected the Desktop warning naming the mount, got: %s", out)
+	}
+	if len(f.builds) != 1 || len(f.creates) != 1 {
+		t.Fatalf("the launch must proceed under Desktop: builds=%v creates=%v", f.builds, f.creates)
+	}
+}
+
+func TestDevelopIgnoresADisabledMountWithAMissingHost(t *testing.T) {
+	p, _ := testPaths(t)
+	cfg := config.Config{Mounts: []config.Mount{
+		{Host: filepath.Join(t.TempDir(), "gone"), Target: "/gone", Mode: "rw", Disabled: true},
+	}}
+	f := &fakeRunner{}
+	s, _, stderr := testStreams("", false)
+	if err := develop(f, s, p, combine(merged(cfg), skills.Resolved{}), false, CredentialAsk); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stderr.String(), "do not exist on this machine") {
+		t.Errorf("a disabled mount was reported: %s", stderr.String())
+	}
+	if len(f.builds) != 1 {
+		t.Fatalf("expected the build to run, got %v", f.builds)
+	}
+}
+
+// Only plain absence is evidence. A probe that fails some other way (here
+// ENOTDIR: a regular file stands where a directory component was named) is not
+// a missing path, so the mount is left to the engine as it was before.
+func TestDevelopDoesNotRefuseOnAProbeErrorThatIsNotAbsence(t *testing.T) {
+	p, _ := testPaths(t)
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Mounts: []config.Mount{
+		{Host: filepath.Join(file, "under"), Target: "/under", Mode: "ro"},
+	}}
+	f := &fakeRunner{}
+	s, _, stderr := testStreams("", false)
+	if err := develop(f, s, p, combine(merged(cfg), skills.Resolved{}), false, CredentialAsk); err != nil {
+		t.Fatalf("a probe byre could not answer must not refuse: %v", err)
+	}
+	if strings.Contains(stderr.String(), "do not exist on this machine") {
+		t.Errorf("an unanswerable probe was reported as absence: %s", stderr.String())
+	}
+	if len(f.builds) != 1 || len(f.creates) != 1 {
+		t.Fatalf("the launch must proceed: builds=%v creates=%v", f.builds, f.creates)
 	}
 }

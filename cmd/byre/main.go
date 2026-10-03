@@ -43,7 +43,7 @@ type app struct {
 	rebuild       func(s commands.Streams, dir string) error
 	rehome        func(s commands.Streams, dir, oldID string, ignore commands.IgnoreEngines) error
 	backup        func(s commands.Streams, dir string, opts commands.BackupOptions) error
-	restore       func(s commands.Streams, file, dir string) error
+	restore       func(s commands.Streams, file, dir string, opts commands.RestoreOptions) error
 	// rehomeCandidates is bare `byre rehome`: list stored projects whose
 	// recorded path no longer exists (the likely rehome sources).
 	rehomeCandidates func(s commands.Streams, dir string) error
@@ -1262,7 +1262,8 @@ func ignoreEngineFlagHelp(engine, consequence string) string {
 // restoreCmd: a backup file becomes a project on this machine. Terminal-only,
 // like the `preset apply` review it extends.
 func restoreCmd(a app, dir string, s commands.Streams) *cobra.Command {
-	return &cobra.Command{
+	var opts commands.RestoreOptions
+	c := &cobra.Command{
 		Use:   "restore FILE [DIR]",
 		Short: "Make a fresh project from a backup file: write the config, pour the volumes.",
 		Long: `Make a fresh project from a backup file: the config written, every carried
@@ -1277,7 +1278,12 @@ config's credential state — and then asks once.
 It refuses a project that already has a config ("restore into a fresh
 checkout"), and it stops on any template, layer, skill or agent the config
 names that is not installed here, offering the install where the file carries
-a hint. It builds nothing: 'byre develop' is the next command.`,
+a hint. It builds nothing: 'byre develop' is the next command.
+
+DIR must be an empty directory or the clean root of a git checkout, so that a
+stray current directory (a home directory, say) cannot become the project by
+accident; --allow-nonempty restores there anyway and says so in the review and
+the summary.`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 || len(args) > 2 {
 				return usageError("usage: byre restore FILE [DIR]")
@@ -1285,9 +1291,11 @@ a hint. It builds nothing: 'byre develop' is the next command.`,
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.restore(s, args[0], optDirArg(args[1:], dir))
+			return a.restore(s, args[0], optDirArg(args[1:], dir), opts)
 		},
 	}
+	c.Flags().BoolVar(&opts.AllowNonempty, "allow-nonempty", false, "restore into a directory that is neither empty nor a clean git root (byre refuses otherwise, to keep a stray cwd from becoming the project)")
+	return c
 }
 
 // optDirArg is the optional trailing DIR operand: the one the user typed, else

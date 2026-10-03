@@ -43,7 +43,21 @@
   does not: restore never proceeds with a package whose grants it could not
   show you. It builds nothing, so `byre develop` is the next step. Restore
   needs a terminal and a fresh checkout -- it refuses a project that already
-  has a config, and refuses to run from a linked worktree.
+  has a config, and refuses to run from a linked worktree. The directory it
+  restores into must be an empty one or the clean root of a git checkout, so
+  that a `byre restore <file>` typed in the wrong place cannot turn your home
+  directory into a byre project; `--allow-nonempty` restores there anyway and
+  says so in the review and the summary.
+
+- **`byre develop` names every missing mount host before it builds.** A
+  config whose `[[mounts]]` point at host paths this machine does not have --
+  the normal state of a config that has just arrived from another machine --
+  used to build the image and then fail deep in the launch with the engine's
+  own error naming ONE of them. Now develop checks every enabled mount first
+  and refuses with the whole list, and the remedy: create the directory,
+  disable the mount in `byre config` (Mounts), or remove it. Under Docker
+  Desktop it warns instead and lets the engine decide, because a bind resolves
+  inside Desktop's VM where a path the host cannot see may still be served.
 
 - **The workspace, the image, layers, skills and templates are not in the
   file.** Git carries your code; the image bakes this machine's user id and

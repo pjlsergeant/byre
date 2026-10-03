@@ -51,12 +51,19 @@ because git carries that.
 
 Send the file to the other machine, along with anything the backup NAMES but
 does not carry: a shared layer (`extends`) is a plain file you copy across
-yourself. Then clone or copy the repo there, and in that fresh checkout run
-`byre restore <file>`. It reviews what it is about to do -- the engine, the
-volumes it will create, the volumes already there it will leave alone, the
-credential state, and every host path this machine will have to satisfy --
-offers to install any skill or template the config names and the file has an
-install hint for, and on your y/n writes the config and pours the volumes.
+yourself. Then clone or copy the repo there, and **run `byre restore <file>`
+in that fresh checkout** -- the directory you want to be the project. Restore
+takes the current directory when you give it no DIR, so it expects that
+directory to be an empty one or the clean root of a git checkout, and refuses
+anything else ("byre restore expects an empty directory or the clean root of a
+git checkout") rather than making a stray directory you happened to be in the
+project. Name the directory (`byre restore <file> ~/src/thing`) or pass
+`--allow-nonempty` if you mean it anyway. It reviews what it is about to do --
+the engine, the volumes it will create, the volumes already there it will
+leave alone, the credential state, and every host path this machine will have
+to satisfy, with the ones that are not here yet marked -- offers to install any
+skill or template the config names and the file has an install hint for, and on
+your y/n writes the config and pours the volumes.
 
 Restore does not build anything. If a package it names is still missing it
 stops and prints the install command; install it and run `byre restore`

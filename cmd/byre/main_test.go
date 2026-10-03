@@ -64,8 +64,8 @@ func recorderApp(calls map[string]string) app {
 				strings.Join(opts.NoVolumes, ","),
 				boolStr(opts.NoCredentials), boolStr(opts.Yes)}, " ")+ignoreStr(opts.Ignore))
 		},
-		restore: func(_ commands.Streams, file, dir string) error {
-			return note("restore", file+" "+dir)
+		restore: func(_ commands.Streams, file, dir string, opts commands.RestoreOptions) error {
+			return note("restore", file+" "+dir+" "+boolStr(opts.AllowNonempty))
 		},
 		rebuild: func(_ commands.Streams, dir string) error { return note("rebuild", dir) },
 		rehome: func(_ commands.Streams, dir, oldID string, ig commands.IgnoreEngines) error {
@@ -197,8 +197,10 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"backup"}, "backup", "/proj   false false"},
 		{[]string{"backup", "/elsewhere"}, "backup", "/elsewhere   false false"},
 		{[]string{"backup", "--output", "box.tar.gz", "--no-volume", ".claude", "--no-volume", "oneoff", "--no-credentials", "--yes"}, "backup", "/proj box.tar.gz .claude,oneoff true true"},
-		{[]string{"restore", "box.tar.gz"}, "restore", "box.tar.gz /proj"},
-		{[]string{"restore", "box.tar.gz", "/elsewhere"}, "restore", "box.tar.gz /elsewhere"},
+		{[]string{"restore", "box.tar.gz"}, "restore", "box.tar.gz /proj false"},
+		{[]string{"restore", "box.tar.gz", "/elsewhere"}, "restore", "box.tar.gz /elsewhere false"},
+		// The switch that takes the wrong-target risk has to reach the options.
+		{[]string{"restore", "box.tar.gz", "--allow-nonempty"}, "restore", "box.tar.gz /proj true"},
 		{[]string{"rehome", "old-id"}, "rehome", "/proj old-id"},
 		{[]string{"rehome"}, "rehome candidates", "/proj"}, // bare = list likely old ids
 		{[]string{"version"}, "version", "-"},

@@ -8,8 +8,10 @@ import (
 	"io"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/pjlsergeant/byre/internal/backup"
@@ -44,6 +46,17 @@ const forgetFallback = "`byre forget`, run in the project directory, is the fall
 // commit point ends on, after the account of what it cleared.
 const restoreCancelledLine = "byre: restore cancelled; nothing written"
 
+// RestoreOptions are `byre restore`'s flags.
+type RestoreOptions struct {
+	// AllowNonempty is --allow-nonempty: the user saying THIS directory is the
+	// project directory even though it is neither empty nor the clean root of a
+	// checkout. The refusal it lifts protects byre's own guess about where the
+	// project is, so it hands over the switch (PRINCIPLES.md P1) -- and the run
+	// then states what the refusal would have said, in the review and again in
+	// the summary.
+	AllowNonempty bool
+}
+
 // Restore implements `byre restore FILE [DIR]`: one backup file becomes a
 // project on this machine -- the config written, every carried volume that is
 // not already here poured from the backup's own bytes, nothing built.
@@ -52,7 +65,7 @@ const restoreCancelledLine = "byre: restore cancelled; nothing written"
 // the whole job itself: after it returns, `byre develop` is the next command,
 // not a second restore step. The one thing it never does is decrypt: a
 // credential row travels as the ciphertext the source's passphrase opens.
-func Restore(s Streams, file, dir string) error {
+func Restore(s Streams, file, dir string, opts RestoreOptions) error {
 	if !s.TTY {
 		return errors.New("restore is interactive (the review is the point) -- run it on a TTY")
 	}
@@ -64,7 +77,7 @@ func Restore(s Streams, file, dir string) error {
 	if err != nil {
 		return err
 	}
-	rr := &restoreRun{s: s, target: target, created: created}
+	rr := &restoreRun{s: s, target: target, created: created, allowNonempty: opts.AllowNonempty}
 	rr.detect = rr.detectEngine
 	rerr := rr.run(file)
 	rr.cleanup(rerr)
@@ -118,6 +131,105 @@ func restoreTarget(dir string) (target string, created bool, err error) {
 	return target, true, nil
 }
 
+// restoreTargetRefusal is the ONE spelling of the wrong-target refusal: the
+// rule, the directory, the reason it does not fit, and both ways past it --
+// name the project directory, or take the risk with the switch (PRINCIPLES.md
+// P1: a refusal that protects a claim hands over the switch).
+func restoreTargetRefusal(dir, reason string) error {
+	return fmt.Errorf("byre restore expects an empty directory or the clean root of a git checkout. %s is neither: %s — name the project directory as DIR (byre restore FILE DIR), or run with --allow-nonempty to restore here anyway",
+		dir, reason)
+}
+
+// restoreNonEmptyLine is the ONE spelling of what --allow-nonempty did: the
+// review states it before the y/n and the summary repeats it, so the consent
+// and the receipt say the same thing in the same words.
+func restoreNonEmptyLine(dir, reason string) string {
+	return fmt.Sprintf("restoring into %s, which is not empty (--allow-nonempty): %s", dir, reason)
+}
+
+// restoreTargetState judges WHERE restore is being run and returns "" for a
+// target it accepts, or the one reason it does not.
+//
+// A restore with no DIR takes the current directory, and the field report is
+// what that costs: run from HOME, it made the home directory the project and
+// created six volumes under its id. An empty directory is unmistakably meant
+// for this, and so is the clean root of a checkout the user just cloned --
+// which is the move-to-another-machine flow. Anything else is a guess byre will
+// not make on its own.
+//
+// Git is the only thing that can prove a tree clean, so a host with no git, a
+// probe that fails, and a probe that times out all land in the same place as a
+// dirty tree: byre could not check, so it refuses and says that is why.
+func restoreTargetState(target string, paths project.Paths) (reason string, err error) {
+	entries, derr := hostopen.ReadDirNoFollow(target)
+	if derr != nil {
+		return "", fmt.Errorf("reading %s: %w", target, derr)
+	}
+	if len(entries) == 0 {
+		// Dotfiles counted: a home directory holding nothing but dotfiles is
+		// exactly the target this rule exists to refuse. A directory restore
+		// itself just created is empty by construction and arrives here.
+		return "", nil
+	}
+	gitExe, _ := hostGit(boxWritableRoots(paths))
+	top, perr := gitProbe(gitExe, "-C", target, "rev-parse", "--show-toplevel")
+	if perr != nil {
+		var exit *exec.ExitError
+		// git ran to completion and declined to name a working tree: there is no
+		// checkout here, which is an ANSWER. A probe killed by the deadline
+		// exits on a signal (ExitCode -1) and is not one.
+		if errors.As(perr, &exit) && exit.ExitCode() > 0 {
+			return fmt.Sprintf("it holds %d entries and is not a git checkout", len(entries)), nil
+		}
+		return restoreGitUncheckable(perr), nil
+	}
+	root := strings.TrimSpace(string(top))
+	if root == "" {
+		return restoreGitUncheckable(errors.New("git named no working tree root")), nil
+	}
+	// By identity, never by string: git prints its own resolution of the root,
+	// so a target reached through a symlinked path (or spelled in another case
+	// on APFS) is the same directory in different words.
+	fi, serr := hostopen.StatNoFollow(target)
+	if serr != nil {
+		return restoreGitUncheckable(serr), nil
+	}
+	rfi, serr := hostopen.PlainStat(root, hostopen.IdentityChecked)
+	if serr != nil {
+		return restoreGitUncheckable(serr), nil
+	}
+	if !os.SameFile(fi, rfi) {
+		return fmt.Sprintf("it is inside a git checkout whose root is %s", root), nil
+	}
+	out, serr := gitProbe(gitExe, "-C", target, "status", "--porcelain")
+	if serr != nil {
+		return restoreGitUncheckable(serr), nil
+	}
+	if n := porcelainFiles(out); n > 0 {
+		return fmt.Sprintf("it is a git checkout with uncommitted changes (%d files)", n), nil
+	}
+	return "", nil
+}
+
+// restoreGitUncheckable is the reason for every way the git check can fail to
+// produce an answer -- no host git, a probe that broke, a probe the deadline
+// killed. byre cannot prove the tree clean, so the target does not fit.
+func restoreGitUncheckable(err error) string {
+	return fmt.Sprintf("byre could not check it with git (%v)", err)
+}
+
+// porcelainFiles counts the paths `git status --porcelain` named: one line per
+// path, untracked files included (a tree with stray files in it is not clean).
+func porcelainFiles(out []byte) int {
+	n := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) != "" {
+			n++
+		}
+	}
+	return n
+}
+
 // restoreRun is one invocation: what the host and the file decided before the
 // review (identity, engine, the verified payloads) and the two things cleanup
 // has to know -- whether byre created the directory, and whether the store has
@@ -131,6 +243,14 @@ type restoreRun struct {
 
 	created      bool
 	bootstrapped bool
+
+	// allowNonempty is --allow-nonempty, and nonEmpty is the reason the target
+	// did not fit, kept for the review and the summary to state. Computed ONCE
+	// in step 1: the review is re-rendered byte-for-byte under the lock, and a
+	// file the user touched meanwhile must not turn the consent record into a
+	// "this project changed" refusal.
+	allowNonempty bool
+	nonEmpty      string
 
 	st       *backup.Staging
 	file     *backup.File
@@ -195,6 +315,19 @@ func (rr *restoreRun) run(file string) error {
 		// restoring the main tree's state from a side checkout whose main tree
 		// may be missing or unconfigured has no good answer.
 		return fmt.Errorf("%s is a linked worktree of %s; restore in the main worktree", rr.target, paths.Canonical)
+	}
+	// WHERE this is being run, before the file is opened: nothing is read,
+	// staged or prompted for into a directory that was never meant to be the
+	// project.
+	reason, err := restoreTargetState(rr.target, paths)
+	if err != nil {
+		return err
+	}
+	if reason != "" {
+		if !rr.allowNonempty {
+			return restoreTargetRefusal(rr.target, reason)
+		}
+		rr.nonEmpty = reason
 	}
 	if err := paths.ValidateExisting(); err != nil {
 		return err
@@ -577,10 +710,18 @@ func (rr *restoreRun) renderSections(w io.Writer) {
 
 // renderRequirements is "Names this machine must satisfy": every host name the
 // destination's resolved set carries, with WHAT reads it and HOW it fails.
-// Restore checks none of them -- the verbs that read each one fail or degrade
-// exactly as they do today, and saying so is the whole point of the list.
+// Restore refuses on none of them -- the verbs that read each one fail or
+// degrade exactly as they do today, and saying so is the whole point of the
+// list.
+//
+// It does MARK the ones that are not here now, from a probe that degrades: a
+// user answering y/n deserves to see that nine of the mount hosts the first
+// develop needs are already absent. A mark, not a gate.
 func (rr *restoreRun) renderRequirements(w io.Writer) {
-	fmt.Fprintln(w, "  Names this machine must satisfy (restore checks none of them):")
+	if rr.nonEmpty != "" {
+		dataf(w, "  %s\n", restoreNonEmptyLine(rr.target, rr.nonEmpty))
+	}
+	fmt.Fprintln(w, "  Names this machine must satisfy (restore refuses on none of them):")
 	n := 0
 	row := func(format string, a ...any) {
 		n++
@@ -592,25 +733,29 @@ func (rr *restoreRun) renderRequirements(w io.Writer) {
 		if m.Disabled {
 			continue
 		}
-		row("mount %s -> %s: `byre develop` fails naming it at launch if it is not there", hostPathAsSeen(m.Host), m.Target)
+		host := hostPathAsSeen(m.Host)
+		row("mount %s -> %s: `byre develop` fails naming it at launch if it is not there%s", host, m.Target, missingNowMark(host))
 	}
 	for _, cd := range rr.rv.cfg.Contexts {
 		if cd.File != "" {
-			row("context file %s: the build fails naming context and path if it is not there", hostPathAsSeen(cd.File))
+			file := hostPathAsSeen(cd.File)
+			row("context file %s: the build fails naming context and path if it is not there%s", file, missingNowMark(file))
 		}
 	}
 	for _, src := range slices.Sorted(maps.Keys(rr.rv.cfg.Files)) {
-		row("files source %s: the build fails naming it if it is not there", hostPathAsSeen(src))
+		seen := hostPathAsSeen(src)
+		row("files source %s: the build fails naming it if it is not there%s", seen, missingNowMark(seen))
 	}
 	for _, cs := range rr.rv.claudeSkills {
 		// A skill's own contribution rides the package it came from; only a
 		// config-named `path` is a host name this machine has to have.
 		if cs.SrcDir == "" && cs.CS.Path != "" {
-			row("Claude Skill %s: the build validates it as a skill directory and fails naming it", hostPathAsSeen(cs.CS.Path))
+			p := hostPathAsSeen(cs.CS.Path)
+			row("Claude Skill %s: the build validates it as a skill directory and fails naming it%s", p, missingNowMark(p))
 		}
 	}
 	for _, sd := range rr.plan.seeds {
-		row("seed source %s for volume %s: develop seeds from it if it is there, else %s starts empty", sd.host, sd.volume, sd.volume)
+		row("seed source %s for volume %s: develop seeds from it if it is there, else %s starts empty%s", sd.host, sd.volume, sd.volume, missingNowMark(sd.host))
 	}
 	if e := rr.rv.cfg.Engine; e != "" {
 		row("engine %s: the config names it, and this restore uses it", e)
@@ -618,11 +763,24 @@ func (rr *restoreRun) renderRequirements(w io.Writer) {
 		row("engine: the config names none; this restore uses %s, the one byre found", rr.r.Engine())
 	}
 	if wb := rr.rv.cfg.WorktreeBase; wb != "" {
-		row("worktree_base %s: `byre worktree` reads it, nothing else", hostPathAsSeen(wb))
+		base := hostPathAsSeen(wb)
+		row("worktree_base %s: `byre worktree` reads it, nothing else%s", base, missingNowMark(base))
 	}
 	if n == 0 {
 		fmt.Fprintln(w, "    (none)")
 	}
+}
+
+// missingNowMark is the review's mark for a host name that is not on this
+// machine at the moment the review is rendered. Pre-rendered on purpose: the
+// row composes it into its own format string, and the probe behind it degrades
+// (hostPathMissing), so a path byre could not look at carries no mark rather
+// than a wrong one.
+func missingNowMark(path string) escaped {
+	if hostPathMissing(path) {
+		return escaped("   (missing on this machine now)")
+	}
+	return ""
 }
 
 // renderFromBackup is "From the backup": every volume in play with what will
@@ -970,6 +1128,9 @@ func (rr *restoreRun) renderSummary() {
 	w := rr.s.Err
 	p := rr.plan
 	dataf(w, "byre: restored %s into %s\n", filepath.Base(rr.target), rr.target)
+	if rr.nonEmpty != "" {
+		dataf(w, "  %s\n", restoreNonEmptyLine(rr.target, rr.nonEmpty))
+	}
 	dataf(w, "  config:  %s (%d bytes, as the backup carried them)\n", rr.store, len(rr.file.Config))
 	if len(p.create) == 0 {
 		fmt.Fprintln(w, "  volumes restored: none")
