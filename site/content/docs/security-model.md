@@ -81,19 +81,28 @@ What it deliberately does NOT do:
   was set for, which catches accidents — a blob swapped between rows, a
   value replayed from git history onto a renamed key, a copy-paste
   across files — but it is not integrity: anyone holding the cleartext
-  recipient can produce a correctly-stamped value. This bites in exactly
-  one place, `byre preset apply`: your repo is the box's own writable
+  recipient can produce a correctly-stamped value. This bites in two
+  places. One is `byre preset apply`: your repo is the box's own writable
   tree, so if you ship credentials through a repo preset, whatever
   writes that repo can **mint** a chosen value (it has the recipient),
   or **swap**, **transplant**, or **replay** existing blobs without it.
-  The prize is durable poisoning of future sessions — a swapped API key
-  that outlives the box — not plaintext, which the box is handed anyway.
+  The other is `byre restore`: a backup carries the config file as it
+  is, rows and `[credentials]` block included, `byre backup` writes it
+  to the current directory by default — often the project folder, which
+  the box can write — and restore writes the rows it carries byte for
+  byte, so whatever writes the file before you restore it can do the
+  same. The prize is durable poisoning of future sessions — a swapped
+  API key that outlives the box — not plaintext, which the box is
+  handed anyway.
   byre answers this at the consent gate rather than by hiding the
   values: the apply review flags every changed row where either side is
   a credential ("if you didn't rotate this credential, reject"), rows
   that appeared or vanished, and any change to the `[credentials]`
-  block itself. Credentials you never ship through a preset have no
-  exposure here.
+  block itself. Restore has no earlier file to compare against, so its
+  review lists every credential row as appeared, says the backup brings
+  its own credentials identity, and says the file's authorship is not
+  proven. Credentials you never ship through a preset or a backup have
+  no exposure here.
 - Transient plaintext in process memory — byre's during launch, the
   agent's afterwards — can reach swap, core dumps, or a hibernation
   image.

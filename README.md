@@ -70,7 +70,7 @@ exposure: 1 host mount · 11 env vars · network deny-by-default · egress 7 hos
 
 Configs are hierarchical, so if a specific client or set of projects need their own standing instructions, that's easy to add to a shared layer. Adding ripgrep (or any package), mounting a sibling directory ... it's all a few key taps in `byre config` and relaunch and `/resume`.
 
-And if you really want to live dangerously: `byre develop --self-edit` will the agent its own box config (but we'll show you what it changed on exit).
+And if you really want to live dangerously: `byre develop --self-edit` will give the agent its own box config (but we'll show you what it changed on exit).
 
 ## Install
 
