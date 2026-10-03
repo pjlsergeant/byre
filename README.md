@@ -68,7 +68,7 @@ exposure: 1 host mount · 11 env vars · network deny-by-default · egress 7 hos
 ↑↓ move · ←→ change · ↵ open · ^s save · ^e $EDITOR · ^q quit
 ```
 
-Configs are hierarchial, so if a specific client or set of projects need their own standing instructions, that's easy to add to a shared layer. Adding ripgrep (or any package), mounting a sibling directory ... it's all a few key taps in `byre config` and relaunch and `/resume`.
+Configs are hierarchical, so if a specific client or set of projects need their own standing instructions, that's easy to add to a shared layer. Adding ripgrep (or any package), mounting a sibling directory ... it's all a few key taps in `byre config` and relaunch and `/resume`.
 
 And if you really want to live dangerously: `byre develop --self-edit` will the agent its own box config (but we'll show you what it changed on exit).
 
@@ -117,7 +117,7 @@ Container:    running (0d95f3a2c1b4)
               4c1e8a7b2d90). Other rows describe the current config.
 ```
 
-(you can use `byre status --full` for more comprehensive output, or `byre status --json` if you need machine-parseable)
+(you can use `byre status --full` for more comprehensive output, or `byre status --data` if you need machine-parseable)
 
 Everything from here on has a page on the docs site:
 **[getbyre.com/docs](https://getbyre.com/docs/)**.

@@ -33,9 +33,10 @@
 
 - **`byre restore <file>` writes the config and pours the volumes, after a
   review.** It extends `byre preset apply`: the same grant review, plus what
-  this machine must satisfy (mount hosts, context files, Claude Skill paths,
-  `engine`, `worktree_base`), what the source machine saw, and every volume
-  in play -- restored, already here and kept, or left to the first develop.
+  this machine must satisfy (mount hosts, context files, `[files]` sources,
+  Claude Skill paths, seed sources, `engine`, `worktree_base`), what the
+  source machine saw, and every volume in play -- restored, already here
+  and kept, or left to the first develop.
   It offers to install a skill or template the config names where the file
   carries an install hint, and stops naming the install command where it
   does not: restore never proceeds with a package whose grants it could not
@@ -56,6 +57,10 @@
   disable the mount in `byre config` (Mounts), or remove it. Under Docker
   Desktop it warns instead and lets the engine decide, because a bind resolves
   inside Desktop's VM where a path the host cannot see may still be served.
+  A socket a skill mounts -- `docker-host`'s Docker socket, say -- is not on
+  the list anywhere: it comes and goes with its daemon, so develop launches
+  over a missing one and the engine decides, with a warning everywhere but
+  Docker Desktop.
 
 - **The workspace, the image, layers, skills and templates are not in the
   file.** Git carries your code; the image bakes this machine's user id and

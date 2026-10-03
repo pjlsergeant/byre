@@ -143,6 +143,13 @@ Version the source pieces instead:
   versioned, a symlink into a dotfiles repo works -- byre reads through
   it.
 
+A project's box -- its config and state volumes -- moves to another
+machine as one file: `byre backup` on this machine, then `byre restore
+<file>` in a fresh checkout on the other. Do not copy `projects/<id>/`
+across instead: the id derives from the project's path, the volumes
+live in the engine rather than here, and restore writes the config only
+after the human reviews it.
+
 ## Sharing skills with others
 
 Give the skill a qualified id (`owner/name`) and a version in its

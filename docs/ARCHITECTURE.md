@@ -231,8 +231,10 @@ probes degrade and disclose instead, since a session end must not be
 blockable by the thing it reports on (ADR 0047). A declined engine is
 never read as an ABSENT one: `develop`'s single-session check treats it
 as uncheckable rather than as one engine fewer, and the commands that
-speak in totals (`forget`, `reset`, `rehome`) refuse rather than claim
-"completely removed" over an engine byre never reached.
+speak in totals (`forget`, `reset`, `rehome`, `backup`) refuse rather than
+claim "completely removed" over an engine byre never reached. Their
+`--ignore-docker` / `--ignore-podman` skip an engine that is installed but
+unreachable; they do not cover a declined one.
 
 **Rootless Podman** is a first-class path with its own ownership math
 (ADR 0032): the chassis bakes a GENERIC dev uid (1000) instead of the
@@ -605,7 +607,10 @@ Two mount species:
    disabled mount's host path may be absent without blocking develop --
    an ENABLED mount with an absent host path refuses the launch before the
    image is built, in one message naming every such mount (under Docker
-   Desktop, where a bind resolves inside the VM, it warns instead).
+   Desktop, where a bind resolves inside the VM, it warns instead). A
+   mount backing a skill's `sock_groups` socket is exempt on every
+   platform: a socket comes and goes with its daemon, so develop leaves
+   the bind to the engine, warning at launch except under Docker Desktop.
 2. **named volume** -- Docker-managed, project-scoped
    (`byre-<project_id>-<name>`), survives rebuilds. Usually contributed
    by a skill; a project can declare ad-hoc ones via `volumes`. Carries:
