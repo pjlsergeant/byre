@@ -2,6 +2,7 @@ package configui
 
 import (
 	"encoding/base64"
+	"slices"
 	"strings"
 	"testing"
 
@@ -190,6 +191,7 @@ func TestHostEnvSchemeRoundTrip(t *testing.T) {
 		{"git:user.email", schemeGit, "user.email"},
 		{"env:TERM", schemeEnv, "TERM"},
 		{"tz:", schemeTZ, ""},
+		{"cwd:", schemeCWD, ""},
 		{"", schemeDisabled, ""},
 	} {
 		gotScheme, gotArg := hostEnvScheme(tc.src)
@@ -231,6 +233,62 @@ func TestHostEnvArgLabelFollowsTheScheme(t *testing.T) {
 	m = m.syncHostEnvLabel()
 	if !strings.Contains(m.inputLabels[1], "no argument") {
 		t.Errorf("label = %q, want it to say tz takes no argument", m.inputLabels[1])
+	}
+}
+
+// Every scheme config accepts has a reachable row in the picker: a scheme the
+// editor cannot write is a hole in the product (PRINCIPLES P0), and the way one
+// appears is a new source arm in config with nothing added here. The picker's
+// own options are the list; this asserts the two agree and that the row writes
+// and reads back.
+func TestHostEnvPickerOffersEveryScheme(t *testing.T) {
+	// The schemes config validates, each spelled as the picker spells it. "" is
+	// `disabled` and a credential is its own option, so the argument-less host
+	// facts are what a new arm lands among.
+	for _, src := range []string{"tz:", "cwd:"} {
+		scheme, arg := hostEnvScheme(src)
+		if arg != "" {
+			t.Errorf("%s must decode with no argument, got %q", src, arg)
+		}
+		if scheme < 0 || scheme >= len(hostEnvSchemes) {
+			t.Fatalf("%s decodes to scheme %d, outside the picker", src, scheme)
+		}
+		if opt := hostEnvSchemes[scheme]; opt != src {
+			t.Errorf("%s decodes to the %q option; want the picker to spell it %q", src, opt, src)
+		}
+		// And it is offered by the editor that cannot write credentials too --
+		// a passthrough needs no [credentials] block.
+		if !slices.Contains(hostEnvPickerOpts(false), src) {
+			t.Errorf("%s missing from the no-credentials picker: %v", src, hostEnvPickerOpts(false))
+		}
+	}
+
+	// The row commits, and the argument-less schemes carry a hint instead of a
+	// label (the label column is shared, the hint lives in the input).
+	m := hostEnvModel(t, nil)
+	m = openHostEnvRow(t, m, "TZ")
+	m.itemMode = schemeCWD
+	m = m.syncHostEnvLabel()
+	if !strings.Contains(m.inputLabels[1], "no argument") {
+		t.Errorf("label = %q, want it to say cwd takes no argument", m.inputLabels[1])
+	}
+	if h := hostEnvArgHint(schemeCWD); !strings.Contains(h, "/workspace") {
+		t.Errorf("hint = %q, want it to say where the directory comes from", h)
+	}
+	// A picker move off an argument-ful scheme leaves what was typed in the
+	// argument box -- deliberately, so moving back does not destroy it (the
+	// form shows it beside the "(no argument)" label, as it has for tz:). It
+	// must not reach the FILE: an argument-free scheme encodes to itself.
+	m.inputs[1].SetValue("user.email")
+	got := m.commitItem()
+	if got.itemErr != "" {
+		t.Fatalf("a cwd: row must commit: %s", got.itemErr)
+	}
+	if v := got.assemble().EnvFromHost["TZ"]; v != "cwd:" {
+		t.Fatalf("the committed row = %q, want cwd:", v)
+	}
+	if err := (config.Config{EnvFromHost: got.assemble().EnvFromHost}).Validate(); err != nil {
+		t.Fatalf("the editor wrote a source config refuses: %v", err)
 	}
 }
 

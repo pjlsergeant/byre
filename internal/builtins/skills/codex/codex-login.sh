@@ -27,19 +27,42 @@ diag_log="$diag_dir/byre-auth-diagnostic.log"
 reap_grace="${BYRE_CODEX_REAP_GRACE:-1}"
 snapshot=""
 
+# The filesystem primitives this hook judges a planted credential with (the
+# identity route, the newline-safe link read, the absent-or-regular target
+# test) live in one library five skills ship to this path. BYRE_SHARED_AUTH_LIB
+# is a test seam, not a user knob: byre refuses BYRE_* names in a project
+# [env] (internal/config/config.go). Without the library this hook cannot
+# judge a symlinked credential at all, so it says so and offers no login
+# rather than running one through whatever is there.
+BYRE_SA_LIB="${BYRE_SHARED_AUTH_LIB:-/usr/local/lib/byre-shared-auth-lib.sh}"
+if [ ! -r "$BYRE_SA_LIB" ]; then
+  echo "byre: cannot read the shared-auth library ($BYRE_SA_LIB); not offering the codex login" >&2
+  exit 0
+fi
+. "$BYRE_SA_LIB"
+
 cleanup_snapshot() {
   [ -z "${snapshot:-}" ] || rm -f -- "$snapshot"
 }
 trap cleanup_snapshot EXIT
+
+# Gates every write this hook makes BY the identity dir's spelling -- the
+# diagnostic log's mkdir/append and the shared-auth lock -- with reconcile.sh's
+# rule: neither the dir nor any ancestor a symlink. BYRE_IDENTITY_BASE is a
+# test seam, and a seam value must itself be a physical path.
+identity_dir_safe() {
+  byre_sa_identity_route_safe "$diag_dir"
+}
 
 # Complements codex-shared-auth's diagnostics so the shared log shows whether
 # this later hook accepted or removed the asserted link. Deliberately records
 # no credential contents, hashes, token metadata, or environment values.
 diag_event() {
   [ -n "${CODEX_AUTH_DIAGNOSTIC_BYRE:-}" ] || return 0
-  mkdir -p "$diag_dir" 2>/dev/null || return 0
+  identity_dir_safe || return 0
+  mkdir -p -- "$diag_dir" 2>/dev/null || return 0
   : >>"$diag_log" 2>/dev/null || return 0
-  chmod 600 "$diag_log" 2>/dev/null || true
+  chmod -- 600 "$diag_log" 2>/dev/null || true
   printf '%s component=codex-login box=%s project=%s pid=%s event=%s\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf unknown)" \
     "$(hostname 2>/dev/null || printf unknown)" "${COMPOSE_PROJECT_NAME:-unknown}" \
@@ -113,10 +136,10 @@ live_probe() {
   rpc_dir="$(mktemp -d "${TMPDIR:-/tmp}/byre-codex-rpc.XXXXXX")" || return 20
   rpc_in="$rpc_dir/in"
   rpc_out="$rpc_dir/out"
-  if ! mkfifo "$rpc_in" "$rpc_out" || ! exec 7<>"$rpc_in" || ! exec 8<>"$rpc_out"; then
+  if ! mkfifo -- "$rpc_in" "$rpc_out" || ! exec 7<>"$rpc_in" || ! exec 8<>"$rpc_out"; then
     { exec 7>&-; } 2>/dev/null || true
     { exec 8>&-; } 2>/dev/null || true
-    rm -rf "$rpc_dir"
+    rm -rf -- "$rpc_dir"
     return 20
   fi
   ( exec 7>&- 8>&-; exec setsid codex app-server 2>/dev/null ) <"$rpc_in" >"$rpc_out" &
@@ -156,7 +179,7 @@ live_probe() {
   sleep "$reap_grace"
   kill -KILL -- "-$rpc_pid" 2>/dev/null || kill -KILL "$rpc_pid" 2>/dev/null || true
   wait "$rpc_pid" 2>/dev/null || true
-  rm -rf "$rpc_dir"
+  rm -rf -- "$rpc_dir"
   return "$outcome"
 }
 
@@ -167,7 +190,7 @@ live_probe() {
 detach_shared_link() {
   [ -n "$shared_auth" ] || return 0
   if [ -L "$cred" ]; then
-    rm -f "$cred" || return 1
+    rm -f -- "$cred" || return 1
     diag_event shared_link_detached_before_login
   fi
 }
@@ -176,7 +199,7 @@ restore_shared_link() {
   [ -n "$shared_auth" ] || return 0
   # Never overwrite a regular file left by a partially completed login.
   if [ ! -e "$cred" ] && [ ! -L "$cred" ]; then
-    ln -s "$target" "$cred" 2>/dev/null || return 1
+    ln -s -- "$target" "$cred" 2>/dev/null || return 1
     diag_event shared_link_restored_after_login_skip
   fi
 }
@@ -196,24 +219,69 @@ if [ -L "$cred" ]; then
   # Canonicalize the target's PARENT dir (the final auth.json may be absent --
   # dangling is the expected first-login state); a lexical prefix check would
   # accept planted ..-traversals and reject legitimate relative links.
-  # Relative targets resolve from the link's own directory.
-  target="$(readlink "$cred")"
-  tdir="$(cd "$CODEX_HOME" 2>/dev/null && cd "$(dirname "$target")" 2>/dev/null && pwd -P)" || tdir=""
+  # Relative targets resolve from the link's own directory, and may start with
+  # "-", so every path-taking tool here takes `--`. The library's read refuses
+  # a target holding a newline, which leaves tdir empty and takes the removal
+  # path below.
+  target=""
+  tdir=""
+  if target=$(byre_sa_link_target "$cred"); then
+    tdir="$(cd -- "$CODEX_HOME" 2>/dev/null && cd -- "$(dirname -- "$target")" 2>/dev/null && pwd -P)" || tdir=""
+  fi
+  tfile="/home/dev/.byre-identity/codex/auth.json"
   # EQUALITY against the FULL canonical target — codex's OWN identity dir AND
   # the auth.json basename (codex-shared-auth links exactly that file) — not a
   # /home/dev/.byre-identity/* wildcard: a broader match would trust a link
   # into a SIBLING agent's identity dir, through which a `codex login` would
   # overwrite that agent's machine-wide credential with codex's incompatible
   # store; and a dir-only match would trust a link to any OTHER name inside
-  # codex's dir. Mirrors the opencode-login hook.
-  if [ "$tdir" = "/home/dev/.byre-identity/codex" ] && [ "$(basename "$target")" = "auth.json" ]; then
+  # codex's dir. AND the target object absent (dangling: first login) or a
+  # regular non-symlink file: a link planted AT the identity dir's auth.json
+  # would chain `codex login status` and a login's write onward to a file of
+  # the planter's choosing (reconcile.sh refuses that shared path too, so the
+  # link is dropped here and the login writes a local regular file). One
+  # conjunction, so no half can be dropped alone. Mirrors the opencode-login
+  # hook.
+  if [ "$tdir" = "/home/dev/.byre-identity/codex" ] && [ "$(basename -- "$target")" = "auth.json" ] && ! byre_sa_shared_unsafe "$tfile"; then
     shared_auth=1
     diag_event shared_link_accepted
   else
     diag_event foreign_link_remove_begin
-    rm -f "$cred"
+    # A failed removal (an unwritable CODEX_HOME) must not fall through: the
+    # rejected link would still be there, and `codex login status` and a
+    # login would read and write THROUGH it. Stop without offering the login.
+    if ! rm -f -- "$cred"; then
+      diag_event foreign_link_remove_failed
+      echo "byre: could not remove the symlinked codex credential $cred; not offering the login -- remove it in byre shell" >&2
+      exit 0
+    fi
     diag_path after_foreign_link_remove
   fi
+  # The accepted link is checked by its TARGET; the shared-auth path below
+  # also works BY the identity dir's spelling (mkdir -p, the auth.lock <>
+  # open), which a planted symlink on the dir or an ancestor would carry to
+  # the far side. reconcile.sh refuses that dir outright; so does this hook:
+  # shared auth is dropped for this launch, and so is the link -- keeping it
+  # unlocked would let the device login's implicit logout revoke the
+  # machine-wide credential through it -- so the hook goes on per-project.
+  if [ -n "$shared_auth" ] && ! identity_dir_safe; then
+    shared_auth=""
+    echo "byre: the Codex identity dir ($diag_dir) is or resolves through a symlink; not using shared auth this launch -- continuing with a per-project login." >&2
+    if ! rm -f -- "$cred"; then
+      echo "byre: could not remove the symlinked codex credential $cred; not offering the login -- remove it in byre shell" >&2
+      exit 0
+    fi
+  fi
+fi
+# Anything else that is not a regular file (a FIFO, socket, directory) is
+# not a credential codex wrote. Stop BEFORE `codex login status`, jq or the
+# live probe open it: opening a FIFO blocks, and with no tty guard on this
+# path a headless launch would sit there until the timeout. Never delete an
+# unknown object -- say so. Same guard as opencode-login.sh.
+if [ -e "$cred" ] && [ ! -L "$cred" ] && [ ! -f "$cred" ]; then
+  diag_event credential_not_regular
+  echo "byre: codex credential path $cred is not a regular file; not reading it and not offering the login -- inspect it in byre shell" >&2
+  exit 0
 fi
 needs_login=""
 if codex login status >/dev/null 2>&1; then
@@ -227,7 +295,7 @@ if codex login status >/dev/null 2>&1; then
   diag_event live_probe_due
   if [ -n "$shared_auth" ]; then
     lock="$diag_dir/auth.lock"
-    mkdir -p "$diag_dir" 2>/dev/null || true
+    mkdir -p -- "$diag_dir" 2>/dev/null || true
     # Same treatment as the reconciler's lock open (its comment has the full
     # story): the path is dev-writable in every sharing box, so replace
     # non-regular debris, then open <> — O_RDWR never blocks on a raced-in
@@ -249,9 +317,9 @@ if codex login status >/dev/null 2>&1; then
       exit 0
     fi
     snapshot="$(mktemp "${TMPDIR:-/tmp}/byre-codex-auth.XXXXXX")" || snapshot=""
-    if [ -z "$snapshot" ] || ! cp -L "$cred" "$snapshot" 2>/dev/null; then
+    if [ -z "$snapshot" ] || ! cp -L -- "$cred" "$snapshot" 2>/dev/null; then
       diag_event live_probe_snapshot_failed
-      [ -n "$snapshot" ] && rm -f "$snapshot"
+      [ -n "$snapshot" ] && rm -f -- "$snapshot"
       snapshot=""
       flock -u 9 2>/dev/null || true
       echo "byre: could not safely inspect the shared Codex credential; launching without changing it." >&2
@@ -278,7 +346,7 @@ if codex login status >/dev/null 2>&1; then
     # shared file yet. Give that write a moment before treating this credential
     # as dead.
     [ -n "$shared_auth" ] && sleep 1
-    if [ -n "$snapshot" ] && ! cmp -s "$snapshot" "$cred"; then
+    if [ -n "$snapshot" ] && ! cmp -s -- "$snapshot" "$cred"; then
       diag_event live_probe_sibling_changed_credential
     else
       diag_event live_probe_auth_unavailable

@@ -40,7 +40,10 @@ shared_auth_for = "codex"
 
 [build]
 apt = ["jq", "util-linux"]
-files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-codex-shared-auth", "reconcile.sh" = "/usr/local/lib/byre-codex-auth-reconcile" }
+# byre-shared-auth-lib.sh: the filesystem primitives the shared-auth and
+# login hooks source. Five skills ship it to the same path, byte-identical,
+# so either works alone (ADR 0056).
+files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-codex-shared-auth", "reconcile.sh" = "/usr/local/lib/byre-codex-auth-reconcile", "byre-shared-auth-lib.sh" = "/usr/local/lib/byre-shared-auth-lib.sh" }
 
 [[volumes]]
 name = "codex-identity"

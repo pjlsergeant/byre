@@ -60,7 +60,10 @@ description = "Share one OpenCode API-key login across all your projects (OAuth 
 shared_auth_for = "opencode"
 
 [build]
-files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-opencode-shared-auth" }
+# byre-shared-auth-lib.sh: the filesystem primitives the shared-auth and
+# login hooks source. Five skills ship it to the same path, byte-identical,
+# so either works alone (ADR 0056).
+files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-opencode-shared-auth", "byre-shared-auth-lib.sh" = "/usr/local/lib/byre-shared-auth-lib.sh" }
 
 [[volumes]]
 name = "opencode-identity"

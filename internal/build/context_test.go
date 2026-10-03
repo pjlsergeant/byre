@@ -14,6 +14,7 @@ import (
 	"testing/iotest"
 	"time"
 
+	"github.com/pjlsergeant/byre/internal/builtins"
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/project"
@@ -901,6 +902,34 @@ func TestAssembleStagesSkillFiles(t *testing.T) {
 	// And the generated Dockerfile COPYs it to the destination.
 	if !strings.Contains(df, gen.CopyLine("skills/tools/review.sh", "/usr/local/bin/byre-review")) {
 		t.Errorf("generated Dockerfile missing skill-file COPY:\n%s", df)
+	}
+}
+
+// The in-tree dual-ship: five built-in skills each stage the shared-auth
+// library to /usr/local/lib/byre-shared-auth-lib.sh, so a box gets it whether
+// it enables the agent skill, its shared-auth companion, or several of them.
+// TestSharedAuthLibCopiesAreIdentical (internal/builtins) keeps the authored
+// bytes identical; this is the other half -- that the real manifests compose
+// through STAGING, where the mode counts too. The alternative is a refusal in
+// a user's develop.
+func TestAssembleDualShipsSharedAuthLib(t *testing.T) {
+	const dest = "/usr/local/lib/byre-shared-auth-lib.sh"
+	cat, err := builtins.LoadCatalogRaw(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Base: "debian:bookworm", Agent: "opencode",
+		Skills: []string{"opencode-shared-auth", "gemini-shared-auth", "codex", "codex-shared-auth"}}
+	res, err := skills.Resolve(cfg, cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	df, err := Assemble(bootstrapped(t), cfg, res)
+	if err != nil {
+		t.Fatalf("the five shared-auth skills must compose: %v", err)
+	}
+	if n := strings.Count(df, dest); n != 5 {
+		t.Errorf("want one COPY of %s per shipping skill (5), got %d:\n%s", dest, n, df)
 	}
 }
 

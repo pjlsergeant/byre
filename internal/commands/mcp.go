@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
 )
 
@@ -118,6 +119,9 @@ func MCPList(s Streams, projectDir string) error {
 	// sources through the same host git develop would run, so a git byre
 	// declines to run reads as "not passed" here too.
 	gitExe, _ := hostGit(boxWritableRootsFor(projectDir))
+	// And the same canonical work dir, for a `cwd:` row. An unresolvable one
+	// reads as "not passed" here exactly as it would at develop.
+	workDir, _ := project.Canonicalize(projectDir)
 	info, err := listDeclInfo(s, projectDir,
 		func(info *statusInfo, cfg config.Merged) {
 			info.EgressClosed = cfg.Closures.Egress
@@ -128,7 +132,7 @@ func MCPList(s Streams, projectDir string) error {
 			info.MCPs, _ = skills.MCPSet(cfg, skills.Resolved{})
 			// Same shared resolution status/develop use: "provided" means
 			// delivered, never configured-and-hoped (render-from-effect).
-			info.EnvProvided = providedEnv(cfg.Config, resolveHostEnv(cfg.Config, gitExe))
+			info.EnvProvided = providedEnv(cfg.Config, resolveHostEnv(cfg.Config, gitExe, workDir))
 			info.ArtifactShadows = artifactShadows(cfg.Config)
 		},
 		func(info *statusInfo, rv resolved, res skills.Resolved) {

@@ -105,7 +105,7 @@ func DockerRun(s Streams, projectDir string) error {
 	// an absent git does -- and the printed argv is then what develop would
 	// actually pass, which is the whole contract of this command.
 	gitExe, _ := hostGit(roots)
-	params, err := runParams(paths, rv, image, false, s.TTY, ident, resolveHostEnv(rv.cfg.Config, gitExe))
+	params, err := runParams(paths, rv, image, false, s.TTY, ident, resolveHostEnv(rv.cfg.Config, gitExe, paths.WorkDir))
 	if err != nil {
 		return err
 	}

@@ -485,3 +485,39 @@ func TestCascadeFilesDegradation(t *testing.T) {
 		t.Fatalf("files = %+v", files)
 	}
 }
+
+// A credential travels to the box as an export from the launcher's own bash,
+// and a name bash itself owns cannot carry it faithfully (the taxonomy is on
+// bashOwnedCredentialNames). The launcher refuses the delivery; the host
+// refuses the key first, with the reason, at the same gate the manifest
+// reservation uses -- so `set`, the editor, and a hand-written row all meet it
+// before a passphrase is asked for. Membership is BashOwnsName's, pinned
+// against the launcher's own spelling in internal/gen; these are the exact and
+// prefix shapes plus one name of each export failure mode.
+func TestValidateCredentialKeyRefusesBashOwnedNames(t *testing.T) {
+	for _, k := range []string{"SECONDS", "UID", "LINENO", "GROUPS", "BASH_REMATCH", "COMP_LINE", "SHLVL", "PS1", "PROMPT_COMMAND"} {
+		err := ValidateCredentialKey(k)
+		if err == nil || !strings.Contains(err.Error(), "bash owns this name") ||
+			!strings.Contains(err.Error(), k) {
+			t.Errorf("ValidateCredentialKey(%q) = %v, want the bash-owned refusal naming the key", k, err)
+		}
+	}
+	// The names bash merely reads stay the user's to use (P1), and the list
+	// is exact, not a substring or case-folded match.
+	for _, k := range []string{"IFS", "PATH", "HOME", "STRIPE_KEY", "MY_SECONDS", "seconds", "UIDX", "COMP",
+		"BASHFUL_KEY", "BASHX", "BASHPIDX"} {
+		if err := ValidateCredentialKey(k); err != nil {
+			t.Errorf("ValidateCredentialKey(%q) = %v, want accepted", k, err)
+		}
+	}
+	// It is a CREDENTIAL rule: a passthrough row keyed like this rides
+	// docker's -e, not the launcher's export loop.
+	if err := ValidateEnvFromHostKey("SECONDS"); err != nil {
+		t.Fatalf("env_from_host passthrough keyed SECONDS must still validate: %v", err)
+	}
+	_, recipient := mintIdentity(t, "pw")
+	row := encRow(t, recipient, "UID", credentials.KindEnv, "sk-live")
+	if _, ok, err := ParseEncryptedRow("UID", row); ok || err == nil || !strings.Contains(err.Error(), "bash owns this name") {
+		t.Fatalf("a hand-written credential row keyed UID must be refused at the row gate: ok=%v err=%v", ok, err)
+	}
+}

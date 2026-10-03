@@ -116,9 +116,10 @@ at runtime.
 them and they outlive `byre reset`, so they're for configuration, not
 credentials. `[env_from_host]` is the runtime channel and a legible
 grant: `KEY = "env:HOST_VAR"` passes a host env var at launch,
-`"git:user.email"` reads git config, `"tz:"` passes your timezone --
-values resolve at launch and never land in a layer. Git identity,
-`TERM`, and `TZ` already pass through by default.
+`"git:user.email"` reads git config, `"tz:"` passes your timezone, and
+`"cwd:"` passes the host directory your `/workspace` comes from -- values
+resolve at launch and never land in a layer. Git identity, `TERM`, and
+`TZ` already pass through by default.
 
 A row can also carry the value itself, encrypted: that is a **project
 credential**, written by `byre credentials set KEY` or by the same Env

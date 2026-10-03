@@ -29,13 +29,17 @@ import (
 // would be a concept the screen does not need.
 // `credential` comes LAST, and deliberately so: the editor that cannot write
 // one (--global, whose file no credentials verb targets either) offers the
-// first five and nothing else, and an option list that only ever SHRINKS from
+// first six and nothing else, and an option list that only ever SHRINKS from
 // the tail keeps every other scheme's index meaning one thing.
+//
+// `cwd:` sits beside `tz:` because it answers the same way: a host fact with no
+// argument to type.
 const (
 	schemeValue = iota
 	schemeGit
 	schemeEnv
 	schemeTZ
+	schemeCWD
 	schemeDisabled
 	schemeCredential
 )
@@ -43,7 +47,7 @@ const (
 // The picker's words, in picker order. `credential` is spelled in user terms
 // rather than as the scheme it writes: "encrypted:" says how the row is
 // stored, and the question this screen asks is what the box gets.
-var hostEnvSchemes = []string{"value", "git:", "env:", "tz:", "disabled", "credential"}
+var hostEnvSchemes = []string{"value", "git:", "env:", "tz:", "cwd:", "disabled", "credential"}
 
 // The credential KIND is a second picker, not two more options on this one:
 // the segmented picker paints every option on one line, and six schemes plus
@@ -51,6 +55,11 @@ var hostEnvSchemes = []string{"value", "git:", "env:", "tz:", "disabled", "crede
 // eat the very option a reader had selected. It is also the volumes editor's
 // shape (an entry carrying two independent closed vocabularies gets two
 // controls), and the question really is a second one: what the box gets.
+//
+// That line is now AT the limit: measured on a real pty, the seven options
+// render at 79 columns of 80 (`▸ `, the 17-column label, `: `, then
+// `[value] ... [credential]`). An eighth member needs this control rethought,
+// not one more option on it.
 var credKindOpts = []string{"env var", "file"}
 
 const (
@@ -127,6 +136,8 @@ func hostEnvArgHint(scheme int) string {
 		return "TERM"
 	case schemeTZ:
 		return "the host's timezone"
+	case schemeCWD:
+		return "the host directory /workspace comes from"
 	case schemeDisabled:
 		return "the key is passed through to nothing"
 	case schemeCredential:
@@ -152,6 +163,8 @@ func hostEnvScheme(src string) (int, string) {
 	//nolint:gocritic // the ordered switch reads as the grammar it decodes
 	case src == "tz:":
 		return schemeTZ, ""
+	case src == "cwd:":
+		return schemeCWD, ""
 	case strings.HasPrefix(src, "git:"):
 		return schemeGit, strings.TrimPrefix(src, "git:")
 	case strings.HasPrefix(src, "env:"):
@@ -177,6 +190,8 @@ func hostEnvSource(scheme int, arg string) string {
 		return "env:" + arg
 	case schemeTZ:
 		return "tz:"
+	case schemeCWD:
+		return "cwd:"
 	}
 	return "" // disabled
 }

@@ -50,7 +50,10 @@ companion_for = "gemini"
 # jq: the firstrun hook seeds security.auth.selectedType into settings.json
 # (idempotent merge, never clobbering a user's choice).
 apt = ["jq"]
-files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-gemini-shared-auth" }
+# byre-shared-auth-lib.sh: the filesystem primitives the shared-auth and
+# login hooks source. Five skills ship it to the same path, byte-identical,
+# so either works alone (ADR 0056).
+files = { "firstrun.sh" = "/etc/byre/firstrun.d/00-gemini-shared-auth", "byre-shared-auth-lib.sh" = "/usr/local/lib/byre-shared-auth-lib.sh" }
 
 [[volumes]]
 name = "gemini-identity"

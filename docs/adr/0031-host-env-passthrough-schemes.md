@@ -7,6 +7,17 @@
 > scheme must: as a named decision with its own consent surface, not a quiet
 > extension. The `""` disable and the closed-set rule are unchanged, and they
 > are the only members whose value comes from the config rather than the host.
+>
+> **Amended 2026-10-03** (`cwd:`): the deferral below is taken up. The set
+> gains one more argument-free member, `cwd:`, resolving to the host
+> directory the box's `/workspace` comes from -- the project dir, and under
+> `byre worktree` the new worktree's own path, since that is the directory
+> the box actually has. Opt-in per row (NOT in
+> `CoreEnvFromHost`), and an unresolvable one degrades like an absent host
+> var: the row resolves empty, says so at develop, and the launch proceeds.
+> It arrives the way this ADR says a scheme must -- a named decision with
+> its own refusal (`cwd:<anything>`) and its own row in the editor's source
+> picker.
 
 ADR 0026 shipped `env_from_host` with `git:` as the only source scheme
 and explicitly reserved `env:...` "until someone actually needs it — at
@@ -22,9 +33,10 @@ Mechanics:
   `env:<HOST_VAR>` (the named host env var, read at launch; an absent
   var sets nothing, same as an unset git key), `tz:` (no argument: the
   host timezone — the `TZ` env var if set, else the IANA name derived
-  from the `/etc/localtime` symlink; underivable sets nothing), and
-  `""` (disables the key). Anything else is a validation error naming
-  the legal schemes.
+  from the `/etc/localtime` symlink; underivable sets nothing), `cwd:`
+  (no argument either; see the 2026-10-03 amendment), and `""` (disables
+  the key). Anything else is a validation error naming the legal
+  schemes.
 - **No `raw:` / literal scheme** (proposed, rejected): a literal value
   already has a home — `[env]` — and per the glossary a config-literal
   env var is *config* while `env_from_host` entries are *grants*; a
@@ -48,7 +60,8 @@ Mechanics:
 
 Deferred: host-CWD passthrough ("perhaps" in the originating TODO) —
 no consumer today, and the scheme grammar makes adding one later cheap
-and non-breaking.
+and non-breaking. (Taken up 2026-10-03 as `cwd:`, for the cost this
+sentence predicted: one scheme arm, one resolver arm, one picker row.)
 
 Shipped alongside (same session, separate concern): `[runtime.env_docs]`
 — a skill's declared consumed-env guidance map (`NAME = "one-line

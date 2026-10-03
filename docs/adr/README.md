@@ -109,7 +109,7 @@ this index:
 - 0028: env.d hooks: the exported environment is the only lasting effect -- computing an export is fine; output, prompts, mutation, or reconfiguring the sourcing shell belongs in firstrun.d [arm: TestClaudeSharedAuthEnvHookExportsOnly, TestBundledEnvdHooksHavePurityArms, TestDockerHostComposeEnvHookIsPure]
 - 0029: packages: bundled ships from embed.FS only, installs are digest-verified; retired names get tombstones; amended by 0059 (2026-10-02): restore is the SECOND entry to that one acquisition flow, and the only other one [arm: TestRetiredNamesTombstone]
 - 0030: egress !closures survive the cascade, subtracting after skill union; portless !host closes every port [arm: TestResolvedEgressClosuresSubtractSkillEntries]
-- 0031: env_from_host sources are a closed scheme set (git:/env:/tz:/encrypted:/encrypted-file:/""); TERM and TZ ship in the core layer [arm: TestEnvFromHostCoreLayerAndValidation]
+- 0031: env_from_host sources are a closed scheme set (git:/env:/tz:/cwd:/encrypted:/encrypted-file:/""); TERM and TZ ship in the core layer; amended 2026-10-03: cwd: is the host dir the box's /workspace comes from, opt-in per row, empty degrades [arm: TestEnvFromHostCoreLayerAndValidation]
 - 0032: rootless Podman builds the generic 1000:1000 image and runs --userns=keep-id:uid=1000,gid=1000 [arm: TestDevelopKeepIDPath]
 - 0033: the MCP set bakes to /etc/byre/mcp.json in every image; adapters inject, never write agent state [arm: TestMCPConfigJSONDeterministicAndShaped]
 - 0034: companion_for declares pairing; shared_auth_for stays the vouch (implying it); both set refuses [arm: TestCompanionForSharedAuthForBothSetRefused]

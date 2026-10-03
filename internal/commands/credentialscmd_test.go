@@ -198,6 +198,12 @@ func TestCredentialsSetRefusals(t *testing.T) {
 		!strings.Contains(err.Error(), config.ReservedCredentialItem) {
 		t.Fatalf("reserved manifest key: %v", err)
 	}
+	// A name bash itself owns: the box's launcher would refuse the delivery,
+	// so the key is refused here first, with the reason, before any prompt.
+	if err := CredentialsSet(s, proj, "SECONDS", false, ""); err == nil ||
+		!strings.Contains(err.Error(), "bash owns this name") || !strings.Contains(err.Error(), "SECONDS") {
+		t.Fatalf("bash-owned key: %v", err)
+	}
 	// Minting an identity needs a terminal — a passphrase never rides a pipe.
 	nonTTY := Streams{Out: io.Discard, Err: &errBuf, In: strings.NewReader("v\n"), TTY: false}
 	if err := CredentialsSet(nonTTY, proj, "A", false, ""); err == nil || !strings.Contains(err.Error(), "terminal") {

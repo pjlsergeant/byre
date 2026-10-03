@@ -45,7 +45,11 @@ apt = ["curl", "ca-certificates", "unzip", "jq"]
 # Runs before the agent launches; skippable with Ctrl-C.
 # opencode-mcp-launch.sh: the MCP adapter — builds OPENCODE_CONFIG_CONTENT
 # from the canonical /etc/byre/mcp.json, execs opencode (ADR 0033).
-files = { "opencode-login.sh" = "/etc/byre/firstrun.d/opencode-login", "opencode-mcp-launch.sh" = "/usr/local/bin/byre-opencode-mcp-launch" }
+# byre-shared-auth-lib.sh: the filesystem primitives the login hook judges a
+# planted credential with. Five skills ship it to the same path,
+# byte-identical, so this skill works with or without opencode-shared-auth
+# (ADR 0056).
+files = { "opencode-login.sh" = "/etc/byre/firstrun.d/opencode-login", "opencode-mcp-launch.sh" = "/usr/local/bin/byre-opencode-mcp-launch", "byre-shared-auth-lib.sh" = "/usr/local/lib/byre-shared-auth-lib.sh" }
 dockerfile = [
   # Pre-create ~/.local's XDG tree AS THE DEV USER. The state volume targets
   # /home/dev/.local/share/opencode, and gen's volume-mount-point layer

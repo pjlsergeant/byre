@@ -145,12 +145,18 @@ same stance the vault design took toward its own store, arrived at again.
    The receiver is handed KEYS, which are already env-grammar — it restates no
    name grammar of its own.
 5. **The launcher wait is bounded FAIL-CLOSED** — ADR 0011's shape, not its
-   opposite. No sentinel, a manifest line the launcher cannot honor, or a bare
-   restart with credentials scheduled, and the agent never runs. The host
-   Stops the container on an inject failure and the launch fails. The export
-   step follows the env.d loop (ADR 0028), so credential exports win env
-   collisions; env-kind exports are byte-exact (`read -rd ''`, never command
-   substitution).
+   opposite. No sentinel, a manifest line the launcher cannot honor, a value
+   file it cannot read, or a bare restart with credentials scheduled, and the
+   agent never runs. The host Stops the container on an inject failure and the
+   launch fails. The wait and export run below the launch gate and ABOVE the
+   firstrun hooks, so a hook (a child process) inherits the delivered values
+   and a login hook stands down on one; a failed-closed launch therefore runs
+   no hook at all. The export is re-applied after the env.d loop (ADR 0028),
+   so credential exports still win env collisions; env-kind exports are
+   byte-exact (`read -rd ''`, never command substitution). (Amended
+   2026-10-03: the export followed the env.d loop alone, after every firstrun
+   hook — a login hook prompted for a key the user had delivered, and the
+   host's "delivered." line landed on its prompt.)
 6. **Honesty by measurement**: the inject's stderr outcome says plain
    "delivered" only when it provably landed inside the launcher's wait (the
    epoch is captured before the goroutine spawns, so the measurement

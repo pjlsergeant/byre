@@ -79,7 +79,11 @@ exceptions noted inline.
 - `[env_from_host]` -- the deliberate host-to-box value channel:
   `KEY = "env:HOST_VAR"` (a host env var, at runtime),
   `KEY = "git:config.key"` (from `git config`), `KEY = "tz:"` (your
-  timezone), `KEY = ""` (disable an inherited entry). Values resolve at
+  timezone), `KEY = "cwd:"` (the host directory the box's `/workspace`
+  comes from -- the project dir, and under `byre worktree` the worktree --
+  so the agent can name host paths for the files it is editing),
+  `KEY = ""` (disable an inherited entry).
+  Values resolve at
   launch and are never baked into the image. Git identity, `TERM`, and
   `TZ` pass through by default. The `BYRE_` prefix is reserved and
   refused here too -- a passthrough lands in the box's environment

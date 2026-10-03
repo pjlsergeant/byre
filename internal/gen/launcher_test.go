@@ -12,6 +12,25 @@ import (
 	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
+// launcherEnv is the environment every launcher (and receiver) run gets:
+// the test process's own, minus every BYRE_CRED_* variable, plus the case's
+// seams. The scrub is load-bearing: the suite runs inside a byre box, and a
+// box whose config declares credentials EXPORTS BYRE_CRED_EXPECT -- inherited
+// unscrubbed, it turned every launcher run without its own expectation into
+// a credential wait that failed closed (the default 20s bound, or the case's
+// own BYRE_CRED_WAIT: TestLauncherNoExpectNoWait waited out its 60s and
+// failed). A case that wants the wait sets the variables itself, after the
+// scrub.
+func launcherEnv(extra ...string) []string {
+	var env []string
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "BYRE_CRED_") {
+			env = append(env, e)
+		}
+	}
+	return append(env, extra...)
+}
+
 // runLauncher drives the real embedded launcher under bash with the gate file
 // override, asking it to exec `true` so a successful launch exits 0 instead of
 // starting a login shell. HOME is the launcher's own export (harmless in a
@@ -24,7 +43,7 @@ func runLauncher(t *testing.T, gateFile, timeout string) (int, string) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("bash", script, "true")
-	cmd.Env = append(os.Environ(),
+	cmd.Env = launcherEnv(
 		"BYRE_LAUNCH_GATE_FILE="+gateFile,
 		"BYRE_LAUNCH_GATE_TIMEOUT="+timeout,
 		// Isolate from the box running the suite: without these the launcher
@@ -124,7 +143,7 @@ func runLauncherEnvd(t *testing.T, envdDir string, cmd ...string) (int, string) 
 		t.Fatal(err)
 	}
 	c := exec.Command("bash", append([]string{script}, cmd...)...)
-	c.Env = append(os.Environ(),
+	c.Env = launcherEnv(
 		"BYRE_LAUNCH_GATE_FILE="+filepath.Join(dir, "no-such-gate"),
 		"BYRE_ENVD_DIR="+envdDir,
 		// Isolate from the box running the suite (see runLauncher).
@@ -185,7 +204,7 @@ func runLauncherFirstrun(t *testing.T, firstrunDir string, cmd ...string) (int, 
 		t.Fatal(err)
 	}
 	c := exec.Command("bash", append([]string{script}, cmd...)...)
-	c.Env = append(os.Environ(),
+	c.Env = launcherEnv(
 		"BYRE_LAUNCH_GATE_FILE="+filepath.Join(dir, "no-such-gate"),
 		"BYRE_FIRSTRUN_DIR="+firstrunDir,
 		"BYRE_ENVD_DIR="+filepath.Join(dir, "no-envd"),
@@ -483,7 +502,7 @@ func runLauncherInWorktree(t *testing.T, ws string) (int, string) {
 		t.Fatal(err)
 	}
 	c := exec.Command("bash", script, "true")
-	c.Env = append(os.Environ(),
+	c.Env = launcherEnv(
 		"BYRE_WORKSPACE_DIR="+ws,
 		"BYRE_LAUNCH_GATE_FILE="+filepath.Join(dir, "no-such-gate"),
 		"BYRE_FIRSTRUN_DIR="+filepath.Join(dir, "no-firstrun"),
@@ -611,7 +630,7 @@ func runLauncherCompose(t *testing.T, ctxDir, gateFile string, extraEnv ...strin
 		t.Fatal(err)
 	}
 	var env []string
-	for _, e := range os.Environ() {
+	for _, e := range launcherEnv() {
 		if !strings.HasPrefix(e, "BYRE_EGRESS=") && !strings.HasPrefix(e, "BYRE_SESSION_CONTEXT=") {
 			env = append(env, e)
 		}
@@ -780,7 +799,7 @@ func TestLauncherGateWaitsAboveFirstrunHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("bash", script, "true")
-	cmd.Env = append(os.Environ(),
+	cmd.Env = launcherEnv(
 		"BYRE_LAUNCH_GATE_FILE="+gate,
 		"BYRE_LAUNCH_GATE_TIMEOUT=1",
 		"BYRE_FIRSTRUN_DIR="+firstrun,
@@ -795,5 +814,43 @@ func TestLauncherGateWaitsAboveFirstrunHooks(t *testing.T) {
 	}
 	if _, statErr := os.Stat(envMarker); statErr == nil {
 		t.Errorf("an env.d hook was sourced before the gate opened — same ordering claim\n%s", out)
+	}
+}
+
+// The credential wait moved above the firstrun loop, and it must not have
+// moved above the gate with it: with credentials expected and an unopened
+// gate, the refusal is the GATE's, and the credential wait never started
+// (ADR 0011 -- nothing runs before the wall, a wait on host-delivered values
+// included). The two messages are distinct, so which one fired is the
+// ordering.
+func TestLauncherGateWaitsAboveCredentialWait(t *testing.T) {
+	dir := t.TempDir()
+	gate := filepath.Join(dir, "launch-gate")
+	if err := os.WriteFile(gate, []byte("59999"), 0o644); err != nil { // nobody listens
+		t.Fatal(err)
+	}
+	script := filepath.Join(dir, "launcher.sh")
+	if err := os.WriteFile(script, LauncherScript(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", script, "true")
+	cmd.Env = launcherEnv(
+		"BYRE_LAUNCH_GATE_FILE="+gate,
+		"BYRE_LAUNCH_GATE_TIMEOUT=1",
+		"BYRE_FIRSTRUN_DIR="+filepath.Join(dir, "no-firstrun"),
+		"BYRE_ENVD_DIR="+filepath.Join(dir, "no-envd"),
+		"BYRE_CRED_DIR="+filepath.Join(dir, "no-creds"), // never delivered
+		"BYRE_CRED_WAIT=1",
+		"BYRE_CRED_EXPECT=1",
+	)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("the launcher must fail closed when the gate never opens:\n%s", out)
+	}
+	if !strings.Contains(string(out), "launch gate") {
+		t.Fatalf("the gate's refusal did not fire:\n%s", out)
+	}
+	if strings.Contains(string(out), "did not arrive") {
+		t.Fatalf("the credential wait ran before the gate opened:\n%s", out)
 	}
 }

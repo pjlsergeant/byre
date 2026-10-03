@@ -21,9 +21,37 @@ package tuitest
 // and finding that out here costs a whole runner cycle.
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
+
+// hostEnvSchemeOrder is the env_from_host Source picker's options in the order
+// it PAINTS them -- a copy of internal/configui/hostenv.go's hostEnvSchemes,
+// which this package can neither read (unexported) nor import (configui's own
+// tests import tuitest). The walk asserts the RENDERED line against this copy
+// and derives its ←/→ counts from it, so the two can never disagree: a scheme
+// inserted mid-list fails the line assertion here instead of silently landing
+// the walk on the wrong option, which is how the cwd: row first broke it.
+var hostEnvSchemeOrder = []string{"value", "git:", "env:", "tz:", "cwd:", "disabled", "credential"}
+
+// picks is the ←/→ keys that move the Source picker from one option to another.
+func picks(t *testing.T, from, to string) []string {
+	t.Helper()
+	i, j := slices.Index(hostEnvSchemeOrder, from), slices.Index(hostEnvSchemeOrder, to)
+	if i < 0 || j < 0 {
+		t.Fatalf("picker order has no %q..%q: %v", from, to, hostEnvSchemeOrder)
+	}
+	key := "Right"
+	if j < i {
+		key, i, j = "Left", j, i
+	}
+	keys := make([]string, 0, j-i)
+	for n := i; n < j; n++ {
+		keys = append(keys, key)
+	}
+	return keys
+}
 
 func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	Require(t)
@@ -68,14 +96,29 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	e = s.Keys("Enter")
 	s.WaitForAfter(e, "Source")
 	// Focus lands on Key (the common path types straight into it), so reach
-	// the picker before driving it -- ←/→ in an input moves the cursor.
-	e = s.Keys("Up", "Right")
+	// the picker before driving it -- ←/→ in an input moves the cursor. The
+	// row this opens is a `git:` one (the Env screen's first key), so one
+	// Right lands on `env:` and its label follows.
+	e = s.Keys(append([]string{"Up"}, picks(t, "git:", "env:")...)...)
 	s.WaitForAfter(e, "host variable")
-	// Three more moves reach `credential`, the picker's last option and the
-	// product's one masked-input form: the kind picker appears beside it, and
-	// the notes state the write. Both are paint a model test cannot prove.
-	// (Nothing is typed, so nothing is written — esc leaves the form.)
-	e = s.Keys("Right", "Right", "Right")
+	// The whole option line, byte for byte: every scheme config accepts has a
+	// reachable row here (a scheme the editor cannot write is a hole in the
+	// product), and the ←/→ counts below are read off this same order, so a
+	// new scheme cannot shift a count without failing here first.
+	//
+	// The line is what this screen can prove about an argument-FREE scheme. Not
+	// its hint: this row opened prefilled from the inherited `git:` source, and
+	// a text input paints its placeholder only when empty, so `tz:` and `cwd:`
+	// show that leftover argument beside their "(no argument)" label instead --
+	// kept on purpose, so moving back to `git:` does not destroy what was
+	// typed, and dropped at encode (a model test pins that it never reaches the
+	// file).
+	s.WaitFor("[" + strings.Join(hostEnvSchemeOrder, "] [") + "]")
+	// On to `credential`, the picker's last option and the product's one
+	// masked-input form: the kind picker appears beside it, and the notes
+	// state the write. Both are paint a model test cannot prove. (Nothing is
+	// typed, so nothing is written — esc leaves the form.)
+	e = s.Keys(picks(t, "env:", "credential")...)
 	s.WaitForAfter(e, "Delivered as")
 	e = s.Paste("not-a-secret\nrefused-on-picker\n")
 	s.WaitForAfter(e, "Paste rejected")

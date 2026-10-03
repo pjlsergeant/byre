@@ -58,7 +58,11 @@ apt = ["curl", "ca-certificates", "gawk", "jq", "util-linux"]
 # shell to log in from. Runs before the agent launches; skippable with Ctrl-C.
 # codex-mcp-launch.sh: the MCP adapter — reads the canonical /etc/byre/mcp.json,
 # derives per-invocation `-c mcp_servers.*` overrides, execs codex (ADR 0033).
-files = { "codex-login.sh" = "/etc/byre/firstrun.d/codex-login", "codex-mcp-launch.sh" = "/usr/local/bin/byre-codex-mcp-launch" }
+# byre-shared-auth-lib.sh: the filesystem primitives the login hook judges a
+# planted credential with. Five skills ship it to the same path,
+# byte-identical, so this skill works with or without codex-shared-auth
+# (ADR 0056).
+files = { "codex-login.sh" = "/etc/byre/firstrun.d/codex-login", "codex-mcp-launch.sh" = "/usr/local/bin/byre-codex-mcp-launch", "byre-shared-auth-lib.sh" = "/usr/local/lib/byre-shared-auth-lib.sh" }
 dockerfile = [
   # This comment line is emitted into the generated Dockerfile so the awk swap
   # isn't a mystery to anyone inspecting it.

@@ -374,8 +374,8 @@ offer. Mechanics: ADR 0025.
 **Launch env hooks**:
 The chassis mechanism `/etc/byre/env.d/*.sh`: skill-contributed scripts
 the launcher sources (sorted, unprivileged, owing ADR 0028's purity
-contract) after firstrun hooks and immediately before exec'ing the
-agent -- the only way a skill can put env into the agent process at
+contract) after firstrun hooks, before the credential re-apply and exec
+of the agent -- the only way a skill can put env into the agent process at
 launch. Sibling of `firstrun.d`.
 
 **Core**:
@@ -436,7 +436,9 @@ _Avoid_: permission (implies a policy engine deciding; byre only reports)
 The one deliberate host→box data channel: a config map `KEY = "source"`.
 Sources are a closed scheme set -- `git:<config-key>`, `env:<HOST_VAR>`
 (absent host var sets nothing), `tz:` (the host timezone: TZ var if set,
-else the `/etc/localtime` symlink's IANA name), the two credential kinds
+else the `/etc/localtime` symlink's IANA name), `cwd:` (the host
+directory the box's `/workspace` comes from: the project dir, and under
+`byre worktree` the worktree), the two credential kinds
 `encrypted:` / `encrypted-file:`, and `""` to disable a lower layer's
 key. byre's core layer ships git identity, TERM, and TZ (ADR
 0026/0031). The `BYRE_` namespace is refused here as it is in `[env]`

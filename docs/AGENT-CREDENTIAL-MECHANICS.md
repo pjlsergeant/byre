@@ -204,15 +204,31 @@ the Claude Code credentials stored in ~/.claude"
 >   symlink-safe. `codex-shared-auth` therefore reconciles valid local/shared
 >   conflicts by `last_refresh` (mtime fallback) under `flock`, atomically
 >   publishes the winner, and restores the link. It never treats link absence
->   alone as authority to delete shared auth.
+>   alone as authority to delete shared auth. Its link step was hardened
+>   2026-10-03 with the opencode/gemini hooks (OpenCode §2 note): a temp
+>   symlink renamed over the local path with `mv -f`, then checked to be the
+>   link to the shared file (no GNU-only `-T`: the macOS CI leg runs these
+>   hooks with BSD tools), every step checked, so a failed link keeps the local
+>   login (the old `rm -f` then `ln -s` lost it); a newline-safe target read;
+>   and a symlinked or non-regular shared path refused. The reconciler now also
+>   refuses a symlinked identity dir or ancestor (physical path vs spelling,
+>   checked on the nearest existing ancestor before `mkdir -p` and on the dir
+>   after -- the order the opencode and gemini link hooks now follow too), so
+>   neither the lock nor a publish lands on the far side of a planted link. The
+>   flock'd publish keeps its shape -- the lock already serializes promotion --
+>   but its two renames (`auth.json`, `auth.json.prev`) are now `mv -f` with
+>   each destination vetted first and checked after the rename to be a regular
+>   non-symlink file (`.prev` also by type; `auth.json` also holding the bytes
+>   just staged), so a symlink or directory raced in is a refusal, never
+>   written through. The codex login hook's trust check gained the same
+>   absent-or-regular target requirement as opencode's.
 > - **Cold-start validation is expiry-gated and fail-open**: the Codex firstrun
 >   hook deliberately narrows Codex's proactive policy: a decodable JWT probes
 >   only within five minutes of expiry, while non-JWT tokens fall back to the
 >   eight-day `last_refresh` threshold. It then serializes a short `app-server`
->   `account/read` refresh probe
->   with the companion's machine lock. Network, process, and protocol ambiguity
->   preserve auth and launch with a warning; a concurrent credential change
->   suppresses recovery. An unavailable account is
+>   `account/read` refresh probe with the companion's machine lock. Network,
+>   process, and protocol ambiguity preserve auth and launch with a warning; a
+>   concurrent credential change suppresses recovery. An unavailable account is
 >   rechecked for a delayed sibling write before device login. Before that
 >   interactive login, byre removes only the box-local symlink: Codex's
 >   unconditional pre-login logout then has no shared credential to revoke.
@@ -435,6 +451,23 @@ no rename
 `OAuth2Client`; a `client.on('tokens', ...)` handler rewrites the cache file
 whenever the library refreshes. An env-selected encrypted-keystore mode
 bypasses the file entirely.
+
+**byre's link hook hardened 2026-10-03**, with `opencode-shared-auth` (see the
+OpenCode §2 note for the findings): `gemini-shared-auth`'s per-file loop had
+the same `mv || true; rm -f; ln -s || true` shape for all four identity files.
+Each file now gets the exclusive-create promotion, the checked temp-link + `mv
+-f` assert (then checked to be the link to the shared file; no GNU-only `-T`),
+the symlinked/non-regular shared-path refusal and the newline-safe target read;
+the identity dir's physical-path check runs once, on the nearest existing
+ancestor before `mkdir -p` and on the dir after. A refusal or failure skips
+only that file and keeps its local copy. The `settings.json` seed now writes
+only into a regular file or an absent path: a symlink (dangling or not) or any
+other non-regular object there -- a planted FIFO used to block the launch -- is
+left alone and named on stderr, and `selectedType` goes unseeded that launch.
+The merge seed writes a fresh `mktemp` file (never a fixed temp name a planted
+symlink could sit at), renames it over `settings.json` with `mv -f`, and checks
+the result is a regular non-symlink file; any failure drops the temp and skips
+the seed, said once.
 
 ### 3. Refresh-token rotation semantics
 
@@ -754,6 +787,31 @@ skill.toml). PID note for completeness: opencode's locks record `pid` +
 `hostname` but stale-probe on heartbeat/mtime, NOT `kill(pid,0)` -- so unlike
 grok's lock they are cross-container-safe on a shared volume; byre just
 doesn't share opencode's lock dir (per-box `$XDG_STATE_HOME`).
+
+**byre's link hook hardened 2026-10-03.** Because the write follows the link,
+the link hook is the trust boundary, and the original's `mv || true; rm -f; ln
+-s || true` shape had eight holes (found by three independent reviewers on the
+mimo port of this hook, each confirmed by failure injection).
+`opencode-shared-auth` now refuses a symlink planted AT the shared `auth.json`
+or on the identity dir's route (physical path must equal the spelling);
+promotes by exclusive create (temp copy + hard `ln`, which counts only once the
+shared name is checked to be that same inode, so two boxes promoting at once
+cannot overwrite each other, and a cross-volume `mv` is no longer copy+unlink);
+keeps the per-project file on any failed promotion or link (temp symlink + `mv
+-f`, then checked to be the link to the shared file — no GNU-only `-T`, since
+the macOS CI leg runs these hooks with BSD tools — every step checked); reads
+the target newline-safe; and prints each message only after its outcome. The
+`opencode` login hook's trust check additionally requires the trusted target to
+be absent or a regular non-symlink file, and stops (never reads, never logs in)
+on a non-regular credential or a foreign link it could not drop. The filesystem
+primitives all of this rides on -- the identity-route check, the shared-path
+vetting, the newline-safe link read, the temp-link+rename assert and the
+exclusive-create promote -- are ONE authored library,
+`/usr/local/lib/byre-shared-auth-lib.sh`, which five skills
+(`codex-shared-auth`, `gemini-shared-auth`, `opencode-shared-auth` and the
+`codex` and `opencode` login skills) ship byte-identical so each works alone
+(ADR 0056); each hook keeps its own policy, messages and diagnostics. They had
+already drifted when they were five copies.
 
 ### 3. Refresh-token rotation semantics
 

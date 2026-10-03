@@ -9,10 +9,12 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/packages"
 	"github.com/pjlsergeant/byre/internal/skills"
 	"github.com/pjlsergeant/byre/internal/testtools"
 )
@@ -81,7 +83,7 @@ func runCodexSharedAuthHook(t *testing.T, identityBase, codexHome string) {
 	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
 	cmd := exec.Command("bash", hook)
 	cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+identityBase, "CODEX_HOME="+codexHome,
-		"BYRE_CODEX_AUTH_RECONCILE="+reconcile)
+		"BYRE_CODEX_AUTH_RECONCILE="+reconcile, sharedAuthLibSeam(t, cat, "codex-shared-auth"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("hook failed: %v (%s)", err, out)
 	}
@@ -90,8 +92,20 @@ func runCodexSharedAuthHook(t *testing.T, identityBase, codexHome string) {
 // codexLoginHookEnv is the environment every login-hook invocation uses.
 // Reap grace is shortened so live_probe's TERM/KILL escalation does not spend
 // two wall-clock seconds per call; production still defaults to 1.
-func codexLoginHookEnv(extra ...string) []string {
-	return append(append(os.Environ(), extra...), "BYRE_CODEX_REAP_GRACE=0.05")
+func codexLoginHookEnv(t *testing.T, cat *packages.Catalog, extra ...string) []string {
+	t.Helper()
+	return append(append(os.Environ(), extra...),
+		"BYRE_CODEX_REAP_GRACE=0.05", sharedAuthLibSeam(t, cat, "codex"))
+}
+
+// codexReconcileEnv is the environment a direct reconcile.sh or firstrun-hook
+// invocation runs under: the identity-base and CODEX_HOME seams, plus the
+// shared-auth library the companion skill ships (a box's copy lives at
+// /usr/local/lib).
+func codexReconcileEnv(t *testing.T, cat *packages.Catalog, base, home string, extra ...string) []string {
+	t.Helper()
+	return append(append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CODEX_HOME="+home,
+		sharedAuthLibSeam(t, cat, "codex-shared-auth")), extra...)
 }
 
 // writeCodexSetsidShim supplies setsid on macOS; Linux uses util-linux.
@@ -124,7 +138,7 @@ func TestCodexSharedAuthDiagnosticsAreGatedAndRedacted(t *testing.T) {
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "firstrun.sh")
 	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
-	base, home := t.TempDir(), t.TempDir()
+	base, home := physTempDir(t), physTempDir(t)
 	shared := filepath.Join(base, "codex", "auth.json")
 	cred := filepath.Join(home, "auth.json")
 	logPath := filepath.Join(base, "codex", "byre-auth-diagnostic.log")
@@ -133,8 +147,7 @@ func TestCodexSharedAuthDiagnosticsAreGatedAndRedacted(t *testing.T) {
 	run := func(enabled bool) {
 		t.Helper()
 		cmd := exec.Command("bash", hook)
-		cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CODEX_HOME="+home,
-			"BYRE_CODEX_AUTH_RECONCILE="+reconcile)
+		cmd.Env = codexReconcileEnv(t, cat, base, home, "BYRE_CODEX_AUTH_RECONCILE="+reconcile)
 		if enabled {
 			cmd.Env = append(cmd.Env, "CODEX_AUTH_DIAGNOSTIC_BYRE=1")
 		} else {
@@ -197,7 +210,7 @@ func TestCodexSharedAuthDiagnosticsAreGatedAndRedacted(t *testing.T) {
 // login replaces stale shared auth; a newer shared login beats a stale local
 // copy; and the whole thing is idempotent.
 func TestCodexSharedAuthHookBehavior(t *testing.T) {
-	base, home := t.TempDir(), t.TempDir()
+	base, home := physTempDir(t), physTempDir(t)
 	shared := filepath.Join(base, "codex", "auth.json")
 	cred := filepath.Join(home, "auth.json")
 
@@ -267,7 +280,7 @@ func TestCodexSharedAuthHookBehavior(t *testing.T) {
 }
 
 func TestCodexSharedAuthMalformedLocalCannotReplaceShared(t *testing.T) {
-	base, home := t.TempDir(), t.TempDir()
+	base, home := physTempDir(t), physTempDir(t)
 	shared := filepath.Join(base, "codex", "auth.json")
 	cred := filepath.Join(home, "auth.json")
 	if err := os.MkdirAll(filepath.Dir(shared), 0o755); err != nil {
@@ -292,7 +305,7 @@ func TestCodexSharedAuthMalformedLocalCannotReplaceShared(t *testing.T) {
 }
 
 func TestCodexSharedAuthHollowTokensCannotReplaceShared(t *testing.T) {
-	base, home := t.TempDir(), t.TempDir()
+	base, home := physTempDir(t), physTempDir(t)
 	shared := filepath.Join(base, "codex", "auth.json")
 	cred := filepath.Join(home, "auth.json")
 	if err := os.MkdirAll(filepath.Dir(shared), 0o755); err != nil {
@@ -317,7 +330,7 @@ func TestCodexSharedAuthHollowTokensCannotReplaceShared(t *testing.T) {
 }
 
 func TestCodexSharedAuthWhitespaceTokensCannotReplaceShared(t *testing.T) {
-	base, home := t.TempDir(), t.TempDir()
+	base, home := physTempDir(t), physTempDir(t)
 	shared := filepath.Join(base, "codex", "auth.json")
 	cred := filepath.Join(home, "auth.json")
 	if err := os.MkdirAll(filepath.Dir(shared), 0o755); err != nil {
@@ -342,7 +355,7 @@ func TestCodexSharedAuthWhitespaceTokensCannotReplaceShared(t *testing.T) {
 func TestCodexSharedAuthPublishFailureReturnsNonzero(t *testing.T) {
 	_, cat := testCat(t)
 	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
-	base, home := t.TempDir(), t.TempDir()
+	base, home := physTempDir(t), physTempDir(t)
 	identity := filepath.Join(base, "codex")
 	if err := os.MkdirAll(identity, 0o755); err != nil {
 		t.Fatal(err)
@@ -357,7 +370,7 @@ func TestCodexSharedAuthPublishFailureReturnsNonzero(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(identity, 0o700) })
 
 	cmd := exec.Command("bash", reconcile, "test_publish_failure")
-	cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CODEX_HOME="+home)
+	cmd.Env = codexReconcileEnv(t, cat, base, home)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("publish failure returned success:\n%s", out)
@@ -371,7 +384,7 @@ func TestCodexSharedAuthPublishFailureReturnsNonzero(t *testing.T) {
 }
 
 func TestCodexSharedAuthMissingLocalNeverDeletesShared(t *testing.T) {
-	base, home := t.TempDir(), t.TempDir()
+	base, home := physTempDir(t), physTempDir(t)
 	shared := filepath.Join(base, "codex", "auth.json")
 	cred := filepath.Join(home, "auth.json")
 	if err := os.MkdirAll(filepath.Dir(shared), 0o755); err != nil {
@@ -392,8 +405,110 @@ func TestCodexSharedAuthMissingLocalNeverDeletesShared(t *testing.T) {
 	}
 }
 
+// The link step: a link to "$SHARED<newline>" -- a different file, which
+// $(readlink) compares equal to "$SHARED" -- is re-asserted to the clean
+// path; and a symlink planted AT the shared path is refused, the box's link
+// and the planted target both untouched. Containment cases (CLAUDE.md, two
+// tiers): refusal plus the unchanged victim, no message fragments.
+func TestCodexSharedAuthAssertLinkHardening(t *testing.T) {
+	validShared := `{"auth_mode":"chatgpt","tokens":{"access_token":"a","refresh_token":"r"},"last_refresh":"2026-07-20T00:00:00Z"}`
+
+	base, home := physTempDir(t), physTempDir(t)
+	shared := filepath.Join(base, "codex", "auth.json")
+	cred := filepath.Join(home, "auth.json")
+	if err := os.MkdirAll(filepath.Dir(shared), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(shared, []byte(validShared), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(shared+"\n", cred); err != nil {
+		t.Fatal(err)
+	}
+	runCodexSharedAuthHook(t, base, home)
+	if got, err := os.Readlink(cred); err != nil || got != shared {
+		t.Fatalf("a newline-suffixed link must be re-asserted to %q, got %q (%v)", shared, got, err)
+	}
+
+	base2, home2 := physTempDir(t), physTempDir(t)
+	shared2 := filepath.Join(base2, "codex", "auth.json")
+	cred2 := filepath.Join(home2, "auth.json")
+	if err := os.MkdirAll(filepath.Dir(shared2), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	decoy := filepath.Join(physTempDir(t), "decoy.json")
+	if err := os.WriteFile(decoy, []byte(validShared), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(decoy, shared2); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(home2, "other.json")
+	if err := os.Symlink(other, cred2); err != nil {
+		t.Fatal(err)
+	}
+	runCodexSharedAuthHook(t, base2, home2)
+	if got, err := os.Readlink(cred2); err != nil || got != other {
+		t.Fatalf("a planted shared symlink must be refused, the local path untouched: %q (%v)", got, err)
+	}
+	if fi, err := os.Stat(decoy); err != nil || fi.Mode().Perm() != 0o644 {
+		t.Fatalf("the planted link's target was touched: %v %v", fi, err)
+	}
+	if b, _ := os.ReadFile(decoy); string(b) != validShared {
+		t.Fatalf("the planted link's target was written: %q", b)
+	}
+
+	// The publish path's keep-a-copy step: with a valid local login and a
+	// symlink planted at the shared path, the old `[ -f "$SHARED" ] && cp`
+	// followed the link and copied the planter's target into auth.json.prev
+	// on the shared volume. Refused before anything is staged: no .prev, no
+	// publish over the planted link, the local login and the decoy as they
+	// were.
+	_, cat := testCat(t)
+	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	base3, home3 := physTempDir(t), physTempDir(t)
+	identity3 := filepath.Join(base3, "codex")
+	shared3 := filepath.Join(identity3, "auth.json")
+	cred3 := filepath.Join(home3, "auth.json")
+	if err := os.MkdirAll(identity3, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	decoy3 := filepath.Join(physTempDir(t), "decoy-secret")
+	const decoyBody = "not-yours-to-copy\n"
+	if err := os.WriteFile(decoy3, []byte(decoyBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(decoy3, shared3); err != nil {
+		t.Fatal(err)
+	}
+	local3 := `{"auth_mode":"chatgpt","tokens":{"access_token":"l","refresh_token":"lr"},"last_refresh":"2026-07-21T00:00:00Z"}`
+	if err := os.WriteFile(cred3, []byte(local3), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", reconcile, "test_planted_shared_publish")
+	cmd.Env = codexReconcileEnv(t, cat, base3, home3)
+	if out, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("publishing over a planted shared symlink must be refused, got success:\n%s", out)
+	}
+	if _, err := os.Lstat(filepath.Join(identity3, "auth.json.prev")); !os.IsNotExist(err) {
+		t.Fatalf("auth.json.prev must not be created from a planted shared symlink (lstat err %v)", err)
+	}
+	if b, _ := os.ReadFile(decoy3); string(b) != decoyBody {
+		t.Fatalf("the planted link's target was written: %q", b)
+	}
+	if got, err := os.Readlink(shared3); err != nil || got != decoy3 {
+		t.Fatalf("the planted shared link must be left as found (not published over): %q (%v)", got, err)
+	}
+	if fi, err := os.Lstat(cred3); err != nil || !fi.Mode().IsRegular() {
+		t.Fatalf("the local login must stay a regular file: %v %v", fi, err)
+	}
+	if b, _ := os.ReadFile(cred3); string(b) != local3 {
+		t.Fatalf("the local login was changed: %q", b)
+	}
+}
+
 func TestCodexSharedAuthMtimeFallbackForAPIKey(t *testing.T) {
-	base, home := t.TempDir(), t.TempDir()
+	base, home := physTempDir(t), physTempDir(t)
 	shared := filepath.Join(base, "codex", "auth.json")
 	cred := filepath.Join(home, "auth.json")
 	if err := os.MkdirAll(filepath.Dir(shared), 0o755); err != nil {
@@ -427,7 +542,7 @@ func TestCodexSharedAuthConcurrentPromotesKeepNewest(t *testing.T) {
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "firstrun.sh")
 	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
-	base, homeOld, homeNew := t.TempDir(), t.TempDir(), t.TempDir()
+	base, homeOld, homeNew := physTempDir(t), physTempDir(t), physTempDir(t)
 	oldAuth := `{"auth_mode":"chatgpt","tokens":{"access_token":"old","refresh_token":"old-refresh"},"last_refresh":"2026-07-20T00:00:00Z"}`
 	newAuth := `{"auth_mode":"chatgpt","tokens":{"access_token":"new","refresh_token":"new-refresh"},"last_refresh":"2026-07-21T00:00:00Z"}`
 	if err := os.WriteFile(filepath.Join(homeOld, "auth.json"), []byte(oldAuth), 0o600); err != nil {
@@ -439,8 +554,7 @@ func TestCodexSharedAuthConcurrentPromotesKeepNewest(t *testing.T) {
 
 	run := func(home string, done chan<- error) {
 		cmd := exec.Command("bash", hook)
-		cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CODEX_HOME="+home,
-			"BYRE_CODEX_AUTH_RECONCILE="+reconcile)
+		cmd.Env = codexReconcileEnv(t, cat, base, home, "BYRE_CODEX_AUTH_RECONCILE="+reconcile)
 		_, err := cmd.CombinedOutput()
 		done <- err
 	}
@@ -471,7 +585,7 @@ func TestCodexSharedAuthLockTimeoutSkipsReconciliation(t *testing.T) {
 	needCodexFlock(t)
 	_, cat := testCat(t)
 	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
-	base, home := t.TempDir(), t.TempDir()
+	base, home := physTempDir(t), physTempDir(t)
 	identity := filepath.Join(base, "codex")
 	if err := os.MkdirAll(identity, 0o755); err != nil {
 		t.Fatal(err)
@@ -509,7 +623,7 @@ func TestCodexSharedAuthLockTimeoutSkipsReconciliation(t *testing.T) {
 	}
 
 	cmd := exec.Command("bash", reconcile, "test_lock_timeout")
-	cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CODEX_HOME="+home)
+	cmd.Env = codexReconcileEnv(t, cat, base, home)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("held lock did not produce a nonzero skip:\n%s", out)
@@ -559,7 +673,7 @@ func TestCodexSharedAuthNonRegularLockIsReplaced(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			base, home := t.TempDir(), t.TempDir()
+			base, home := physTempDir(t), physTempDir(t)
 			identity := filepath.Join(base, "codex")
 			if err := os.MkdirAll(identity, 0o755); err != nil {
 				t.Fatal(err)
@@ -575,7 +689,7 @@ func TestCodexSharedAuthNonRegularLockIsReplaced(t *testing.T) {
 			plant(t, filepath.Join(identity, "auth.lock"), victim)
 
 			cmd := exec.Command("timeout", "20", "bash", reconcile, "test_nonregular_lock")
-			cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CODEX_HOME="+home)
+			cmd.Env = codexReconcileEnv(t, cat, base, home)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("reconcile with a planted %s lock failed (a hang shows as timeout exit 124): %v\n%s", name, err, out)
@@ -598,7 +712,7 @@ func TestCodexSharedAuthNonRegularLockIsReplaced(t *testing.T) {
 // replaced and the plant's target never sees credential bytes. (A planted
 // FIFO is covered by the same rename — mv -f replaces the dirent.)
 func TestCodexSharedAuthRetentionDoesNotFollowPlantedPrev(t *testing.T) {
-	base, home := t.TempDir(), t.TempDir()
+	base, home := physTempDir(t), physTempDir(t)
 	identity := filepath.Join(base, "codex")
 	shared := filepath.Join(identity, "auth.json")
 	if err := os.MkdirAll(identity, 0o755); err != nil {
@@ -638,7 +752,7 @@ func TestCodexSharedAuthRetentionDoesNotFollowPlantedPrev(t *testing.T) {
 // displaced bytes as auth.json.prev (0600): a wrong winner pick is then a
 // file restore, not a re-login on every box sharing the credential.
 func TestCodexSharedAuthPublishRetainsDisplacedShared(t *testing.T) {
-	base, home := t.TempDir(), t.TempDir()
+	base, home := physTempDir(t), physTempDir(t)
 	shared := filepath.Join(base, "codex", "auth.json")
 	cred := filepath.Join(home, "auth.json")
 	if err := os.MkdirAll(filepath.Dir(shared), 0o755); err != nil {
@@ -668,38 +782,80 @@ func TestCodexSharedAuthPublishRetainsDisplacedShared(t *testing.T) {
 	}
 }
 
-// TestCodexLoginHookRejectsForeignSymlink mirrors the opencode login-hook
-// coverage for codex's carve-out: the trusted target is the HARDCODED full
-// path /home/dev/.byre-identity/codex/auth.json (own-dir + basename equality,
-// not a /home/dev/.byre-identity/* wildcard — a wildcard would trust a link
-// into a SIBLING agent's identity dir, through which a `codex login` would
-// overwrite that agent's machine-wide credential; a dir-only match would
-// trust any other name inside codex's dir).
-//
-// LIMIT of the behavioral half: the trusted base is deliberately hardcoded
-// (an env seam would let a config-supplied [env] var redefine the trusted
-// namespace — see the opencode hook's comment), so a unit test can't build a
-// sibling-identity fixture; a temp-dir target is foreign under BOTH the old
-// wildcard and the new equality. The narrowing itself is pinned by the source
-// assertions below; the behavioral cases cover
-// foreign-link removal and the logged-in short-circuit.
+// The publish rename cannot take GNU's -T (the macOS CI leg runs BSD mv), so a
+// directory that races in between the shared-path check and the rename RECEIVES
+// the staged login instead of failing -- and so does a SYMLINK to a directory,
+// which mv follows, putting this box's login wherever on the identity volume
+// the link points. The refusal was already right in both cases; what was wrong
+// is that the login then STAYED there, mode 600, on a volume every sibling box
+// reads, under a message saying the credential stayed local. A `cp` stub plants
+// the object in the window the real race would use -- the hook refuses a
+// directory or a symlink that is already there long before the publish, so a
+// race is the only way in.
+func TestCodexSharedAuthPublishLeavesNothingInARacedInDirectory(t *testing.T) {
+	testtools.NeedTool(t, "bash", "jq")
+	_, cat := testCat(t)
+	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	realCp, err := exec.LookPath("cp")
+	if err != nil {
+		t.Skip("no cp on PATH")
+	}
+	local := `{"auth_mode":"chatgpt","tokens":{"access_token":"a","refresh_token":"r"},"last_refresh":"2026-07-21T00:00:00Z"}`
+	for _, tc := range []struct {
+		name string
+		// plant is the shell the stubbed cp runs after copying, in the window
+		// between the shared-path check and the rename; it returns the directory
+		// that must be empty afterwards.
+		plant func(t *testing.T, shared, scratch string) (string, string)
+	}{
+		{"directory", func(t *testing.T, shared, _ string) (string, string) {
+			return "mkdir -p -- " + strconv.Quote(shared) + "\n", shared
+		}},
+		{"symlink to a directory", func(t *testing.T, shared, scratch string) (string, string) {
+			if err := os.MkdirAll(scratch, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			return "ln -s -- " + strconv.Quote(scratch) + " " + strconv.Quote(shared) + "\n", scratch
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base, home, bin := physTempDir(t), physTempDir(t), physTempDir(t)
+			shared := filepath.Join(base, "codex", "auth.json")
+			cred := filepath.Join(home, "auth.json")
+			if err := os.WriteFile(cred, []byte(local), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			plant, mustBeEmpty := tc.plant(t, shared, filepath.Join(base, "codex", "planted-dir"))
+			stub := "#!/bin/sh\n" + realCp + " \"$@\" || exit 1\n" + plant + "exit 0\n"
+			if err := os.WriteFile(filepath.Join(bin, "cp"), []byte(stub), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("bash", reconcile, "test_raced_in_directory")
+			cmd.Env = codexReconcileEnv(t, cat, base, home, "PATH="+bin+":"+os.Getenv("PATH"))
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatalf("publishing into a raced-in directory must be refused, got success:\n%s", out)
+			}
+			if ents, err := os.ReadDir(mustBeEmpty); err != nil || len(ents) != 0 {
+				t.Fatalf("the refused publish left this box's login in %s: %v (%v)\n%s", mustBeEmpty, ents, err, out)
+			}
+			isRegularWith(t, cred, local)
+		})
+	}
+}
+
+// TestCodexLoginHookRejectsForeignSymlink: a symlinked credential whose
+// target is not codex's own shared one is removed before anything reads or
+// writes through it, and a link the hook cannot remove stops the hook instead
+// of falling through to a login. The trusted target is the HARDCODED full path
+// /home/dev/.byre-identity/codex/auth.json, so every temp-dir link here is
+// foreign; the carve-out itself is driven against a rewritten copy of the hook
+// in TestCodexLoginHookTrustsOnlyItsOwnIdentityLink.
 func TestCodexLoginHookRejectsForeignSymlink(t *testing.T) {
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
 
-	// Pin the WHOLE predicate line in the hook source — the full conjunction,
-	// not its halves independently — so weakening either side (or the &&)
-	// fails here.
-	src, err := os.ReadFile(hook)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(src),
-		`if [ "$tdir" = "/home/dev/.byre-identity/codex" ] && [ "$(basename "$target")" = "auth.json" ]; then`) {
-		t.Error("hook must trust ONLY the full canonical path /home/dev/.byre-identity/codex/auth.json (single && predicate)")
-	}
-
-	bin := t.TempDir()
+	bin := physTempDir(t)
 	stamp := filepath.Join(bin, "login-attempted")
 	// Stub codex: `login status` reports NOT logged in (exit 1); `login
 	// --device-auth` records the attempt. Anything else is a no-op success.
@@ -715,7 +871,7 @@ func TestCodexLoginHookRejectsForeignSymlink(t *testing.T) {
 	run := func(codexHome string) {
 		t.Helper()
 		cmd := exec.Command("bash", hook)
-		cmd.Env = codexLoginHookEnv("PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+codexHome,
+		cmd.Env = codexLoginHookEnv(t, cat, "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+codexHome,
 			"BYRE_CODEX_AUTH_RECONCILE=/nonexistent")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("hook failed: %v (%s)", err, out)
@@ -724,7 +880,7 @@ func TestCodexLoginHookRejectsForeignSymlink(t *testing.T) {
 
 	// A FOREIGN symlinked credential (temp-dir target) is removed; a fresh
 	// login runs.
-	home := t.TempDir()
+	home := physTempDir(t)
 	cred := filepath.Join(home, "auth.json")
 	planted := filepath.Join(home, "elsewhere.json")
 	if err := os.WriteFile(planted, []byte(`{"tokens":{"access_token":"planted"}}`), 0o600); err != nil {
@@ -741,13 +897,38 @@ func TestCodexLoginHookRejectsForeignSymlink(t *testing.T) {
 		t.Fatal("removal must fall through to a fresh login; none was attempted")
 	}
 
+	// A foreign link the hook cannot drop (read-only CODEX_HOME) must not
+	// fall through to a status probe or login that would go THROUGH it.
+	if os.Geteuid() != 0 { // root ignores the mode bits this case relies on
+		_ = os.Remove(stamp)
+		roHome := physTempDir(t)
+		victim := filepath.Join(physTempDir(t), "victim.json")
+		if err := os.WriteFile(victim, []byte("victim"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(victim, filepath.Join(roHome, "auth.json")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(roHome, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(roHome, 0o755) })
+		run(roHome)
+		if loginAttempted() {
+			t.Fatal("a foreign link that could not be removed must not lead to a login")
+		}
+		if b, err := os.ReadFile(victim); err != nil || string(b) != "victim" {
+			t.Fatalf("the link's target must be untouched: %v %q", err, b)
+		}
+	}
+
 	// A logged-in codex (login status = 0) short-circuits: no login attempted.
 	_ = os.Remove(stamp)
 	if err := os.WriteFile(filepath.Join(bin, "codex"),
 		[]byte("#!/bin/sh\ntest \"$1 $2\" = 'login status' && exit 0\ntouch "+stamp+"\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	home2 := t.TempDir()
+	home2 := physTempDir(t)
 	if err := os.WriteFile(filepath.Join(home2, "auth.json"), []byte(`{"tokens":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -757,11 +938,140 @@ func TestCodexLoginHookRejectsForeignSymlink(t *testing.T) {
 	}
 }
 
+// The trusted-link carve-out: the hook accepts codex-shared-auth's own link
+// into ITS identity dir (dangling included -- the first-login state) and
+// removes every other symlink, because `codex login status`, the live probe
+// and a login all read and write THROUGH the link. The trust root is
+// deliberately hardcoded (an env seam there would let a config-supplied [env]
+// var redefine the trusted namespace), so the only way to exercise the
+// acceptance is a copy of the hook with that literal rewritten. All three
+// halves of the conjunction are driven here: the identity dir, the auth.json
+// basename, and the target object being absent or a regular file -- a link
+// planted AT the shared auth.json would chain a login's write onward to a
+// file of the planter's choosing. A wildcard over the identity base would
+// trust a link into a SIBLING agent's dir, through which a `codex login` would
+// overwrite that agent's machine-wide credential.
+func TestCodexLoginHookTrustsOnlyItsOwnIdentityLink(t *testing.T) {
+	testtools.NeedTool(t, "bash")
+	_, cat := testCat(t)
+	src, err := os.ReadFile(filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := physTempDir(t)
+	stamp := filepath.Join(bin, "login-attempted")
+	// `login status` reports logged in, so the hook judges the link and then
+	// short-circuits: no login, and whatever it decided about the link stands.
+	if err := os.WriteFile(filepath.Join(bin, "codex"),
+		[]byte("#!/bin/sh\ncase \"$1 $2\" in 'login status') exit 0 ;; esac\ntouch "+stamp+"\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name   string
+		target func(identity, elsewhere string) string
+		plant  func(t *testing.T, target string)
+		kept   bool
+	}{
+		{"dangling link into the identity dir is kept", func(id, _ string) string {
+			return filepath.Join(id, "auth.json")
+		}, nil, true},
+		{"link to a regular shared credential is kept", func(id, _ string) string {
+			return filepath.Join(id, "auth.json")
+		}, func(t *testing.T, target string) {
+			if err := os.WriteFile(target, []byte(`{"tokens":{"access_token":"shared"}}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, true},
+		{"link whose shared end is itself a symlink is dropped", func(id, _ string) string {
+			return filepath.Join(id, "auth.json")
+		}, func(t *testing.T, target string) {
+			if err := os.Symlink(filepath.Join(filepath.Dir(target), "chained.json"), target); err != nil {
+				t.Fatal(err)
+			}
+		}, false},
+		{"link to another name in the identity dir is dropped", func(id, _ string) string {
+			return filepath.Join(id, "other.json")
+		}, nil, false},
+		{"link outside the identity dir is dropped", func(_, elsewhere string) string {
+			return filepath.Join(elsewhere, "auth.json")
+		}, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base, home, elsewhere := physTempDir(t), physTempDir(t), physTempDir(t)
+			identity := filepath.Join(base, "codex")
+			if err := os.MkdirAll(identity, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			hook := filepath.Join(physTempDir(t), "codex-login.sh")
+			if err := os.WriteFile(hook,
+				[]byte(strings.ReplaceAll(string(src), "/home/dev/.byre-identity/codex", identity)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			target := tc.target(identity, elsewhere)
+			if tc.plant != nil {
+				tc.plant(t, target)
+			}
+			cred := filepath.Join(home, "auth.json")
+			if err := os.Symlink(target, cred); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("bash", hook)
+			cmd.Env = codexLoginHookEnv(t, cat, "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+				"BYRE_IDENTITY_BASE="+base, "BYRE_CODEX_AUTH_RECONCILE=/nonexistent")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("hook failed: %v (%s)", err, out)
+			}
+			if _, err := os.Stat(stamp); err == nil {
+				t.Fatal("a logged-in codex must not be offered a login")
+			}
+			got, err := os.Readlink(cred)
+			if tc.kept && (err != nil || got != target) {
+				t.Fatalf("the trusted link must be kept, got %q (%v)", got, err)
+			}
+			if !tc.kept {
+				if _, err := os.Lstat(cred); !os.IsNotExist(err) {
+					t.Fatalf("an untrusted link must be removed, still present (%v)", err)
+				}
+			}
+		})
+	}
+}
+
+// A FIFO (or any other non-regular object) at the credential path is not a
+// credential codex wrote: the hook stops before `codex login status`, jq or
+// the live probe open it -- opening a FIFO blocks -- and runs no codex at
+// all. Containment: no codex invocation, exit 0, the object left alone.
+func TestCodexLoginHookRefusesNonRegularCredential(t *testing.T) {
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
+	testtools.NeedTool(t, "bash")
+	bin := physTempDir(t)
+	marker := filepath.Join(bin, "codex-ran")
+	if err := os.WriteFile(filepath.Join(bin, "codex"),
+		[]byte("#!/bin/sh\ntouch "+marker+"\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	home := physTempDir(t)
+	fifo := filepath.Join(home, "auth.json")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runHook(t, "bash", hook, "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+		"BYRE_CODEX_AUTH_RECONCILE=/nonexistent", "BYRE_CODEX_REAP_GRACE=0.05",
+		sharedAuthLibSeam(t, cat, "codex"))
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("a FIFO at the credential path must not lead to any codex invocation")
+	}
+	if fi, err := os.Lstat(fifo); err != nil || fi.Mode()&os.ModeNamedPipe == 0 {
+		t.Fatalf("the FIFO must be left alone: %v %v", fi, err)
+	}
+}
+
 func TestCodexLoginHookPublishesSuccessfulDeviceLogin(t *testing.T) {
 	_, cat := testCat(t)
 	loginHook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
 	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
-	base, home, bin := t.TempDir(), t.TempDir(), t.TempDir()
+	base, home, bin := physTempDir(t), physTempDir(t), physTempDir(t)
 	shared := filepath.Join(base, "codex", "auth.json")
 	freshAuth := `{"auth_mode":"chatgpt","tokens":{"access_token":"fresh","refresh_token":"fresh-refresh"},"last_refresh":"2026-07-21T00:00:00Z"}`
 
@@ -777,7 +1087,7 @@ func TestCodexLoginHookPublishesSuccessfulDeviceLogin(t *testing.T) {
 	}
 
 	cmd := exec.Command("bash", loginHook)
-	cmd.Env = codexLoginHookEnv(
+	cmd.Env = codexLoginHookEnv(t, cat,
 		"PATH="+bin+":/usr/bin:/bin",
 		"CODEX_HOME="+home,
 		"BYRE_IDENTITY_BASE="+base,
@@ -858,7 +1168,7 @@ func TestCodexLoginHookColdStartProbe(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			home, bin := t.TempDir(), t.TempDir()
+			home, bin := physTempDir(t), physTempDir(t)
 			writeCodexSetsidShim(t, bin)
 			probeStamp := filepath.Join(home, "probe")
 			loginStamp := filepath.Join(home, "login")
@@ -889,7 +1199,7 @@ func TestCodexLoginHookColdStartProbe(t *testing.T) {
 			}
 
 			cmd := exec.Command("bash", hook)
-			cmd.Env = codexLoginHookEnv("PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+			cmd.Env = codexLoginHookEnv(t, cat, "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
 				"BYRE_CODEX_AUTH_RECONCILE=/nonexistent")
 			out, err := cmd.CombinedOutput()
 			if err != nil {
@@ -920,7 +1230,7 @@ func TestCodexLoginHookReapsAppServer(t *testing.T) {
 	testtools.NeedTool(t, "ps")
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
-	home, bin := t.TempDir(), t.TempDir()
+	home, bin := physTempDir(t), physTempDir(t)
 	writeCodexSetsidShim(t, bin)
 	auth := `{"auth_mode":"chatgpt","tokens":{"access_token":"opaque","refresh_token":"refresh"},"last_refresh":"2020-01-01T00:00:00Z"}`
 	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(auth), 0o600); err != nil {
@@ -942,7 +1252,7 @@ func TestCodexLoginHookReapsAppServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("bash", hook)
-	cmd.Env = codexLoginHookEnv("PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+	cmd.Env = codexLoginHookEnv(t, cat, "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
 		"BYRE_CODEX_AUTH_RECONCILE=/nonexistent")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("hook failed: %v (%s)", err, out)
@@ -980,7 +1290,7 @@ func TestCodexLoginHookDetachesSharedLinkBeforeDeviceLogin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	base, home, bin := t.TempDir(), t.TempDir(), t.TempDir()
+	base, home, bin := physTempDir(t), physTempDir(t), physTempDir(t)
 	writeCodexSetsidShim(t, bin)
 	identity := filepath.Join(base, "codex")
 	if err := os.MkdirAll(identity, 0o700); err != nil {
@@ -996,10 +1306,12 @@ func TestCodexLoginHookDetachesSharedLinkBeforeDeviceLogin(t *testing.T) {
 	}
 
 	// The production trust root is intentionally not configurable. Materialize a
-	// test-only copy with that one literal replaced so the destructive boundary
-	// can be exercised without sharing /home/dev state between parallel tests.
-	testSrc := strings.Replace(string(src), `/home/dev/.byre-identity/codex`, identity, 1)
-	testHook := filepath.Join(t.TempDir(), "codex-login.sh")
+	// test-only copy with EVERY occurrence of that literal replaced -- it
+	// appears twice, as the predicate's dir and as its tfile -- so the
+	// destructive boundary can be exercised without sharing /home/dev state
+	// between parallel tests.
+	testSrc := strings.ReplaceAll(string(src), `/home/dev/.byre-identity/codex`, identity)
+	testHook := filepath.Join(physTempDir(t), "codex-login.sh")
 	if err := os.WriteFile(testHook, []byte(testSrc), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1020,7 +1332,7 @@ func TestCodexLoginHookDetachesSharedLinkBeforeDeviceLogin(t *testing.T) {
 	}
 	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
 	cmd := exec.Command("bash", testHook)
-	cmd.Env = codexLoginHookEnv("PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+	cmd.Env = codexLoginHookEnv(t, cat, "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
 		"BYRE_IDENTITY_BASE="+base, "BYRE_CODEX_AUTH_RECONCILE="+reconcile)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1040,6 +1352,85 @@ func TestCodexLoginHookDetachesSharedLinkBeforeDeviceLogin(t *testing.T) {
 	}
 }
 
+// The accepted shared link is judged by its TARGET, but the shared-auth path
+// then works by the identity dir's SPELLING (mkdir -p, the auth.lock open,
+// the diagnostic log). An identity base that resolves through a symlink must
+// not get a dir, lock or log created on the far side: the hook drops shared
+// auth and its link with one stderr line and goes on per-project -- the
+// device login still runs and writes a LOCAL regular file, and the shared
+// credential is not touched.
+func TestCodexLoginHookRefusesSymlinkedIdentityDir(t *testing.T) {
+	testtools.NeedTool(t, "bash", "jq")
+	_, cat := testCat(t)
+	src, err := os.ReadFile(filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	realBase, home, bin := physTempDir(t), physTempDir(t), physTempDir(t)
+	identity := filepath.Join(realBase, "codex")
+	if err := os.MkdirAll(identity, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	shared := filepath.Join(identity, "auth.json")
+	stale := `{"auth_mode":"chatgpt","tokens":{"access_token":"opaque","refresh_token":"dead"},"last_refresh":"2020-01-01T00:00:00Z"}`
+	if err := os.WriteFile(shared, []byte(stale), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(shared, filepath.Join(home, "auth.json")); err != nil {
+		t.Fatal(err)
+	}
+	// The seam spells the identity base through a symlink to the real one:
+	// the link's target still resolves to the (test) trust root, so only the
+	// spelling check stands between the hook and the far side.
+	linkBase := filepath.Join(physTempDir(t), "base-link")
+	if err := os.Symlink(realBase, linkBase); err != nil {
+		t.Fatal(err)
+	}
+	testSrc := strings.ReplaceAll(string(src), `/home/dev/.byre-identity/codex`, identity)
+	testHook := filepath.Join(physTempDir(t), "codex-login.sh")
+	if err := os.WriteFile(testHook, []byte(testSrc), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	loginStamp := filepath.Join(home, "login-ran")
+	fresh := `{"auth_mode":"chatgpt","tokens":{"access_token":"opaque","refresh_token":"fresh"},"last_refresh":"2030-01-01T00:00:00Z"}`
+	stub := "#!/bin/sh\n" +
+		"if [ \"$1 $2\" = 'login status' ]; then test -e \"$CODEX_HOME/auth.json\"; exit $?; fi\n" +
+		"if [ \"$1 $2\" = 'login --device-auth' ]; then\n" +
+		"  test ! -e \"$CODEX_HOME/auth.json\" && test ! -L \"$CODEX_HOME/auth.json\" || exit 41\n" +
+		"  touch " + strconv.Quote(loginStamp) + "\n" +
+		"  printf '%s' " + strconv.Quote(fresh) + " > \"$CODEX_HOME/auth.json\"\n" +
+		"  exit 0\nfi\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", testHook)
+	cmd.Env = codexLoginHookEnv(t, cat, "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+		"BYRE_IDENTITY_BASE="+linkBase, "CODEX_AUTH_DIAGNOSTIC_BYRE=1",
+		"BYRE_CODEX_AUTH_RECONCILE="+filepath.Join(physTempDir(t), "no-reconcile"))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("hook failed: %v (%s)", err, out)
+	}
+	// Containment test: the refusal (nothing created through the link, the
+	// login landing local) and the untouched shared file are the contract;
+	// the stderr wording is not pinned (CLAUDE.md, two tiers).
+	for _, name := range []string{"auth.lock", "byre-auth-diagnostic.log"} {
+		if _, err := os.Lstat(filepath.Join(identity, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s was created through the symlinked identity base (%v)", name, err)
+		}
+	}
+	if _, err := os.Stat(loginStamp); err != nil {
+		t.Fatalf("the per-project device login must still run: %v (%s)", err, out)
+	}
+	fi, err := os.Lstat(filepath.Join(home, "auth.json"))
+	if err != nil || !fi.Mode().IsRegular() {
+		t.Fatalf("the login must land as a local regular file: %v %v", fi, err)
+	}
+	if got, err := os.ReadFile(shared); err != nil || string(got) != stale {
+		t.Fatalf("the shared credential must be untouched: %v %q", err, got)
+	}
+}
+
 func TestCodexLoginHookAdoptsDelayedSiblingRefresh(t *testing.T) {
 	needCodexFlock(t)
 	_, cat := testCat(t)
@@ -1047,7 +1438,7 @@ func TestCodexLoginHookAdoptsDelayedSiblingRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	base, home, bin := t.TempDir(), t.TempDir(), t.TempDir()
+	base, home, bin := physTempDir(t), physTempDir(t), physTempDir(t)
 	writeCodexSetsidShim(t, bin)
 	identity := filepath.Join(base, "codex")
 	if err := os.MkdirAll(identity, 0o700); err != nil {
@@ -1062,8 +1453,8 @@ func TestCodexLoginHookAdoptsDelayedSiblingRefresh(t *testing.T) {
 	if err := os.Symlink(shared, filepath.Join(home, "auth.json")); err != nil {
 		t.Fatal(err)
 	}
-	testSrc := strings.Replace(string(src), `/home/dev/.byre-identity/codex`, identity, 1)
-	testHook := filepath.Join(t.TempDir(), "codex-login.sh")
+	testSrc := strings.ReplaceAll(string(src), `/home/dev/.byre-identity/codex`, identity)
+	testHook := filepath.Join(physTempDir(t), "codex-login.sh")
 	if err := os.WriteFile(testHook, []byte(testSrc), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1080,7 +1471,7 @@ func TestCodexLoginHookAdoptsDelayedSiblingRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("bash", testHook)
-	cmd.Env = codexLoginHookEnv("PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+	cmd.Env = codexLoginHookEnv(t, cat, "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
 		"BYRE_IDENTITY_BASE="+base, "CODEX_AUTH_DIAGNOSTIC_BYRE=1")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("hook failed: %v (%s)", err, out)
@@ -1104,7 +1495,7 @@ func TestCodexLoginHookRestoresSharedLinkAfterFailedLogin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	base, home, bin := t.TempDir(), t.TempDir(), t.TempDir()
+	base, home, bin := physTempDir(t), physTempDir(t), physTempDir(t)
 	writeCodexSetsidShim(t, bin)
 	identity := filepath.Join(base, "codex")
 	if err := os.MkdirAll(identity, 0o700); err != nil {
@@ -1119,8 +1510,8 @@ func TestCodexLoginHookRestoresSharedLinkAfterFailedLogin(t *testing.T) {
 	if err := os.Symlink(shared, cred); err != nil {
 		t.Fatal(err)
 	}
-	testSrc := strings.Replace(string(src), `/home/dev/.byre-identity/codex`, identity, 1)
-	testHook := filepath.Join(t.TempDir(), "codex-login.sh")
+	testSrc := strings.ReplaceAll(string(src), `/home/dev/.byre-identity/codex`, identity)
+	testHook := filepath.Join(physTempDir(t), "codex-login.sh")
 	if err := os.WriteFile(testHook, []byte(testSrc), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1133,7 +1524,7 @@ func TestCodexLoginHookRestoresSharedLinkAfterFailedLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("bash", testHook)
-	cmd.Env = codexLoginHookEnv("PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
+	cmd.Env = codexLoginHookEnv(t, cat, "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
 		"BYRE_IDENTITY_BASE="+base, "BYRE_CODEX_AUTH_RECONCILE=/nonexistent")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("hook failed: %v (%s)", err, out)
@@ -1143,5 +1534,104 @@ func TestCodexLoginHookRestoresSharedLinkAfterFailedLogin(t *testing.T) {
 	}
 	if got, err := os.ReadFile(shared); err != nil || string(got) != stale {
 		t.Fatalf("failed device login changed shared credential: %v %q", err, got)
+	}
+}
+
+// shared_unsafe vets only the leaf auth.json: a symlinked identity dir, or
+// any symlinked ancestor, was followed by mkdir -p, the lock and the publish
+// rename, so a valid local login was published to wherever the link
+// pointed. Both shapes are refused before anything is created: non-zero
+// exit, nothing at the link's target, the local login exactly as it was.
+func TestCodexSharedAuthRefusesSymlinkedIdentityDir(t *testing.T) {
+	_, cat := testCat(t)
+	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	local := `{"auth_mode":"chatgpt","tokens":{"access_token":"l","refresh_token":"lr"},"last_refresh":"2026-07-21T00:00:00Z"}`
+	for _, tc := range []struct {
+		name  string
+		plant func(t *testing.T, target string) (base string)
+	}{
+		{"symlinked identity base", func(t *testing.T, target string) string {
+			base := filepath.Join(physTempDir(t), "identity-link")
+			if err := os.Symlink(target, base); err != nil {
+				t.Fatal(err)
+			}
+			return base
+		}},
+		{"symlinked codex dir in a real base", func(t *testing.T, target string) string {
+			base := physTempDir(t)
+			if err := os.Symlink(target, filepath.Join(base, "codex")); err != nil {
+				t.Fatal(err)
+			}
+			return base
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			target := physTempDir(t)
+			base := tc.plant(t, target)
+			home := physTempDir(t)
+			cred := filepath.Join(home, "auth.json")
+			if err := os.WriteFile(cred, []byte(local), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("bash", reconcile, "test_symlinked_identity")
+			cmd.Env = codexReconcileEnv(t, cat, base, home)
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatalf("a symlinked identity dir must be refused, got success:\n%s", out)
+			}
+			// Containment test: the refusal (non-zero exit, nothing created
+			// at the link's target) and the untouched local login are the
+			// contract; the stderr wording is not pinned (CLAUDE.md, two tiers).
+			if entries, err := os.ReadDir(target); err != nil || len(entries) != 0 {
+				t.Fatalf("something was created at the link's target: %v %v", entries, err)
+			}
+			if fi, err := os.Lstat(cred); err != nil || !fi.Mode().IsRegular() {
+				t.Fatalf("the local login must stay a regular file: %v %v", fi, err)
+			}
+			if b, _ := os.ReadFile(cred); string(b) != local {
+				t.Fatalf("the local login was changed: %q", b)
+			}
+		})
+	}
+}
+
+// The publish and keep-a-copy renames: a plain `mv` onto a
+// symlink-to-directory planted at auth.json / auth.json.prev moves the file
+// INTO the link's target, and GNU's -T is not available on the macOS CI
+// leg (BSD mv). So the .prev rename is `mv -f` after a vet -- a symlink
+// there is dropped first, a directory skips retention -- plus a post-check
+// that .prev is a regular non-symlink file: the planted link is replaced
+// and its target never sees a byte. (shared_unsafe already refuses a
+// symlinked auth.json before publish, and the publish rename is checked
+// after too; this pins the .prev rename.)
+func TestCodexSharedAuthPrevRenameDoesNotFollowDirLink(t *testing.T) {
+	base, home := physTempDir(t), physTempDir(t)
+	identity := filepath.Join(base, "codex")
+	if err := os.MkdirAll(identity, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldShared := `{"auth_mode":"chatgpt","tokens":{"access_token":"old","refresh_token":"old-refresh"},"last_refresh":"2026-07-20T00:00:00Z"}`
+	newLocal := `{"auth_mode":"chatgpt","tokens":{"access_token":"new","refresh_token":"new-refresh"},"last_refresh":"2026-07-21T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(identity, "auth.json"), []byte(oldShared), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(newLocal), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := physTempDir(t)
+	if err := os.Symlink(elsewhere, filepath.Join(identity, "auth.json.prev")); err != nil {
+		t.Fatal(err)
+	}
+
+	runCodexSharedAuthHook(t, base, home)
+
+	if entries, err := os.ReadDir(elsewhere); err != nil || len(entries) != 0 {
+		t.Fatalf("the .prev rename moved a file into the planted directory link's target: %v %v", entries, err)
+	}
+	if fi, err := os.Lstat(filepath.Join(identity, "auth.json.prev")); err != nil || !fi.Mode().IsRegular() {
+		t.Fatalf("the planted .prev link must be replaced by a regular file: %v %v", fi, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(identity, "auth.json")); err != nil || string(got) != newLocal {
+		t.Fatalf("the newer local login must still publish: %v %q", err, got)
 	}
 }

@@ -107,7 +107,12 @@ differed, because the alternative is build-order last-writer-wins with
 nothing the user can read saying which skill's file their box runs.
 Judged over the staged bytes, so keep dual-shipped files exactly in
 sync — a shared source of truth in your repo, copied into each package
-at release. (ADR 0056.)
+at release. (ADR 0056.) byre's own built-ins work that way: five skills
+(`codex-shared-auth`, `gemini-shared-auth`, `opencode-shared-auth` and
+the `codex` and `opencode` login skills) each stage
+`byre-shared-auth-lib.sh` to `/usr/local/lib/`, which is what lets a box
+enable any one of them alone, and a test pins the copies to one
+canonical file in byre's tree.
 
 Note the asymmetry, which is easy to trip over: a USER's config has a
 `[files]` key with the same name and a different root. Theirs resolves

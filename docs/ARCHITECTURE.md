@@ -634,47 +634,44 @@ Two mount species:
      a shared mount; nothing flows back.
 
 Credentials are **not seeded** (ADR 0007 -- a "not now", not doctrine:
-copy-semantics breaks rotating OAuth tokens): agents log in once in the
-box and the state volume persists the login per-project. `seed_prefs`
-(ADR 0013) is the curated, non-secret exception for agent prefs. The
-**shared-auth companion skills** (`claude-shared-auth`,
-`codex-shared-auth`, `gemini-shared-auth`, `opencode-shared-auth`;
-ADR 0017) make one login
-serve every project WITHOUT host copying: the credential lives in a
-machine-scoped identity volume and byre reads nothing from the host --
-Codex, Gemini, and OpenCode log in once in any box (the credential
-lands in the shared volume through symlinks; Gemini's API-key path is
-verified and its two-box OAuth check is gate-pending; OpenCode is
-vouched for API-key logins -- two-box gate passed 2026-07-17, OAuth
-entries unsupported and warned -- see the skills' own skill.toml
-gate records); Grok's v1 file-sharing was retired in the field
-(ADR 0023) and its v2 auth broker awaits its rollover field gate
-(ADR 0036);
-Claude uses a user-minted `claude
-setup-token` pasted at a
-first-run prompt and exported to the agent process by a **launch env
-hook**
-(`/etc/byre/env.d/*.sh`, sourced by the launcher after firstrun hooks,
-immediately before exec -- the chassis mechanism for skills that must
-put env into the agent process). A companion whose mechanism is ready
-declares `shared_auth_for = "<agent>"` in its skill.toml, and the
-first-run picker then asks, at every box's onboarding, whether to opt
-that box in -- yes puts the companion in the project's `byre.config`
-`skills`, the only grant the answer makes. Save-as-default stores the
-answer as a favourite (the picker-owned `shared_auth` list) that
-prefills the next box's offer; the offer is skipped under exactly two
-suppressions (ADR 0025): the companion already granted machine-wide in
+copy-semantics breaks rotating OAuth tokens): agents log in once in
+the box and the state volume persists the login per-project.
+`seed_prefs` (ADR 0013) is the curated, non-secret exception for agent
+prefs. The **shared-auth companion skills** (`claude-shared-auth`,
+`codex-shared-auth`, `gemini-shared-auth`, `opencode-shared-auth`; ADR
+0017) make one login serve every project WITHOUT host copying: the
+credential lives in a machine-scoped identity volume and byre reads
+nothing from the host -- Codex, Gemini, and OpenCode log in once in
+any box (the credential lands in the shared volume through symlinks;
+Gemini's API-key path is verified and its two-box OAuth check is
+gate-pending; OpenCode is vouched for API-key logins -- two-box gate
+passed 2026-07-17, OAuth entries unsupported and warned -- see the
+skills' own skill.toml gate records); Grok's v1 file-sharing was
+retired in the field (ADR 0023) and its v2 auth broker awaits its
+rollover field gate (ADR 0036); Claude uses a user-minted `claude
+setup-token` pasted at a first-run prompt and exported to the agent
+process by a **launch env hook** (`/etc/byre/env.d/*.sh`, sourced by
+the launcher after firstrun hooks, before the credential re-apply and
+exec -- the chassis mechanism for skills that must put env into the
+agent process). A companion whose mechanism is ready declares
+`shared_auth_for = "<agent>"` in its skill.toml, and the first-run
+picker then asks, at every box's onboarding, whether to opt that box
+in -- yes puts the companion in the project's `byre.config` `skills`,
+the only grant the answer makes. Save-as-default stores the answer as
+a favourite (the picker-owned `shared_auth` list) that prefills the
+next box's offer; the offer is skipped under exactly two suppressions
+(ADR 0025): the companion already granted machine-wide in
 `default.config` `skills` (a key the picker never writes -- the answer
 could not matter), or `defaults.skip_questions`, the standing
 instruction to configure new projects from the stored answers unasked
 (which DOES apply the grant, and says so at the switch and at develop
-time). Gemini (two-box
-OAuth check pending) and grok (broker rollover gate pending, ADR 0036)
-deliberately don't declare it yet; opencode's gate passed 2026-07-17
-and it now does. The gate-pending pair still declare `companion_for` --
-the pairing fact, which nests a companion under its agent's row in the
-config UI without putting anything in front of onboarding; readiness
-gates the offer, never the display (ADR 0034).
+time). Gemini (two-box OAuth check pending) and grok (broker rollover
+gate pending, ADR 0036) deliberately don't declare it yet; opencode's
+gate passed 2026-07-17 and it now does. The gate-pending pair still
+declare `companion_for` -- the pairing fact, which nests a companion
+under its agent's row in the config UI without putting anything in
+front of onboarding; readiness gates the offer, never the display (ADR
+0034).
 
 ## The chassis
 
@@ -707,22 +704,28 @@ Runtime constants:
   your `.gitconfig`, not git credentials), `TERM` (the launching
   terminal's), and `TZ` (the host timezone: the TZ var if set, else
   the `/etc/localtime` symlink's IANA name). Sources are a closed
-  scheme set (`git:<key>`, `env:<HOST_VAR>`, `tz:`, and the two
-  credential kinds `encrypted:` / `encrypted-file:`); each host-sourced
-  entry is a grant -- attributed in status, counted in exposure,
-  disable-able per layer (`KEY = ""`). A credential row asks the host
-  for nothing: it carries an age ciphertext this config file's own
-  `[credentials]` identity opens, and it is delivered over the
-  credential channel onto the session tmpfs rather than as `-e` (ADR
-  0057). Host env is otherwise isolated (ADR 0026).
+  scheme set (`git:<key>`, `env:<HOST_VAR>`, `tz:`, `cwd:` -- the host
+  directory the box's `/workspace` comes from: the project dir, and
+  under `byre worktree` the worktree -- and the two credential kinds
+  `encrypted:` / `encrypted-file:`);
+  each host-sourced entry is a grant -- attributed in status, counted
+  in exposure, disable-able per layer (`KEY = ""`). A credential row
+  asks the host for nothing: it carries an age ciphertext this config
+  file's own `[credentials]` identity opens, and it is delivered over
+  the credential channel onto the session tmpfs rather than as `-e`
+  (ADR 0057). Host env is otherwise isolated (ADR 0026).
 - The launcher: wait at the launch gate if a network-posture skill is
   enabled (ADR 0011), export the per-session context additions as
   `BYRE_SESSION_CONTEXT` (under an allowlist posture, the session's
   enforced egress allowlist -- the same `BYRE_EGRESS` string the netns
   helper applied, so announcement and enforcement share one source;
-  plus the self-edit note when that grant is live), run first-run
-  hooks as the user (agent login flows live here), then exec the
-  selected agent's command in autonomous mode. The agent command
+  plus the self-edit note when that grant is live), wait bounded and
+  fail-closed for delivered credentials and export them (ADR 0057),
+  run first-run hooks as the user (agent login flows live here; they
+  inherit those exports, so a login hook stands down on a delivered
+  key), source the launch env hooks, re-apply the credential exports
+  so they win env collisions (ADR 0028), then exec the selected
+  agent's command in autonomous mode. The agent command
   itself INJECTS the baked agent context (the chassis facts, the base
   image, a one-line inventory of config-provisioned `apt`
   packages when any exist -- the agent shouldn't discover tools by

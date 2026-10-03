@@ -232,7 +232,7 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 		BuildRaw:           append(append([]string{}, cfg.DockerfilePre...), cfg.DockerfilePost...),
 		Base:               cfg.Base,
 		ProjectRunArgs:     len(cfg.RunArgs) > 0,
-		HostEnv:            resolveHostEnv(cfg.Config, gitExe),
+		HostEnv:            resolveHostEnv(cfg.Config, gitExe, paths.WorkDir),
 		ArtifactShadows:    artifactShadows(cfg.Config),
 		Cat:                cat,
 	}

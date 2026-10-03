@@ -28,7 +28,7 @@ func TestResolveHostEnvPrecedenceAndStates(t *testing.T) {
 	}
 	// "" for the host git: this case turns on the `git:` source LOSING to an
 	// explicit [env] key, which it must do before any probe runs.
-	results := resolveHostEnv(cfg, "")
+	results := resolveHostEnv(cfg, "", "")
 	states := map[string]hostEnvState{}
 	for _, r := range results {
 		states[r.Key] = r.State
@@ -72,7 +72,7 @@ func TestResolveHostEnvPrecedenceAndStates(t *testing.T) {
 // macOS zoneinfo trees.
 func TestHostTimezone(t *testing.T) {
 	t.Setenv("TZ", "America/New_York")
-	if got := hostSourceValue("tz:", ""); got != "America/New_York" {
+	if got := hostSourceValue("tz:", "", ""); got != "America/New_York" {
 		t.Fatalf("tz: must prefer the TZ env var, got %q", got)
 	}
 
@@ -86,6 +86,55 @@ func TestHostTimezone(t *testing.T) {
 		if got := tzFromZoneinfoPath(target); got != want {
 			t.Fatalf("tzFromZoneinfoPath(%q) = %q, want %q", target, got, want)
 		}
+	}
+}
+
+// The cwd: source is the whole work dir and nothing else -- no argument, no
+// probe, no host state to read. The work dir is the host directory the box's
+// /workspace comes from (the project dir; under `byre worktree`, the worktree),
+// which is why the resolver takes it rather than asking the OS a second time.
+func TestHostSourceValueCWD(t *testing.T) {
+	if got := hostSourceValue("cwd:", "", "/host/code/acme"); got != "/host/code/acme" {
+		t.Fatalf("cwd: = %q, want the work dir", got)
+	}
+	// It reads nothing else: a tz: row with a work dir in hand still answers
+	// from the timezone, and a cwd: row ignores the git exe.
+	t.Setenv("TZ", "Europe/London")
+	if got := hostSourceValue("tz:", "", "/host/code/acme"); got != "Europe/London" {
+		t.Fatalf("tz: must not answer from the work dir, got %q", got)
+	}
+}
+
+// A cwd: row delivers like any other passthrough, and an unresolvable work dir
+// degrades exactly like an unset host var: the row resolves EMPTY, is warned
+// about at develop in the shared "resolved empty -- NOT passed" shape, and sets
+// nothing. Never a block -- byre does not refuse a launch over a row it could
+// not fill.
+func TestResolveHostEnvCWDDeliversAndDegrades(t *testing.T) {
+	cfg := config.Config{EnvFromHost: map[string]string{"HOST_CWD": "cwd:"}}
+	got := resolveHostEnv(cfg, "", "/host/code/acme")
+	if len(got) != 1 || got[0].State != hostEnvDelivered || got[0].Value != "/host/code/acme" {
+		t.Fatalf("cwd: row = %+v, want delivered with the work dir", got)
+	}
+	env := map[string]string{}
+	addEnvFromHost(env, got)
+	if env["HOST_CWD"] != "/host/code/acme" {
+		t.Fatalf("runtime env = %v, want the work dir under the row's key", env)
+	}
+
+	empty := resolveHostEnv(cfg, "", "")
+	if len(empty) != 1 || empty[0].State != hostEnvEmpty {
+		t.Fatalf("an unresolvable cwd must resolve empty, got %+v", empty)
+	}
+	env = map[string]string{}
+	addEnvFromHost(env, empty)
+	if len(env) != 0 {
+		t.Fatalf("an empty row must set nothing, got %v", env)
+	}
+	var b bytes.Buffer
+	warnHostEnvEmpty(&b, empty, nil)
+	if !strings.Contains(b.String(), "HOST_CWD <- cwd: resolved empty -- NOT passed") {
+		t.Fatalf("the degrade must be said in the shared shape: %q", b.String())
 	}
 }
 
@@ -122,7 +171,7 @@ func TestResolveHostEnvExcludesCredentialRows(t *testing.T) {
 	}
 	cfg := config.Config{EnvFromHost: map[string]string{"STRIPE_KEY": row, "TERM": "env:TERM"}}
 	t.Setenv("TERM", "xterm")
-	got := resolveHostEnv(cfg, "")
+	got := resolveHostEnv(cfg, "", "")
 	states := map[string]hostEnvState{}
 	for _, r := range got {
 		states[r.Key] = r.State
@@ -141,7 +190,7 @@ func TestResolveHostEnvExcludesCredentialRows(t *testing.T) {
 	// A damaged payload is still a credential row, not an argv value: the
 	// launch refuses it by name, and nothing here quietly passes it through.
 	cfg.EnvFromHost["STRIPE_KEY"] = "encrypted:AAAA"
-	for _, r := range resolveHostEnv(cfg, "") {
+	for _, r := range resolveHostEnv(cfg, "", "") {
 		if r.Key == "STRIPE_KEY" && r.State != hostEnvEncrypted {
 			t.Fatalf("damaged credential row state = %v", r.State)
 		}

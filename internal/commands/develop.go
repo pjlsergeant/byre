@@ -478,7 +478,7 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	warnCompatLegacy(s.Err, paths.WorkDir)
 	// One host-env resolution feeds the runtime env, the exposure tally,
 	// and (in status) the row -- render-from-effect, no re-derivation.
-	hostEnv := resolveHostEnv(rv.cfg.Config, rv.gitExe)
+	hostEnv := resolveHostEnv(rv.cfg.Config, rv.gitExe, paths.WorkDir)
 	warnHostEnvEmpty(s.Err, hostEnv, rv.skills.Env())
 	params, err := runParams(paths, rv, image, selfEdit, s.TTY, ident, hostEnv)
 	if err != nil {

@@ -64,6 +64,58 @@
   nothing is a surprise at restore. A backup is not an archive format for
   other tools: it is byre's own, and repacking it makes it unreadable.
 
+- **First-run hooks now see your `byre credentials` values.** The box
+  used to export them only after every hook had run, so a login hook
+  asked for a key you had already given byre, and byre's own
+  "credentials: delivered." line landed on its prompt. Both now happen
+  before any hook starts (a hook that prompts the instant it starts can
+  still share that first line), and a launch whose credentials never
+  arrive fails before any hook runs. Credentials still beat a skill's
+  env hook that sets the same variable.
+
+- **A credential named after one of the box launcher's own variables no
+  longer breaks the launch.** One named `cred_lineno` or `cred_key` used
+  to stop the launch with part of the secret in a shell error, or reach
+  the agent rewritten; one named `FIRSTRUN_DIR`, `hook` or `CMD` reached
+  hooks and the agent as the launcher's own value instead of yours. The
+  launcher now keeps its state under byre's reserved `BYRE_` names,
+  which a credential cannot use, so every other name is simply yours.
+
+- **Credential names bash itself owns are refused, with the remedy.**
+  `byre credentials set`, the config editor and `byre develop` turn down
+  a credential named `SECONDS`, `UID`, `SHLVL`, `PROMPT_COMMAND`, the
+  `PS0`-`PS4` prompts, anything starting `BASH_`, `COMP_` or `READLINE_`
+  (`BASHFUL_KEY` is still yours) or any other name bash owns, and say to
+  rename the row: bash would not hand the value to the agent as you set
+  it -- it would treat it as a number, keep it read-only, rewrite it in
+  every shell it starts, print it as a prompt or RUN it -- and some of
+  them launched the box with only part of your set. A box refuses one
+  that arrives anyway -- naming the manifest line, never the value -- as
+  it now also does for a credential that does not survive the export
+  byte-for-byte, or whose value it cannot read. `IFS`, `PATH` and `HOME`
+  stay yours to use.
+
+- **Shared auth: a failed promotion or link now keeps the per-project
+  login.** `opencode-shared-auth`, `gemini-shared-auth` and
+  `codex-shared-auth` link a box's login into the machine-wide identity
+  volume, and a failure partway -- a full or read-only volume, a link
+  that could not be made -- used to leave no credential at all. Two
+  boxes promoting a login at the same moment no longer overwrite each
+  other (exactly one becomes the shared login; two fresh logins racing
+  through the link are still not serialized). A symlink planted at the
+  shared path or on the way to it is refused rather than followed, and a
+  FIFO or directory where a login belongs is left alone and named -- at
+  `~/.gemini/settings.json` one used to hang the launch.
+
+- **`env_from_host` can pass the host directory your box's `/workspace`
+  comes from.** `HOST_CWD = "cwd:"` hands the box that path -- your
+  project directory, or the worktree for a `byre worktree` box -- so the
+  agent can name a file the way you see it on the host instead of as
+  `/workspace/...`. It takes no argument, like `tz:`, and `byre config`
+  -> Env vars offers it in the source picker. The value resolves at
+  launch like every other passthrough, and the row is a grant: status
+  attributes it and the exposure tally counts it.
+
 ## v1.11.0 — 2026-09-13
 
 - **Builds require Go 1.27.1 or newer.** CI and release builds use the

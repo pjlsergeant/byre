@@ -6,9 +6,9 @@
 # There is no root phase and no gosu drop: /home/dev and the named volumes are
 # born owned by the baked UID at build time, so nothing needs re-owning. The
 # launcher just places git identity, exports the per-session context var,
-# runs first-run hooks, and execs the agent — all as the same user. Agent
-# context is INJECTED by the agent command (ADR 0046); the launcher writes no
-# agent file.
+# exports delivered credentials, runs first-run hooks, and execs the agent —
+# all as the same user. Agent context is INJECTED by the agent command (ADR
+# 0046); the launcher writes no agent file.
 set -euo pipefail
 
 # The dev user's home is baked at build time (skills.DevHome); not an env
@@ -20,7 +20,8 @@ export HOME=/home/dev
 # setup from OUTSIDE the box (a netns-init helper container) after start, and
 # that helper listens on the port once the rules are applied and verified. We
 # poll-connect until it does, and only then proceed — so NOTHING in the box
-# (context placement, first-run hooks, the agent) runs before the wall is up.
+# (context placement, the credential wait, first-run hooks, the agent) runs
+# before the wall is up.
 # Every failure path fails CLOSED: no listener within the timeout means the
 # box exits instead of launching open. The handshake is deliberately stateless
 # (no marker file): a `docker restart` recreates the netns without the rules,
@@ -156,59 +157,6 @@ $BYRE_SESSION_CONTEXT"
 fi
 export BYRE_SESSION_CONTEXT
 
-# First-run hooks — agent skills drop scripts here. They run as the dev user
-# (the launcher is unprivileged), so a hook does its own user-level setup directly
-# (codex device-auth login → the .codex volume; devlog → /workspace). A hook that
-# needs root is not supported: skills declaring privileged setup would need an
-# explicit, status-visible grant, not a blanket-root entrypoint. The dir
-# override is a test seam (the gate-file/env.d precedent) — without it, the
-# launcher tests execute the REAL hooks of whatever box runs the suite, and a
-# hook that legitimately prompts (a login on a box whose credential died)
-# hangs them.
-FIRSTRUN_DIR="${BYRE_FIRSTRUN_DIR:-/etc/byre/firstrun.d}"
-if [ -d "$FIRSTRUN_DIR" ]; then
-  for hook in "$FIRSTRUN_DIR"/*; do
-    # Unreadable entries -- and the literal "$FIRSTRUN_DIR/*" an unmatched glob
-    # leaves behind -- are a silent no-op. A hook that RAN and failed is not:
-    # the launcher continues (one skill's broken setup must not cost the user
-    # their box) but says so, because a hook failing invisibly is how a box
-    # boots subtly wrong. The `if bash ...; then :; else` shape is load-bearing
-    # under `set -e`: the naive `bash "$hook"; status=$?` kills the launcher on
-    # the failing hook, the exact inversion of best-effort.
-    if [ -r "$hook" ]; then
-      if bash "$hook"; then
-        :
-      else
-        status=$?
-        printf 'byre: firstrun hook %q exited %d (continuing)\n' "$hook" "$status" >&2
-      fi
-    fi
-  done
-fi
-
-# Launch env hooks — skills drop scripts here to put env into the AGENT
-# process (a firstrun hook runs in its own process, so it can't). Sourced (not
-# executed) in glob order, after firstrun hooks and immediately before exec,
-# still as the unprivileged dev user. Hooks owe this shell the ADR 0028 purity
-# contract: the environment they leave behind is their only lasting effect.
-# errexit/nounset are suspended around each source so strict mode does not turn
-# a pure hook's benign unset reference into a dead launcher -- that suspension
-# is a courtesy to hooks that KEEP the contract, not a container for ones that
-# break it, and best-effort is guaranteed only to the former. First user:
-# claude-shared-auth exports CLAUDE_CODE_OAUTH_TOKEN from its identity volume
-# (ADR 0017). The dir override is a test seam, per the gate precedent.
-ENVD_DIR="${BYRE_ENVD_DIR:-/etc/byre/env.d}"
-if [ -d "$ENVD_DIR" ]; then
-  for envhook in "$ENVD_DIR"/*.sh; do
-    if [ -r "$envhook" ]; then
-      set +eu
-      # shellcheck disable=SC1090
-      . "$envhook"
-      set -eu
-    fi
-  done
-fi
-
 # Credential export — the launcher's end of credential delivery.
 # BYRE_CRED_EXPECT is set at create time ONLY when this launch decrypted a
 # deliverable set and scheduled an inject; it is purely a wait/export
@@ -223,19 +171,63 @@ fi
 # un-re-unlocked box simply times out here and exits instead of running with
 # credentials it no longer has.
 #
-# Placed AFTER the env.d loop so credential exports win env collisions (ADR
-# 0028 ordering); values export byte-exact, no shell re-evaluation. The env
+# PLACEMENT. byre_credentials_apply is called TWICE, and this is the only
+# place either call is explained. First below the launch gate (ADR 0011:
+# nothing runs before the wall, and a wait for host-delivered values is
+# something) and below the worktree populate (that checkout runs the repo's
+# own post-checkout hook and smudge filters, which have no business inheriting
+# a credential), but ABOVE the firstrun loop, so a hook -- a child process,
+# which inherits these exports -- sees a value the user delivered with
+# `byre credentials`: a login hook that stands down on an env credential can
+# only do that if the credential is already in its env. Then again after the
+# env.d loop, so credential exports still win env collisions (ADR 0028
+# ordering). Values export byte-exact, no shell re-evaluation.
+# The first call's placement also keeps the host's "byre: credentials:
+# delivered." line (internal/commands/credentials.go credDeliveredLine,
+# printed once the inject exec returns) off a hook's open prompt: the launcher
+# blocks on .done until the receiver has written it, so no hook has started
+# when it lands. The residual is milliseconds wide: the receiver writes .done
+# and THEN exits while the host prints after its exec returns, so the
+# launcher's next 0.2s poll can win that race and a hook that prompts
+# instantly may still share its first line with the host's.
+#
+# NAMING. Every variable the launcher assigns from here to the exec is
+# BYRE_-named, and the key check below refuses BYRE_*, so no delivered key can
+# alias one. The key grammar admits every OTHER shell name, and an export
+# attribute survives a later plain assignment: a loop counter spelled
+# cred_exported would be read back as the launcher's own state (a secret
+# evaluated as arithmetic kills the launcher under set -u and echoes part of it
+# in bash's error), a key slot spelled cred_key would reach the agent
+# rewritten, and a firstrun loop variable spelled `hook` would hand every hook
+# the launcher's path in place of the user's `hook` credential. Function names
+# need no prefix: `export` assigns variables, and a function is a separate
+# namespace no export can clobber.
+#
+# The seams resolve ONCE, here, so both calls read the same delivery. The env
 # overrides are test seams (gate precedent); a user setting them re-points
-# byre's own delivery, which is theirs to do.
-if [ -n "${BYRE_CRED_EXPECT:-}" ]; then
-  CRED_DIR="${BYRE_CRED_DIR:-/run/byre}"
-  cred_wait="${BYRE_CRED_WAIT:-20}"
+# byre's own delivery, which is theirs to do. Readonly because the key check
+# guards only the manifest: env.d is SOURCED into this shell, under set +eu,
+# between the two calls, so a hook that reassigned BYRE_cred_expect to ""
+# would turn the second pass into a no-op (its own export then beats the
+# credential, against ADR 0028), one that re-pointed BYRE_cred_dir would fail
+# a good delivery closed after the hooks ran, and an unset would kill the
+# launcher on nounset. Readonly makes each of those a refused assignment the
+# hook's own set +eu shrugs off: non-POSIX bash treats the assignment as a
+# non-fatal error -- it abandons the rest of that one command in the hook,
+# and the hook and this launcher carry on (POSIX mode would exit; the
+# launcher runs under `bash`, never `sh`/posix).
+BYRE_cred_expect="${BYRE_CRED_EXPECT:-}"
+BYRE_cred_dir="${BYRE_CRED_DIR:-/run/byre}"
+BYRE_cred_wait="${BYRE_CRED_WAIT:-20}"
+readonly BYRE_cred_expect BYRE_cred_dir BYRE_cred_wait
+byre_credentials_apply() {
+  [ -n "$BYRE_cred_expect" ] || return 0
   SECONDS=0
-  while [ ! -e "$CRED_DIR/.done" ] && [ "$SECONDS" -lt "$cred_wait" ]; do
+  while [ ! -e "$BYRE_cred_dir/.done" ] && [ "$SECONDS" -lt "$BYRE_cred_wait" ]; do
     sleep 0.2
   done
-  if [ ! -e "$CRED_DIR/.done" ] || [ ! -r "$CRED_DIR/manifest" ]; then
-    echo "byre: credentials were expected but did not arrive within ${cred_wait}s — refusing to launch without them (failing closed)." >&2
+  if [ ! -e "$BYRE_cred_dir/.done" ] || [ ! -r "$BYRE_cred_dir/manifest" ]; then
+    echo "byre: credentials were expected but did not arrive within ${BYRE_cred_wait}s — refusing to launch without them (failing closed)." >&2
     echo "byre: (a restarted box never gets them: the session tmpfs empties, and the passphrase is only asked for at \`byre develop\`. Re-run it. To launch deliberately without: \`byre develop --credentials=skip\`.)" >&2
     exit 1
   fi
@@ -256,65 +248,224 @@ if [ -n "${BYRE_CRED_EXPECT:-}" ]; then
     echo "byre: (re-run \`byre develop\` to deliver them again. To launch deliberately without: \`byre develop --credentials=skip\`.)" >&2
     exit 1
   }
+  # An export failure is not the manifest's fault -- byre wrote the key, and
+  # bash refused the name or did not keep the value -- so it says that
+  # instead, naming the line and neither the key nor the value. The likeliest
+  # cause by far is an env.d hook that made the name readonly or gave it an
+  # attribute, which the second pass then meets.
+  cred_export_fail() {
+    echo "byre: credentials: the value on line $1 could not be exported under the name it was delivered with (a launch env hook may have redefined that name) — refusing to launch on a partial credential set (failing closed)." >&2
+    echo "byre: (re-run \`byre develop\` to deliver them again. To launch deliberately without: \`byre develop --credentials=skip\`.)" >&2
+    exit 1
+  }
+  # The backstop behind the bash-owned refusal below: whatever that list
+  # misses must still fail CLOSED, without the value in any message. Takes
+  # line, key, value as positional parameters, so it holds no variable a
+  # delivered key could name. The subshell probe goes first because some
+  # failures are not a false return bash lets `if` catch: an arithmetic
+  # assignment error (RANDOM, OPTIND) exits the shell even under set +e, and
+  # a readonly export exits it under set -e, either way silently with stderr
+  # discarded and never through a refusal. A probe that dies costs only the
+  # probe. The read-back then insists on a plain exported scalar holding the
+  # exact bytes: an export can return 0 and still leave a dynamic value
+  # (LINENO, SECONDS) or an array no child ever receives (BASH_REMATCH).
+  byre_cred_export() {
+    if ! (export -- "$2=$3") 2>/dev/null || ! export -- "$2=$3" 2>/dev/null; then
+      cred_export_fail "$1"
+    fi
+    # The attribute check is `declare -p`, not bash 4.4's ${!2@a}: the macOS
+    # CI leg runs this under /bin/bash 3.2. An exported plain scalar prints
+    # exactly `declare -x NAME=...`; an array prints -ax, an integer -ix, a
+    # readonly -rx, an unexported one `declare --`. The output (which holds
+    # the value) never leaves the substitution.
+    if [ -z "${!2+set}" ] || [ "${!2}" != "$3" ]; then
+      cred_export_fail "$1"
+    fi
+    case "$(declare -p -- "$2" 2>/dev/null)" in
+    "declare -x $2="*) ;;
+    *) cred_export_fail "$1" ;;
+    esac
+  }
   # Byre's manifest ends every line, the last one included. A final byte that
   # is not a newline means the delivery was CUT SHORT -- and `read` would end
   # the loop on that partial line without failing, exporting only the rows
   # before it: the partial credential set every rejection below exits over,
   # reached by silence instead of by a bad line. Refused whole, here, so the
   # loop only ever sees terminated records.
-  if [ -n "$(tail -c 1 "$CRED_DIR/manifest")" ]; then
-    cred_fail 0 "it does not end in a newline, so the delivery was truncated"
+  #
+  # Read with a BUILTIN, never `tail`: PATH is a name a credential may carry
+  # (byre discloses that rather than reserving it, P1), and the SECOND pass
+  # runs with every delivered value already exported -- so an external command
+  # here is one a delivered value can make unfindable. `tail` was exactly
+  # that: with PATH re-pointed its substitution came back empty, this check
+  # passed vacuously, and a manifest shortened between the two passes exported
+  # a partial set. The only external command left in this function is the wait
+  # loop's `sleep`, which the second pass never reaches (.done exists by then)
+  # and the first pass runs before any credential is exported. PAST this
+  # function, `bash "$hook"` and the final exec do resolve on PATH: a
+  # credential that re-points those breaks the user's own box, which is theirs
+  # to do (P1), and byre says so rather than reserving the name.
+  BYRE_cred_nl='
+'
+  BYRE_cred_manifest=""
+  # A read to the NUL delimiter returns 0 only when it FOUND one, which byre's
+  # composer never writes -- and everything past it stays unread, so the
+  # newline check below would judge a prefix while the loop went on to drop the
+  # unterminated record after it: the partial set, reached by silence. Refused
+  # as its own rule. A non-zero return is the ordinary end of file, with the
+  # whole manifest in the variable.
+  if IFS= read -rd '' BYRE_cred_manifest <"$BYRE_cred_dir/manifest"; then
+    cred_fail 0 "it holds a NUL, a byte byre never writes"
   fi
-  cred_lineno=0
-  cred_exported=0
-  while read -r cred_key cred_kind; do
-    cred_lineno=$((cred_lineno + 1))
+  case "$BYRE_cred_manifest" in
+  # Empty: the "named no credentials at all" refusal below is the honest one.
+  "") ;;
+  *"$BYRE_cred_nl") ;;
+  *) cred_fail 0 "it does not end in a newline, so the delivery was truncated" ;;
+  esac
+  BYRE_cred_manifest=""
+  BYRE_cred_lineno=0
+  BYRE_cred_exported=0
+  # The split is pinned to a space (byre's composer writes "KEY kind"), not
+  # inherited: the key grammar admits IFS, PATH, HOME and every other shell
+  # name, and since the first pass exports above firstrun, a credential so
+  # named now reaches every hook (and env.d, sourced into this shell) too --
+  # byre discloses that, it does not reserve the names (P1: a user's own key
+  # is theirs to name). What it must not do is let one re-parse its own
+  # manifest: an inherited IFS of, say, ":" makes this read take "KEY env"
+  # as one key, so a delivery that exported clean on the first pass failed
+  # closed on the second, after the hooks had run.
+  while IFS=' ' read -r BYRE_cred_key BYRE_cred_kind; do
+    BYRE_cred_lineno=$((BYRE_cred_lineno + 1))
     # An empty line is a line byre's composer never writes, which by this
     # block's own rule makes the delivery corrupt -- and skipping it would
     # skip it SILENTLY, the one direction every other arm here refuses.
-    [ -n "$cred_key" ] || cred_fail "$cred_lineno" "the line is empty"
-    if ! [[ "$cred_key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || [[ "$cred_key" == BYRE_* ]]; then
-      cred_fail "$cred_lineno" "the export key is not a variable name byre would have written"
+    [ -n "$BYRE_cred_key" ] || cred_fail "$BYRE_cred_lineno" "the line is empty"
+    if ! [[ "$BYRE_cred_key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || [[ "$BYRE_cred_key" == BYRE_* ]]; then
+      cred_fail "$BYRE_cred_lineno" "the export key is not a variable name byre would have written"
     fi
-    cred_file="$CRED_DIR/credentials/$cred_key"
+    # Names bash itself owns cannot carry a value to the agent faithfully
+    # (why, per name: config.bashOwnedCredentialNames, which `byre credentials
+    # set` refuses the same list from). Refused like BYRE_*, naming the line
+    # only. The arm below is pinned byte-identical to
+    # config.BashOwnedCredentialPattern by test; edit the Go list.
+    case "$BYRE_cred_key" in
+    BASH_* | COMP_* | READLINE_* | BASH | BASHPID | BASHOPTS | SECONDS | RANDOM | SRANDOM | LINENO | EPOCHSECONDS | EPOCHREALTIME | HISTCMD | OPTIND | OPTERR | UID | EUID | PPID | GROUPS | DIRSTACK | FUNCNAME | PIPESTATUS | SHELLOPTS | SHLVL | PWD | OLDPWD | PS0 | PS1 | PS2 | PS3 | PS4 | PROMPT_COMMAND)
+      cred_fail "$BYRE_cred_lineno" "the export key is a name bash itself owns"
+      ;;
+    esac
+    BYRE_cred_file="$BYRE_cred_dir/credentials/$BYRE_cred_key"
     # A value file that is missing or is not a regular file means the
     # delivery for this row did not land; there is nothing to export and no
     # honest way to continue.
-    [ -f "$cred_file" ] || cred_fail "$cred_lineno" "its value never landed on the session tmpfs"
-    case "$cred_kind" in
+    [ -f "$BYRE_cred_file" ] || cred_fail "$BYRE_cred_lineno" "its value never landed on the session tmpfs"
+    # And one that cannot be OPENED fails closed as well, for both kinds: the
+    # read below cannot report it (`read -rd ''` returns non-zero at EOF on
+    # every successful read of a NUL-free value, which is what the `|| true`
+    # is for, so it swallows an open failure too and exports the empty
+    # string), and a file kind would hand the agent a path it cannot read.
+    { : <"$BYRE_cred_file"; } 2>/dev/null ||
+      cred_fail "$BYRE_cred_lineno" "its value could not be read from the session tmpfs"
+    case "$BYRE_cred_kind" in
     env)
       # Byte-exact: read to EOF (env values are NUL-free by rule);
       # $(cat) would strip trailing newlines the value may carry.
-      cred_val=""
-      IFS= read -rd '' cred_val <"$cred_file" || true
-      export -- "$cred_key=$cred_val"
-      cred_val=""
+      BYRE_cred_val=""
+      IFS= read -rd '' BYRE_cred_val <"$BYRE_cred_file" || true
+      byre_cred_export "$BYRE_cred_lineno" "$BYRE_cred_key" "$BYRE_cred_val"
+      BYRE_cred_val=""
       ;;
     file)
-      export -- "$cred_key=$cred_file"
+      byre_cred_export "$BYRE_cred_lineno" "$BYRE_cred_key" "$BYRE_cred_file"
       ;;
     *)
-      cred_fail "$cred_lineno" "the delivery kind is neither env nor file"
+      cred_fail "$BYRE_cred_lineno" "the delivery kind is neither env nor file"
       ;;
     esac
-    cred_exported=$((cred_exported + 1))
-  done <"$CRED_DIR/manifest"
+    BYRE_cred_exported=$((BYRE_cred_exported + 1))
+  done <"$BYRE_cred_dir/manifest"
   # BYRE_CRED_EXPECT is only set when byre scheduled a non-empty set, so a
   # manifest that named nothing is the same corrupt delivery as a bad line.
-  if [ "$cred_exported" -eq 0 ]; then
+  if [ "$BYRE_cred_exported" -eq 0 ]; then
     cred_fail 0 "it named no credentials at all"
   fi
+}
+byre_credentials_apply
+
+# First-run hooks — agent skills drop scripts here. They run as the dev user
+# (the launcher is unprivileged), so a hook does its own user-level setup directly
+# (codex device-auth login → the .codex volume; devlog → /workspace). A hook that
+# needs root is not supported: skills declaring privileged setup would need an
+# explicit, status-visible grant, not a blanket-root entrypoint.
+# The dir override is a test seam (the gate-file/env.d precedent) — without it, the
+# launcher tests execute the REAL hooks of whatever box runs the suite, and a
+# hook that legitimately prompts (a login on a box whose credential died)
+# hangs them.
+BYRE_firstrun_dir="${BYRE_FIRSTRUN_DIR:-/etc/byre/firstrun.d}"
+if [ -d "$BYRE_firstrun_dir" ]; then
+  for BYRE_hook in "$BYRE_firstrun_dir"/*; do
+    # Unreadable entries -- and the literal "$BYRE_firstrun_dir/*" an unmatched glob
+    # leaves behind -- are a silent no-op. A hook that RAN and failed is not:
+    # the launcher continues (one skill's broken setup must not cost the user
+    # their box) but says so, because a hook failing invisibly is how a box
+    # boots subtly wrong. The `if bash ...; then :; else` shape is load-bearing
+    # under `set -e`: the naive `bash "$BYRE_hook"; BYRE_hook_status=$?` kills
+    # the launcher on the failing hook, the exact inversion of best-effort.
+    if [ -r "$BYRE_hook" ]; then
+      if bash "$BYRE_hook"; then
+        :
+      else
+        BYRE_hook_status=$?
+        printf 'byre: firstrun hook %q exited %d (continuing)\n' "$BYRE_hook" "$BYRE_hook_status" >&2
+      fi
+    fi
+  done
 fi
+
+# Launch env hooks — skills drop scripts here to put env into the AGENT
+# process (a firstrun hook runs in its own process, so it can't). Sourced
+# (not executed) in glob order, after firstrun hooks and before the
+# credential re-apply and exec, still as the unprivileged dev user. Hooks owe
+# this shell the ADR 0028 purity contract: the environment they leave behind
+# is their only lasting effect. errexit/nounset are suspended around each
+# source so strict mode does not turn a pure hook's benign unset reference
+# into a dead launcher -- that suspension is a courtesy to hooks that KEEP
+# the contract, not a container for ones that break it, and best-effort is
+# guaranteed only to the former. First user: claude-shared-auth exports
+# CLAUDE_CODE_OAUTH_TOKEN from its identity volume (ADR 0017). The dir
+# override is a test seam, per the gate precedent.
+BYRE_envd_dir="${BYRE_ENVD_DIR:-/etc/byre/env.d}"
+if [ -d "$BYRE_envd_dir" ]; then
+  for BYRE_envhook in "$BYRE_envd_dir"/*.sh; do
+    if [ -r "$BYRE_envhook" ]; then
+      set +eu
+      # shellcheck disable=SC1090
+      . "$BYRE_envhook"
+      set -eu
+    fi
+  done
+fi
+
+# Credential re-apply — the second call (the block above firstrun holds the
+# function and the reasoning). The sentinel already exists, so this does not
+# wait; it re-validates the same tree under the same seam values and re-exports
+# byte-exact, so a credential target beats an env.d hook exporting the same
+# variable -- the ADR 0028 "credential exports win env collisions" ordering,
+# unchanged. byre itself writes nothing to the session tmpfs between the two
+# calls (the receiver is one-shot and wrote .done LAST). First-run code runs as
+# the box user and could -- it already holds these exports, so it gains nothing
+# by it.
+byre_credentials_apply
 
 # Agent command: explicit run args > recorded agent command > login shell.
 # /etc/byre/agent-cmd is an *executable script* an agent skill installs;
 # executing it (rather than word-splitting its text) preserves quoting/spaces.
 if [ "$#" -gt 0 ]; then
-  CMD=("$@")
+  BYRE_cmd=("$@")
 elif [ -x /etc/byre/agent-cmd ]; then
-  CMD=(/etc/byre/agent-cmd)
+  BYRE_cmd=(/etc/byre/agent-cmd)
 else
-  CMD=(bash -l)
+  BYRE_cmd=(bash -l)
 fi
 
-exec "${CMD[@]}"
+exec "${BYRE_cmd[@]}"

@@ -68,16 +68,87 @@ type EncryptedRow struct {
 // credential off it — the reservation has to be stated.
 const ReservedCredentialItem = "manifest"
 
-// ValidateCredentialKey refuses the one env key a credential may not use.
-// Every other env_from_host rule is ValidateEnvFromHostKey's; this is the
-// extra one a CREDENTIAL carries, because a credential value travels to the
-// box under its config key and the manifest travels under this name.
+// ValidateCredentialKey refuses the env keys a credential may not use.
+// Every other env_from_host rule is ValidateEnvFromHostKey's; these are the
+// extra ones a CREDENTIAL carries, because a credential value travels to the
+// box under its config key -- so not under the name the manifest travels
+// under, and not under a name bash owns (the launcher would refuse it).
 func ValidateCredentialKey(key string) error {
 	if key == ReservedCredentialItem {
 		return fmt.Errorf("%s %s: %q is reserved — a credential travels to the box under its config key, and byre's own export manifest travels under that name; rename the row (byre credentials unset %s, then set it under another key)",
 			EnvFromHostTable, key, ReservedCredentialItem, key)
 	}
+	if BashOwnsName(key) {
+		return fmt.Errorf("%s %s: bash owns this name; rename the row (byre credentials unset %s, then set it under another key)",
+			EnvFromHostTable, key, key)
+	}
 	return nil
+}
+
+// bashOwnedCredentialPrefixes and bashOwnedCredentialNames are the names a
+// credential cannot travel under because bash itself owns them. This is the
+// ONE place the taxonomy is written down:
+//
+//   - arithmetic: SECONDS, RANDOM, SRANDOM, OPTIND, OPTERR, HISTCMD -- a
+//     value that is not a number aborts the launcher, with the value in
+//     bash's own error message.
+//   - readonly: UID, EUID, PPID, SHELLOPTS, BASHOPTS -- the export fails.
+//   - dynamic: LINENO, EPOCHSECONDS, EPOCHREALTIME, BASHPID -- bash rewrites
+//     the value, so what the agent reads is never what was delivered.
+//   - arrays: GROUPS, DIRSTACK, FUNCNAME, PIPESTATUS, BASH_REMATCH, and the
+//     BASH_/COMP_/READLINE_ families -- never passed to a child at all, so
+//     the agent runs on a PARTIAL set.
+//   - reset in every child: BASH, SHLVL, PWD, OLDPWD -- a hook or a `bash -l`
+//     agent sees bash's own path, 1, its cwd, unset.
+//   - prompt: PS0, PS1, PS2, PS3, PS4 -- an interactive bash would DISPLAY
+//     the value; PROMPT_COMMAND -- it would EXECUTE it.
+//
+// The last two classes export cleanly from the launcher, so its read-back
+// backstop cannot catch them; they have to be on the list. The launcher
+// refuses the same set, and that rule has to exist in two languages, so its
+// case arm is pinned byte-identical to BashOwnedCredentialPattern by test
+// (internal/gen) -- edit the list here.
+//
+// Deliberately NOT here: IFS, PATH, HOME and the other names bash merely
+// READS. A credential so named is the user's own footgun (P1), and the
+// launcher's manifest parse does not depend on them.
+//
+// The rule is a CREDENTIAL rule, not an env_from_host one: a passthrough
+// (env:/git:/tz:) row travels on docker's -e, not through the launcher's
+// export loop, so ValidateEnvFromHostKey does not carry it.
+var (
+	// BASH_ is a prefix, the un-underscored BASH names are exact: a bare
+	// "BASH" prefix would refuse a user's BASHFUL_KEY, which bash never owns.
+	bashOwnedCredentialPrefixes = []string{"BASH_", "COMP_", "READLINE_"}
+	bashOwnedCredentialNames    = []string{
+		"BASH", "BASHPID", "BASHOPTS", "SECONDS", "RANDOM", "SRANDOM", "LINENO", "EPOCHSECONDS", "EPOCHREALTIME",
+		"HISTCMD", "OPTIND", "OPTERR", "UID", "EUID", "PPID", "GROUPS", "DIRSTACK",
+		"FUNCNAME", "PIPESTATUS", "SHELLOPTS", "SHLVL", "PWD", "OLDPWD",
+		"PS0", "PS1", "PS2", "PS3", "PS4", "PROMPT_COMMAND",
+	}
+)
+
+// BashOwnsName reports whether key is a name bash itself owns, which a
+// credential cannot be delivered under (see bashOwnedCredentialNames).
+func BashOwnsName(key string) bool {
+	for _, p := range bashOwnedCredentialPrefixes {
+		if strings.HasPrefix(key, p) {
+			return true
+		}
+	}
+	return slices.Contains(bashOwnedCredentialNames, key)
+}
+
+// BashOwnedCredentialPattern is the bash case-arm pattern the launcher
+// restates the list as ("BASH_* | COMP_* | ... | PS2"), exported so the
+// test in internal/gen can pin the two spellings byte-identical.
+func BashOwnedCredentialPattern() string {
+	parts := make([]string, 0, len(bashOwnedCredentialPrefixes)+len(bashOwnedCredentialNames))
+	for _, p := range bashOwnedCredentialPrefixes {
+		parts = append(parts, p+"*")
+	}
+	parts = append(parts, bashOwnedCredentialNames...)
+	return strings.Join(parts, " | ")
 }
 
 // ParseEncryptedRow decodes one row value. ok is false for any other source

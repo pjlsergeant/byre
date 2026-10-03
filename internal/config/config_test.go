@@ -1236,15 +1236,16 @@ func TestEnvFromHostCoreLayerAndValidation(t *testing.T) {
 		t.Fatalf("a layer must override a core source: %v", cfg2.EnvFromHost)
 	}
 
-	// The scheme set is closed: env:/tz: are legal, anything else is a loud
-	// error naming the schemes; a literal value is pointed at [env].
+	// The scheme set is closed: env:/tz:/cwd: are legal, anything else is a
+	// loud error naming the schemes; a literal value is pointed at [env].
 	ok := Config{EnvFromHost: map[string]string{
 		"GEMINI_API_KEY": "env:GEMINI_API_KEY",
 		"BOX_NAME":       "env:HOST_NAME",
 		"TZ":             "tz:",
+		"HOST_CWD":       "cwd:",
 	}}
 	if err := ok.Validate(); err != nil {
-		t.Fatalf("env:/tz: sources must validate: %v", err)
+		t.Fatalf("env:/tz:/cwd: sources must validate: %v", err)
 	}
 	bad := Config{EnvFromHost: map[string]string{"FOO": "literal-value"}}
 	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "[env]") {
@@ -1257,6 +1258,12 @@ func TestEnvFromHostCoreLayerAndValidation(t *testing.T) {
 	badTz := Config{EnvFromHost: map[string]string{"TZ": "tz:Europe/London"}}
 	if err := badTz.Validate(); err == nil || !strings.Contains(err.Error(), "no argument") {
 		t.Fatalf("tz: with an argument must be rejected, got %v", err)
+	}
+	// cwd: takes no argument either, and the refusal names THAT rule: a dozen
+	// rules can reject this source, and the wrong one keeps the test green.
+	badCwd := Config{EnvFromHost: map[string]string{"HOST_CWD": "cwd:/some/where"}}
+	if err := badCwd.Validate(); err == nil || !strings.Contains(err.Error(), `"cwd:" takes no argument`) {
+		t.Fatalf("cwd: with an argument must be rejected naming the rule, got %v", err)
 	}
 	badKey := Config{EnvFromHost: map[string]string{"BAD KEY": "git:user.name"}}
 	if err := badKey.Validate(); err == nil || !strings.Contains(err.Error(), "not a valid environment variable name") {

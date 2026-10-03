@@ -45,7 +45,7 @@ type hostEnvResult struct {
 // runner applies, never its own re-derivation of the intent (the
 // render-from-effect rule; the empty-git-identity lie was the 2026-07
 // review's headline finding).
-func resolveHostEnv(cfg config.Config, gitExe string) []hostEnvResult {
+func resolveHostEnv(cfg config.Config, gitExe, workDir string) []hostEnvResult {
 	keys := make([]string, 0, len(cfg.EnvFromHost))
 	for k := range cfg.EnvFromHost {
 		keys = append(keys, k)
@@ -67,7 +67,7 @@ func resolveHostEnv(cfg config.Config, gitExe string) []hostEnvResult {
 			// whose ok is false for exactly those rows; through that one this
 			// line said "empty" about a credential.
 			r.State = hostEnvEncrypted
-		} else if v := hostSourceValue(r.Source, gitExe); v != "" {
+		} else if v := hostSourceValue(r.Source, gitExe, workDir); v != "" {
 			r.Value, r.State = v, hostEnvDelivered
 		} else {
 			r.State = hostEnvEmpty
@@ -159,7 +159,19 @@ func providedEnv(cfg config.Config, hostEnv []hostEnvResult) map[string]bool {
 // already refused it at config load; this is a total function so a scheme
 // reaching this point through a path that skipped validation sets nothing
 // rather than panicking.
-func hostSourceValue(src, gitExe string) string {
+//
+// workDir is the "cwd:" source's whole answer: the host directory the box's
+// /workspace comes from -- the project dir, and under `byre worktree` the
+// worktree. That is project.Canonicalize of the directory byre ran in (byre
+// has no project-root walk; a project is the directory you are in), and it is
+// passed in rather than read here because that is how byre already obtains it:
+// main captures the cwd once and threads it down, so every surface answers for
+// the SAME launch. It also keeps a `byre worktree` handoff honest -- develop
+// runs in the new worktree, so the box is told the directory it actually has
+// at /workspace, not the repo the command was typed in. Empty (an unresolvable
+// cwd) reads as empty like an unset git key: the row is warned about at
+// develop and sets nothing.
+func hostSourceValue(src, gitExe, workDir string) string {
 	if key, ok := strings.CutPrefix(src, "git:"); ok {
 		return gitConfig(gitExe, key)
 	}
@@ -168,6 +180,9 @@ func hostSourceValue(src, gitExe string) string {
 	}
 	if src == "tz:" {
 		return hostTimezone()
+	}
+	if src == "cwd:" {
+		return workDir
 	}
 	return ""
 }

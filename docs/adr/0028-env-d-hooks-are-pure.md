@@ -4,15 +4,23 @@
 > step runs AFTER the env.d loop, deliberately — credential exports win env
 > collisions, and the step keeps this ADR's purity contract (its exports are
 > its only lasting effect).
+>
+> **Amended 2026-10-03** (launcher credential ordering): the credential
+> step now runs TWICE — exported BEFORE the firstrun hooks (below the
+> launch gate), so a hook sees a `byre credentials` value instead of
+> prompting for a key already delivered, and re-applied AFTER the env.d
+> loop, so credential exports still win env collisions. env.d hooks now
+> see delivered values too; the purity contract is unchanged.
 
-byre skills contribute launch-time environment via `env.d` hooks —
-`.sh` files sourced by the launcher just before it execs the agent, so
-their `export`s land in the agent's process. This ADR pins a contract on
-that mechanism and extends it to login shells. Decided 2026-07-13,
-surfaced building the `docker-host` skill (ADR 0027). Amended 2026-07-29:
-the purity contract is stated as observable purity — the original literal
-wording ("may only export... no commands") banned the computation the
-shipped hooks legitimately do to derive their exports.
+byre skills contribute launch-time environment via `env.d` hooks — `.sh`
+files sourced by the launcher after the firstrun hooks, before the
+credential re-apply and exec of the agent, so their `export`s land in the
+agent's process. This ADR pins a contract on that mechanism and extends it
+to login shells. Decided 2026-07-13, surfaced building the `docker-host`
+skill (ADR 0027). Amended 2026-07-29: the purity contract is stated as
+observable purity — the original literal wording ("may only export... no
+commands") banned the computation the shipped hooks legitimately do to
+derive their exports.
 
 ## The problem
 

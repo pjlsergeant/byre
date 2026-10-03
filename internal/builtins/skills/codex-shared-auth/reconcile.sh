@@ -18,6 +18,20 @@ export CODEX_HOME="${CODEX_HOME:-/home/dev/.codex-home}"
 cred="$CODEX_HOME/auth.json"
 reason="${1:-unspecified}"
 
+# The filesystem primitives (identity route, shared-path vetting, the link
+# assert) live in one library five skills ship to this path; this script owns
+# the policy -- the lock, the winner choice, the publish under it -- and the
+# messages. BYRE_SHARED_AUTH_LIB is a test seam, not a user knob: byre refuses
+# BYRE_* names in a project [env] (internal/config/config.go). A library byre
+# cannot read means none of the hardening below is in force, which is never
+# something to do quietly.
+BYRE_SA_LIB="${BYRE_SHARED_AUTH_LIB:-/usr/local/lib/byre-shared-auth-lib.sh}"
+if [ ! -r "$BYRE_SA_LIB" ]; then
+  echo "byre codex-shared-auth: cannot read the shared-auth library ($BYRE_SA_LIB) — shared auth not asserted this launch." >&2
+  exit 1
+fi
+. "$BYRE_SA_LIB"
+
 diag_event() {
   [ -n "${CODEX_AUTH_DIAGNOSTIC_BYRE:-}" ] || return 0
   printf '%s component=shared-auth box=%q project=%q pid=%s reason=%s event=%s codex_home=%q identity_dir=%q\n' \
@@ -31,7 +45,7 @@ diag_path() {
   local label="$1" path="$2" kind target="" meta=""
   if [ -L "$path" ]; then
     kind=symlink
-    target="$(readlink "$path" 2>/dev/null || true)"
+    target="$(readlink -- "$path" 2>/dev/null || true)"
   elif [ -e "$path" ]; then
     kind=non_symlink
   else
@@ -115,6 +129,17 @@ choose_winner() {
 
 publish_local() {
   local tmp
+  # Refused before anything is staged, with assert_link's own check: the
+  # keep-a-copy step below tests and copies $SHARED by pathname, which
+  # follows a planted symlink and would copy ITS target -- a file of the
+  # planter's choosing -- into auth.json.prev on the shared volume. Not
+  # published either: the local login stays where it is, and the caller's
+  # result=1 plus the exit releases the lock as on every other failure.
+  if byre_sa_shared_unsafe "$SHARED"; then
+    echo "byre codex-shared-auth: refusing: $SHARED is a symlink or not a regular file — this box keeps its local credential; not published machine-wide this launch." >&2
+    diag_event shared_unsafe_refused
+    return 1
+  fi
   tmp="$(mktemp "$IDENTITY_DIR/.auth.json.tmp.XXXXXX" 2>/dev/null)" || {
     echo "byre codex-shared-auth: cannot create a temporary credential in $IDENTITY_DIR; keeping the local login." >&2
     diag_event publish_temp_failed
@@ -127,55 +152,122 @@ publish_local() {
   # Staged like publish itself — temp + rename — because the .prev path is
   # dev-writable in every box: a cp onto a planted FIFO would hang inside
   # the lock, and onto a planted symlink would write through it.
+  #
+  # Neither rename uses `mv -T` (GNU-only; the macOS CI leg runs this with
+  # BSD mv). A plain `mv` onto a directory -- or a symlink to one -- moves
+  # the file INTO it, so each destination is vetted first (a symlink at
+  # .prev is dropped, a directory there skips retention; $SHARED was
+  # refused above unless regular or absent) and checked again AFTER the
+  # rename, which closes the swap-in-between race. The two post-checks
+  # differ by what they protect: $SHARED is compared to the local login's
+  # bytes, because what the other boxes read has to BE this box's
+  # credential, while .prev is checked only to be a regular non-symlink
+  # file -- retention is best-effort, and a wrong .prev costs a recovery
+  # path, not a login.
+  #
+  # A directory raced in between check and rename RECEIVES the staged file,
+  # since the rename cannot take -T -- and so does a SYMLINK to a directory,
+  # which mv follows, putting the file wherever on this volume the link points.
+  # Both refusals below therefore remove the name the rename left inside,
+  # resolving the link to do it (byre_sa_drop_interior says why that one
+  # resolution is safe when every other check refuses instead). It matters
+  # asymmetrically: a .prev copy left there is bytes already sitting on this
+  # volume as $SHARED, while the published copy is this box's LOCAL login,
+  # which the refusal claims stayed local -- left inside a planted directory it
+  # would be readable by every sibling box on the machine.
+  local prev="$IDENTITY_DIR/auth.json.prev"
   if [ -f "$SHARED" ]; then
     local prev_tmp
-    if prev_tmp="$(mktemp "$IDENTITY_DIR/.auth.json.prev.tmp.XXXXXX" 2>/dev/null)"; then
-      if cp -- "$SHARED" "$prev_tmp" 2>/dev/null && chmod 600 "$prev_tmp" 2>/dev/null &&
-         mv -f -- "$prev_tmp" "$IDENTITY_DIR/auth.json.prev" 2>/dev/null; then
+    if [ -L "$prev" ]; then
+      rm -f -- "$prev" 2>/dev/null || true
+    fi
+    if [ -d "$prev" ] || [ -L "$prev" ]; then
+      diag_event prev_retention_failed
+    elif prev_tmp="$(mktemp "$IDENTITY_DIR/.auth.json.prev.tmp.XXXXXX" 2>/dev/null)"; then
+      if cp -- "$SHARED" "$prev_tmp" 2>/dev/null && chmod -- 600 "$prev_tmp" 2>/dev/null &&
+         mv -f -- "$prev_tmp" "$prev" 2>/dev/null && [ -f "$prev" ] && [ ! -L "$prev" ]; then
         :
       else
         rm -f -- "$prev_tmp" 2>/dev/null || true
+        byre_sa_drop_interior "$prev" "$prev_tmp"
         diag_event prev_retention_failed
       fi
     else
       diag_event prev_retention_failed
     fi
   fi
-  if ! cp -- "$cred" "$tmp" 2>/dev/null || ! chmod 600 "$tmp" 2>/dev/null ||
+  if ! cp -- "$cred" "$tmp" 2>/dev/null || ! chmod -- 600 "$tmp" 2>/dev/null ||
      ! mv -f -- "$tmp" "$SHARED" 2>/dev/null; then
     rm -f -- "$tmp" 2>/dev/null || true
+    byre_sa_drop_interior "$SHARED" "$tmp"
     echo "byre codex-shared-auth: cannot publish the local Codex login machine-wide; keeping the local login." >&2
     diag_event publish_failed
+    return 1
+  fi
+  if [ -L "$SHARED" ] || [ ! -f "$SHARED" ] || ! cmp -s -- "$cred" "$SHARED"; then
+    rm -f -- "$tmp" 2>/dev/null || true
+    byre_sa_drop_interior "$SHARED" "$tmp"
+    echo "byre codex-shared-auth: refusing: $SHARED was not the published credential after the rename (a symlink, directory or other object raced in) — this box keeps its local credential; not published machine-wide this launch." >&2
+    diag_event shared_unsafe_refused
     return 1
   fi
   diag_event local_published
   return 0
 }
 
+# Point $cred at the machine-wide credential, or leave it as it is. The
+# refusals come before the already-linked short-circuit inside the library,
+# so a planted shared path is reported even on a box already linked to it
+# (codex-login.sh then drops that link rather than trust it).
+#
+# The publish path above keeps its own temp + rename rather than the
+# library's exclusive promote: the flock serializes promotion between boxes,
+# which the opencode/gemini hooks (no lock) need the exclusive create for.
 assert_link() {
-  if [ -L "$cred" ] && [ "$(readlink "$cred" 2>/dev/null)" = "$SHARED" ]; then
+  byre_sa_assert_link "$cred" "$SHARED"
+  case $? in
+  0)
+    diag_event link_asserted
     return 0
-  fi
-  rm -f -- "$cred" 2>/dev/null || {
-    echo "byre codex-shared-auth: cannot replace $cred with the machine-wide credential link." >&2
-    diag_event local_remove_failed
-    return 1
-  }
-  if ! ln -s "$SHARED" "$cred" 2>/dev/null; then
-    echo "byre codex-shared-auth: cannot link $cred to the machine-wide credential." >&2
+    ;;
+  2)
+    echo "byre codex-shared-auth: refusing: $SHARED is a symlink or not a regular file — this box keeps its local credential; shared auth not asserted this launch." >&2
+    diag_event shared_unsafe_refused
+    ;;
+  3)
+    echo "byre codex-shared-auth: refusing: $cred is not a regular file — this box keeps its local credential; shared auth not asserted this launch." >&2
     diag_event link_failed
-    return 1
-  fi
-  diag_event link_asserted
+    ;;
+  *)
+    echo "byre codex-shared-auth: cannot link $cred to the machine-wide credential; this box keeps its local credential." >&2
+    diag_event link_failed
+    ;;
+  esac
+  return 1
 }
 
-if ! mkdir -p "$IDENTITY_DIR" "$CODEX_HOME" 2>/dev/null; then
+# The identity dir must be the path it is spelled as: the leaf auth.json is
+# vetted on its own, but a symlinked identity DIR -- or any symlinked
+# ancestor -- is followed by mkdir -p, the lock, and the publish rename, so
+# this box's login would land wherever the planted link points. The local
+# login is untouched either way. BYRE_IDENTITY_BASE is a test seam (the BYRE_
+# namespace is refused in a project [env]), and a seam value must itself be a
+# physical path -- the opencode-shared-auth rule.
+if ! byre_sa_identity_route_safe "$IDENTITY_DIR"; then
+  echo "byre codex-shared-auth: refusing: the identity dir ($IDENTITY_DIR) is or resolves through a symlink — this box keeps its local credential; shared auth not asserted this launch." >&2
+  exit 1
+fi
+if ! mkdir -p -- "$IDENTITY_DIR" "$CODEX_HOME" 2>/dev/null; then
   echo "byre codex-shared-auth: cannot create $IDENTITY_DIR or $CODEX_HOME — shared auth not asserted this launch." >&2
+  exit 1
+fi
+if ! byre_sa_path_as_spelled "$IDENTITY_DIR"; then
+  echo "byre codex-shared-auth: refusing: the identity dir ($IDENTITY_DIR) resolves through a symlink — this box keeps its local credential; shared auth not asserted this launch." >&2
   exit 1
 fi
 if [ -n "${CODEX_AUTH_DIAGNOSTIC_BYRE:-}" ]; then
   : >>"$DIAG_LOG" 2>/dev/null || true
-  chmod 600 "$DIAG_LOG" 2>/dev/null || true
+  chmod -- 600 "$DIAG_LOG" 2>/dev/null || true
 fi
 
 diag_event reconcile_start
@@ -248,32 +340,40 @@ if [ "$local_regular" = true ]; then
   shared_valid=false
   [ "$shared_regular" = true ] && auth_valid "$SHARED" && shared_valid=true
 
+  # Each outcome line prints only AFTER its operation succeeded, past tense;
+  # on failure publish_local / assert_link's own failure lines are the only
+  # output (a "publishing ..." line followed by "cannot publish" read as a
+  # half-success).
   if [ "$local_valid" = true ] && [ "$shared_valid" = false ]; then
-    echo "byre codex-shared-auth: publishing this box's Codex login as the machine-wide credential" >&2
     diag_event winner_local_shared_missing_or_invalid
-    if publish_local; then
-      assert_link || result=1
+    if publish_local && assert_link; then
+      echo "byre codex-shared-auth: published this box's Codex login as the machine-wide credential" >&2
     else
       result=1
     fi
   elif [ "$local_valid" = false ] && [ "$shared_valid" = true ]; then
-    echo "byre codex-shared-auth: local Codex auth is malformed; retaining the valid machine-wide credential" >&2
     diag_event winner_shared_local_invalid
-    assert_link || result=1
+    if assert_link; then
+      echo "byre codex-shared-auth: local Codex auth was malformed; retained the valid machine-wide credential" >&2
+    else
+      result=1
+    fi
   elif [ "$local_valid" = true ] && [ "$shared_valid" = true ]; then
     winner="$(choose_winner)"
     if [ "$winner" = local ]; then
-      echo "byre codex-shared-auth: promoting the newer local Codex login to the machine-wide credential" >&2
       diag_event winner_local_newer
-      if publish_local; then
-        assert_link || result=1
+      if publish_local && assert_link; then
+        echo "byre codex-shared-auth: promoted the newer local Codex login to the machine-wide credential" >&2
       else
         result=1
       fi
     else
-      echo "byre codex-shared-auth: retaining the newer machine-wide Codex login over this box's stale local copy" >&2
       diag_event winner_shared_newer
-      assert_link || result=1
+      if assert_link; then
+        echo "byre codex-shared-auth: retained the newer machine-wide Codex login over this box's stale local copy" >&2
+      else
+        result=1
+      fi
     fi
   else
     echo "byre codex-shared-auth: local Codex auth is malformed and no valid shared credential exists; leaving it untouched for recovery." >&2
@@ -287,7 +387,7 @@ else
   assert_link || result=1
 fi
 
-[ -f "$SHARED" ] && chmod 600 "$SHARED" 2>/dev/null || true
+[ -f "$SHARED" ] && [ ! -L "$SHARED" ] && chmod -- 600 "$SHARED" 2>/dev/null || true
 diag_path local_final "$cred"
 diag_path shared_final "$SHARED"
 diag_event reconcile_end
