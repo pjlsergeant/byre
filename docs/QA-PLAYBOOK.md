@@ -368,7 +368,12 @@ remedy, and creates nothing.
    State vols row, and the Worktrees row (with a sibling up again) names
    it rather than saying only "share these volumes". Only the gated
    integration suite can stage two live boxes -- this is the journey that
-   proves the refusal against a real engine.
+   proves the refusal against a real engine. Known divergence (TODO.md,
+   seen in the 2026-09-05 and 2026-10-03 passes): a worktree box started
+   BEFORE `ledger` was declared does not mount it, so the main develop
+   builds and starts instead of refusing. To see the refusal itself, stop
+   and restart the worktree box after adding the volume, then develop the
+   main tree.
 6. TEARDOWN: exit both; `git worktree remove` on the host if re-running.
 
 ## Journey: config UI, pickers follow an Extends flip
@@ -465,13 +470,17 @@ No engine needed. New in v1.5.0 (the scanner-family kill).
    resolve, the fork-time strip guard refuses before publishing rather
    than shipping a double `[package]`.
 3. Body key under `[package]` (new in v1.10.0): a local `skill.toml` with
-   `files = { ... }` written BELOW the `[package]` header -> `skill
-   validate` refuses, rc 1, naming the key and the move (`[package]
-   carries key(s) it does not define: files ... move it above [package],
-   or under the table it belongs to`); `skill list` shows the dir INVALID
-   with the same reason; the same key above the header loads. A template
-   with `base` below `[package]` refuses the same way. Installed and
-   bundled packages are NOT checked (stage 1 stays lenient).
+   a top-level key such as `companion_for = "gemini"` written BELOW the
+   `[package]` header -> `skill validate` refuses, rc 1, naming the key
+   and the move (`[package] carries key(s) it does not define:
+   companion_for ... move it above [package], or under the table it
+   belongs to`); `skill list` shows the dir INVALID with the same reason;
+   the same key above the header loads. (Use a real top-level key: `files`
+   belongs under `[build]`, so above the header it refuses as an unknown
+   key, and `description` is a `[package]` field, valid in both places.)
+   A template (`template.config`) with `base` below `[package]` refuses the
+   same way. Installed and bundled packages are NOT checked (stage 1 stays
+   lenient).
 4. byre's own writers place the header correctly (v1.10.0): `template
    fork go qa/tgo` keeps `base`/`egress_offered` ABOVE the fork's
    `[package]` and validates; `skill fork gemini-shared-auth qa/gsa`
@@ -545,9 +554,13 @@ On a project with a netns skill enabled (`skills = ["firewall"]`):
 2. Enter on a row → `Set in: byre default` + `Override here`. Enter → the
    picker renders FIRST with the row's current scheme highlighted (prove
    with `capture-pane -e`, not plain text) and the argument label matching.
-3. ←/→ across all five schemes: the label column must not change width, and
-   the argument's placeholder explains schemes that take no argument. From
-   `[disabled]` one more → wraps to `[value]`.
+3. ←/→ across all seven sources (`[value] [git:] [env:] [tz:] [cwd:]
+   [disabled] [credential]`): the label column must not change width, and
+   on a fresh add the argument's placeholder explains schemes that take no
+   argument (`cwd:` → "the host directory /workspace comes from"). From
+   `[credential]` one more → wraps to `[value]`. The highlight moves only
+   while the cursor is ON the Source row (↑ first); with the cursor on Key,
+   ←/→ land nowhere, so prove each move with `capture-pane -e`.
 4. Scheme `value` on a key that is also a passthrough → an `[env]` literal
    row PLUS the passthrough row annotated `(… — overridden by [env], not
    passed)`; the counts must not move (one key, one grant — the field
@@ -562,7 +575,19 @@ On a project with a netns skill enabled (`skills = ["firewall"]`):
 7. Rude keys — `BAD KEY`, `1STARTS_WITH_DIGIT`, `ünïcödé`, `K=EQUALS`,
    `BYRE_EGRESS` — each rejected naming the rule that fired; `git:` with
    `user name with spaces` rejected as an invalid git config key.
-8. TEARDOWN: none (discard).
+8. `cwd:` (new in v1.12.0), on a git project whose image carries git
+   (`apt = ["git"]`): add `HOST_CWD` with source `[cwd:]` → the row reads
+   `HOST_CWD <- host cwd:  (set here)` and the exposure count rises before
+   any save. `byre status` counts it among "keys from host"; `--full`
+   shows `HOST_CWD <- cwd:`. `byre develop` → in the box `echo $HOST_CWD`
+   prints the project's HOST path; `byre worktree wt1 --path ../<p>-wt1`
+   → in that box it prints the worktree's host path. Hand-edit the row to
+   `cwd:x` (and `cwd:/tmp`) → `byre status` and `byre develop` both exit 1
+   with `"cwd:" takes no argument (it always means the host directory the
+   box's /workspace comes from)`; `CWD:` and bare `cwd` fall to the
+   supported-sources list.
+9. TEARDOWN: step 6 saves, so restore the project config; rm the boxes;
+   `git worktree remove` the worktree.
 
 ## Journey: config UI, Build files
 
@@ -579,7 +604,7 @@ On a project with a netns skill enabled (`skills = ["firewall"]`):
    ("create it, or remove the entry"), never a raw lstat error.
 4. Valid entry + a real file → `byre develop` (agent none, template none) →
    the file is at the destination in the box, and `byre dockerfile` shows
-   `COPY files/<src> <dest>` before the guard block.
+   `COPY "files/<src>" "<dest>"` (both quoted) before the guard block.
 5. Destination `/usr/local/bin/byre-launch` with `skills = ["firewall"]` →
    the clobber note on stderr and the guard block re-COPYing the launcher
    at the tail (see the security-guard journey).
@@ -605,6 +630,215 @@ With at least one project volume and one machine identity volume
 existing: `byre config` → Volume data. Expect two groups — "Project
 volumes" and "Machine volumes — shared by all your projects" — engine
 suffix per row, and the state-volume explainer line at the bottom.
+
+## Journey: backup → restore round trip
+
+New in v1.12.0 (ADR 0059). `byre restore` is terminal-only: drive it in
+tmux or a python pty (the runner's script(1) dies on stdin EOF). Needs a
+git project with a commit, an agent (claude is cheapest), and passphrase
+prompts answered in tmux.
+
+1. SETUP: wizard (template none, agent claude, decline sharing). Plant
+   in the box (`docker exec -u dev`): `~/.claude/qa-marker.txt`, an
+   absolute symlink, a traversing symlink (`../../../../x`) and a FIFO.
+   Exit, then write the store config with a `[[mounts]]` (an existing
+   host dir), a `[[volumes]]` `role = "state"` and one `role = "cache"`.
+   `byre credentials set QA_TOKEN` (mints the identity: passphrase twice,
+   value) and `printf '...' | byre credentials set --file QA_FILE`.
+   develop once so the new volumes exist; plant data in both.
+2. With the box RUNNING, `byre backup`: the preview prints and asks
+   `Proceed?`; `y` → refusal naming the session and its `docker stop`
+   line, rc 1. (The sweep runs under the lock AFTER the y/n, by design.)
+3. Box stopped, `byre backup`. Preview: `volumes carried` (agent + state
+   volume), `left behind` (`<cache>: not carried (cache)`), config bytes
+   and `N credential rows, carried encrypted under this file's own
+   passphrase`, references (mounts, agent, base). `y` → `byre: wrote
+   <dir>/<folder>-<YYYY-MM-DD>.byre-backup.tar.gz`, mode 0600, entries in
+   order `backup.toml`, `byre.config`, `volumes/*.tar`; the summary lists
+   the symlinks verbatim and the FIFO as dropped-by-restore. rc 0.
+4. Same command again → `already exists and byre backup never
+   overwrites — move it, or name another path with --output`, rc 1.
+   `--output <existing dir>` refuses the same way; `--output
+   <missing-dir>/x` names the missing directory. `--no-credentials` → the
+   copy has no `[credentials]` and no `encrypted:` rows (the source keeps
+   them). `--no-volume <state>` → `left behind: <name>: not carried
+   (--no-volume)`; an unknown name lists the carried candidates; a cache
+   name says it is not carried anyway. All refusals rc 1.
+5. Off a terminal, `byre restore FILE DIR </dev/null` → `restore is
+   interactive ... run it on a TTY`, rc 1, DIR not created.
+6. Move the mount's host dir aside. `byre restore FILE <new empty DIR>`:
+   the review shows `Names this machine must satisfy` with the mount
+   marked `(missing on this machine now)`, `What the source saw`, `From
+   the backup` (each volume `will be restored`, the cache volume `left to
+   the first develop`, credential state, symlinks, the FIFO, `this file's
+   authorship is not proven`), the credentials-identity ⚠, then `[y/N]`.
+   `y` → `restored <folder> into <DIR>`, `next: byre develop`, rc 0, and
+   `~/.byre/staging` empty.
+7. `byre develop` there: passphrase prompt, then the missing-mount refusal
+   (see the missing-mount journey), rc 1, nothing built. Restore the
+   mount dir, develop again: the marker, the symlinks and the state data
+   are back with mtimes intact, the cache dir is empty, and the agent
+   process (`/proc/1/environ`) carries QA_TOKEN and QA_FILE with the
+   SAME passphrase.
+8. Refusals, each rc 1: restore into the project from step 6 → `already
+   has a config; restore into a fresh checkout`; from inside a linked
+   worktree (cwd or DIR) → `is a linked worktree of <main>; restore in
+   the main worktree`; a non-empty non-git dir (a lone dotfile counts),
+   a dirty git root, a subdirectory of a clean checkout (names the root),
+   and $HOME by default → `expects an empty directory or the clean root
+   of a git checkout ... --allow-nonempty`; a regular file as DIR. A clean
+   git root reaches the review; declining → `not restored; nothing
+   written`, rc 0, no enrolment left.
+9. `--allow-nonempty` into the non-empty dir: the review AND the summary
+   both carry `restoring into <DIR>, which is not empty (--allow-nonempty):
+   <reason>`.
+10. Rude files, each refused before anything is written, no DIR left: a
+    flipped byte (sha256 mismatch naming the member); a payload edited and
+    recompressed; plain GNU tar repack (`... bytes follow the last member
+    inside the archive`); truncated; bytes appended; a second gzip member
+    (`data follows the gzip member`); not gzip; empty; a FIFO or directory
+    as FILE (`not a regular file`); missing. Repack with `tar -b 1` to
+    edit the index: `format = 2` → the newer-format sentence; an unknown
+    key → `unknown key(s) at format 1`; a lying `credentials` state is
+    described from the verified bytes, not refused.
+11. Both engines: a second `BYRE_HOME` whose `default.config` says
+    `engine = "podman"` is "another machine". Restore the docker backup
+    there, develop on podman (marker + credentials), add a marker, back up
+    from podman, restore into the docker home, develop: both markers and
+    both credentials present.
+12. TEARDOWN: rm the boxes, every project volume, the images, both
+    stores and homes, the backup files and fixture dirs.
+
+## Probe: interrupting backup and restore
+
+Give a state volume ~600 MB of incompressible data (`docker run --rm -v
+<vol>:/v debian:bookworm sh -c 'head -c 600M /dev/urandom > /v/big.bin'`)
+for a usable window, and send Ctrl-C from the RUNNER side when the state
+you want appears (`docker ps --filter label=byre.helper`, a
+`.byre-publish-*` temp in the output dir): a laptop-side sleep is too
+coarse. Record `docker events --filter label=byre.helper` alongside.
+
+- Backup mid-capture and mid-publish: `backup cancelled; nothing written`,
+  rc 1, no helper, no temp, `~/.byre/staging` empty.
+- Restore mid-pour: `restoring volume <v> failed: cancelled while pouring`,
+  the volume being poured removed, volumes poured whole `already
+  restored, and kept`, the dir and store stay and it says so; a re-run
+  reports the kept volume `exists here; the backed-up copy is dropped`
+  and pours the rest whole (compare a sha256 inside both volumes).
+- Sweep the delay after the first helper appears (0-2 s): every point
+  must leave no helper container. (2026-10-03: at ~0.3 s byre printed
+  `helper container <id> could not be removed ... remove it by hand`
+  for a helper its own `--rm` had already taken; and a cancel just after
+  `y` left the new empty DIR plus an enrolment stub while saying only
+  `nothing written`.)
+
+## Journey: --ignore-docker / --ignore-podman (backup, reset, forget, rehome)
+
+New in v1.12.0. Make an engine unreachable for ONE command without
+touching the daemon: `CONTAINER_HOST=unix:///tmp/dead.sock` (podman
+answers `Cannot connect to Podman`, rc 125) or `DOCKER_HOST=unix:///tmp/
+dead.sock`. A DECLINED engine (ADR 0047) is an executable `podman` script
+inside the project dir, put first on PATH.
+
+1. backup (docker source), podman dead, no flag → `byre backup expects to
+   check every installed engine ... podman isn't reachable (...): start
+   podman, or run with --ignore-podman`, rc 1. With `--ignore-podman` →
+   written, and `podman ignored (--ignore-podman): volumes of this project
+   there, if any, are not in this backup, and a session there could not
+   be ruled out`. `--ignore-docker` (the source), dead or alive, and both
+   flags together → `docker is the engine this backup reads, so it cannot
+   be skipped`, rc 1. Docker dead, no flag → `start docker and re-run`
+   only (no switch offered).
+2. Create `byre-<id>-.claude` and `byre-<id>-extra` on podman: the preview
+   lists both under `left behind` as `(on podman; this backup reads
+   docker)`; with podman ignored they are absent and the ignored line
+   stands in; `--no-volume extra` says it is not carried anyway.
+3. reset / forget / rehome, each: unreachable engine without the flag →
+   the same refusal with its own verb, rc 1; with the flag → proceeds and
+   prints its cost (reset: `were NOT removed`; forget: `... stay behind as
+   orphans under this project's prefix — list them later with <engine>
+   volume ls --filter name=byre-<id>-`; rehome: `were not migrated — they
+   stay under byre-<old-id>-`). Declined podman + `--ignore-podman` →
+   `this command speaks in totals and byre cannot account for podman:
+   byre declines to run podman: PATH resolves it to ...`, rc 1, whatever
+   the flag says.
+4. TEARDOWN: rm the planted podman volumes and the orphans the flags left.
+
+## Journey: develop names every missing mount host
+
+New in v1.12.0. Agentless project with an image already built; record
+its image ID.
+
+1. Config with mounts whose hosts are: missing (`~/...`), a missing deep
+   absolute path (`mode = "rw"`), a dangling symlink, a missing file path,
+   one that exists, and one missing with `disabled = true`.
+2. `byre develop` → `N mount host path(s) do not exist on this machine:`
+   listing every enabled missing one (the dangling symlink included, the
+   disabled one NOT), then `create the directory, disable the mount in
+   `byre config` (Mounts), or remove it ...`, rc 1, image ID unchanged.
+3. Same config with `engine = "podman"` and no podman image: the same
+   list before any build; still no podman image afterwards.
+4. TEARDOWN: restore the config.
+
+## Journey: credentials reach first-run hooks
+
+New in v1.12.0. A local skill whose `[build]` `files` installs a bash
+hook at `/etc/byre/firstrun.d/50-qa-credhook.sh` that prints
+`${!k}` for each name below plus `cat "$QA_FILE"` and a count of
+`env | grep '^BYRE_cred'`.
+
+1. `byre credentials set QA_ENV` in tmux (passphrase twice, value), then
+   piped sets: `--file QA_FILE`, and `cred_lineno`, `hook`, `BASHFUL_KEY`,
+   `FIRSTRUN_DIR`, `CMD`, `cred_key` — all rc 0.
+2. `byre develop` → passphrase, then `byre: credentials: delivered.`
+   BEFORE the first hook line (the hook's first line may share that row —
+   disclosed residual); every value intact, QA_FILE a path whose file
+   holds both lines, zero BYRE_cred* vars. The session shell sees the
+   same values.
+3. Refused at `set` (rc 1, `bash owns this name; rename the row ...`):
+   SECONDS UID PS0 PS1 PS4 PROMPT_COMMAND SHLVL EUID RANDOM LINENO HISTCMD
+   BASHOPTS BASH_ENV BASH_FOO COMP_WORDS READLINE_LINE. Accepted: IFS PATH
+   HOME BASHFUL_KEY2 COMPUTE_KEY PS5 bash_lower (unset them straight away;
+   a delivered PATH would break the box).
+4. Hand-rename a row to `SECONDS = "encrypted:..."`: `credentials list`
+   names it, `byre develop` exits 1 naming it (never the value), and
+   `byre credentials unset SECONDS` removes it.
+5. `byre config` → Env vars → `a` → ↑ to Source, → to `[credential]`,
+   ↓ Key `SECONDS`, Tab, value, `^s` (Enter never saves; pressing it puts
+   the value field into a newline-error state — Esc and redo) → the same
+   `✗ ... bash owns this name` rule; `PROMPT_COMMAND` likewise; `IFS` is
+   written. A develop with IFS delivered launches; `/proc/1/environ`
+   carries it.
+6. TEARDOWN: unset the rows; rm box, image, the skill.
+
+## Journey: shared-auth hooks with dummy logins
+
+New in v1.12.0 (opencode-, gemini-, codex-shared-auth). Loginless: plant
+dummy files straight into the volumes with `docker run --rm -u 1000:1000
+-v <vol>:/d debian:bookworm ...`. Start with NO `byre-machine-u<uid>-*`
+volumes (they are shared by every project on the engine). opencode's TUI
+clears the scrollback: record the raw pane with `tmux pipe-pane -o 'cat
+>> log'` and read the hook lines from the log.
+
+1. Promote: project with the agent and sharing declined; develop once
+   (Ctrl-C at the login gate). Plant a dummy login in the state volume
+   (opencode `auth.json` in `.opencode`; gemini's four identity files in
+   `.gemini`; codex `{"OPENAI_API_KEY":"sk-DUMMY"}` as `auth.json` in
+   `.codex`). Add `skills = ["<agent>-shared-auth"]` to the store config
+   and develop. Expect `promoted this box's ...` (codex: `published this
+   box's Codex login as the machine-wide credential`); the local file is
+   now a symlink into `/home/dev/.byre-identity/<agent>/`, the machine
+   volume holds the dummy at 0600.
+2. Refuse: with a regular local login in place, replace the SHARED file
+   in the machine volume with a symlink (`-> /etc/passwd`), then a FIFO,
+   then a directory, one launch each. Expect `refusing: the shared ...
+   is a symlink or not a regular file`, the local login byte-identical,
+   and the hook done within seconds (the agent then runs). gemini judges
+   each of its four files separately (one healthy file still links).
+3. gemini `settings.json` as a FIFO in `.gemini` → `... is a symlink or
+   not a regular file; not seeding selectedType`, no hang.
+4. TEARDOWN: rm boxes, project volumes, and the three machine identity
+   volumes.
 
 ## Journey: shared-auth field gates — gemini + grok (PARKED — live logins + maintainer)
 
@@ -724,3 +958,24 @@ source alone (the grok-v1 lesson). Tracked in TODO.md ("Maybe someday").
   death by `tmux list-panes -F '#{pane_dead}'` and a `pgrep`, not by the
   status file -- and re-test a "the first Ctrl-C was ignored" impression
   before reporting it (one did not reproduce, 2026-07-27).
+- Build the candidate from `git archive <sha>`, never the working tree
+  (docs are embedded in the binary, and another session may be editing
+  them). The archive carries no VCS stamp, so `byre version` says
+  `(devel)` -- expected.
+- A passphrase prompt swallows whatever is typed next, masked: an `echo
+  rc=$?` sent while develop waits at `passphrase for ...` becomes a wrong
+  passphrase (2026-10-03). Wait for the prompt to be answered before
+  measuring.
+- Name a python pty driver anything but `pty.py`: it shadows the stdlib
+  `pty` module and every run dies with an AttributeError.
+- Memory: the runner has ~4 GB and may host the owner's other stacks. An
+  agent TUI killed with `exit status 137` right after its login gate is
+  the kernel OOM killer (`docker events` shows `oom`; `dmesg` names the
+  process), not byre. Check `free -m` before agent legs, and redo any leg
+  that died that way.
+- gemini's folder-trust dialog swallows Ctrl-C as its auth screens do;
+  a "stopped" gemini box may still be up. `docker ps` before planting
+  into its volumes (2026-10-03: a plant landed under a live box).
+- A wait pattern naming a SKILL (`opencode-shared-auth`) matches the
+  build log's COPY lines, like an agent name does. Wait for the hook's
+  own verbs (`promoted`, `refusing`) in a pipe-pane log.
