@@ -484,7 +484,7 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	if err != nil {
 		return none, err
 	}
-	if err := refuseMissingMountHosts(r, s.Err, rv.mounts); err != nil {
+	if err := refuseMissingMountHosts(r, s.Err, rv.mounts, rv.skills); err != nil {
 		return none, err
 	}
 	// Credential decrypt (launch step 2) — under the lock, against the
@@ -695,8 +695,18 @@ func decodeAgentExit(runErr error) error {
 // A disabled mount is skipped -- switching one off is exactly how a user keeps
 // an absent host path from blocking develop (ADR 0015) -- and a probe that is
 // not a plain absence is no evidence at all (hostPathMissing).
-func refuseMissingMountHosts(r sessionRunner, w io.Writer, mounts []config.Mount) error {
-	var missing []string
+//
+// A skill's sock_groups source is skipped too, whether or not it is there: a
+// socket's presence is the engine's business -- it comes and goes with a daemon,
+// and a podman-only or Desktop host may serve one byre cannot stat -- so
+// warnSockSources warns and launches on it, and that rule is this one's to
+// respect. A directory or file the user named is a different kind of claim: a
+// fact about this host, which the host can state, and getting it wrong costs a
+// whole build before the engine says so.
+func refuseMissingMountHosts(r sessionRunner, w io.Writer, mounts []config.Mount, res skills.Resolved) error {
+	type enabled struct{ host, target string }
+	var active []enabled
+	hostByTarget := map[string]string{}
 	for _, m := range mounts {
 		if m.Disabled {
 			continue
@@ -707,8 +717,19 @@ func refuseMissingMountHosts(r sessionRunner, w io.Writer, mounts []config.Mount
 			// an unexpandable path is that rule's to report, not this one's.
 			continue
 		}
-		if hostPathMissing(host) {
-			missing = append(missing, fmt.Sprintf("%s -> %s", host, m.Target))
+		if _, ok := hostByTarget[m.Target]; !ok {
+			hostByTarget[m.Target] = host
+		}
+		active = append(active, enabled{host: host, target: m.Target})
+	}
+	sockets := sockGroupHostSources(res, hostByTarget)
+	var missing []string
+	for _, m := range active {
+		if sockets[m.host] {
+			continue
+		}
+		if hostPathMissing(m.host) {
+			missing = append(missing, fmt.Sprintf("%s -> %s", m.host, m.target))
 		}
 	}
 	if len(missing) == 0 {

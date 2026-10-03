@@ -178,9 +178,9 @@ An engine byre cannot account for is a refusal, and a **declined binary**
 into doing so. An engine whose daemon byre cannot REACH is a refusal too, but
 one that names the two ways past it (PRINCIPLES.md P1):
 
-    byre backup expects to check every installed engine for containers of this
-    project. podman isn't reachable (<the engine's own first line>): start
-    podman, or run with --ignore-podman.
+    byre backup expects to check every installed engine for this project's
+    state (listing volumes). podman isn't reachable (<the engine's own first
+    line>): start podman, or run with --ignore-podman.
 
 `--ignore-podman` / `--ignore-docker` is the user saying "that engine is
 installed but not running -- go ahead without it". The named engine is then not

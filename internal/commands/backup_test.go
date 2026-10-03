@@ -861,7 +861,8 @@ func TestBackupRefusesAnUnreachableEngineNamingTheIgnoreFlag(t *testing.T) {
 	if err == nil {
 		t.Fatal("an unreachable engine must still refuse")
 	}
-	for _, want := range []string{"podman isn't reachable", "--ignore-podman", "start podman"} {
+	// The query that failed is in the sentence: this one is the volume list.
+	for _, want := range []string{"(listing volumes)", "podman isn't reachable", "--ignore-podman", "start podman"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal must carry %q: %v", want, err)
 		}

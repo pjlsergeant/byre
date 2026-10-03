@@ -23,6 +23,26 @@ func bindHostByTarget(binds []runner.BindMount) map[string]string {
 	return byTarget
 }
 
+// sockGroupHostSources is the set of host paths that back a skill's sock_groups
+// declaration, resolved through the caller's target -> host map (params.Binds
+// via bindHostByTarget for the appliers; the enabled mounts for the pre-build
+// refusal). One owner for "which host path is a skill's socket": warnSockSources
+// attributes and warns on these, refuseMissingMountHosts steps over them.
+func sockGroupHostSources(res skills.Resolved, hostByTarget map[string]string) map[string]bool {
+	var out map[string]bool
+	for _, sg := range res.SockGroups() {
+		host, ok := hostByTarget[sg.Path]
+		if !ok {
+			continue
+		}
+		if out == nil {
+			out = map[string]bool{}
+		}
+		out[host] = true
+	}
+	return out
+}
+
 // sortSockGroups orders sock_groups declarations by skill then path, so the
 // warnings both appliers print come out in a stable order.
 func sortSockGroups(sgs []skills.SockGroup) {

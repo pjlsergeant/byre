@@ -56,7 +56,9 @@ func TestTotalsCommandsRefusalNamesTheSwitchAndHonoursIt(t *testing.T) {
 			if err == nil {
 				t.Fatalf("%s must refuse over an engine it could not query", tc.name)
 			}
-			for _, want := range []string{"podman isn't reachable", "start podman", "--ignore-podman"} {
+			// The refusal names the query that failed, not whatever the
+			// sentence was first written around.
+			for _, want := range []string{"(checking for a running session)", "podman isn't reachable", "start podman", "--ignore-podman"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("%s: the refusal must carry %q: %v", tc.name, want, err)
 				}

@@ -1283,6 +1283,67 @@ func TestDevelopWarnsAboutMissingMountHostsUnderDockerDesktop(t *testing.T) {
 	}
 }
 
+// A skill's sock_groups source is the engine's business: a missing socket keeps
+// warnSockSources' warn-and-launch rule, so the pre-build refusal names the
+// ordinary mount and only that one.
+func TestDevelopRefusesAMissingOrdinaryMountWhileSteppingOverAMissingSocket(t *testing.T) {
+	p, _ := testPaths(t)
+	notes := filepath.Join(t.TempDir(), "notes")
+	sock := filepath.Join(t.TempDir(), "docker.sock")
+	cfg := config.Config{Mounts: []config.Mount{{Host: notes, Target: "/notes", Mode: "ro"}}}
+	f := &fakeRunner{}
+	s, _, _ := testStreams("", false)
+	err := develop(f, s, p, combine(merged(cfg), sockGroupSkill(sock)), false, CredentialAsk)
+	if err == nil {
+		t.Fatal("develop launched with a mount host that does not exist")
+	}
+	for _, want := range []string{
+		"1 mount host path(s) do not exist on this machine",
+		notes + " -> /notes",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want %q in it", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), sock) {
+		t.Errorf("a skill's sock_groups source is in the refusal: %v", err)
+	}
+	if len(f.builds) != 0 || len(f.creates) != 0 {
+		t.Fatalf("nothing may be built or created: builds=%v creates=%v", f.builds, f.creates)
+	}
+}
+
+// ...and with nothing else missing the launch proceeds on the warning alone --
+// the arm a pre-build refusal over the socket would make unreachable.
+func TestDevelopWarnsAndLaunchesWhenOnlyASockGroupsSourceIsMissing(t *testing.T) {
+	p, _ := testPaths(t)
+	sock := filepath.Join(t.TempDir(), "docker.sock")
+	f := &fakeRunner{}
+	s, _, stderr := testStreams("", false)
+	if err := develop(f, s, p, combine(merged(config.Config{}), sockGroupSkill(sock)), false, CredentialAsk); err != nil {
+		t.Fatalf("a missing socket must not refuse: %v", err)
+	}
+	out := stderr.String()
+	if strings.Contains(out, "do not exist on this machine") {
+		t.Errorf("a skill's sock_groups source was refused as a missing mount: %s", out)
+	}
+	if !strings.Contains(out, sock) || !strings.Contains(out, "the host source is missing") || !strings.Contains(out, "the engine is the authority") {
+		t.Errorf("expected the sock_groups warning naming the source, got: %s", out)
+	}
+	if len(f.builds) != 1 || len(f.creates) != 1 {
+		t.Fatalf("the launch must proceed: builds=%v creates=%v", f.builds, f.creates)
+	}
+}
+
+// sockGroupSkill is the docker-host shape: one host socket bind, declared in
+// sock_groups, which is what makes the source the engine's to judge.
+func sockGroupSkill(host string) skills.Resolved {
+	var sf skills.File
+	sf.Runtime.SockGroups = []string{"/var/run/docker.sock"}
+	sf.Runtime.Mounts = []config.Mount{{Host: host, Target: "/var/run/docker.sock", Mode: "rw"}}
+	return skills.Resolved{Skills: []skills.Skill{{Name: "docker-host", File: sf}}}
+}
+
 func TestDevelopIgnoresADisabledMountWithAMissingHost(t *testing.T) {
 	p, _ := testPaths(t)
 	cfg := config.Config{Mounts: []config.Mount{

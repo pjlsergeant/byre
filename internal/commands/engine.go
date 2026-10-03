@@ -183,6 +183,6 @@ func (v totalsVerb) queryErr(eng runner.Engine, what string, err error) error {
 		return fmt.Errorf("byre %s reads %s, and %s isn't reachable (%s): start %s and re-run",
 			v.name, eng, eng, briefly(err.Error()), eng)
 	}
-	return fmt.Errorf("byre %s expects to check every installed engine for containers of this project. %s isn't reachable (%s): start %s, or run with --ignore-%s",
-		v.name, eng, briefly(err.Error()), eng, eng)
+	return fmt.Errorf("byre %s expects to check every installed engine for this project's state (%s). %s isn't reachable (%s): start %s, or run with --ignore-%s",
+		v.name, what, eng, briefly(err.Error()), eng, eng)
 }
