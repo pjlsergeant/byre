@@ -33,15 +33,15 @@ type app struct {
 	develop       func(s commands.Streams, dir, tmpl, agent string, sharedAuth *bool, selfEdit bool, credMode commands.CredentialMode) error
 	config        func(s commands.Streams, dir string, global bool, layer string) error
 	status        func(s commands.Streams, dir string, opts commands.StatusOptions) error
-	reset         func(s commands.Streams, dir string, force bool) error
-	forget        func(s commands.Streams, dir string, force bool) error
+	reset         func(s commands.Streams, dir string, force bool, ignore commands.IgnoreEngines) error
+	forget        func(s commands.Streams, dir string, force bool, ignore commands.IgnoreEngines) error
 	shell         func(s commands.Streams, dir string, skipUIDCheck bool) error
 	deliver       func(s commands.Streams, dir string, opts deliver.Options, paths []string) error
 	grab          func(s commands.Streams, dir string, opts deliver.Options, boxPath, hostPath string) error
 	installApp    func(s commands.Streams, o commands.InstallAppOptions) error
 	worktree      func(s commands.Streams, dir, name, path, agent string, selfEdit bool, credMode commands.CredentialMode) error
 	rebuild       func(s commands.Streams, dir string) error
-	rehome        func(s commands.Streams, dir, oldID string) error
+	rehome        func(s commands.Streams, dir, oldID string, ignore commands.IgnoreEngines) error
 	backup        func(s commands.Streams, dir string, opts commands.BackupOptions) error
 	restore       func(s commands.Streams, file, dir string) error
 	// rehomeCandidates is bare `byre rehome`: list stored projects whose
@@ -1110,6 +1110,7 @@ not packages: distribution is sending someone the file.`,
 
 func resetCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	var force bool
+	var ignore commands.IgnoreEngines
 	c := &cobra.Command{
 		Use:   "reset",
 		Short: "Wipe this project's named volumes.",
@@ -1117,10 +1118,11 @@ func resetCmd(a app, dir string, s commands.Streams) *cobra.Command {
 caches — not the image). Prompts first; refuses while a session is running.`,
 		Args: noArgsU,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.reset(s, dir, force)
+			return a.reset(s, dir, force, ignore)
 		},
 	}
 	c.Flags().BoolVarP(&force, "force", "y", false, "skip the confirmation prompt")
+	ignoreEngineFlags(c, &ignore, "its containers and volumes of this project are not checked and not removed")
 	return c
 }
 
@@ -1139,7 +1141,8 @@ untouched; the next 'byre develop' runs the fresh image.`,
 }
 
 func rehomeCmd(a app, dir string, s commands.Streams) *cobra.Command {
-	return &cobra.Command{
+	var ignore commands.IgnoreEngines
+	c := &cobra.Command{
 		Use:   "rehome [<old-id>]",
 		Short: "Re-point this directory's identity after a move.",
 		Long: `After moving/renaming the project directory (which changes its path-derived
@@ -1157,13 +1160,16 @@ first — instead of spelunking in ~/.byre/projects/.`,
 			if len(args) == 0 {
 				return a.rehomeCandidates(s, dir)
 			}
-			return a.rehome(s, dir, args[0])
+			return a.rehome(s, dir, args[0], ignore)
 		},
 	}
+	ignoreEngineFlags(c, &ignore, "its containers and volumes of the old id there are not checked and not migrated")
+	return c
 }
 
 func forgetCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	var force bool
+	var ignore commands.IgnoreEngines
 	c := &cobra.Command{
 		Use:   "forget",
 		Short: "Remove all byre host-side state for this directory.",
@@ -1172,10 +1178,11 @@ the image, and ~/.byre/projects/<id>/ (config, applied marker, build
 context). Your project tree is left alone. Prompts first.`,
 		Args: noArgsU,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.forget(s, dir, force)
+			return a.forget(s, dir, force, ignore)
 		},
 	}
 	c.Flags().BoolVarP(&force, "force", "y", false, "skip the confirmation prompt")
+	ignoreEngineFlags(c, &ignore, "its containers and volumes of this project are not checked and not removed; the store is removed anyway, leaving them behind")
 	return c
 }
 
@@ -1231,7 +1238,25 @@ it runs, and prints every list the preview would have shown.`,
 	c.Flags().StringArrayVar(&opts.NoVolumes, "no-volume", nil, "leave this volume out, by its logical name (.claude, .grok); repeatable")
 	c.Flags().BoolVar(&opts.NoCredentials, "no-credentials", false, "delete the [credentials] block and every credential row from the config COPY in the file (the project's own file is untouched)")
 	c.Flags().BoolVar(&opts.Yes, "yes", false, "skip the preview prompt")
+	ignoreEngineFlags(c, &opts.Ignore, "its containers and volumes of this project are not checked and not carried")
 	return c
+}
+
+// ignoreEngineFlags wires --ignore-docker/--ignore-podman onto one totals
+// command. One owner for the pair and for the help text: these commands refuse
+// over an engine they cannot query to protect a claim they make, and the
+// refusal names the flag by which the user takes that risk themselves
+// (PRINCIPLES.md P1), so the two must stay spelled the same everywhere.
+// consequence is the ONE part that differs -- what skipping that engine costs
+// in THIS command -- because a flag whose help describes another verb's effect
+// is a flag the user has to translate.
+func ignoreEngineFlags(c *cobra.Command, ignore *commands.IgnoreEngines, consequence string) {
+	c.Flags().BoolVar(&ignore.Docker, "ignore-docker", false, ignoreEngineFlagHelp("docker", consequence))
+	c.Flags().BoolVar(&ignore.Podman, "ignore-podman", false, ignoreEngineFlagHelp("podman", consequence))
+}
+
+func ignoreEngineFlagHelp(engine, consequence string) string {
+	return fmt.Sprintf("skip %s entirely: %s; use when %s is installed but not running", engine, consequence, engine)
 }
 
 // restoreCmd: a backup file becomes a project on this machine. Terminal-only,

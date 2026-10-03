@@ -324,11 +324,18 @@ plaintext inside a volume is plaintext in the file, and `--no-credentials` is
 about the CONFIG file only -- it drops the encrypted rows and the
 `[credentials]` block from the copy that travels, and says nothing about a
 volume's contents or about any other file you send alongside. Encrypt the
-file yourself if it is leaving your machine. Eight more facts, each a
+file yourself if it is leaving your machine. Nine more facts, each a
 limitation rather than a bug: **stillness is cooperative** -- backup refuses
 unless no container of the project exists on any installed engine, and holds
 the setup lock through the copy, but a `docker run` you type yourself can
-start a box during one, outside anything byre can serialize; **the file's
+start a box during one, outside anything byre can serialize; **an engine you tell byre to ignore is not checked, and the output says so** --
+backup refuses over an engine it cannot reach (podman installed with its
+machine stopped) and names `--ignore-podman`; pass it and that engine is
+skipped entirely, so a box of the project there is not ruled out and its
+project volumes are not in the file, which the preview and the summary both
+state (the same flag is on `reset`, `forget` and `rehome`, where it also means
+nothing there was removed);
+**the file's
 authorship is not proven** -- the per-payload sha256 detects corruption, not
 who wrote it, and the restore review says so in those words; **a restored
 agent login shares its rotating token with the source box**, which is

@@ -40,6 +40,10 @@ type BackupOptions struct {
 	NoCredentials bool
 	// Yes skips the terminal prompt.
 	Yes bool
+	// Ignore is every --ignore-<engine>: the user saying an installed engine is
+	// not running and backup should go ahead without checking it. The engine
+	// backup READS cannot be ignored -- see Backup.
+	Ignore IgnoreEngines
 }
 
 // Backup implements `byre backup`: one gzip tar holding the project's config
@@ -140,6 +144,11 @@ type backupRun struct {
 	gid    int
 	runID  string
 	opts   BackupOptions
+	// ignore is what --ignore-<engine> came to over the OTHER installed engines:
+	// which ones were dropped from others, and which flag named an engine that
+	// is not here at all. Set by run(), so the filter has one owner
+	// (splitEngines) and a test can hand in an engine it must never query.
+	ignore ignoreSplit
 	// image is the helper image step 2 picked and proved -- a project image
 	// this engine already had, or the resolved base it pulled. Named in the
 	// preview and the summary, because which image ran the capture is part of
@@ -211,9 +220,27 @@ func (b *backupRun) engineSet() []engineRunner {
 	return append([]engineRunner{b.source}, b.others...)
 }
 
+// verb is how backup names itself in an engine-query refusal, and which engine
+// that refusal must NOT offer to skip: the source engine is what the file is
+// made of.
+func (b *backupRun) verb() totalsVerb {
+	return totalsVerb{name: "backup", source: b.source.Engine()}
+}
+
 func (b *backupRun) run() error {
+	// The one engine --ignore cannot name: every volume in the file comes from
+	// it, so "go ahead without checking it" has no meaning here. Refused rather
+	// than ignored with a note, because the user asked for something backup
+	// cannot do.
+	if src := b.source.Engine(); b.opts.Ignore.Has(src) {
+		return fmt.Errorf("--ignore-%s: %s is the engine this backup reads, so it cannot be skipped — drop the flag, or point `engine` at the other engine", src, src)
+	}
+	// --ignore-<engine> is applied ONCE, here: from this point `others` is the
+	// set backup queries, and b.ignore is what it was told to leave out.
+	b.ignore = splitEngines(b.others, b.opts.Ignore)
+	b.others = b.ignore.query
 	// Step 2: what the backup would contain, on this engine, with these flags.
-	plan, err := planBackup(b.paths, b.rv, b.source, b.others, b.uid, b.opts)
+	plan, err := planBackup(b.paths, b.rv, b.source, b.others, b.uid, b.opts, b.verb())
 	if err != nil {
 		return err
 	}
@@ -269,7 +296,7 @@ func (b *backupRun) locked(reviewed backupPlan, out string, hp helperPlan, pulle
 		return err
 	}
 	b.rv = fresh
-	plan, err := planBackup(b.paths, fresh, b.source, b.others, b.uid, b.opts)
+	plan, err := planBackup(b.paths, fresh, b.source, b.others, b.uid, b.opts, b.verb())
 	if err != nil {
 		return err
 	}
@@ -280,9 +307,11 @@ func (b *backupRun) locked(reviewed backupPlan, out string, hp helperPlan, pulle
 		return fmt.Errorf("%s changed while you were reviewing; re-run byre backup", what)
 	}
 	// The stillness sweep: reset's project-label, any-state, every-engine
-	// check with the removal taken out. Nothing is stopped or removed.
+	// check with the removal taken out. Nothing is stopped or removed. An
+	// --ignore-<engine> engine is not in this set at all, which is the whole of
+	// what the flag does.
 	for _, r := range b.engineSet() {
-		if err := refuseUnlessStill(b.s.Err, r, b.paths.ID); err != nil {
+		if err := refuseUnlessStill(b.s.Err, b.verb(), r, b.paths.ID); err != nil {
 			return err
 		}
 	}
@@ -478,8 +507,9 @@ func (p backupPlan) drift(q backupPlan) string {
 // records, from one read of the engine and one resolution of the project.
 //
 // Every volume query failure refuses: backup speaks in totals, and an engine
-// it could not ask cannot be reported on.
-func planBackup(paths project.Paths, rv resolved, source engineRunner, others []engineRunner, uid int, opts BackupOptions) (backupPlan, error) {
+// it could not ask cannot be reported on. A cleanly unreachable engine's
+// refusal names the way past it -- start it, or --ignore-<engine> (totalsVerb).
+func planBackup(paths project.Paths, rv resolved, source engineRunner, others []engineRunner, uid int, opts BackupOptions, verb totalsVerb) (backupPlan, error) {
 	var p backupPlan
 	raw, err := hostopen.ReadFileBounded(filepath.Join(paths.Dir, config.ProjectConfigName), false, config.MaxConfigBytes)
 	if err != nil {
@@ -531,7 +561,7 @@ func planBackup(paths project.Paths, rv resolved, source engineRunner, others []
 	prefix := volumePrefix(paths.ID)
 	srcVols, err := projectVolumes(source, paths.Home, paths.ID)
 	if err != nil {
-		return p, fmt.Errorf("listing volumes (%s): %w", source.Engine(), err)
+		return p, verb.queryErr(source.Engine(), "listing volumes", err)
 	}
 	// Every project volume on the source engine comes along -- including one
 	// no skill in the set declares, which is a one-off `develop --agent` run's
@@ -572,7 +602,7 @@ func planBackup(paths project.Paths, rv resolved, source engineRunner, others []
 	// prefix -- a volume can outlive the skill that declared it.
 	physMachine, err := source.VolumesByPrefix(machineVolumePrefix(uid))
 	if err != nil {
-		return p, fmt.Errorf("listing machine-scoped volumes (%s): %w", source.Engine(), err)
+		return p, verb.queryErr(source.Engine(), "listing machine-scoped volumes", err)
 	}
 	for _, phys := range physMachine {
 		machine[strings.TrimPrefix(phys, machineVolumePrefix(uid))] = true
@@ -590,7 +620,7 @@ func planBackup(paths project.Paths, rv resolved, source engineRunner, others []
 	}
 	allPrefixed, err := source.VolumesByPrefix(prefix)
 	if err != nil {
-		return p, fmt.Errorf("listing volumes (%s): %w", source.Engine(), err)
+		return p, verb.queryErr(source.Engine(), "listing volumes", err)
 	}
 	for _, phys := range allPrefixed {
 		if machineVolumeRe.MatchString(phys) {
@@ -606,7 +636,7 @@ func planBackup(paths project.Paths, rv resolved, source engineRunner, others []
 	for _, r := range others {
 		vols, verr := projectVolumes(r, paths.Home, paths.ID)
 		if verr != nil {
-			return p, fmt.Errorf("listing volumes (%s): %w", r.Engine(), verr)
+			return p, verb.queryErr(r.Engine(), "listing volumes", verr)
 		}
 		for _, phys := range vols {
 			add(string(r.Engine())+":"+phys, strings.TrimPrefix(phys, prefix),
@@ -871,7 +901,7 @@ func (b *backupRun) pickHelperImage() (image string, pulled bool, err error) {
 	for _, tag := range imageTagCandidates(b.source, b.paths.ID, b.uid, b.gid) {
 		has, herr := b.source.ImageExists(tag)
 		if herr != nil {
-			return "", false, fmt.Errorf("checking image %s (%s): %w", tag, b.source.Engine(), herr)
+			return "", false, b.verb().queryErr(b.source.Engine(), "checking image "+tag, herr)
 		}
 		if has {
 			return tag, false, nil
@@ -880,7 +910,7 @@ func (b *backupRun) pickHelperImage() (image string, pulled bool, err error) {
 	base := orDefault(b.rv.cfg.Base, gen.DefaultBase)
 	has, herr := b.source.ImageExists(base)
 	if herr != nil {
-		return "", false, fmt.Errorf("checking image %s (%s): %w", base, b.source.Engine(), herr)
+		return "", false, b.verb().queryErr(b.source.Engine(), "checking image "+base, herr)
 	}
 	if has {
 		return base, false, nil
@@ -1109,12 +1139,14 @@ func checkOutputSpace(out string, staged int64) error {
 // container prints the remedies and refuses; one in any other state refuses
 // with the engine's own `rm` line; a leftover helper refuses with its
 // `rm -f` line; a query byre could not make refuses too, because an engine it
-// cannot inspect cannot be declared idle. Nothing is stopped or removed --
+// cannot inspect cannot be declared idle -- an unreachable one through the
+// verb, so the refusal names the two ways past it. Nothing is stopped or
+// removed --
 // the container is still there after the refusal.
-func refuseUnlessStill(w io.Writer, r sessionRunner, id string) error {
+func refuseUnlessStill(w io.Writer, verb totalsVerb, r sessionRunner, id string) error {
 	live, err := liveSession(r, id)
 	if err != nil {
-		return fmt.Errorf("checking for a running session (%s): %w", r.Engine(), err)
+		return verb.queryErr(r.Engine(), "checking for a running session", err)
 	}
 	if len(live) > 0 {
 		reportRunning(w, r.Engine(), live, true)
@@ -1122,7 +1154,7 @@ func refuseUnlessStill(w io.Writer, r sessionRunner, id string) error {
 	}
 	all, err := r.ContainersByLabel(labelKey + "=" + id)
 	if err != nil {
-		return fmt.Errorf("checking for session containers (%s): %w", r.Engine(), err)
+		return verb.queryErr(r.Engine(), "checking for session containers", err)
 	}
 	if err := refuseLeftoverHelpers(r, id); err != nil {
 		return err
@@ -1286,6 +1318,12 @@ func (b *backupRun) renderBody(w io.Writer, ran string, p backupPlan) {
 	b.renderVolumeLists(w, p)
 	fmt.Fprintln(w, "  references (the destination must have these before `byre develop` runs there):")
 	renderReferences(w, "    ", p.refs)
+	// renderBody is both surfaces, so an ignored engine is named in the preview
+	// AND in the summary -- off a terminal the summary is the only surface there
+	// is, and an engine byre did not look at must not be silent (P4).
+	b.ignore.note(w, func(eng string) string {
+		return "volumes of this project there, if any, are not in this backup, and a session there could not be ruled out"
+	})
 }
 
 // renderVolumeLists prints the carried volumes and everything left behind

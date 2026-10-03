@@ -68,6 +68,16 @@ func TestBackupDocsPrinciplesCarriesTheCiphertextClause(t *testing.T) {
 	)
 }
 
+// P1's own clause: a refusal that protects a claim hands the user the switch
+// that takes the risk. The flags are the first instance, so the principle and
+// the flags must not be able to drift apart quietly.
+func TestBackupDocsPrinciplesCarriesTheHandOverTheSwitchClause(t *testing.T) {
+	docFragments(t, "../../docs/PRINCIPLES.md",
+		"never declines to OBEY",
+		"--ignore-docker",
+	)
+}
+
 func TestBackupDocsGlossaryDefinesBackup(t *testing.T) {
 	docFragments(t, "../../docs/GLOSSARY.md",
 		"\n**Backup**:\n",

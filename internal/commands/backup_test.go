@@ -683,7 +683,9 @@ func TestBackupRefusesAnImageItCannotProve(t *testing.T) {
 			f.pullErr = errors.New("manifest unknown")
 		}, "debian:bookworm"},
 		{"image-exists query failure", func(f *fakeRunner) {
-			f.imageExistsErr = errors.New("cannot connect to the daemon")
+			// A daemon that ANSWERED and refused: not an unreachability, so it
+			// keeps this wrapping rather than the start-it-or-ignore-it refusal.
+			f.imageExistsErr = errors.New("permission denied while trying to connect to the docker daemon socket")
 		}, "checking image"},
 		{"not GNU tar", func(f *fakeRunner) {
 			f.helperStdout = func(h runner.Helper, w io.Writer) error {
@@ -823,6 +825,196 @@ func TestBackupRefusesUnlessTheProjectIsCompletelyStill(t *testing.T) {
 			}
 		}
 	})
+}
+
+// ------------------------------------------------- an unreachable engine
+
+// unreachableEngineErr is what an engine whose daemon was never started
+// answers every query with: podman's own text from the field report
+// (2026-10-03, a Mac with podman installed and its machine not started), and
+// docker's from its client. deliver.IsUnreachable is the only classifier in
+// play, and it reads these messages.
+func unreachableEngineErr(eng runner.Engine) error {
+	if eng == runner.Podman {
+		return fmt.Errorf("exit status 125: Cannot connect to Podman. Please verify your connection to the Linux system using `podman system connection list`, or try `podman machine init` and `podman machine start`")
+	}
+	return fmt.Errorf("exit status 1: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")
+}
+
+// downEngine is an engine that answers every query byre makes of it with that
+// unreachability -- a stopped podman machine does not answer one of them.
+func downEngine(eng runner.Engine) *fakeRunner {
+	down := unreachableEngineErr(eng)
+	return &fakeRunner{engine: eng, volQueryErr: down, liveErr: down, allErr: down, imageExistsErr: down}
+}
+
+// An engine byre cannot query is still a refusal -- backup speaks in totals --
+// but the refusal names the two ways past it, which is the whole of the fix:
+// the bare wrapped error was a dead end (field report, 2026-10-03).
+func TestBackupRefusesAnUnreachableEngineNamingTheIgnoreFlag(t *testing.T) {
+	rv := combine(merged(config.Config{Volumes: []config.Volume{
+		{Name: ".claude", Role: "state", Target: "/home/dev/.claude"},
+	}}), skills.Resolved{})
+	f := &fakeRunner{}
+	other := downEngine(runner.Podman)
+	b, out, p := backupHarness(t, "", rv, f, discardStreams(), BackupOptions{})
+	b.others = []engineRunner{other}
+	f.vols = map[string]bool{volumeName(p.ID, ".claude"): true}
+	err := b.run()
+	if err == nil {
+		t.Fatal("an unreachable engine must still refuse")
+	}
+	for _, want := range []string{"podman isn't reachable", "--ignore-podman", "start podman"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must carry %q: %v", want, err)
+		}
+	}
+	if ok, _ := hostopen.ExistsNoFollow(out); ok {
+		t.Error("a refused backup must publish nothing")
+	}
+}
+
+// The engine backup READS has only one way forward: it is what the file is made
+// of, so the refusal says start it and never offers to skip it.
+func TestBackupRefusesAnUnreachableSourceEngineWithTheStartRemedyOnly(t *testing.T) {
+	rv := combine(merged(config.Config{Volumes: []config.Volume{
+		{Name: ".claude", Role: "state", Target: "/home/dev/.claude"},
+	}}), skills.Resolved{})
+	down := unreachableEngineErr(runner.Docker)
+	for _, tc := range []struct {
+		name string
+		set  func(f *fakeRunner)
+	}{
+		{"volume query", func(f *fakeRunner) { f.volQueryErr = down }},
+		{"running query", func(f *fakeRunner) { f.liveErr = down }},
+		{"any-state query", func(f *fakeRunner) { f.allErr = down }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &fakeRunner{}
+			b, out, p := backupHarness(t, "", rv, f, discardStreams(), BackupOptions{})
+			f.vols = map[string]bool{volumeName(p.ID, ".claude"): true}
+			tc.set(f)
+			err := b.run()
+			if err == nil {
+				t.Fatal("an unreachable source engine must refuse")
+			}
+			for _, want := range []string{"backup reads docker", "docker isn't reachable", "start docker"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal must carry %q: %v", want, err)
+				}
+			}
+			if strings.Contains(err.Error(), "--ignore-docker") {
+				t.Errorf("the source engine must never be offered as skippable: %v", err)
+			}
+			if ok, _ := hostopen.ExistsNoFollow(out); ok {
+				t.Error("a refused backup must publish nothing")
+			}
+		})
+	}
+}
+
+// --ignore-<engine> is the user taking the risk byre declined to take for them
+// (PRINCIPLES.md P1): the engine is not queried AT ALL -- this one answers
+// every query with a failure, so a single query would fail the backup -- and
+// both surfaces say what that cost.
+func TestBackupIgnoredEngineIsNeverQueriedAndEverySurfaceSaysSo(t *testing.T) {
+	rv := combine(merged(config.Config{Volumes: []config.Volume{
+		{Name: ".claude", Role: "state", Target: "/home/dev/.claude"},
+	}}), skills.Resolved{})
+	for _, tc := range []struct {
+		name string
+		tty  bool
+		in   string
+	}{
+		{"preview", true, "y\n"},
+		{"summary", false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &fakeRunner{}
+			other := downEngine(runner.Podman)
+			s, _, errb := testStreams(tc.in, tc.tty)
+			b, out, p := backupHarness(t, "", rv, f, s, BackupOptions{Ignore: IgnoreEngines{Podman: true}})
+			b.others = []engineRunner{other}
+			f.vols = map[string]bool{volumeName(p.ID, ".claude"): true}
+			if err := b.run(); err != nil {
+				t.Fatalf("an ignored engine must not fail the backup: %v", err)
+			}
+			if other.liveCalls != 0 {
+				t.Errorf("the ignored engine was queried %d times", other.liveCalls)
+			}
+			if ok, _ := hostopen.ExistsNoFollow(out); !ok {
+				t.Error("the backup must still be written")
+			}
+			if !strings.Contains(errb.String(), "podman ignored (--ignore-podman)") {
+				t.Errorf("the %s must name the ignored engine:\n%s", tc.name, errb.String())
+			}
+			// Which SURFACE carried it: on a terminal the line has to be in the
+			// preview, which is everything before the one y/n; off a terminal
+			// there is no preview and the summary is all there is.
+			prompt := strings.Index(errb.String(), "Proceed?")
+			note := strings.Index(errb.String(), "podman ignored")
+			if tc.tty && !(note >= 0 && note < prompt) {
+				t.Errorf("the preview must carry the line before the prompt:\n%s", errb.String())
+			}
+			if !tc.tty && prompt >= 0 {
+				t.Errorf("off a terminal there is no prompt:\n%s", errb.String())
+			}
+		})
+	}
+}
+
+// The engine backup reads cannot be skipped: every volume in the file comes
+// from it, so the flag is refused rather than honoured.
+func TestBackupRefusesIgnoringTheEngineItReads(t *testing.T) {
+	rv := combine(merged(config.Config{}), skills.Resolved{})
+	f := &fakeRunner{}
+	b, out, _ := backupHarness(t, "", rv, f, discardStreams(), BackupOptions{Ignore: IgnoreEngines{Docker: true}})
+	err := b.run()
+	if err == nil || !strings.Contains(err.Error(), "--ignore-docker") ||
+		!strings.Contains(err.Error(), "the engine this backup reads") {
+		t.Fatalf("ignoring the source engine must be refused naming it, got %v", err)
+	}
+	if ok, _ := hostopen.ExistsNoFollow(out); ok {
+		t.Error("a refused backup must publish nothing")
+	}
+}
+
+// Only a CLEAN unreachability gets the flag's remedy. A daemon that answered
+// and refused is an engine byre could not account for, and its refusal stays
+// the engine problem it is -- offering to skip it would be advice to ignore a
+// misconfigured daemon.
+func TestBackupRefusesANonUnreachableFailureWithoutTheIgnoreRemedy(t *testing.T) {
+	rv := combine(merged(config.Config{Volumes: []config.Volume{
+		{Name: ".claude", Role: "state", Target: "/home/dev/.claude"},
+	}}), skills.Resolved{})
+	denied := errors.New("dial unix /run/podman/podman.sock: connect: permission denied")
+	for _, tc := range []struct {
+		name string
+		set  func(f *fakeRunner)
+		want string
+	}{
+		{"volume query", func(f *fakeRunner) { f.volQueryErr = denied }, "listing volumes (podman)"},
+		{"running query", func(f *fakeRunner) { f.liveErr = denied }, "checking for a running session (podman)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &fakeRunner{}
+			other := &fakeRunner{engine: runner.Podman}
+			tc.set(other)
+			b, out, p := backupHarness(t, "", rv, f, discardStreams(), BackupOptions{})
+			b.others = []engineRunner{other}
+			f.vols = map[string]bool{volumeName(p.ID, ".claude"): true}
+			err := b.run()
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("a permission failure must refuse with %q, got %v", tc.want, err)
+			}
+			if strings.Contains(err.Error(), "--ignore-podman") {
+				t.Errorf("a daemon that IS running must not be offered as skippable: %v", err)
+			}
+			if ok, _ := hostopen.ExistsNoFollow(out); ok {
+				t.Error("a refused backup must publish nothing")
+			}
+		})
+	}
 }
 
 // ---------------------------------------------------------- under-lock re-check

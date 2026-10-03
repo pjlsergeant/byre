@@ -18,7 +18,7 @@ func TestResetForceWipesAll(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, ".claude"): true, volumeName(p.ID, "cache"): true}}
 	s, _, _ := testStreams("", false)
-	if err := reset(s, p, engines(f), true); err != nil {
+	if err := reset(s, p, engines(f), true, IgnoreEngines{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.removed) != 2 {
@@ -37,7 +37,7 @@ func TestResetSparesAndNamesMachineVolumes(t *testing.T) {
 		machineVol:                  true,
 	}}
 	s, _, out := testStreams("", false)
-	if err := reset(s, p, engines(f), true); err != nil {
+	if err := reset(s, p, engines(f), true, IgnoreEngines{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, rm := range f.removed {
@@ -57,7 +57,7 @@ func TestResetRefusesWhenLive(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{live: liveProject(p, "abcdef0123456789"), vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, _ := testStreams("", false)
-	if err := reset(s, p, engines(f), true); err == nil {
+	if err := reset(s, p, engines(f), true, IgnoreEngines{}); err == nil {
 		t.Fatal("expected refusal while a session is live")
 	}
 	if len(f.removed) != 0 {
@@ -69,7 +69,7 @@ func TestResetNoVolumes(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{}
 	s, _, out := testStreams("", false)
-	if err := reset(s, p, engines(f), true); err != nil {
+	if err := reset(s, p, engines(f), true, IgnoreEngines{}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "no volumes to reset") {
@@ -81,7 +81,7 @@ func TestResetPromptAbortsOnNo(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, out := testStreams("n\n", false)
-	if err := reset(s, p, engines(f), false); err != nil {
+	if err := reset(s, p, engines(f), false, IgnoreEngines{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.removed) != 0 {
@@ -97,7 +97,7 @@ func TestResetRechecksLiveUnderLock(t *testing.T) {
 	// Not live at the first check, but a session appears by the re-check.
 	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}, liveSecond: liveProject(p, "abcdef0123456789")}
 	s, _, _ := testStreams("", false)
-	if err := reset(s, p, engines(f), true); err == nil {
+	if err := reset(s, p, engines(f), true, IgnoreEngines{}); err == nil {
 		t.Fatal("expected abort when a session starts before deletion")
 	}
 	if len(f.removed) != 0 {
@@ -115,7 +115,7 @@ func TestResetRemovesPreStartMarker(t *testing.T) {
 		allContainers: map[string][]string{labelKey + "=" + p.ID: {"feed0000beef"}},
 	}
 	s, _, _ := testStreams("", false)
-	if err := reset(s, p, engines(f), true); err != nil {
+	if err := reset(s, p, engines(f), true, IgnoreEngines{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.rmContainers) != 1 || f.rmContainers[0] != "feed0000beef" {
@@ -136,7 +136,7 @@ func TestResetAbortsWhenMarkerRemovalFails(t *testing.T) {
 		failRmCont:    map[string]bool{"feed0000beef": true},
 	}
 	s, _, _ := testStreams("", false)
-	if err := reset(s, p, engines(f), true); err == nil {
+	if err := reset(s, p, engines(f), true, IgnoreEngines{}); err == nil {
 		t.Fatal("expected abort when the marker can't be removed")
 	}
 	if len(f.removed) != 0 {
@@ -152,7 +152,7 @@ func TestResetWipesEveryInstalledEngine(t *testing.T) {
 	docker := &fakeRunner{vols: map[string]bool{volumeName(p.ID, ".claude"): true}}
 	podman := &fakeRunner{engine: "podman", vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, out := testStreams("", false)
-	if err := reset(s, p, engines(docker, podman), true); err != nil {
+	if err := reset(s, p, engines(docker, podman), true, IgnoreEngines{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(docker.removed) != 1 || len(podman.removed) != 1 {
@@ -169,7 +169,7 @@ func TestResetRefusesWhenLiveOnAnyEngine(t *testing.T) {
 	docker := &fakeRunner{vols: map[string]bool{volumeName(p.ID, ".claude"): true}}
 	podman := &fakeRunner{engine: "podman", live: liveProject(p, "deadbeef0000")}
 	s, _, _ := testStreams("", false)
-	if err := reset(s, p, engines(docker, podman), true); err == nil {
+	if err := reset(s, p, engines(docker, podman), true, IgnoreEngines{}); err == nil {
 		t.Fatal("expected refusal while a session is live on podman")
 	}
 	if len(docker.removed) != 0 {
@@ -186,7 +186,7 @@ func TestResetRefusesWhileSetupIsInProgress(t *testing.T) {
 	defer held.Release()
 	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, _ := testStreams("", false)
-	err = reset(s, p, engines(f), true)
+	err = reset(s, p, engines(f), true, IgnoreEngines{})
 	if err == nil || !strings.Contains(err.Error(), "wait for it to finish") || !strings.Contains(err.Error(), "byre reset") {
 		t.Fatalf("setup-contention error = %v", err)
 	}
@@ -202,7 +202,7 @@ func TestResetPartialWipeReported(t *testing.T) {
 		failRemove: map[string]bool{volumeName(p.ID, "b"): true},
 	}
 	s, _, _ := testStreams("", false)
-	err := reset(s, p, engines(f), true)
+	err := reset(s, p, engines(f), true, IgnoreEngines{})
 	if err == nil {
 		t.Fatal("expected error reporting partial wipe")
 	}
@@ -219,7 +219,7 @@ func TestResetPromptProceedsOnYes(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, _ := testStreams("y\n", false)
-	if err := reset(s, p, engines(f), false); err != nil {
+	if err := reset(s, p, engines(f), false, IgnoreEngines{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.removed) != 1 {
@@ -233,7 +233,7 @@ func TestResetPromptRepromptsOnGarbage(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, errw := testStreams("banana\nn\n", false)
-	if err := reset(s, p, engines(f), false); err != nil {
+	if err := reset(s, p, engines(f), false, IgnoreEngines{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.removed) != 0 {
@@ -255,7 +255,7 @@ func TestResetNotesMachineVolumesEvenWithNoProjectVolumes(t *testing.T) {
 	machineVol := machineVolumeName(os.Getuid(), "claude-identity")
 	f := &fakeRunner{vols: map[string]bool{machineVol: true}}
 	s, _, out := testStreams("", false)
-	if err := reset(s, p, engines(f), true); err != nil {
+	if err := reset(s, p, engines(f), true, IgnoreEngines{}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "NOT touched") || !strings.Contains(out.String(), machineVol) {

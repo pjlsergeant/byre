@@ -36,7 +36,12 @@ Four verbs touch built state, from lightest to heaviest:
 All four leave your project tree alone -- `forget` removes byre's
 *host-side* state, never files in the project. `reset` and `forget` act
 across every installed engine, name everything they're about to delete,
-and require confirmation (`--force` skips it).
+and require confirmation (`--force` skips it). Acting across every engine
+means they refuse if one of them cannot be reached -- "wiped" has to be
+true of all of it -- and the refusal names the way past: start that engine,
+or pass `--ignore-podman` (or `--ignore-docker`) to skip it. Then they say
+what that cost: volumes of this project there, if any, were not removed.
+`byre backup` and `byre rehome` take the same flags, for the same reason.
 
 **Machine volumes are never touched silently.** `reset` and `forget`
 exclude them and say so -- the machine-wide agent login must never die

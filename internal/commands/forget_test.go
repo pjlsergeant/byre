@@ -22,7 +22,7 @@ func TestForgetRemovesHostStateLeavesProjectTree(t *testing.T) {
 	}
 
 	s, _, _ := testStreams("", false)
-	if err := forget(s, p, engines(f), true); err != nil {
+	if err := forget(s, p, engines(f), true, IgnoreEngines{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.removed) != 2 || len(f.rmImages) != 1 {
@@ -49,7 +49,7 @@ func TestForgetCleansEveryInstalledEngine(t *testing.T) {
 		images: map[string]bool{"byre-" + p.ID: true}, // built under podman, legacy tag
 	}
 	s, _, _ := testStreams("", false)
-	if err := forget(s, p, engines(docker, podman), true); err != nil {
+	if err := forget(s, p, engines(docker, podman), true, IgnoreEngines{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(docker.removed) != 1 || len(podman.removed) != 1 || len(podman.rmImages) != 1 {
@@ -69,7 +69,7 @@ func TestForgetKeepsStoreWhenAnEngineCannotBeQueried(t *testing.T) {
 	docker := &fakeRunner{vols: map[string]bool{volumeName(p.ID, ".claude"): true}}
 	podman := &fakeRunner{engine: "podman", liveErr: errors.New("cannot connect to podman")}
 	s, _, _ := testStreams("", false)
-	if err := forget(s, p, engines(docker, podman), true); err == nil {
+	if err := forget(s, p, engines(docker, podman), true, IgnoreEngines{}); err == nil {
 		t.Fatal("expected an error when an engine can't be queried")
 	}
 	if len(docker.removed) != 0 {
@@ -84,7 +84,7 @@ func TestForgetRefusesLive(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{live: liveProject(p, "deadbeef0000"), vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, _ := testStreams("", false)
-	if err := forget(s, p, engines(f), true); err == nil {
+	if err := forget(s, p, engines(f), true, IgnoreEngines{}); err == nil {
 		t.Fatal("expected refusal while a session is live")
 	}
 	if len(f.removed) != 0 || len(f.rmImages) != 0 {
@@ -104,7 +104,7 @@ func TestForgetRefusesWhileSetupIsInProgress(t *testing.T) {
 	defer held.Release()
 	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, _ := testStreams("", false)
-	err = forget(s, p, engines(f), true)
+	err = forget(s, p, engines(f), true, IgnoreEngines{})
 	if err == nil || !strings.Contains(err.Error(), "wait for it to finish") || !strings.Contains(err.Error(), "byre forget") {
 		t.Fatalf("setup-contention error = %v", err)
 	}
@@ -117,7 +117,7 @@ func TestForgetPromptAborts(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	s, _, out := testStreams("n\n", false)
-	if err := forget(s, p, engines(f), false); err != nil {
+	if err := forget(s, p, engines(f), false, IgnoreEngines{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.removed) != 0 || !strings.Contains(out.String(), "aborted") {

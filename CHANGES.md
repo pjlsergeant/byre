@@ -19,6 +19,20 @@
   on the far side asks for the source config's passphrase (`byre credentials
   rekey` rotates it afterwards).
 
+- **`--ignore-docker` / `--ignore-podman` on `backup`, `reset`, `forget` and
+  `rehome`.** These four check every installed engine -- your project's
+  volumes can live in one your config no longer names -- so an engine they
+  cannot reach used to stop them with the engine's own error and nothing else.
+  A Mac with podman installed and its machine never started hit this on every
+  `byre backup`. Now the refusal names the way past it ("start podman, or run
+  with --ignore-podman"), and the flag skips that engine entirely: nothing
+  there is queried, and the output says what that cost -- volumes not in the
+  backup, not removed by `reset`/`forget` (and still orphaned under the
+  project's prefix once `forget` removes the store), not migrated by `rehome`.
+  `byre backup` cannot ignore the engine it reads. An engine byre declined to
+  RUN (a binary in a box-writable directory) still refuses whatever the flags
+  say.
+
 - **`byre restore <file>` writes the config and pours the volumes, after a
   review.** It extends `byre preset apply`: the same grant review, plus what
   this machine must satisfy (mount hosts, context files, Claude Skill paths,

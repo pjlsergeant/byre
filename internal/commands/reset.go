@@ -15,8 +15,9 @@ import (
 // live in an engine the config no longer names. It names what dies first,
 // refuses while a session is live or setup is active, and takes the setup lock
 // without waiting. force
-// skips the confirmation prompt.
-func Reset(s Streams, projectDir string, force bool) error {
+// skips the confirmation prompt; ignore is every --ignore-<engine>, the user's
+// own "that engine is installed but not running, go ahead without it".
+func Reset(s Streams, projectDir string, force bool, ignore IgnoreEngines) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err
@@ -37,7 +38,7 @@ func Reset(s Streams, projectDir string, force bool) error {
 	if err != nil {
 		return err
 	}
-	return reset(s, paths, engines, force)
+	return reset(s, paths, engines, force, ignore)
 }
 
 // neverEnrolled reports whether teardown has nothing of byre's to touch: no
@@ -71,15 +72,15 @@ func liveSession(r sessionRunner, id string) ([]string, error) {
 // remove the marker (forceless, so a session that started meanwhile makes
 // the removal fail and we abort) and that develop's start fails loudly
 // instead of launching against the state the caller is about to delete.
-func clearSessionMarkers(w io.Writer, r sessionRunner, id string) error {
+func clearSessionMarkers(w io.Writer, verb totalsVerb, r sessionRunner, id string) error {
 	if live, err := liveSession(r, id); err != nil {
-		return fmt.Errorf("checking for a running session (%s): %w", r.Engine(), err)
+		return verb.queryErr(r.Engine(), "checking for a running session", err)
 	} else if len(live) > 0 {
 		return fmt.Errorf("a session started for this project (%s, %s); aborting", shortID(live[0]), r.Engine())
 	}
 	all, err := r.ContainersByLabel(labelKey + "=" + id)
 	if err != nil {
-		return fmt.Errorf("checking for session containers (%s): %w", r.Engine(), err)
+		return verb.queryErr(r.Engine(), "checking for session containers", err)
 	}
 	// A helper (seed, rehome copy, backup capture, restore pour) that
 	// outlived its byre is holding a volume this command is about to
@@ -97,7 +98,17 @@ func clearSessionMarkers(w io.Writer, r sessionRunner, id string) error {
 	return nil
 }
 
-func reset(s Streams, paths project.Paths, engines []engineRunner, force bool) error {
+func reset(s Streams, paths project.Paths, engines []engineRunner, force bool, ignore IgnoreEngines) error {
+	verb := totalsVerb{name: "reset"}
+	// --ignore-<engine> applied once: from here `engines` is what reset asks and
+	// deletes, and the note below says what that cost. An engine byre was told
+	// to skip is never queried at all.
+	sp := splitEngines(engines, ignore)
+	if err := sp.refuseIfEmpty(verb.name); err != nil {
+		return err
+	}
+	engines = sp.query
+	noteIgnoredForReset(s.Err, sp)
 	multi := len(engines) > 1
 	// Fast fail: never wipe volumes out from under a running session — on any
 	// engine. A query failure is fatal: an engine that can't be inspected
@@ -105,13 +116,13 @@ func reset(s Streams, paths project.Paths, engines []engineRunner, force bool) e
 	total := 0
 	for _, r := range engines {
 		if live, err := liveSession(r, paths.ID); err != nil {
-			return fmt.Errorf("checking for a running session (%s): %w", r.Engine(), err)
+			return verb.queryErr(r.Engine(), "checking for a running session", err)
 		} else if len(live) > 0 {
 			return fmt.Errorf("a session is running for this project (%s%s); exit it before reset — no terminal attached to it? the box outlived its byre; stop it with: %s stop %s", shortID(live[0]), engineSuffix(multi, r), r.Engine(), shortID(live[0]))
 		}
 		vols, err := projectVolumes(r, paths.Home, paths.ID)
 		if err != nil {
-			return fmt.Errorf("listing volumes (%s): %w", r.Engine(), err)
+			return verb.queryErr(r.Engine(), "listing volumes", err)
 		}
 		total += len(vols)
 		// The machine-volume note comes before the empty-case return: a project
@@ -129,7 +140,7 @@ func reset(s Streams, paths project.Paths, engines []engineRunner, force bool) e
 	for _, r := range engines {
 		vols, err := projectVolumes(r, paths.Home, paths.ID)
 		if err != nil {
-			return fmt.Errorf("listing volumes (%s): %w", r.Engine(), err)
+			return verb.queryErr(r.Engine(), "listing volumes", err)
 		}
 		for _, v := range vols {
 			fmt.Fprintf(s.Err, "  - %s%s\n", v, engineSuffix(multi, r))
@@ -152,7 +163,7 @@ func reset(s Streams, paths project.Paths, engines []engineRunner, force bool) e
 			// Under the lock, per engine: abort on a session that started since
 			// the prompt, and dissolve any pre-start ownership marker before
 			// touching volumes.
-			if err := clearSessionMarkers(s.Err, r, paths.ID); err != nil {
+			if err := clearSessionMarkers(s.Err, verb, r, paths.ID); err != nil {
 				return err
 			}
 
@@ -161,7 +172,7 @@ func reset(s Streams, paths project.Paths, engines []engineRunner, force bool) e
 			// stranded.
 			vols, err := projectVolumes(r, paths.Home, paths.ID)
 			if err != nil {
-				return fmt.Errorf("listing volumes (%s): %w", r.Engine(), err)
+				return verb.queryErr(r.Engine(), "listing volumes", err)
 			}
 			volsTotal += len(vols)
 
@@ -176,9 +187,22 @@ func reset(s Streams, paths project.Paths, engines []engineRunner, force bool) e
 				fmt.Fprintf(s.Err, "byre: removed %s%s\n", v, engineSuffix(multi, r))
 			}
 		}
+		// The summary surface: an engine reset did not touch is said again where
+		// the user reads what reset DID (P4) -- off a terminal, with --force, the
+		// preview line above scrolled past unprompted.
+		noteIgnoredForReset(s.Err, sp)
 		if len(failed) > 0 {
 			return fmt.Errorf("reset incomplete: %d of %d volumes not removed (%s)", len(failed), volsTotal, strings.Join(failed, ", "))
 		}
 		return nil
+	})
+}
+
+// noteIgnoredForReset is reset's ignored-engine consequence, in one place
+// because both surfaces print it: nothing was removed there, and reset's whole
+// claim is that the project's volumes are gone.
+func noteIgnoredForReset(w io.Writer, sp ignoreSplit) {
+	sp.note(w, func(eng string) string {
+		return "volumes of this project there, if any, were NOT removed"
 	})
 }

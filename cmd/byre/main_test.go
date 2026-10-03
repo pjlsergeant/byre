@@ -33,11 +33,11 @@ func recorderApp(calls map[string]string) app {
 			return note("status", strings.Join([]string{dir,
 				boolStr(opts.SelfEdit), boolStr(opts.Full), boolStr(opts.Data)}, " "))
 		},
-		reset: func(_ commands.Streams, dir string, force bool) error {
-			return note("reset", dir+" "+boolStr(force))
+		reset: func(_ commands.Streams, dir string, force bool, ig commands.IgnoreEngines) error {
+			return note("reset", dir+" "+boolStr(force)+ignoreStr(ig))
 		},
-		forget: func(_ commands.Streams, dir string, force bool) error {
-			return note("forget", dir+" "+boolStr(force))
+		forget: func(_ commands.Streams, dir string, force bool, ig commands.IgnoreEngines) error {
+			return note("forget", dir+" "+boolStr(force)+ignoreStr(ig))
 		},
 		shell: func(_ commands.Streams, dir string, skipUID bool) error {
 			return note("shell", dir+" "+boolStr(skipUID))
@@ -62,13 +62,15 @@ func recorderApp(calls map[string]string) app {
 		backup: func(_ commands.Streams, dir string, opts commands.BackupOptions) error {
 			return note("backup", strings.Join([]string{dir, opts.Output,
 				strings.Join(opts.NoVolumes, ","),
-				boolStr(opts.NoCredentials), boolStr(opts.Yes)}, " "))
+				boolStr(opts.NoCredentials), boolStr(opts.Yes)}, " ")+ignoreStr(opts.Ignore))
 		},
 		restore: func(_ commands.Streams, file, dir string) error {
 			return note("restore", file+" "+dir)
 		},
-		rebuild:          func(_ commands.Streams, dir string) error { return note("rebuild", dir) },
-		rehome:           func(_ commands.Streams, dir, oldID string) error { return note("rehome", dir+" "+oldID) },
+		rebuild: func(_ commands.Streams, dir string) error { return note("rebuild", dir) },
+		rehome: func(_ commands.Streams, dir, oldID string, ig commands.IgnoreEngines) error {
+			return note("rehome", dir+" "+oldID+ignoreStr(ig))
+		},
 		rehomeCandidates: func(_ commands.Streams, dir string) error { return note("rehome candidates", dir) },
 		version:          func(_ commands.Streams) error { return note("version", "-") },
 	}
@@ -80,11 +82,54 @@ func testStreams() (commands.Streams, *bytes.Buffer) {
 	return commands.Streams{Out: &out, Err: io.Discard, In: strings.NewReader("")}, &out
 }
 
+// ignoreStr renders the --ignore-<engine> flags for the dispatch pins: empty
+// when neither was given, so every existing expectation reads unchanged and a
+// flag that fails to reach its command shows up as a missing suffix.
+func ignoreStr(ig commands.IgnoreEngines) string {
+	if names := ig.Names(); len(names) > 0 {
+		return " ignore=" + strings.Join(names, ",")
+	}
+	return ""
+}
+
 func boolStr(b bool) string {
 	if b {
 		return "true"
 	}
 	return "false"
+}
+
+// The --ignore-<engine> pair carries ONE lead and ONE tail (ignoreEngineFlagHelp
+// owns both) and a per-command middle clause: a flag whose help describes
+// another verb's effect is a flag the user has to translate.
+func TestIgnoreEngineFlagHelpNamesEachCommandsOwnConsequence(t *testing.T) {
+	a := recorderApp(map[string]string{})
+	s, _ := testStreams()
+	for _, tc := range []struct{ cmd, want string }{
+		{"backup", "not checked and not carried"},
+		{"reset", "not checked and not removed; use when"},
+		{"forget", "the store is removed anyway, leaving them behind"},
+		{"rehome", "not checked and not migrated"},
+	} {
+		root := newRootCmd(a, "/proj", s)
+		sub, _, err := root.Find([]string{tc.cmd})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.cmd, err)
+		}
+		for _, engine := range []string{"docker", "podman"} {
+			f := sub.Flags().Lookup("ignore-" + engine)
+			if f == nil {
+				t.Fatalf("%s has no --ignore-%s", tc.cmd, engine)
+			}
+			if !strings.Contains(f.Usage, "skip "+engine+" entirely: ") ||
+				!strings.Contains(f.Usage, engine+" is installed but not running") {
+				t.Errorf("%s --ignore-%s lost the shared lead or tail: %q", tc.cmd, engine, f.Usage)
+			}
+			if !strings.Contains(f.Usage, tc.want) {
+				t.Errorf("%s --ignore-%s must say %q: %q", tc.cmd, engine, tc.want, f.Usage)
+			}
+		}
+	}
 }
 
 // TestRunDispatch pins the flag->function wiring: each argv reaches exactly
@@ -115,6 +160,11 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"status", "--full"}, "status", "/proj false true false"},
 		{[]string{"status", "--data"}, "status", "/proj false false true"},
 		{[]string{"reset"}, "reset", "/proj false"},
+		// The --ignore-<engine> pair reaches each totals command (PRINCIPLES.md P1).
+		{[]string{"reset", "--ignore-podman"}, "reset", "/proj false ignore=podman"},
+		{[]string{"forget", "-y", "--ignore-docker", "--ignore-podman"}, "forget", "/proj true ignore=docker,podman"},
+		{[]string{"backup", "--ignore-podman"}, "backup", "/proj   false false ignore=podman"},
+		{[]string{"rehome", "old-id", "--ignore-podman"}, "rehome", "/proj old-id ignore=podman"},
 		{[]string{"reset", "--force"}, "reset", "/proj true"},
 		{[]string{"reset", "-y"}, "reset", "/proj true"},
 		{[]string{"forget", "--force"}, "forget", "/proj true"},

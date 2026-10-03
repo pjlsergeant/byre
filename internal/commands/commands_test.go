@@ -308,8 +308,8 @@ func TestMCPAddEnrollsWithPathRecord(t *testing.T) {
 // exact store these commands exist to remove.
 func TestResetForgetNeverEnrolledLeaveNoStore(t *testing.T) {
 	for name, run := range map[string]func(Streams, string) error{
-		"reset":  func(s Streams, p string) error { return Reset(s, p, true) },
-		"forget": func(s Streams, p string) error { return Forget(s, p, true) },
+		"reset":  func(s Streams, p string) error { return Reset(s, p, true, IgnoreEngines{}) },
+		"forget": func(s Streams, p string) error { return Forget(s, p, true, IgnoreEngines{}) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("BYRE_HOME", t.TempDir())
@@ -427,8 +427,8 @@ func TestReadOnlyViewsFailLoudlyOnCollision(t *testing.T) {
 		"shell": func() error { return shell(s, proj, nil, 1000, false) },
 		// Teardown refuses too: on a collision these would enumerate and
 		// delete ANOTHER project's volumes/images/store.
-		"reset":  func() error { return Reset(s, proj, true) },
-		"forget": func() error { return Forget(s, proj, true) },
+		"reset":  func() error { return Reset(s, proj, true, IgnoreEngines{}) },
+		"forget": func() error { return Forget(s, proj, true, IgnoreEngines{}) },
 	} {
 		err := run()
 		if err == nil || !strings.Contains(err.Error(), "collision") {

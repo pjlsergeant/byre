@@ -80,6 +80,19 @@ Implications:
 - A "safety" feature that would gate a deliberate user choice rather than
   prevent an accident does not belong in byre.
 
+**A refusal that protects a claim hands over the switch.** Where byre declines
+to act in order to keep a claim of its own true -- "completely removed", "the
+project is completely still", "every installed engine checked" -- the refusal
+names an explicit command-line switch that takes the risk on the user's behalf,
+and the run then says exactly what went unchecked. byre may decline to CLAIM; it
+never declines to OBEY. First instance: `--ignore-docker` / `--ignore-podman` on
+`backup`, `reset`, `forget` and `rehome`, for the engine that is installed but
+not running -- without it they refuse naming the flag, with it they skip that
+engine entirely and print what was not checked or not removed. The degrade-only
+sibling is `develop`'s cross-engine session check: it never refused in the first
+place, so it needs no switch -- it notes the engine it could not reach and
+carries on.
+
 Precedents: no path nannying (byre runs on `~/.byre` itself); `run_args`
 overrides byre's own flags by design; the firewall is disabled by
 removing it from `skills`, not by a dedicated flag.

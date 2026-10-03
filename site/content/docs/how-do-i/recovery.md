@@ -19,6 +19,14 @@ volumes. Machine-wide volumes (shared agent logins) survive all three
 deliberately. The [comparison table](/docs/volumes-and-state/#which-hammer)
 has the details.
 
+**"podman isn't reachable"?** `reset`, `forget`, `rehome` and `backup` check
+every installed engine, because your project's volumes can live in one the
+config no longer names -- so an engine they cannot reach stops them rather than
+letting "wiped" or "completely still" be half true. Common on a Mac with podman
+installed and its machine never started. Start that engine, or tell byre to
+leave it out: `byre reset --ignore-podman` (and `--ignore-docker` the other
+way round). byre then prints what it did not check or remove there.
+
 ## Move or rename a project directory?
 
 tldr: move it, then `byre rehome <old-id>` -- bare `byre rehome` lists

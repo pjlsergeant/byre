@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -19,8 +20,10 @@ import (
 // deleting the store while the other engine still held credentials would be a
 // false success. It does NOT touch the project tree; a committed
 // <project>/byre.config is yours to keep. Refuses while a session is live;
-// names everything before deleting.
-func Forget(s Streams, projectDir string, force bool) error {
+// names everything before deleting. ignore is every --ignore-<engine>: the
+// user's own "that engine is installed but not running, go ahead without it",
+// and what forget then says it did not remove.
+func Forget(s Streams, projectDir string, force bool, ignore IgnoreEngines) error {
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
 		return err
@@ -40,10 +43,21 @@ func Forget(s Streams, projectDir string, force bool) error {
 	if err != nil {
 		return err
 	}
-	return forget(s, paths, engines, force)
+	return forget(s, paths, engines, force, ignore)
 }
 
-func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) error {
+func forget(s Streams, paths project.Paths, engines []engineRunner, force bool, ignore IgnoreEngines) error {
+	verb := totalsVerb{name: "forget"}
+	// --ignore-<engine> applied once: from here `engines` is what forget asks and
+	// deletes. The note carries the consequence forget alone has -- the store
+	// goes anyway, so an unremoved volume there is an orphan nothing will name
+	// again unless the user goes looking.
+	sp := splitEngines(engines, ignore)
+	if err := sp.refuseIfEmpty(verb.name); err != nil {
+		return err
+	}
+	engines = sp.query
+	noteIgnoredForForget(s.Err, sp, paths.ID)
 	multi := len(engines) > 1
 
 	// Preview pass: any engine that can't be fully inspected fails the command
@@ -57,7 +71,7 @@ func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) 
 	var states []engineState
 	for _, r := range engines {
 		if live, err := liveSession(r, paths.ID); err != nil {
-			return fmt.Errorf("checking for a running session (%s): %w", r.Engine(), err)
+			return verb.queryErr(r.Engine(), "checking for a running session", err)
 		} else if len(live) > 0 {
 			return fmt.Errorf("a session is running for this project (%s%s); exit it before forget — no terminal attached to it? the box outlived its byre; stop it with: %s stop %s", shortID(live[0]), engineSuffix(multi, r), r.Engine(), shortID(live[0]))
 		}
@@ -65,7 +79,7 @@ func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) 
 		var err error
 		st.vols, err = projectVolumes(r, paths.Home, paths.ID)
 		if err != nil {
-			return fmt.Errorf("listing volumes (%s): %w", r.Engine(), err)
+			return verb.queryErr(r.Engine(), "listing volumes", err)
 		}
 		// Every tag this project may have built on THIS engine (identity-
 		// qualified, keep-id generic where the engine is rootless Podman, and
@@ -74,7 +88,7 @@ func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) 
 		for _, img := range imageTagCandidates(r, paths.ID, os.Getuid(), os.Getgid()) {
 			has, ierr := r.ImageExists(img)
 			if ierr != nil {
-				return fmt.Errorf("checking image %s (%s): %w", img, r.Engine(), ierr)
+				return verb.queryErr(r.Engine(), "checking image "+img, ierr)
 			}
 			if has {
 				st.imgs = append(st.imgs, img)
@@ -113,12 +127,12 @@ func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) 
 		for _, r := range engines {
 			// Abort on a session that started since the prompt, and dissolve any
 			// pre-start ownership marker before touching volumes.
-			if lerr := clearSessionMarkers(s.Err, r, paths.ID); lerr != nil {
+			if lerr := clearSessionMarkers(s.Err, verb, r, paths.ID); lerr != nil {
 				return lerr
 			}
 			lockedVols, lerr := projectVolumes(r, paths.Home, paths.ID)
 			if lerr != nil {
-				return fmt.Errorf("listing volumes (%s): %w", r.Engine(), lerr)
+				return verb.queryErr(r.Engine(), "listing volumes", lerr)
 			}
 			for _, v := range lockedVols {
 				if rerr := r.VolumeRemove(v); rerr != nil {
@@ -162,7 +176,21 @@ func forget(s Streams, paths project.Paths, engines []engineRunner, force bool) 
 		return rerr
 	}
 	fmt.Fprintf(s.Err, "byre: forgot %s\n", paths.ID)
+	// The summary surface: "forgot <id>" is the claim, and an engine forget never
+	// asked is part of what that word does not cover (P4).
+	noteIgnoredForForget(s.Err, sp, paths.ID)
 	return nil
+}
+
+// noteIgnoredForForget is forget's ignored-engine consequence, in one place
+// because both surfaces print it. Forget alone has a lasting one: the store
+// dies whatever happened engine-side, so a volume left on the ignored engine
+// has nothing pointing at it afterwards -- hence the line that finds it again.
+func noteIgnoredForForget(w io.Writer, sp ignoreSplit, id string) {
+	sp.note(w, func(eng string) string {
+		return fmt.Sprintf("volumes and images of this project there, if any, were NOT removed; byre removes the store anyway, so they stay behind as orphans under this project's prefix — list them later with `%s volume ls --filter name=%s`",
+			eng, volumePrefix(id))
+	})
 }
 
 // clearStoreContents deletes everything in a project store dir EXCEPT the
