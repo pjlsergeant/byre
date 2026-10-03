@@ -45,7 +45,7 @@ var commandsPageAreas = []struct {
 	{"Inspection", []string{"status", "dockerfile", "dockerrun", "ejectfirewall", "version"}},
 	{"Configuration", []string{"config", "preset", "layer", "mcp", "claude-skill", "context", "credentials"}},
 	{"Skills & templates", []string{"skill", "template"}},
-	{"Lifecycle & recovery", []string{"reset", "rebuild", "rehome", "forget"}},
+	{"Lifecycle & recovery", []string{"reset", "rebuild", "rehome", "forget", "backup", "restore"}},
 	{"Shell integration", []string{"completion"}},
 }
 

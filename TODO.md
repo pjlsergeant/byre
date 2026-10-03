@@ -65,14 +65,15 @@ the rationale lives.
   container rails the resolver establishes: read that design for whether it
   already generalises before writing a sidecar design.
 
-- [ ] (L) **Box export / import** (Pete, 2026-09-08): design and ship a portable
-  box hand-off, with explicit inclusion rules for config/layers/packages,
-  credentials, and persistent state rather than silently exporting either too
-  little to restore or machine-bound secrets. Design: `wip/backup-restore.md`
-  (restarted 2026-10-01 as `byre backup` / `byre restore`: config byte-for-byte,
-  agent volume plus `--volume`, restore pours volumes from the base image and
-  builds nothing; v5 export/import design retired, in git history; Pete to
-  ratify v1, then build).
+- [x] (L) **Box export / import** (Pete, 2026-09-08): shipped 2026-10-02 as
+  `byre backup` / `byre restore` (ADR 0059; the `wip/backup-restore.md`
+  design absorbed and deleted, git history keeps it and the retired v5
+  export/import design). Config byte-for-byte with `--no-credentials` the one
+  rewrite, every project volume by default with `--no-volume` to drop one,
+  restore proves the base image then pours volumes from it and builds
+  nothing. Gated round trip green on Docker and Podman in both directions.
+  Logged follow-up, not part of this unit: an editor-style backup form
+  (flags only in this cut).
 
 - [ ] (L) **SSH-agent-backed project credentials** (Pete, 2026-09-08): let a
   credentials identity be keyed to a specific key offered by the user's SSH

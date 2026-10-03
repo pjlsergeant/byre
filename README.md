@@ -239,6 +239,11 @@ tldr: `byre skill init <name>`, edit its `skill.toml`, enable it in a
 box. I'd recommend asking an agent to do it for you
 ([recipe](https://getbyre.com/docs/how-do-i/toolkit/#write-my-own-skill))
 
+**Move my box to another machine?**
+tldr: `byre backup`, send the file, `byre restore <file>` in a fresh
+checkout.
+([recipe](https://getbyre.com/docs/how-do-i/recovery/#move-my-box-to-another-machine))
+
 **Stop using byre?**
 tldr: `byre dockerfile` and `byre dockerrun` print the whole exit;
 `byre ejectfirewall` prints the firewall's step.

@@ -113,7 +113,7 @@ func TestIntegrationSeedingAndMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.VolumeRemove(volA) })
-	if err := r.SeedVolume(volA, src, smokeImage, Identity{UID: uid, GID: gid}); err != nil {
+	if err := r.SeedVolume(volA, src, smokeImage, Identity{UID: uid, GID: gid}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := catInVolume(t, r, volA, "cred.json"); got != `{"k":"v"}` {
@@ -130,7 +130,7 @@ func TestIntegrationSeedingAndMigration(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = r.VolumeRemove(volB) })
 	const literal = "token = \"s3cr3t\"\n"
-	if err := r.SeedLiteral(volB, "etc/deep/auth.toml", literal, smokeImage, Identity{UID: uid, GID: gid}); err != nil {
+	if err := r.SeedLiteral(volB, "etc/deep/auth.toml", literal, smokeImage, Identity{UID: uid, GID: gid}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := catInVolume(t, r, volB, "etc/deep/auth.toml"); got != strings.TrimSpace(literal) {
@@ -150,7 +150,7 @@ func TestIntegrationSeedingAndMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.VolumeRemove(volC) })
-	if err := r.SeedFiles(volC, prefSrc, []string{"keep.json", "not-there.json"}, smokeImage, Identity{UID: uid, GID: gid}); err != nil {
+	if err := r.SeedFiles(volC, prefSrc, []string{"keep.json", "not-there.json"}, smokeImage, Identity{UID: uid, GID: gid}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := catInVolume(t, r, volC, "keep.json"); got != "keep" {
@@ -166,7 +166,7 @@ func TestIntegrationSeedingAndMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.VolumeRemove(volD) })
-	if err := r.MigrateVolume(volA, volD, smokeImage, Identity{UID: uid, GID: gid}); err != nil {
+	if err := r.MigrateVolume(volA, volD, smokeImage, Identity{UID: uid, GID: gid}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := catInVolume(t, r, volD, "cred.json"); got != `{"k":"v"}` {

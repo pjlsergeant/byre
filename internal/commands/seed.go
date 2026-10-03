@@ -36,7 +36,7 @@ func seedVolumes(s volumeRunner, log io.Writer, paths project.Paths, image strin
 			if err := s.VolumeCreate(name); err != nil {
 				return err
 			}
-			if err := s.SeedLiteral(name, v.Seed.Path, v.Seed.Literal, image, ident); err != nil {
+			if err := s.SeedLiteral(name, v.Seed.Path, v.Seed.Literal, image, ident, helperLabel(paths.ID)); err != nil {
 				if rmErr := s.VolumeRemove(name); rmErr != nil {
 					return fmt.Errorf("literal-seeding %s failed (%w); rollback of volume %s also failed (%v) — remove it manually before retrying", v.Name, err, name, rmErr)
 				}
@@ -68,7 +68,7 @@ func seedVolumes(s volumeRunner, log io.Writer, paths project.Paths, image strin
 		if err := s.VolumeCreate(name); err != nil {
 			return err
 		}
-		if err := s.SeedVolume(name, host, image, ident); err != nil {
+		if err := s.SeedVolume(name, host, image, ident, helperLabel(paths.ID)); err != nil {
 			if rmErr := s.VolumeRemove(name); rmErr != nil {
 				return fmt.Errorf("seeding %s from %s failed (%w); rollback of volume %s also failed (%v) — remove it manually before retrying", v.Name, host, err, name, rmErr)
 			}
@@ -118,7 +118,7 @@ func seedPrefs(s volumeRunner, log io.Writer, paths project.Paths, image, agentS
 	if err := s.VolumeCreate(name); err != nil {
 		return err
 	}
-	if err := s.SeedFiles(name, host, files, image, ident); err != nil {
+	if err := s.SeedFiles(name, host, files, image, ident, helperLabel(paths.ID)); err != nil {
 		if rmErr := s.VolumeRemove(name); rmErr != nil {
 			return fmt.Errorf("seeding prefs into %s failed (%w); rollback of volume %s also failed (%v) — remove it manually before retrying", agentState, err, name, rmErr)
 		}

@@ -255,6 +255,10 @@ type enginePlan struct {
 	ident   runner.Identity
 	pairs   []volPair
 	created []string
+	// helperLabels label the copy helpers. Both ids: the new one, whose volume
+	// the helper fills, and the old one, whose volume it mounts -- a sweep
+	// running under EITHER id has to be able to see this container.
+	helperLabels []string
 }
 
 type volPair struct{ src, dst string }
@@ -266,7 +270,7 @@ type volPair struct{ src, dst string }
 func planRehomeVolumes(paths project.Paths, oldID string, r engineRunner, uid, gid int, multi bool) (enginePlan, error) {
 	newID := paths.ID
 	oldPrefix := "byre-" + oldID + "-"
-	pl := enginePlan{r: r, ident: engineIdentity(r, uid, gid)}
+	pl := enginePlan{r: r, ident: engineIdentity(r, uid, gid), helperLabels: []string{helperLabel(newID), helperSrcLabel(oldID)}}
 	oldVols, err := projectVolumes(r, paths.Home, oldID)
 	if err != nil {
 		return pl, fmt.Errorf("listing volumes (%s): %w", r.Engine(), err)
@@ -304,7 +308,7 @@ func copyRehomeVolumes(s Streams, pl *enginePlan, multi bool) error {
 			return fmt.Errorf("creating %s: %w", p.dst, err)
 		}
 		pl.created = append(pl.created, p.dst)
-		if err := pl.r.MigrateVolume(p.src, p.dst, pl.image, pl.ident); err != nil {
+		if err := pl.r.MigrateVolume(p.src, p.dst, pl.image, pl.ident, pl.helperLabels); err != nil {
 			return fmt.Errorf("copying %s -> %s: %w", p.src, p.dst, err)
 		}
 		fmt.Fprintf(s.Err, "byre: migrated %s -> %s%s\n", p.src, p.dst, engineSuffix(multi, pl.r))

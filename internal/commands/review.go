@@ -328,7 +328,10 @@ const credentialRejectAdvice = " — if you didn't rotate this credential, rejec
 // literal, which takes the key out of env_from_host entirely) changes the same
 // delivered value, and a classifier that only looked at the new side would
 // wave it through.
-func credentialReviewLines(store, content []byte) []grantLine {
+// subject is the noun the review calls the incoming document ("preset",
+// "backup"): the identity lines name it, because "this preset brings its own
+// credentials identity" is a lie on restore's path.
+func credentialReviewLines(subject string, store, content []byte) []grantLine {
 	before, beforeErr := readCredentialView(store)
 	after, afterErr := readCredentialView(content)
 	if beforeErr != nil || afterErr != nil {
@@ -359,24 +362,39 @@ func credentialReviewLines(store, content []byte) []grantLine {
 			out = append(out, grantLine{Text: fmt.Sprintf("%s: credential row vanished (was %s) — its value is gone from this file", key, before.render(key)), Credential: true})
 		}
 	}
-	return append(out, credentialBlockLine(before.block, before.hasBlock, after.block, after.hasBlock)...)
+	return append(out, credentialBlockLine(subject, before.block, before.hasBlock, after.block, after.hasBlock)...)
 }
 
 // credentialBlockLine names a change to the file-local [credentials] block.
 // The block is what OPENS this file's rows and what future `set`s encrypt to,
 // so replacing it is a stronger move than changing any one value: every value
 // set afterward answers to the incoming identity's passphrase, not the user's.
-func credentialBlockLine(before config.CredentialsBlock, hadBefore bool, after config.CredentialsBlock, hasAfter bool) []grantLine {
+func credentialBlockLine(subject string, before config.CredentialsBlock, hadBefore bool, after config.CredentialsBlock, hasAfter bool) []grantLine {
 	same := string(before.Identity) == string(after.Identity) && before.Recipient == after.Recipient
 	switch {
 	case hadBefore && hasAfter && !same:
-		return []grantLine{{Text: "this preset replaces the file's credentials identity — its rows open under ITS passphrase, and values you set afterward would encrypt to ITS recipient; if you didn't do this, reject", Credential: true}}
+		return []grantLine{{Text: fmt.Sprintf("this %s replaces the file's credentials identity%s", subject, credentialsIdentityConsequence), Credential: true}}
 	case !hadBefore && hasAfter:
-		return []grantLine{{Text: "this preset brings its own credentials identity — its rows open under ITS passphrase, and values you set afterward would encrypt to ITS recipient; if you didn't do this, reject", Credential: true}}
+		return []grantLine{{Text: CredentialsIdentityBroughtLine(subject), Credential: true}}
 	case hadBefore && !hasAfter:
-		return []grantLine{{Text: "this preset removes the file's credentials identity — nothing here can open a credential row afterward; if you didn't do this, reject", Credential: true}}
+		return []grantLine{{Text: fmt.Sprintf("this %s removes the file's credentials identity — nothing here can open a credential row afterward; if you didn't do this, reject", subject), Credential: true}}
 	}
 	return nil
+}
+
+// credentialsIdentityConsequence is what an incoming [credentials] identity
+// means -- the same for one that replaces the project's and one that arrives
+// where there was none -- so the two rows share a spelling.
+const credentialsIdentityConsequence = " — its rows open under ITS passphrase, and values you set afterward would encrypt to ITS recipient; if you didn't do this, reject"
+
+// CredentialsIdentityBroughtLine is the review row for a document that
+// carries a [credentials] identity where the project has none -- every first
+// apply with credentials, and every restore of a backup that carries them.
+// Exported because it is prose several surfaces depend on (the review, apply's
+// test, restore's test, and the docs sweep that pins the "this backup brings"
+// spelling), and prose asserted in several places gets one owner.
+func CredentialsIdentityBroughtLine(subject string) string {
+	return fmt.Sprintf("this %s brings its own credentials identity%s", subject, credentialsIdentityConsequence)
 }
 
 // fileCredentialView is one physical config file's credential-relevant

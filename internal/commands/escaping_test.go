@@ -638,7 +638,7 @@ func presetReview(t *testing.T, payload, body string, tty bool) string {
 	s, _, errBuf := testStreams("", tty)
 	renderPresetReview(s, paths, preset, content,
 		[]missingRef{{Name: "acme/x" + payload, Kind: packages.KindSkill}},
-		"Inspect", store, true)
+		"Inspect", presetSubject, store, true, nil)
 	return errBuf.String()
 }
 

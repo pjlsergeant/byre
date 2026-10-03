@@ -59,6 +59,14 @@ func recorderApp(calls map[string]string) app {
 		worktree: func(_ commands.Streams, dir, name, path, agent string, selfEdit bool, _ commands.CredentialMode) error {
 			return note("worktree", strings.Join([]string{dir, name, path, agent, boolStr(selfEdit)}, " "))
 		},
+		backup: func(_ commands.Streams, dir string, opts commands.BackupOptions) error {
+			return note("backup", strings.Join([]string{dir, opts.Output,
+				strings.Join(opts.NoVolumes, ","),
+				boolStr(opts.NoCredentials), boolStr(opts.Yes)}, " "))
+		},
+		restore: func(_ commands.Streams, file, dir string) error {
+			return note("restore", file+" "+dir)
+		},
 		rebuild:          func(_ commands.Streams, dir string) error { return note("rebuild", dir) },
 		rehome:           func(_ commands.Streams, dir, oldID string) error { return note("rehome", dir+" "+oldID) },
 		rehomeCandidates: func(_ commands.Streams, dir string) error { return note("rehome candidates", dir) },
@@ -134,6 +142,13 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"worktree", "feat", "--path", "/tmp/x", "--self-edit"}, "worktree", "/proj feat /tmp/x  true"},
 		{[]string{"worktree", "feat", "-a", "codex"}, "worktree", "/proj feat  codex false"},
 		{[]string{"rebuild"}, "rebuild", "/proj"},
+		// backup's DIR is optional and defaults to the directory byre ran in;
+		// --no-volume is repeatable, so both names must reach the options.
+		{[]string{"backup"}, "backup", "/proj   false false"},
+		{[]string{"backup", "/elsewhere"}, "backup", "/elsewhere   false false"},
+		{[]string{"backup", "--output", "box.tar.gz", "--no-volume", ".claude", "--no-volume", "oneoff", "--no-credentials", "--yes"}, "backup", "/proj box.tar.gz .claude,oneoff true true"},
+		{[]string{"restore", "box.tar.gz"}, "restore", "box.tar.gz /proj"},
+		{[]string{"restore", "box.tar.gz", "/elsewhere"}, "restore", "box.tar.gz /elsewhere"},
 		{[]string{"rehome", "old-id"}, "rehome", "/proj old-id"},
 		{[]string{"rehome"}, "rehome candidates", "/proj"}, // bare = list likely old ids
 		{[]string{"version"}, "version", "-"},
@@ -187,6 +202,9 @@ func TestArityUsageErrorsNameTheShape(t *testing.T) {
 		{[]string{"preset", "inspect", "a", "b"}, "usage: byre preset inspect [<uri>|<path>]"},
 		{[]string{"layer", "new"}, "usage: byre layer new <name>"},
 		{[]string{"layer", "validate", "a", "b"}, "usage: byre layer validate [name]"},
+		{[]string{"backup", "a", "b"}, "usage: byre backup [DIR] [--output PATH] [--no-volume NAME]... [--no-credentials] [--yes]"},
+		{[]string{"restore"}, "usage: byre restore FILE [DIR]"},
+		{[]string{"restore", "a", "b", "c"}, "usage: byre restore FILE [DIR]"},
 	}
 	for _, tc := range cases {
 		calls := map[string]string{}
@@ -280,6 +298,13 @@ func TestRunUsageErrors(t *testing.T) {
 		{[]string{"skill", "bogus"}, "usage: byre skill list|inspect"},
 		// bare rehome is valid: it lists candidates.
 		{[]string{"rehome", "old", "extra"}, "usage: byre rehome [<old-id>]"},
+		// An explicitly blank --output would read downstream as "flag absent"
+		// and write the default name; a blank --no-volume names no volume.
+		{[]string{"backup", "--output="}, "--output: blank value"},
+		{[]string{"backup", "--no-volume="}, "--no-volume: blank value"},
+		{[]string{"backup", "--no-volume", ".claude", "--no-volume", "  "}, "--no-volume: blank value"},
+		{[]string{"backup", "--bogus"}, ""},  // unknown flag
+		{[]string{"restore", "--bogus"}, ""}, // unknown flag
 		{[]string{"version", "extra"}, "unexpected arguments"},
 		{[]string{"--version", "extra"}, "unexpected arguments"},
 	}

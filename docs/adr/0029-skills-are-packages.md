@@ -1,5 +1,13 @@
 # Skills and templates are packages; presets replace adoption
 
+> **Amended by ADR 0059** (2026-10-02): `byre restore` is the SECOND entry to
+> the one acquisition flow below, and the only other one. It hands the apply
+> chauffeur the config bytes it verified out of a backup file, so every install
+> it offers is apply's own digest-verified walk-through -- and unlike apply it
+> does not continue past a package that is still missing, because the volumes
+> it must pour and the engine, base and mounts it must prove all come from the
+> resolved set.
+
 Skills and templates became **packages** with three provenances, an
 installation pipeline, and a preset flow that replaces the develop-time
 adoption offer. Decided 2026-07-13 (the working design of record, a
@@ -110,8 +118,9 @@ host-side-store premise stands; the offer-and-adopt-on-develop clause is
 reversed). A preset is a **saved answer to onboarding's questions** -- a
 complete config proposal from anywhere, conventionally `byre.preset` in
 a repo. It is not a package: no identity, no version, no install.
-`byre preset apply` is the one flow in which byre initiates acquisition
-walk-throughs -- the **solicitation rule**: inside a flow the user
+`byre preset apply` (and, since ADR 0059, `byre restore`, which hands apply
+the config bytes it verified out of a backup file) is the one flow in which
+byre initiates acquisition walk-throughs -- the **solicitation rule**: inside a flow the user
 invoked to compose a box, the chauffeur walks each missing package
 through its own install consent; anywhere a third party's document
 introduces references (a cloned repo, a develop tripping on dangling

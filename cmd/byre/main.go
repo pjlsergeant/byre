@@ -42,6 +42,8 @@ type app struct {
 	worktree      func(s commands.Streams, dir, name, path, agent string, selfEdit bool, credMode commands.CredentialMode) error
 	rebuild       func(s commands.Streams, dir string) error
 	rehome        func(s commands.Streams, dir, oldID string) error
+	backup        func(s commands.Streams, dir string, opts commands.BackupOptions) error
+	restore       func(s commands.Streams, file, dir string) error
 	// rehomeCandidates is bare `byre rehome`: list stored projects whose
 	// recorded path no longer exists (the likely rehome sources).
 	rehomeCandidates func(s commands.Streams, dir string) error
@@ -64,6 +66,8 @@ var realApp = app{
 	worktree:         commands.Worktree,
 	rebuild:          commands.Rebuild,
 	rehome:           commands.Rehome,
+	backup:           commands.Backup,
+	restore:          commands.Restore,
 	rehomeCandidates: commands.RehomeCandidates,
 	version:          printVersion,
 }
@@ -210,6 +214,8 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		rebuildCmd(a, dir, s),
 		rehomeCmd(a, dir, s),
 		forgetCmd(a, dir, s),
+		backupCmd(a, dir, s),
+		restoreCmd(a, dir, s),
 		versionCmd(a, s),
 		completionCmd(s),
 		commandsPageCmd(s),
@@ -1171,6 +1177,101 @@ context). Your project tree is left alone. Prompts first.`,
 	}
 	c.Flags().BoolVarP(&force, "force", "y", false, "skip the confirmation prompt")
 	return c
+}
+
+// backupCmd: one file holding this project's config and its state volumes.
+// The verb is the whole job -- it writes nothing into the project and removes
+// nothing from the engine (ADR 0059).
+func backupCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	var opts commands.BackupOptions
+	c := &cobra.Command{
+		Use:   "backup [DIR]",
+		Short: "Write one file holding this project's config and its state volumes.",
+		Long: `Write ONE file holding this project's config and its state volumes — the box
+you have been working in, ready to come back to you on this machine or another.
+
+The project must be completely still: byre refuses while a container of it
+exists in ANY state, on ANY installed engine, in any worktree, and it holds
+the project's setup lock from that check through the end of the copy.
+
+What travels: the config file byte-for-byte (credential rows included, still
+encrypted under that file's own passphrase — byre decrypts nothing), and every
+state volume of the project on the source engine, minus cache-role volumes and
+any --no-volume name. What does not: your workspace (git carries it), the built
+image, machine-scoped identity volumes (the destination logs in once), and the
+layers, template, skills and agent the config names — those are references, and
+the file lists them for the destination to install.
+
+The default name is <folder>-<YYYY-MM-DD>.byre-backup.tar.gz in the current
+directory; an existing entry at the output path is a refusal, never an
+overwrite. On a terminal backup shows a preview and asks first; off a terminal
+it runs, and prints every list the preview would have shown.`,
+		Args: maxArgsU(1, "backup [DIR] [--output PATH] [--no-volume NAME]... [--no-credentials] [--yes]"),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// `--output=` would read downstream as "flag absent" and silently
+			// write the default name in the current directory — an explicitly
+			// given flag must never be silently ignored. Exactly empty, not
+			// trimmed: a space-bearing path is unusual but not invalid (the
+			// --remote-byre precedent).
+			if cmd.Flags().Changed("output") && opts.Output == "" {
+				return usageError(`--output: blank value — name the file to write, or omit the flag for the default name`)
+			}
+			// Repeatable, so the blank check is per value: a volume name is
+			// never blank under the grammar byre matches these against, and an
+			// empty one would read as "this flag was not given".
+			for _, name := range opts.NoVolumes {
+				if strings.TrimSpace(name) == "" {
+					return usageError(`--no-volume: blank value — name the volume to leave out (its logical name, the part after the project prefix)`)
+				}
+			}
+			return a.backup(s, optDirArg(args, dir), opts)
+		},
+	}
+	c.Flags().StringVar(&opts.Output, "output", "", "write the file here instead of <folder>-<date>.byre-backup.tar.gz in the current directory")
+	c.Flags().StringArrayVar(&opts.NoVolumes, "no-volume", nil, "leave this volume out, by its logical name (.claude, .grok); repeatable")
+	c.Flags().BoolVar(&opts.NoCredentials, "no-credentials", false, "delete the [credentials] block and every credential row from the config COPY in the file (the project's own file is untouched)")
+	c.Flags().BoolVar(&opts.Yes, "yes", false, "skip the preview prompt")
+	return c
+}
+
+// restoreCmd: a backup file becomes a project on this machine. Terminal-only,
+// like the `preset apply` review it extends.
+func restoreCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	return &cobra.Command{
+		Use:   "restore FILE [DIR]",
+		Short: "Make a fresh project from a backup file: write the config, pour the volumes.",
+		Long: `Make a fresh project from a backup file: the config written, every carried
+volume that is not already here poured from the file's own bytes. DIR is the
+project directory (default: the current one), created when it is absent.
+
+Terminal-only, like 'byre preset apply', because the review is the point: it
+names what this machine must satisfy (mount hosts, context files, seeds), what
+the source saw, and what the file holds — volume by volume, with the carried
+config's credential state — and then asks once.
+
+It refuses a project that already has a config ("restore into a fresh
+checkout"), and it stops on any template, layer, skill or agent the config
+names that is not installed here, offering the install where the file carries
+a hint. It builds nothing: 'byre develop' is the next command.`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) < 1 || len(args) > 2 {
+				return usageError("usage: byre restore FILE [DIR]")
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return a.restore(s, args[0], optDirArg(args[1:], dir))
+		},
+	}
+}
+
+// optDirArg is the optional trailing DIR operand: the one the user typed, else
+// the directory byre was run in.
+func optDirArg(args []string, dir string) string {
+	if len(args) == 1 {
+		return args[0]
+	}
+	return dir
 }
 
 func versionCmd(a app, s commands.Streams) *cobra.Command {

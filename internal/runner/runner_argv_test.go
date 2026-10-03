@@ -89,7 +89,7 @@ func TestStartAttachArgv(t *testing.T) {
 
 func TestSeedVolumeArgv(t *testing.T) {
 	r, gotArgs := argvRunner(Docker)
-	if err := r.SeedVolume("byre-vol.claude-state", "/home/pete/.claude", "byre-img.v0", Identity{UID: 1234, GID: 5678}); err != nil {
+	if err := r.SeedVolume("byre-vol.claude-state", "/home/pete/.claude", "byre-img.v0", Identity{UID: 1234, GID: 5678}, ""); err != nil {
 		t.Fatal(err)
 	}
 	want := "docker run --rm --entrypoint sh -u 0:0" +
@@ -104,7 +104,7 @@ func TestSeedVolumeArgv(t *testing.T) {
 func TestSeedFilesArgv(t *testing.T) {
 	r, gotArgs := argvRunner(Docker)
 	files := []string{".claude/settings.json", ".claude.json"}
-	if err := r.SeedFiles("byre-vol.prefs", "/home/pete", files, "byre-img.v0", Identity{UID: 1234, GID: 5678}); err != nil {
+	if err := r.SeedFiles("byre-vol.prefs", "/home/pete", files, "byre-img.v0", Identity{UID: 1234, GID: 5678}, ""); err != nil {
 		t.Fatal(err)
 	}
 	args := *gotArgs
@@ -127,7 +127,7 @@ func TestSeedFilesArgv(t *testing.T) {
 
 func TestMigrateVolumeArgv(t *testing.T) {
 	r, gotArgs := argvRunner(Docker)
-	if err := r.MigrateVolume("byre-vol.old-name", "byre-vol.new-name", "byre-img.v0", Identity{UID: 1234, GID: 5678}); err != nil {
+	if err := r.MigrateVolume("byre-vol.old-name", "byre-vol.new-name", "byre-img.v0", Identity{UID: 1234, GID: 5678}, nil); err != nil {
 		t.Fatal(err)
 	}
 	want := "docker run --rm --entrypoint sh -u 0:0" +
@@ -152,7 +152,7 @@ func TestSeedLiteralArgvAndStdin(t *testing.T) {
 		gotStdin = string(b)
 		return nil
 	}}
-	if err := r.SeedLiteral("byre-vol.creds", ".codex/auth.json", content, "byre-img.v0", Identity{UID: 1234, GID: 5678}); err != nil {
+	if err := r.SeedLiteral("byre-vol.creds", ".codex/auth.json", content, "byre-img.v0", Identity{UID: 1234, GID: 5678}, ""); err != nil {
 		t.Fatal(err)
 	}
 	want := "docker run --rm -i --entrypoint sh -u 0:0" +

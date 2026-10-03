@@ -29,6 +29,42 @@ image and volumes. `rehome` migrates them (and the config) onto the new
 path's identity and retires the old one. If the repo has worktrees, run
 it from the main worktree.
 
+## Move my box to another machine?
+
+tldr: `byre backup`, send the file, `byre restore <file>` in a fresh
+checkout.
+
+`byre backup` writes one file holding this project's config and its state
+volumes -- the agent's login, memory and history, your encrypted credential
+rows, everything byre keeps for the directory. It shows you what it will
+carry and what it leaves behind first, and it needs the project completely
+still: stop any running box before you run it. The workspace is not in there,
+because git carries that.
+
+Send the file to the other machine, along with anything the backup NAMES but
+does not carry: a shared layer (`extends`) is a plain file you copy across
+yourself. Then clone or copy the repo there, and in that fresh checkout run
+`byre restore <file>`. It reviews what it is about to do -- the engine, the
+volumes it will create, the volumes already there it will leave alone, the
+credential state, and every host path this machine will have to satisfy --
+offers to install any skill or template the config names and the file has an
+install hint for, and on your y/n writes the config and pours the volumes.
+
+Restore does not build anything. If a package it names is still missing it
+stops and prints the install command; install it and run `byre restore`
+again. Once it is through, `byre develop` builds the image and starts the box.
+Credentials travel encrypted and still need the source config's passphrase at
+the first launch -- rotate it afterwards with `byre credentials rekey` if you
+want the new machine on its own. Machine-wide volumes (shared agent logins)
+never travel: log in once on the new machine, as any box does.
+
+Two things to know before you send the file. It is an ordinary file at mode
+0600 with no encryption of its own, and whatever is plaintext inside a volume
+is plaintext in it -- `--no-credentials` drops the encrypted rows from the
+CONFIG copy and says nothing about volume contents, so encrypt the file
+yourself if it is crossing anything you don't trust. And byre reads its own
+format: don't repack it, or restore will refuse it.
+
 ## Pull fresh tool versions?
 
 tldr: `byre rebuild`.

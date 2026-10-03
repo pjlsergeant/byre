@@ -255,7 +255,7 @@ func TestCredentialReviewFlagsAChangedValue(t *testing.T) {
 	blob := strings.Repeat("QUJD", 200)
 	before := reviewCredFile("", map[string]string{"STRIPE_KEY": credRow(blob), "EDITOR": "env:EDITOR"}, nil)
 	after := reviewCredFile("", map[string]string{"STRIPE_KEY": credRow("Zm9v"), "EDITOR": "env:EDITOR"}, nil)
-	lines := credentialReviewLines(before, after)
+	lines := credentialReviewLines(presetSubject, before, after)
 	got := grantTexts(lines)
 	if !strings.Contains(got, "STRIPE_KEY: credential value changed") || !strings.Contains(got, "didn't rotate this credential, reject") {
 		t.Fatalf("the value-change rule did not fire: %q", got)
@@ -302,7 +302,7 @@ func TestCredentialReviewFlagsEitherSide(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := grantTexts(credentialReviewLines(tc.before, tc.after))
+			got := grantTexts(credentialReviewLines(presetSubject, tc.before, tc.after))
 			if !strings.Contains(got, "STRIPE_KEY: credential value changed") || !strings.Contains(got, "didn't rotate this credential, reject") {
 				t.Fatalf("the value-change rule did not fire: %q", got)
 			}
@@ -318,14 +318,14 @@ func TestCredentialReviewFlagsEitherSide(t *testing.T) {
 // rotate this" is a question about a key that was already here.
 func TestCredentialReviewNamesAppearedAndVanishedRows(t *testing.T) {
 	cred := credRow("Zm9v")
-	appeared := grantTexts(credentialReviewLines(reviewCredFile("", nil, nil), reviewCredFile("", map[string]string{"STRIPE_KEY": cred}, nil)))
+	appeared := grantTexts(credentialReviewLines(presetSubject, reviewCredFile("", nil, nil), reviewCredFile("", map[string]string{"STRIPE_KEY": cred}, nil)))
 	if !strings.Contains(appeared, "STRIPE_KEY: credential row appeared") {
 		t.Fatalf("an appearing row is not named: %q", appeared)
 	}
 	if strings.Contains(appeared, "rotate") {
 		t.Fatalf("a new row must not carry the value-change wording: %q", appeared)
 	}
-	vanished := grantTexts(credentialReviewLines(reviewCredFile("", map[string]string{"STRIPE_KEY": cred}, nil), reviewCredFile("", nil, nil)))
+	vanished := grantTexts(credentialReviewLines(presetSubject, reviewCredFile("", map[string]string{"STRIPE_KEY": cred}, nil), reviewCredFile("", nil, nil)))
 	if !strings.Contains(vanished, "STRIPE_KEY: credential row vanished") {
 		t.Fatalf("a vanishing row is not named: %q", vanished)
 	}
@@ -343,7 +343,7 @@ func TestCredentialReviewFlagsBlockChanges(t *testing.T) {
 	theirs := credBlock(credIdentityB, credRecipientB)
 	rows := map[string]string{"STRIPE_KEY": credRow("Zm9v")}
 
-	replaced := grantTexts(credentialReviewLines(reviewCredFile(mine, rows, nil), reviewCredFile(theirs, rows, nil)))
+	replaced := grantTexts(credentialReviewLines(presetSubject, reviewCredFile(mine, rows, nil), reviewCredFile(theirs, rows, nil)))
 	if !strings.Contains(replaced, "replaces the file's credentials identity") || !strings.Contains(replaced, "if you didn't do this, reject") {
 		t.Fatalf("the block-replacement rule did not fire: %q", replaced)
 	}
@@ -354,16 +354,16 @@ func TestCredentialReviewFlagsBlockChanges(t *testing.T) {
 	}
 	// A recipient swap under the SAME identity is the same move: values set
 	// afterward encrypt to whatever the recipient names.
-	recip := grantTexts(credentialReviewLines(reviewCredFile(credBlock(credIdentityA, credRecipientA), rows, nil), reviewCredFile(credBlock(credIdentityA, credRecipientB), rows, nil)))
+	recip := grantTexts(credentialReviewLines(presetSubject, reviewCredFile(credBlock(credIdentityA, credRecipientA), rows, nil), reviewCredFile(credBlock(credIdentityA, credRecipientB), rows, nil)))
 	if !strings.Contains(recip, "replaces the file's credentials identity") {
 		t.Fatalf("a recipient swap did not fire: %q", recip)
 	}
 
-	arrived := grantTexts(credentialReviewLines(reviewCredFile("", nil, nil), reviewCredFile(theirs, rows, nil)))
+	arrived := grantTexts(credentialReviewLines(presetSubject, reviewCredFile("", nil, nil), reviewCredFile(theirs, rows, nil)))
 	if !strings.Contains(arrived, "brings its own credentials identity") || !strings.Contains(arrived, "if you didn't do this, reject") {
 		t.Fatalf("an arriving block is not named: %q", arrived)
 	}
-	removed := grantTexts(credentialReviewLines(reviewCredFile(mine, rows, nil), reviewCredFile("", rows, nil)))
+	removed := grantTexts(credentialReviewLines(presetSubject, reviewCredFile(mine, rows, nil), reviewCredFile("", rows, nil)))
 	if !strings.Contains(removed, "removes the file's credentials identity") {
 		t.Fatalf("a removed block is not named: %q", removed)
 	}
@@ -376,7 +376,7 @@ func TestCredentialReviewIsSilentWithoutAChange(t *testing.T) {
 	same := reviewCredFile(credBlock(credIdentityA, credRecipientA),
 		map[string]string{"STRIPE_KEY": credRow("Zm9v"), "EDITOR": "env:EDITOR"},
 		map[string]string{"TERM": "xterm"})
-	if lines := credentialReviewLines(same, same); len(lines) != 0 {
+	if lines := credentialReviewLines(presetSubject, same, same); len(lines) != 0 {
 		t.Fatalf("an unchanged file was annotated: %q", grantTexts(lines))
 	}
 	// And a change to something that is not a credential stays the ordinary
@@ -384,7 +384,7 @@ func TestCredentialReviewIsSilentWithoutAChange(t *testing.T) {
 	other := reviewCredFile(credBlock(credIdentityA, credRecipientA),
 		map[string]string{"STRIPE_KEY": credRow("Zm9v"), "EDITOR": "env:VISUAL"},
 		map[string]string{"TERM": "xterm"})
-	if lines := credentialReviewLines(same, other); len(lines) != 0 {
+	if lines := credentialReviewLines(presetSubject, same, other); len(lines) != 0 {
 		t.Fatalf("a non-credential change was annotated: %q", grantTexts(lines))
 	}
 }
@@ -395,7 +395,7 @@ func TestCredentialReviewIsSilentWithoutAChange(t *testing.T) {
 func TestCredentialReviewDegradesOnAnUnreadableSide(t *testing.T) {
 	good := reviewCredFile("", map[string]string{"STRIPE_KEY": credRow("Zm9v")}, nil)
 	bad := []byte("[credentials]\nidentity = 7\n")
-	got := grantTexts(credentialReviewLines(good, bad))
+	got := grantTexts(credentialReviewLines(presetSubject, good, bad))
 	if !strings.Contains(got, "could not compare this file's credentials") || !strings.Contains(got, "NOT shown") {
 		t.Fatalf("an unreadable side was passed over in silence: %q", got)
 	}
@@ -409,7 +409,7 @@ func TestPresetReviewCarriesTheCredentialAnnotation(t *testing.T) {
 	store := reviewCredFile(credBlock(credIdentityA, credRecipientA), map[string]string{"STRIPE_KEY": credRow("Zm9v")}, nil)
 	content := reviewCredFile(credBlock(credIdentityB, credRecipientB), map[string]string{"STRIPE_KEY": credRow("YmFy")}, nil)
 	s, _, errBuf := testStreams("", true)
-	renderPresetReview(s, paths, config.Config{}, content, nil, "Apply", store, true)
+	renderPresetReview(s, paths, config.Config{}, content, nil, "Apply", presetSubject, store, true, nil)
 	out := errBuf.String()
 	if !strings.Contains(out, "STRIPE_KEY: credential value changed") {
 		t.Fatalf("the value-change line never reached the gate:\n%s", out)

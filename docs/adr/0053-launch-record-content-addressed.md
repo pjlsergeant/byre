@@ -5,7 +5,23 @@
 > immutable and written pre-start). Keys and outcomes only; values never, the
 > standing keys-not-values rule.
 
-Decided 2026-07-28. Every container byre creates gets a **launch record** -- a
+> **Amended by ADR 0059** (2026-10-02): "every container" is "every SESSION
+> container". byre's one-shot helpers write no launch record, because they
+> launch no session: backup's capture and restore's pour carry
+> `byre.helper=<project id>` plus a per-invocation run id (the run id is what
+> lets a cancelled verb remove its OWN helpers and no others); the seed helper
+> carries `byre.helper=<project id>` alone; rehome's migrate helper carries
+> `byre.helper=<new id>` and `byre.helper.src=<old id>`, because it mounts both
+> projects' volumes and one label key holds one value; and the worktree
+> helper carries neither label. The record-less part was always true; the ADR
+> never wrote the exception down. The sweeps that must not run beside a helper
+> query `byre.helper=<project id>` and `byre.helper.src=<project id>` directly,
+> since a launch-record scan cannot
+> see one -- which is also why the worktree helper, carrying no label, is not
+> one of the containers those sweeps can find.
+
+Decided 2026-07-28. Every session container byre creates gets a **launch
+record** -- a
 TOML file in the project store holding the exposure facts byre handed the
 engine, named by the sha256 of its own bytes, pointed at by a `byre.launch`
 container label. `byre status` reads and VERIFIES it, and while a box is

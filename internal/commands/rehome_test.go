@@ -454,3 +454,38 @@ func TestMigrateStoreUnreadableOldStoreClaimsNoAbsence(t *testing.T) {
 		t.Error("a store that cannot be read must abort the migration, not proceed quietly")
 	}
 }
+
+// The copy helper mounts BOTH ids' volumes, so it carries a label for each: a
+// sweep run under the OLD id (a develop in a recreated old path, a reset or
+// forget there) finds it under byre.helper.src, and one under the new id finds
+// it under byre.helper.
+func TestRehomeCopyHelperCarriesBothIDsLabels(t *testing.T) {
+	p, _ := testPaths(t)
+	f := &fakeRunner{
+		vols:   map[string]bool{"byre-oldid-.claude": true},
+		images: map[string]bool{imageTag("oldid", 1000, 1000): true},
+	}
+	s, _, _ := testStreams("", false)
+	if err := rehome(s, p, "oldid", engines(f), 1000, 1000); err != nil {
+		t.Fatal(err)
+	}
+	want := helperLabel(p.ID) + " " + helperSrcLabel("oldid")
+	if len(f.seedLabels) != 1 || f.seedLabels[0] != want {
+		t.Fatalf("migrate helper labels = %v, want one helper labelled %q", f.seedLabels, want)
+	}
+}
+
+// And the sweep reads both keys: a leftover helper of this project refuses
+// whether it named the project as its own or as the id it was copying from.
+func TestRefuseLeftoverHelpersReadsBothKeys(t *testing.T) {
+	for _, key := range []string{helperKey, helperSrcKey} {
+		f := &fakeRunner{allContainers: map[string][]string{key + "=proj-abc123": {"leftover0001"}}}
+		err := refuseLeftoverHelpers(f, "proj-abc123")
+		if err == nil {
+			t.Fatalf("a helper labelled %s=proj-abc123 did not refuse", key)
+		}
+		if !strings.Contains(err.Error(), "leftover0001") || !strings.Contains(err.Error(), "rm -f") {
+			t.Errorf("the refusal for %s does not name the container and its removal: %v", key, err)
+		}
+	}
+}

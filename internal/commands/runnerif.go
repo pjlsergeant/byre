@@ -56,10 +56,25 @@ type volumeRunner interface {
 	VolumeExists(name string) (bool, error)
 	VolumeCreate(name string) error
 	VolumeRemove(name string) error
-	SeedVolume(name, hostPath, image string, id runner.Identity) error
-	SeedLiteral(volName, destPath, content, image string, id runner.Identity) error
-	SeedFiles(volName, srcDir string, files []string, image string, id runner.Identity) error
-	MigrateVolume(src, dst, image string, id runner.Identity) error
+	SeedVolume(name, hostPath, image string, id runner.Identity, helperLabel string) error
+	SeedLiteral(volName, destPath, content, image string, id runner.Identity, helperLabel string) error
+	SeedFiles(volName, srcDir string, files []string, image string, id runner.Identity, helperLabel string) error
+	MigrateVolume(src, dst, image string, id runner.Identity, helperLabels []string) error
+}
+
+// helperRunner is the one-shot helper surface the backup and restore verbs
+// drive (see runner.Helper): a labelled helper run to completion, an explicit
+// image pull, and the BOUNDED cleanup calls a path that has already failed
+// makes -- finding and force-removing the verb's own helpers, and taking away
+// the volume a rollback was filling. Why every one of those is bounded is
+// runner.CleanupTimeout's own doc.
+type helperRunner interface {
+	RunHelper(h runner.Helper, stdin io.Reader, stdout io.Writer) (stderr string, err error)
+	ImagePull(image string) error
+	ContainersByLabelBounded(label string) ([]string, error)
+	ContainerForceRemove(container string) error
+	VolumeExistsBounded(name string) (bool, error)
+	VolumeRemoveBounded(name string) error
 }
 
 // imageRunner is the image surface: build and image lifecycle.
@@ -78,6 +93,7 @@ type engineRunner interface {
 	sessionRunner
 	volumeRunner
 	imageRunner
+	helperRunner
 }
 
 var _ engineRunner = (*runner.Runner)(nil)

@@ -410,6 +410,9 @@ func (a *volumeAdmin) Clear(v configui.VolumeStatus) error {
 			} else if len(live) > 0 {
 				return fmt.Errorf("a session is running (%s) — exit it before clearing volumes", shortID(live[0]))
 			}
+			if err := refuseLeftoverHelpers(r, a.paths.ID); err != nil {
+				return err
+			}
 			if v.Machine {
 				// A machine-scoped volume is mounted by EVERY project's boxes, so
 				// the this-project guard above isn't enough: refuse while ANY byre

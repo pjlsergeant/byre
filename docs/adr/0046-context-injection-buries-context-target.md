@@ -1,5 +1,11 @@
 # Agent context is injected; byre never writes an agent-owned file
 
+> **Amended by ADR 0059** (2026-10-02): "byre no longer writes into any file an
+> agent or its user owns, ever" is about CONTEXT DELIVERY -- byre speaks through
+> its own channel or not at all. It is not a rule about restoring the user's own
+> data: `byre restore` pours the user's own files back into the user's own
+> volume, at the user's instruction, which is the whole purpose of the verb.
+
 Decided 2026-07-26, maintainer-diagnosed ("we've made a terrible mistake
 with the design of byre"). The agent context -- chassis facts, skill
 snippets, `[[context]]` standing instructions -- now reaches every agent

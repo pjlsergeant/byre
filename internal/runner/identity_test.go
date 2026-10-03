@@ -81,7 +81,7 @@ func TestKeepIDUsernsOnHelpers(t *testing.T) {
 	const flag = "--userns=keep-id:uid=1000,gid=1000"
 
 	r, gotArgs := argvRunner(Podman)
-	if err := r.SeedVolume("v", "/src", "img", id); err != nil {
+	if err := r.SeedVolume("v", "/src", "img", id, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.Join(*gotArgs, " "); !strings.Contains(got, flag) || !strings.Contains(got, "chown -R 1000:1000") {
@@ -89,7 +89,7 @@ func TestKeepIDUsernsOnHelpers(t *testing.T) {
 	}
 
 	r, gotArgs = argvRunner(Podman)
-	if err := r.SeedFiles("v", "/src", []string{"a"}, "img", id); err != nil {
+	if err := r.SeedFiles("v", "/src", []string{"a"}, "img", id, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.Join(*gotArgs, " "); !strings.Contains(got, flag) {
@@ -97,7 +97,7 @@ func TestKeepIDUsernsOnHelpers(t *testing.T) {
 	}
 
 	r, gotArgs = argvRunner(Podman)
-	if err := r.MigrateVolume("a", "b", "img", id); err != nil {
+	if err := r.MigrateVolume("a", "b", "img", id, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.Join(*gotArgs, " "); !strings.Contains(got, flag) {

@@ -558,6 +558,14 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	if err != nil {
 		return none, err
 	}
+	// A leftover helper on the engine this develop is about to use (always
+	// this engine, whatever the engine record says): a pour or seed that
+	// outlived its byre may still be filling a volume the box would mount.
+	// Under the lock, so a develop that arrived during a backup or restore
+	// waited for it to finish and now sees only what it left behind.
+	if err := refuseLeftoverHelpers(r, paths.ID); err != nil {
+		return none, err
+	}
 	// Single-WRITER, where the check above is single-SESSION. A volume may
 	// declare `sharing = "exclusive"`, and sibling worktrees mount the
 	// identical project-scoped volume set by construction (ADR 0009), so

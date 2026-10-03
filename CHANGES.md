@@ -1,5 +1,43 @@
 # Changes
 
+## v1.12.0 — unreleased
+
+- **`byre backup` writes one file holding a project's config and its state
+  volumes, and `byre restore` makes a fresh project from it.** Move a box to
+  another machine, or keep a copy of one: the agent's login, memory and
+  history, your encrypted credential rows and the project's config all
+  travel. `byre backup` previews what it will carry -- and names everything
+  it leaves behind, with the reason: a cache volume, a `--no-volume` you
+  asked for, a machine-wide login that never travels, a volume living on
+  another installed engine. It needs the project completely still, so stop
+  any running box first; it refuses rather than stopping one for you. The
+  default file is `<folder>-<date>.byre-backup.tar.gz` in the current
+  directory (`--output` puts it elsewhere), mode 0600, and an existing file
+  at that path is never overwritten. `--no-credentials` drops the encrypted
+  rows and the `[credentials]` block from the config copy that travels; with
+  them included they stay encrypted end to end, and the first `byre develop`
+  on the far side asks for the source config's passphrase (`byre credentials
+  rekey` rotates it afterwards).
+
+- **`byre restore <file>` writes the config and pours the volumes, after a
+  review.** It extends `byre preset apply`: the same grant review, plus what
+  this machine must satisfy (mount hosts, context files, Claude Skill paths,
+  `engine`, `worktree_base`), what the source machine saw, and every volume
+  in play -- restored, already here and kept, or left to the first develop.
+  It offers to install a skill or template the config names where the file
+  carries an install hint, and stops naming the install command where it
+  does not: restore never proceeds with a package whose grants it could not
+  show you. It builds nothing, so `byre develop` is the next step. Restore
+  needs a terminal and a fresh checkout -- it refuses a project that already
+  has a config, and refuses to run from a linked worktree.
+
+- **The workspace, the image, layers, skills and templates are not in the
+  file.** Git carries your code; the image bakes this machine's user id and
+  is rebuilt on the other side; layers are plain files you copy across
+  yourself; packages are installed. The backup names every one of them so
+  nothing is a surprise at restore. A backup is not an archive format for
+  other tools: it is byre's own, and repacking it makes it unreadable.
+
 ## v1.11.0 — 2026-09-13
 
 - **Builds require Go 1.27.1 or newer.** CI and release builds use the

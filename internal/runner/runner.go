@@ -127,6 +127,10 @@ type Runner struct {
 	// credential inject's seam (streaming content in, deadline-bounded,
 	// from a goroutine concurrent with the attached session).
 	captureBoundedIn func(d time.Duration, stdin io.Reader, name string, args ...string) (string, error)
+	// pipe is RunHelper's seam: caller-supplied stdin AND stdout, with the
+	// child's stderr captured and returned (a capture helper's archive
+	// streams out while tar's own notices come back as data).
+	pipe func(stdin io.Reader, stdout io.Writer, name string, args ...string) (string, error)
 }
 
 // New returns a Runner for the given engine using real exec. exe is the
@@ -146,6 +150,7 @@ func New(e Engine, exe string) *Runner {
 		streamOut:        streamOutExec,
 		captureBounded:   captureBoundedExec,
 		captureBoundedIn: captureBoundedInExec,
+		pipe:             pipeExec,
 	}
 }
 
@@ -589,16 +594,27 @@ func netnsInitArgs(name, image, container, entrypoint string, env map[string]str
 
 // VolumeExists reports whether a named volume exists.
 func (r *Runner) VolumeExists(name string) (bool, error) {
-	out, err := r.capture(r.bin(), "volume", "ls", "-q", "--filter", "name=^"+name+"$")
+	out, err := r.capture(r.bin(), volumeLsArgs(name)...)
 	if err != nil {
 		return false, err
 	}
+	return volumeListed(out, name), nil
+}
+
+// volumeLsArgs and volumeListed are the ONE spelling of "does this volume
+// exist", shared with the bounded form the cleanup paths use (see
+// VolumeExistsBounded) so the two cannot answer the same question differently.
+func volumeLsArgs(name string) []string {
+	return []string{"volume", "ls", "-q", "--filter", "name=^" + name + "$"}
+}
+
+func volumeListed(out, name string) bool {
 	for _, line := range strings.Split(out, "\n") {
 		if strings.TrimSpace(line) == name {
-			return true, nil
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 // VolumeCreate creates a named volume.
@@ -641,15 +657,34 @@ func (r *Runner) ImageRemove(tag string) error {
 	return err
 }
 
+// helperLabelArgs renders the helper labels a volume-filling one-shot carries,
+// supplied by the caller as "key=value" (an empty one is dropped, so "" means
+// none). They are what lets a byre killed mid-seed leave a helper the lifecycle
+// sweeps can SEE; which labels, and why never the project label, is settled
+// where the keys live (internal/commands naming.go).
+func helperLabelArgs(labels ...string) []string {
+	var args []string
+	for _, l := range labels {
+		if l == "" {
+			continue
+		}
+		args = append(args, "--label", l)
+	}
+	return args
+}
+
 // MigrateVolume copies the contents of src into dst (which must already exist),
 // chowning to the box identity. Used by rehome (Docker has no volume rename).
 // image supplies cp/chown; the entrypoint is bypassed and it runs as root, in
-// the box's own userns mapping when the identity carries one.
-func (r *Runner) MigrateVolume(src, dst, image string, id Identity) error {
+// the box's own userns mapping when the identity carries one. helperLabels are
+// the helper labels (see helperLabelArgs): this one-shot mounts TWO projects'
+// volumes, so it carries a label for each, and the caller supplies both.
+func (r *Runner) MigrateVolume(src, dst, image string, id Identity, helperLabels []string) error {
 	script := fmt.Sprintf("cp -a /from/. /to/ && chown -R %d:%d /to", id.UID, id.GID)
 	args := []string{"run", "--rm",
 		"--entrypoint", "sh", "-u", "0:0"}
 	args = appendUserns(args, id.Userns())
+	args = append(args, helperLabelArgs(helperLabels...)...)
 	args = append(args,
 		"--mount", "type=volume,source="+src+",target=/from,readonly",
 		"--mount", "type=volume,source="+dst+",target=/to",
@@ -687,12 +722,14 @@ func (r *Runner) VolumeRemove(name string) error {
 // It overrides the image ENTRYPOINT (the byre launcher) and runs as root —
 // in the box's own userns mapping when the identity carries one, so the
 // chown target means what it will mean to the box — since a fresh volume is
-// root-owned and the cp/chown must run privileged.
-func (r *Runner) SeedVolume(name, hostPath, image string, id Identity) error {
+// root-owned and the cp/chown must run privileged. helperLabel is the
+// byre.helper label (see helperLabelArgs).
+func (r *Runner) SeedVolume(name, hostPath, image string, id Identity, helperLabel string) error {
 	script := fmt.Sprintf("cp -a /src/. /dest/ && chown -R %d:%d /dest", id.UID, id.GID)
 	args := []string{"run", "--rm",
 		"--entrypoint", "sh", "-u", "0:0"}
 	args = appendUserns(args, id.Userns())
+	args = append(args, helperLabelArgs(helperLabel)...)
 	args = append(args,
 		"--mount", "type=volume,source="+name+",target=/dest",
 		"--mount", "type=bind,source="+hostPath+",target=/src,readonly",
@@ -705,11 +742,12 @@ func (r *Runner) SeedVolume(name, hostPath, image string, id Identity) error {
 // via stdin and destPath via an env var, so neither can inject shell. Runs as
 // root with the image entrypoint bypassed, in the box's own userns mapping
 // when the identity carries one.
-func (r *Runner) SeedLiteral(volName, destPath, content, image string, id Identity) error {
+func (r *Runner) SeedLiteral(volName, destPath, content, image string, id Identity, helperLabel string) error {
 	script := fmt.Sprintf(`mkdir -p "/dest/$(dirname "$BYRE_DEST")" && cat > "/dest/$BYRE_DEST" && chown -R %d:%d /dest`, id.UID, id.GID)
 	args := []string{"run", "--rm", "-i",
 		"--entrypoint", "sh", "-u", "0:0"}
 	args = appendUserns(args, id.Userns())
+	args = append(args, helperLabelArgs(helperLabel)...)
 	args = append(args,
 		"-e", "BYRE_DEST="+destPath,
 		"--mount", "type=volume,source="+volName+",target=/dest",
@@ -727,7 +765,7 @@ func (r *Runner) SeedLiteral(volName, destPath, content, image string, id Identi
 // The file list is passed as positional ARGV (never interpolated into the
 // script), so a path can't inject shell. A listed path missing in srcDir is
 // skipped, not an error (the host may simply not have that pref yet).
-func (r *Runner) SeedFiles(volName, srcDir string, files []string, image string, id Identity) error {
+func (r *Runner) SeedFiles(volName, srcDir string, files []string, image string, id Identity, helperLabel string) error {
 	// set -e so a failed mkdir/cp aborts with non-zero (the trailing chown must
 	// not mask a copy failure — the caller's rollback depends on the exit status).
 	// A listed path missing in /src is skipped via the [ -e ] guard, not a failure.
@@ -742,6 +780,7 @@ chown -R "$BYRE_OWNER" /dest`
 	args := []string{"run", "--rm",
 		"--entrypoint", "sh", "-u", "0:0"}
 	args = appendUserns(args, id.Userns())
+	args = append(args, helperLabelArgs(helperLabel)...)
 	args = append(args,
 		"-e", fmt.Sprintf("BYRE_OWNER=%d:%d", id.UID, id.GID),
 		"--mount", "type=volume,source="+volName+",target=/dest",
@@ -798,7 +837,7 @@ func captureInExec(stdin io.Reader, name string, args ...string) (string, error)
 	}
 	if err != nil {
 		// Surface the child's stderr — otherwise failures are just "exit status 1".
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+		if msg := stderr.capped(); msg != "" {
 			return string(out), fmt.Errorf("%s: %s", err, msg)
 		}
 	}
@@ -815,7 +854,7 @@ func streamOutExec(stdout io.Writer, name string, args ...string) error {
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		// Surface the child's stderr — otherwise failures are just "exit status 1".
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+		if msg := stderr.capped(); msg != "" {
 			return fmt.Errorf("%s: %s", err, msg)
 		}
 		return err
@@ -890,7 +929,7 @@ func captureBoundedInExec(d time.Duration, stdin io.Reader, name string, args ..
 	case rerr != nil:
 		return string(out), rerr
 	case err != nil:
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+		if msg := stderr.capped(); msg != "" {
 			return string(out), fmt.Errorf("%s: %s", err, msg)
 		}
 	}
@@ -899,21 +938,51 @@ func captureBoundedInExec(d time.Duration, stdin io.Reader, name string, args ..
 
 // capBuffer is an io.Writer that keeps at most max bytes but always reports a
 // full write, so a child writing past the cap is never blocked on its stderr
-// pipe (it just stops being recorded).
+// pipe (it just stops being recorded). What it stopped recording is counted:
+// the kept text is a PREFIX, and a caller that hands those lines on (backup
+// prints tar's own, where the `socket ignored` lines ARE the socket list) must
+// be able to say the list is cut off rather than let a partial one read as
+// complete.
 type capBuffer struct {
 	b   bytes.Buffer
 	max int
+	// dropped is how many bytes went past the cap -- the figure the marker
+	// names, and the only record that the kept text is a prefix.
+	dropped int
 }
 
 func (c *capBuffer) Write(p []byte) (int, error) {
-	if room := c.max - c.b.Len(); room > 0 {
-		if len(p) > room {
-			c.b.Write(p[:room])
-		} else {
-			c.b.Write(p)
-		}
+	room := c.max - c.b.Len()
+	switch {
+	case room <= 0:
+		c.dropped += len(p)
+	case len(p) > room:
+		c.b.Write(p[:room])
+		c.dropped += len(p) - room
+	default:
+		c.b.Write(p)
 	}
 	return len(p), nil
 }
 
 func (c *capBuffer) String() string { return c.b.String() }
+
+// truncated reports whether the cap dropped anything -- the question every
+// caller of capped asks, and the one a test pins.
+func (c *capBuffer) truncated() bool { return c.dropped > 0 }
+
+// capped is the recorded stderr as every caller hands it on: trimmed, with one
+// marker line appended when the cap dropped bytes. The marker travels IN the
+// text because that is the only channel these callers have -- an error string
+// or, through pipeExec, a helper's stderr a verb prints line by line.
+func (c *capBuffer) capped() string {
+	msg := strings.TrimSpace(c.b.String())
+	if !c.truncated() {
+		return msg
+	}
+	mark := fmt.Sprintf("[byre: %d more bytes of stderr not shown; output exceeded %d KiB]", c.dropped, c.max>>10)
+	if msg == "" {
+		return mark
+	}
+	return msg + "\n" + mark
+}

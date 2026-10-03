@@ -84,17 +84,62 @@ type fakeRunner struct {
 	fileSeed    []string          // SeedFiles: name:f1,f2
 	migrated    []string          // MigrateVolume: src->dst
 	failSeed    bool
+	failCreate  map[string]bool // volume names whose CREATION fails
 	failMigrate string          // MigrateVolume dst to fail on
 	failRemove  map[string]bool // volume names whose removal fails
+	// volStall/volStallErr are the engine that stopped answering about volumes:
+	// the plain calls block on volStall until the test closes it, and the
+	// bounded forms answer volStallErr at once.
+	volStall    chan struct{}
+	volStallErr error
+	// volCreateStall and createHook are the engine that stopped answering in
+	// `volume create`: the hook runs as the call starts -- where a test places
+	// its cancellation -- and the call then blocks until the test releases the
+	// channel, so a create that is not watched hangs the test that pins it.
+	volCreateStall chan struct{}
+	createHook     func(name string)
+	// volCreateDone, when set, receives each volume name once VolumeCreate has
+	// finished with it. A test that RELEASES a stalled create has to wait for
+	// that create to land before it reads the fake back, and the receive is
+	// what orders the create goroutine's writes against the test's reads.
+	volCreateDone chan string
+
+	// helpers (backup/restore one-shots)
+	helperRuns   []runner.Helper                          // RunHelper: every spec, in order
+	helperStdin  [][]byte                                 // RunHelper: what each run read from stdin
+	helperStdout func(h runner.Helper, w io.Writer) error // what a run writes to stdout (nil: nothing)
+	helperErr    func(h runner.Helper) error              // a run's failure (nil: success)
+	helperStderr string                                   // what every run reports on stderr
+	helperHook   func(h runner.Helper)                    // called before each run: "while the helper runs"
+	// probeHook is called by the read-only engine probes a test needs to place
+	// in time -- the stillness sweep ("still") and a volume query ("query") --
+	// so it can see what the verb had done by then.
+	probeHook    func(what string)
+	pulls        []string // ImagePull: images
+	pullErr      error
+	forceRemoved []string // ContainerForceRemove: ids
+	forceRmErr   map[string]bool
+	seedLabels   []string // the helper label each seed/migrate ran with
 
 	// images
 	images         map[string]bool   // tag -> exists
+	imageExistsErr error             // ImageExists failure (an engine that cannot be asked)
 	imageDigests   map[string]string // tag -> ImageDigest answer (default: a stable fake)
 	imageDigestErr error             // ImageDigest failure (the record's honest-empty path)
 	rmImages       []string
 	builds         []string // tag, with " nocache" appended when noCache
 
 	ops []string
+}
+
+// probe reports one read-only engine probe to the test's probeHook.
+func (f *fakeRunner) probe(what string) {
+	f.mu.Lock()
+	hook := f.probeHook
+	f.mu.Unlock()
+	if hook != nil {
+		hook(what)
+	}
 }
 
 func (f *fakeRunner) Engine() runner.Engine {
@@ -109,6 +154,7 @@ func (f *fakeRunner) IsRootlessPodman() (bool, error) { return f.rootless, f.roo
 func (f *fakeRunner) SupportsKeepIDMapping() (bool, error) { return f.keepID, f.keepIDErr }
 
 func (f *fakeRunner) RunningContainersByLabel(label string) ([]string, error) {
+	f.probe("still")
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.liveCalls++
@@ -307,9 +353,64 @@ func (f *fakeRunner) VolumesByPrefix(prefix string) ([]string, error) {
 	return out, nil
 }
 
-func (f *fakeRunner) VolumeExists(name string) (bool, error) { return f.vols[name], f.volQueryErr }
+func (f *fakeRunner) VolumeExists(name string) (bool, error) {
+	f.probe("query")
+	f.stallVolumeCall()
+	return f.vols[name], f.volQueryErr
+}
+
+// VolumeExistsBounded and VolumeRemoveBounded are the plain forms under the
+// engine cleanup deadline: with volStallErr set they answer with it at once,
+// which is what the real pair does when that deadline expires.
+func (f *fakeRunner) VolumeExistsBounded(name string) (bool, error) {
+	f.mu.Lock()
+	stall := f.volStallErr
+	f.mu.Unlock()
+	if stall != nil {
+		return false, stall
+	}
+	return f.VolumeExists(name)
+}
+
+func (f *fakeRunner) VolumeRemoveBounded(name string) error {
+	f.mu.Lock()
+	stall := f.volStallErr
+	f.mu.Unlock()
+	if stall != nil {
+		return stall
+	}
+	return f.VolumeRemove(name)
+}
+
+// stallVolumeCall is the engine that stopped answering: while volStall is set
+// the PLAIN volume calls never come back, so a cleanup path that reaches for
+// one instead of its bounded form hangs the test that pins it rather than
+// passing.
+func (f *fakeRunner) stallVolumeCall() {
+	f.mu.Lock()
+	ch := f.volStall
+	f.mu.Unlock()
+	if ch != nil {
+		<-ch
+	}
+}
 
 func (f *fakeRunner) VolumeCreate(name string) error {
+	f.mu.Lock()
+	hook, stall, landed := f.createHook, f.volCreateStall, f.volCreateDone
+	f.mu.Unlock()
+	if hook != nil {
+		hook(name)
+	}
+	if stall != nil {
+		<-stall
+	}
+	if landed != nil {
+		defer func() { landed <- name }()
+	}
+	if f.failCreate[name] {
+		return fmt.Errorf("create %s: no space left on device", name)
+	}
 	f.created = append(f.created, name)
 	f.ops = append(f.ops, "create "+name)
 	if f.vols == nil {
@@ -320,6 +421,7 @@ func (f *fakeRunner) VolumeCreate(name string) error {
 }
 
 func (f *fakeRunner) VolumeRemove(name string) error {
+	f.stallVolumeCall()
 	if f.failRemove[name] {
 		return fmt.Errorf("remove %s: boom", name)
 	}
@@ -329,44 +431,55 @@ func (f *fakeRunner) VolumeRemove(name string) error {
 	return nil
 }
 
-func (f *fakeRunner) SeedVolume(name, hostPath, image string, id runner.Identity) error {
+func (f *fakeRunner) SeedVolume(name, hostPath, image string, id runner.Identity, helperLabel string) error {
 	if f.failSeed {
 		return io.EOF
 	}
+	f.seedLabels = append(f.seedLabels, helperLabel)
 	f.seeded = append(f.seeded, name)
 	f.seedIdents = append(f.seedIdents, id)
 	f.ops = append(f.ops, "seed "+name)
 	return nil
 }
 
-func (f *fakeRunner) SeedLiteral(volName, destPath, content, image string, id runner.Identity) error {
+func (f *fakeRunner) SeedLiteral(volName, destPath, content, image string, id runner.Identity, helperLabel string) error {
 	if f.failSeed {
 		return io.EOF
 	}
+	f.seedLabels = append(f.seedLabels, helperLabel)
 	f.literals = append(f.literals, volName+":"+destPath+"="+content)
 	f.ops = append(f.ops, "seedliteral "+volName)
 	return nil
 }
 
-func (f *fakeRunner) SeedFiles(volName, srcDir string, files []string, image string, id runner.Identity) error {
+func (f *fakeRunner) SeedFiles(volName, srcDir string, files []string, image string, id runner.Identity, helperLabel string) error {
 	if f.failSeed {
 		return io.EOF
 	}
+	f.seedLabels = append(f.seedLabels, helperLabel)
 	f.fileSeed = append(f.fileSeed, volName+":"+strings.Join(files, ","))
 	f.ops = append(f.ops, "seedfiles "+volName)
 	return nil
 }
 
-func (f *fakeRunner) MigrateVolume(src, dst, image string, id runner.Identity) error {
+func (f *fakeRunner) MigrateVolume(src, dst, image string, id runner.Identity, helperLabels []string) error {
 	if dst == f.failMigrate {
 		return fmt.Errorf("copy boom")
 	}
+	// Recorded as one space-joined entry, the way the argv carries them: a
+	// migrate helper names two projects, and a test asserting it sees both.
+	f.seedLabels = append(f.seedLabels, strings.Join(helperLabels, " "))
 	f.migrated = append(f.migrated, src+"->"+dst)
 	f.ops = append(f.ops, "migrate "+src+"->"+dst)
 	return nil
 }
 
-func (f *fakeRunner) ImageExists(tag string) (bool, error) { return f.images[tag], nil }
+func (f *fakeRunner) ImageExists(tag string) (bool, error) {
+	if f.imageExistsErr != nil {
+		return false, f.imageExistsErr
+	}
+	return f.images[tag], nil
+}
 
 // ImageDigest answers with a stable per-tag digest so develop's launch record
 // is deterministic; imageDigestErr drives the honest-degradation path.
@@ -393,6 +506,78 @@ func (f *fakeRunner) Build(tag, dockerfile, contextDir string, noCache bool, bui
 	}
 	f.builds = append(f.builds, b)
 	f.ops = append(f.ops, "build "+tag)
+	return nil
+}
+
+// RunHelper records the spec and what the script read from stdin, then
+// answers per the test's hooks: helperStdout writes the "archive" a capture
+// would stream, helperErr fails the run, helperStderr is tar's own voice.
+func (f *fakeRunner) RunHelper(h runner.Helper, stdin io.Reader, stdout io.Writer) (string, error) {
+	f.mu.Lock()
+	hook := f.helperHook
+	f.mu.Unlock()
+	if hook != nil {
+		hook(h)
+	}
+	var in []byte
+	if stdin != nil {
+		in, _ = io.ReadAll(stdin)
+	}
+	f.mu.Lock()
+	f.helperRuns = append(f.helperRuns, h)
+	f.helperStdin = append(f.helperStdin, in)
+	f.ops = append(f.ops, "helper "+h.Volume)
+	out, ferr, serr := f.helperStdout, f.helperErr, f.helperStderr
+	f.mu.Unlock()
+	if ferr != nil {
+		if err := ferr(h); err != nil {
+			return serr, err
+		}
+	}
+	if out != nil {
+		if err := out(h, stdout); err != nil {
+			return serr, err
+		}
+	}
+	return serr, nil
+}
+
+func (f *fakeRunner) ImagePull(image string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.pulls = append(f.pulls, image)
+	f.ops = append(f.ops, "pull "+image)
+	if f.pullErr != nil {
+		return f.pullErr
+	}
+	if f.images == nil {
+		f.images = map[string]bool{}
+	}
+	f.images[image] = true
+	return nil
+}
+
+func (f *fakeRunner) ContainersByLabelBounded(label string) ([]string, error) {
+	return f.ContainersByLabel(label)
+}
+
+func (f *fakeRunner) ContainerForceRemove(container string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.forceRmErr[container] {
+		return fmt.Errorf("rm -f %s: engine gone", container)
+	}
+	f.forceRemoved = append(f.forceRemoved, container)
+	f.ops = append(f.ops, "rm-f "+container)
+	for label, ids := range f.allContainers {
+		var kept []string
+		for _, id := range ids {
+			if id != container {
+				kept = append(kept, id)
+			}
+		}
+		f.allContainers[label] = kept
+	}
 	return nil
 }
 

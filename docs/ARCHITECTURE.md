@@ -279,6 +279,24 @@ read or verify degrades the page with one qualifier instead of a guess.
 Records are reaped opportunistically at the next create, when nothing
 points at them.
 
+**Not every container byre creates is a session.** A few one-shot helpers
+run to completion and exit: volume seeding, the worktree image step, and
+`byre backup`'s capture and `byre restore`'s pour. None of them writes a launch
+record, because none launches a session (ADR 0053 as amended by ADR 0059), and
+none carries the project label. What they carry differs: the capture and the
+pour carry `byre.helper=<project id>` plus a per-invocation run id, which is how
+a cancelled or failed verb removes its OWN helpers and no others; the seed
+helper carries `byre.helper=<project id>` alone; rehome's migrate helper carries
+`byre.helper=<new id>` and `byre.helper.src=<old id>`, because it mounts both
+projects' volumes and a label key holds one value; the worktree helper
+carries neither label. Every command that mounts or mutates a project volume --
+backup, restore, develop under its lock, `reset`, `forget`, `rehome`, and the
+config editor's volume Clear -- queries `byre.helper=<project id>` and
+`byre.helper.src=<project id>` first and
+refuses on a hit, naming the container and its `rm -f` line, so a labelled
+helper left behind by a killed byre or an engine outage can never run beside
+them unseen.
+
 **`develop` is single-session per directory** (ADR 0004): if a session is
 already running here, it reports that session (and how to re-attach to
 its terminal, stop it, or get a shell via `byre shell`) rather than
@@ -740,15 +758,17 @@ which re-resolves automatically once git's own pointers are repaired).
 ## Commands
 
 Commands fall into *lifecycle*, *inspection and ejection*, *package and
-wiring management*, *transfer* (`deliver` and `grab`, below), and the
-self-describers. `byre --help` is the authoritative list, and the site's
+wiring management*, *transfer* (`deliver` and `grab`, plus the
+`backup`/`restore` pair -- both below), and the self-describers. `byre --help` is the authoritative list, and the site's
 commands page is generated from the command tree; the reference below
 covers the ones with architectural weight rather than every verb.
 **No command mutates config behind your back** -- config *content*
 changes only where you asked for the write: files you edit, the `byre
 config` editor, the declaration verbs (`byre mcp add`/`remove`,
 `byre claude-skill add`/`remove`, `byre context add`/`remove`),
-`byre preset apply` (after its review), and onboarding's initial write. `rehome` and `forget` move or
+`byre preset apply` (after its review), `byre restore` (after its own, and
+only into a project that has no config yet), and onboarding's initial write.
+`rehome` and `forget` move or
 delete the store wholesale, never editing what's inside; everything
 else -- `develop` and friends included -- only reads it and acts.
 
@@ -849,6 +869,15 @@ byre claude-skill ...  add / remove / list -- declare Claude Skills in the
 byre context ...  add / remove / list -- declare standing-instruction
                   snippets in the project config (ADR 0043/0046).
 
+byre backup       Write ONE file holding this project's config and its state
+                  volumes -- the project must be completely still. Previews
+                  what it will carry and what it leaves behind, and asks.
+
+byre restore      Make a fresh project from a backup file: write the config,
+                  pour every carried volume, name what this machine must
+                  still install. Terminal-only; refuses a project that
+                  already has a config.
+
 byre deliver      Stream files (or the clipboard, or stdin) from the host into
                   a running box's /inbox -- locally, or through another machine
                   via ssh://. User docs: docs/DELIVER.md.
@@ -943,6 +972,37 @@ same-named file byre didn't write is refused. Icons are the one
 non-text artifact: on Linux they're judged by content (only byre's own
 bytes are ever replaced; anything else is skipped with a note), and the
 icns inside a macOS bundle rides the bundle's own marker gate.
+
+### Backup and restore
+
+`byre backup` and `byre restore` move a project between machines. The scope
+is deliberately narrow: the project's `byre.config` and its state volumes,
+and nothing byre can rebuild (the image, which bakes this host's UID),
+re-reference (layers, templates, skills, the agent -- these must exist at the
+destination, and the file names every one it saw), or that git already
+carries (the workspace). The file is one gzip tar: a strict TOML index first,
+then the config byte-for-byte, then one plain tar per carried volume, each
+with its own sha256. The digests are integrity, never authorship, and the
+restore review says so. Reading it is all refusals: a fixed member order, a
+hard budget on the DECOMPRESSED stream (the one size gzip does not declare),
+one gzip member with nothing after it, and a nested-tar contract every payload
+must meet before any project state is written. The pour then replays a stream
+the validator REBUILDS entry by entry, with ownership and the
+setuid/setgid/sticky bits zeroed, so the restored tree is the source tree under
+exactly one stated transformation. The contract's rules are spelled in
+`internal/backup/tarcheck.go` and recorded in ADR 0059.
+
+Both verbs read and write volume bytes through **helper containers** of the
+seeding shape: `--rm`, entrypoint overridden, `-u 0:0` in the identity's
+userns, no network, no host bind, no `run_args`, the tar environment pinned
+(`TAR_OPTIONS=` cleared, `-f -` on every tar command, because an image's own
+`ENV` can otherwise change what tar does), the volume mounted with copy-up
+disabled at one per-run path. The image is proved before anything runs in it:
+GNU tar's own banner, then the verb's COMPLETE command against a scratch
+directory. Backup holds the project setup lock from the stillness sweep
+through the last capture; restore holds it for the config write and every
+pour together, with the review re-rendered under it and compared byte for
+byte. Decisions and residuals: ADR 0059.
 
 ## Platform note
 

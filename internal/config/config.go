@@ -140,6 +140,15 @@ const ProjectConfigName = "byre.config"
 // dotfile-style state volumes like `.claude` / `.codex` / `.gemini`.
 var volumeNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
+// ValidVolumeName reports whether name passes the volume-name grammar above.
+// It is the ONE owner of that grammar: a backup file names volumes by their
+// logical name, and the reader checks each against this before the name is
+// joined into a physical volume name, so the grammar is never spelled twice.
+// The grammar admits "." and "..", which are legal Docker names but which a
+// caller joining the name onto a prefix may still want to refuse; that is
+// the caller's rule, not this one.
+func ValidVolumeName(name string) bool { return volumeNameRe.MatchString(name) }
+
 // These allowlists constrain the TYPED config fields that byre interpolates into
 // generated Dockerfile/shell syntax, so a config or third-party skill can't smuggle
 // executable content through a field that looks like inert data. They are NOT a

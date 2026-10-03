@@ -327,7 +327,9 @@ feature. byre is not: an agent (it runs one); a Docker replacement; a
 devcontainer implementation; a policy engine; a secret manager in the
 rotation/IAM sense (project credentials are stored encrypted and
 delivered per launch — ADR 0057 — never rotated, leased, brokered, or
-shared across machines); a cloud sandbox
+shared across machines — a backup carries the config file as it is,
+ciphertext included, which is the user moving their own file and not byre
+brokering one, ADR 0059); a cloud sandbox
 service (no hosted runtime, no sign-in, no fleet, no telemetry); a
 security product with a stronger-than-Docker isolation claim
 (it competes on legibility and management, not on the boundary itself).

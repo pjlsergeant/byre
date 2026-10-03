@@ -125,6 +125,22 @@ Exempt from the droplet avoidance: the `.app` bundle's INTERNAL
 naming, and the `.applescript` path doubles as the ownership marker
 existing installs are recognized by -- they keep Apple's names.
 
+**Backup**:
+Both the file and the verb pair. The FILE is what `byre backup` writes: one
+gzip tar holding a project's config and its state volumes, index first, with
+a plain tar per volume inside it -- nothing byre can rebuild (the image) or
+re-reference (layers, templates, skills, the agent) and nothing git already
+carries (the workspace). The VERBS are `byre backup`, which writes it with
+the project completely still, and `byre restore`, which makes a fresh project
+from it on this machine or another: config written, volumes poured, ready for
+`byre develop` once every package the config names is installed. A backup is
+your own box coming back to you -- not an export format and not a
+distribution channel. (ADR 0059)
+_Avoid_: "manifest" (taken: a package's `[package]` table), "export" /
+"import" (the retired v5 design's words, and both read as a format other
+tools consume), "snapshot" (taken: an installed package's content-addressed
+snapshot)
+
 ### Config
 
 **Cascade**:

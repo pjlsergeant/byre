@@ -35,12 +35,42 @@ import (
 // from one with a live byre attached. Liveness-by-pid is a heuristic: a
 // recycled pid can mask an orphan, which degrades the label back to plain
 // "running", never the other way around.
+// helperKey, helperSrcKey and helperRunKey label the one-shot HELPER
+// containers byre runs against a project's volumes (seeding, rehome's copy,
+// backup's capture, restore's pour and both verbs' preflight):
+// byre.helper=<project id> says which project's volumes the helper may be
+// holding, and byre.helper.run=<random per invocation> says which byre
+// invocation started it, so a verb cleaning up force-removes exactly ITS
+// helpers. byre.helper.src=<project id> is the SECOND project a helper can be
+// holding: rehome's copy mounts the old id's volume as well as the new id's,
+// and a container label key holds one value, so the old id needs a key of its
+// own or a sweep under it (a develop in a recreated old path, a reset or
+// forget there) could not see the helper at all. Deliberately
+// NOT the project label: a helper is not a session (ADR 0053, as amended),
+// and the session sweeps must never read one as a box. They query the helper
+// label separately and refuse while one is alive -- a helper that outlived
+// the byre that started it is holding a volume the sweep is about to touch.
 const (
-	labelKey   = "byre.project"
-	workdirKey = "byre.workdir"
-	runKey     = "byre.run"
-	clientKey  = "byre.client"
+	labelKey     = "byre.project"
+	workdirKey   = "byre.workdir"
+	runKey       = "byre.run"
+	clientKey    = "byre.client"
+	helperKey    = "byre.helper"
+	helperSrcKey = "byre.helper.src"
+	helperRunKey = "byre.helper.run"
 )
+
+// helperLabel, helperSrcLabel and helperRunLabel are the "key=value" forms of
+// the labels above: every query, every --label and every remedy line goes
+// through them.
+func helperLabel(id string) string       { return helperKey + "=" + id }
+func helperSrcLabel(id string) string    { return helperSrcKey + "=" + id }
+func helperRunLabel(runID string) string { return helperRunKey + "=" + runID }
+
+// helperProjectLabels are the two keys under which a helper can be holding
+// project id's volumes: its own and, for rehome's copy, the id it is copying
+// FROM. Every leftover-helper sweep queries both.
+func helperProjectLabels(id string) []string { return []string{helperLabel(id), helperSrcLabel(id)} }
 
 // containerName is the engine container name — keyed on the worktree id so two
 // worktrees of one repo get distinct containers (and distinct single-session
@@ -108,8 +138,14 @@ func imageTag(projectID string, uid, gid int) string {
 // resolving <id> from the main worktree's path — not by a separate volume
 // scope — see docs/adr/0009-worktrees-inherit-project-identity.md.)
 func volumeName(projectID, name string) string {
-	return "byre-" + projectID + "-" + name
+	return volumePrefix(projectID) + name
 }
+
+// volumePrefix is the one spelling of a project's volume-name prefix. Three
+// things key off it -- the name a volume gets, the listing that finds a
+// project's volumes, and the longest-id ownership rule -- and a second
+// spelling of it would be a silent mismatch between them.
+func volumePrefix(projectID string) string { return "byre-" + projectID + "-" }
 
 // machineVolumeName is the Docker name for a machine-scoped volume:
 // byre-machine-u<uid>-<name>. No project id — every project of this user
@@ -118,8 +154,12 @@ func volumeName(projectID, name string) string {
 // share one volume (it cannot stop a daemon user mounting another's volume
 // deliberately — daemon access is root-equivalent; see docs/SECURITY.md).
 func machineVolumeName(uid int, name string) string {
-	return fmt.Sprintf("byre-machine-u%d-%s", uid, name)
+	return machineVolumePrefix(uid) + name
 }
+
+// machineVolumePrefix is the physical prefix machineVolumeName builds on, and
+// the one backup trims a listed machine volume's logical name off.
+func machineVolumePrefix(uid int) string { return fmt.Sprintf("byre-machine-u%d-", uid) }
 
 // machineVolumeRe matches any user's machine-scoped volume names, so project-
 // volume listings can exclude them even when a project id happens to begin
@@ -140,7 +180,7 @@ func scopedVolumeName(projectID string, uid int, v config.Volume) string {
 // LONGEST known id whose prefix it carries, so one project never captures
 // another's volumes.
 func projectVolumes(r volumeRunner, home, id string) ([]string, error) {
-	vols, err := r.VolumesByPrefix("byre-" + id + "-")
+	vols, err := r.VolumesByPrefix(volumePrefix(id))
 	if err != nil {
 		return nil, err
 	}
@@ -192,12 +232,80 @@ func knownProjectIDs(home string) ([]string, error) {
 // claimedByLongerID reports whether vol belongs to a different, more-specific
 // project id (a longer `byre-<oid>-` prefix) than id.
 func claimedByLongerID(vol, id string, others []string) bool {
-	p := "byre-" + id + "-"
-	for _, oid := range others {
-		op := "byre-" + oid + "-"
-		if oid != id && len(op) > len(p) && strings.HasPrefix(vol, op) {
-			return true
+	return claimingLongerID(vol, id, others) != ""
+}
+
+// claimingLongerID is disputingID's longer-id half: the project that owns vol
+// INSTEAD of id, "" when none does. Backup prints it ("not carried: owned by
+// project <id>"), because "this volume is not yours" is an answer the user can
+// only act on if it says whose it is.
+func claimingLongerID(vol, id string, others []string) string {
+	if oid := disputingID(vol, id, others); len(oid) > len(id) {
+		return oid
+	}
+	return ""
+}
+
+// disputingID names the OTHER known project whose own volume prefix also
+// spells phys -- the longest such id, which is the one projectVolumes' rule
+// hands the name to. "" means no other project's listing can claim it.
+//
+// ignore is the id whose enrollment must not be consulted: restore asks this
+// question about a project that is not enrolled yet (and, on a retry, about
+// one that is). Once this id has a store directory it is the LONGEST id for
+// its own names, so a listing that counted it would stop reporting the
+// shorter project's claim -- the very collision the caller has to refuse.
+func disputingID(phys, ignore string, known []string) string {
+	winner := ""
+	for _, oid := range known {
+		if oid == ignore || !strings.HasPrefix(phys, volumePrefix(oid)) {
+			continue
+		}
+		if len(oid) > len(winner) {
+			winner = oid
 		}
 	}
-	return false
+	return winner
+}
+
+// refuseVolumeNameOwnership refuses when a physical volume name this project
+// is about to create or adopt is a name another enrolled project's own
+// listing would claim, in EITHER direction (ids and logical names both use
+// "-", so one physical name can spell two projects):
+//
+//   - a LONGER id claims it outright: projectVolumes hands the name to that
+//     project, so a volume byre poured here would be reset and forget's to
+//     delete over there. Refused whether or not it exists yet.
+//   - a SHORTER id -- this project's id extends an existing one -- claims it
+//     only while this project is not enrolled, which is exactly restore's
+//     window. Refused when the name ALREADY exists, because then the volume
+//     on the engine is the other project's state and byre must not keep it as
+//     this project's nor pour over it. A name that does not exist yet is this
+//     project's to create: once it is enrolled it is the longer id and wins.
+//
+// Both refusals name both projects: "this name is not yours" is only
+// actionable if it says whose it is.
+func refuseVolumeNameOwnership(r volumeRunner, home, id string, logical []string) error {
+	known, err := knownProjectIDs(home)
+	if err != nil {
+		return err
+	}
+	for _, name := range logical {
+		phys := volumeName(id, name)
+		oid := disputingID(phys, id, known)
+		if oid == "" {
+			continue
+		}
+		if len(oid) > len(id) {
+			return fmt.Errorf("volume %s would be project %s's, not this project's (%s) — the two ids spell the same physical name; restore into a directory whose project id does not collide", phys, oid, id)
+		}
+		exists, verr := r.VolumeExists(phys)
+		if verr != nil {
+			return fmt.Errorf("checking volume %s: %w", phys, verr)
+		}
+		if exists {
+			return fmt.Errorf("volume %s already exists and project %s lists it as its own (this project's id, %s, extends %s) — remove or rename it there before restoring here", phys, oid, id, oid)
+		}
+	}
+	return nil
 }

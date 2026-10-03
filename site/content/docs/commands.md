@@ -96,6 +96,8 @@ every command and flag.
 | `byre rebuild` | Rebuild the image with the cache disabled. |
 | `byre rehome [<old-id>]` | Re-point this directory's identity after a move. |
 | `byre forget` | Remove all byre host-side state for this directory. |
+| `byre backup [DIR]` | Write one file holding this project's config and its state volumes. |
+| `byre restore FILE [DIR]` | Make a fresh project from a backup file: write the config, pour the volumes. |
 
 ## Shell integration
 

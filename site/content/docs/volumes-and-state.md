@@ -50,6 +50,12 @@ from the path, so the old image and volumes would be orphaned --
 `byre rehome` lists likely candidates: stored projects whose recorded
 path no longer exists.
 
+**Moving to another machine?** `byre backup` writes one file holding this
+project's config and these volumes, and `byre restore` makes a fresh project
+from it on the other side -- the recipe is
+[move my box to another machine](/docs/how-do-i/recovery/#move-my-box-to-another-machine).
+Machine-wide volumes never travel: you log in once on the new machine.
+
 **Worktree boxes share these volumes, and that is the point** -- two
 sessions on one repo, one agent login, one cache. If a volume holds data
 that cannot take two writers, declare `sharing = "exclusive"` on it and

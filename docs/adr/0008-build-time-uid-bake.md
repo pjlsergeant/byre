@@ -1,4 +1,13 @@
-# Bake the host UID/GID at build time; no runtime chown, no root at runtime
+# Bake the host UID/GID at build time; no runtime chown, no root at runtime in a session
+
+> **Amended by ADR 0059** (2026-10-02): "in a session" is the scope, and always
+> was. byre runs one-shot helper containers as root in the box's user namespace
+> -- volume seeding, `byre backup`'s capture, `byre restore`'s pour -- each with
+> a closed argv and an exit before any session starts. The capture and the pour
+> take no host bind and no network; seeding mounts its declared host source
+> read-only and runs on the engine's default network, as it always has. The
+> title and the consequence below say so now; the session itself still runs
+> unprivileged as the host user from PID 1.
 
 The generated image creates the `dev` user at the invoking host user's
 UID/GID (`--build-arg BYRE_UID/BYRE_GID`), chowns `/home/dev` and the
@@ -22,7 +31,14 @@ Consequences:
   wrong-UID image. Volume names are deliberately NOT UID-qualified
   (renaming them would silently orphan agent auth state).
 - `gosu` survives as a *build-only* helper (skills install CLIs as `dev`
-  inside root build steps); nothing runs as root after PID 1.
+  inside root build steps); nothing runs as root after PID 1 in a session.
+  The one-shot helpers are the stated exception: volume seeding, backup's
+  capture and restore's pour each run `-u 0:0` inside the box's userns
+  mapping, write only into the one named volume they mount (the capture only
+  reads one), and exit before a session exists (ADR 0059). The capture and the
+  pour take no network and no host bind; a host-path seed binds its declared
+  source read-only and runs on the engine's default network, which is what
+  seeding has always done.
 - First-run hooks run as the user -- a future skill needing privileged
   setup would need an explicit, status-visible grant, not root hooks.
 - No automatic volume migration was built for the upgrade (single-operator

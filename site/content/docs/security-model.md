@@ -316,6 +316,42 @@ the contract there belong to your other projects, which byre's scan
 does not see -- so cross-project data has no single-writer vocabulary
 at all.
 
+**A backup is an unencrypted file of your project's state.** `byre backup`
+writes one gzip tar holding the project's config and its state volumes
+([ADR 0059](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0059-box-backup.md)).
+It is mode 0600 and that is the whole of the protection: whatever is
+plaintext inside a volume is plaintext in the file, and `--no-credentials` is
+about the CONFIG file only -- it drops the encrypted rows and the
+`[credentials]` block from the copy that travels, and says nothing about a
+volume's contents or about any other file you send alongside. Encrypt the
+file yourself if it is leaving your machine. Eight more facts, each a
+limitation rather than a bug: **stillness is cooperative** -- backup refuses
+unless no container of the project exists on any installed engine, and holds
+the setup lock through the copy, but a `docker run` you type yourself can
+start a box during one, outside anything byre can serialize; **the file's
+authorship is not proven** -- the per-payload sha256 detects corruption, not
+who wrote it, and the restore review says so in those words; **a restored
+agent login shares its rotating token with the source box**, which is
+[ADR 0007](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0007-no-credential-seeding.md)'s
+observed failure (the first refresh on either side logs the other out) and is
+your call to make -- byre neither warns nor blocks; **a shared layer can
+change while a backup runs**, because named layers have their own lock and
+the project's setup lock does not cover them, so the one resolution the file
+records can be stale by the last payload; **a crash byre cannot catch runs no
+cleanup** -- SIGKILL or power loss can leave a staging directory under
+`~/.byre/staging` holding volume bytes, plaintext secrets included, and
+because byre cannot tell a crashed verb's leftovers from a concurrent verb's
+live staging, the next backup or restore NAMES a stale one and leaves it for
+you; **restore reads only the engine it is restoring to**, so a same-named
+project volume on another installed engine is not consulted and not reported;
+**a project enrolled after restore's ownership re-check is outside it** --
+that re-check, taken under the lock, is the cross-project boundary, and it is
+a moment rather than a hold on every other project's store; and **a helper
+container that outlives an engine outage is named, not removed** -- backup,
+restore, develop, `reset`, `forget`, `rehome` and the config editor's volume
+Clear each refuse while one is there, printing its `rm -f` line, so it is
+never silent, but removing it is yours.
+
 **Agents hold usable credentials by construction.** Whatever auth story
 you choose, the agent can read its own credential -- it needs it to
 work. byre's job is that the credential's scope is what you chose, its

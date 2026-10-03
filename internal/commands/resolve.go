@@ -268,3 +268,34 @@ func resolveWithAgent(paths project.Paths, projectDir string, notices io.Writer,
 	rv.reread = func() (resolved, error) { return resolveWithAgent(paths, projectDir, notices, agentOverride) }
 	return rv, nil
 }
+
+// resolveProposal resolves the set develop WOULD run from a PROPOSAL's config
+// -- bytes verified out of a backup file, not the store's config, which on
+// restore's path does not exist yet. Same three steps resolve() runs for a
+// live project (cascade, skills, the config+skill union) over
+// config.ResolveProposed instead of config.Load, and the catalog is carried
+// the same way so a caller can name each package's provenance.
+//
+// The credential fields stay nil: restore never decrypts, and a view that
+// carried the cascade's rows would hand the launch path's input to a verb
+// that must not have it.
+func resolveProposal(paths project.Paths, proposal config.Config) (resolved, error) {
+	cat, err := builtins.LoadCatalogRaw(paths.Home)
+	if err != nil {
+		return resolved{}, err
+	}
+	effective, err := config.ResolveProposed(proposal)
+	if err != nil {
+		return resolved{}, err
+	}
+	res, err := skills.Resolve(effective.Config, cat)
+	if err != nil {
+		return resolved{}, err
+	}
+	rv := combine(effective, res)
+	rv.cat = cat
+	if err := rv.validate(); err != nil {
+		return resolved{}, err
+	}
+	return rv, nil
+}

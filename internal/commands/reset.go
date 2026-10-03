@@ -81,6 +81,13 @@ func clearSessionMarkers(w io.Writer, r sessionRunner, id string) error {
 	if err != nil {
 		return fmt.Errorf("checking for session containers (%s): %w", r.Engine(), err)
 	}
+	// A helper (seed, rehome copy, backup capture, restore pour) that
+	// outlived its byre is holding a volume this command is about to
+	// delete or copy; it is never a session, so the project-label queries
+	// above cannot see it. Refused, never removed: the user clears it.
+	if err := refuseLeftoverHelpers(r, id); err != nil {
+		return err
+	}
 	for _, c := range all {
 		if rerr := r.ContainerRemove(c); rerr != nil {
 			return fmt.Errorf("a session appears to be starting for this project (container %s on %s could not be removed: %v); aborting", shortID(c), r.Engine(), rerr)

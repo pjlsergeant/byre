@@ -39,6 +39,10 @@ func retiredPresetName(path string) string {
 // ordinary store state.
 const appliedRecord = "applied"
 
+// presetSubject is the noun the apply and inspect reviews call their
+// document. restore passes its own (backupSubject).
+const presetSubject = "preset"
+
 // missingRef is one package reference a preset names that the catalog cannot
 // resolve, with its kind-correct verb and any [sources] hint.
 type missingRef struct {
@@ -144,7 +148,7 @@ func PresetApply(s Streams, projectDir, arg string) error {
 		return fmt.Errorf(errReviewDiffRead, reviewedStoreErr)
 	}
 	hasStore := reviewedStoreErr == nil
-	renderPresetReview(s, paths, preset, content, still, "Apply", reviewedStore, hasStore)
+	renderPresetReview(s, paths, preset, content, still, "Apply", presetSubject, reviewedStore, hasStore, nil)
 
 	// Step 6: confirm; write the reviewed bytes as the project's byre.config
 	// and record the applied marker. Same discipline as every store write:
@@ -230,7 +234,7 @@ func PresetInspect(s Streams, projectDir, arg string) error {
 		// failure must not silently omit the promised diff.
 		return fmt.Errorf(errReviewDiffRead, inspErr)
 	}
-	renderPresetReview(s, paths, preset, content, missing, "Inspect", inspStore, inspErr == nil)
+	renderPresetReview(s, paths, preset, content, missing, "Inspect", presetSubject, inspStore, inspErr == nil, nil)
 	// Reports and exact commands, never prompts: a third party's document
 	// introducing references gets a report, not a walk-through.
 	for _, m := range missing {
@@ -331,38 +335,134 @@ func parsePreset(content []byte, source string) (config.Config, error) {
 	return c, nil
 }
 
+// packageRef is one reference a config names, for the check below.
+type packageRef struct {
+	name string
+	kind packages.Kind
+}
+
+// skillRefs is the agent plus every enabled skill, in the order a review reads
+// them.
+func skillRefs(c config.Config) []packageRef {
+	refs := []packageRef{{c.Agent, packages.KindSkill}}
+	for _, sk := range c.Skills {
+		refs = append(refs, packageRef{sk, packages.KindSkill})
+	}
+	return refs
+}
+
+// missingPackageRefs is the ONE spelling of "which of these does the catalog not
+// resolve": the skip rules (unset, the none label, a removal marker -- removing
+// something absent is a no-op, not an acquisition) and the canonical id each
+// refusal is reported under. hint supplies the [sources] entry by canonical id,
+// from whichever table the caller's half of the question reads.
+func missingPackageRefs(cat *packages.Catalog, refs []packageRef, hint func(canon string) *config.SourceHint) []missingRef {
+	var out []missingRef
+	for _, r := range refs {
+		name := strings.TrimSpace(r.name)
+		if name == "" || name == config.NoneLabel || config.IsRemoval(name) {
+			continue
+		}
+		if _, err := cat.ResolveName(name); err != nil {
+			canon := cat.ExpandAlias(name)
+			out = append(out, missingRef{Name: canon, Kind: r.kind, Hint: hint(canon)})
+		}
+	}
+	return out
+}
+
 // missingRefs collects every package reference the preset names that the
 // catalog cannot resolve -- skills, the selected template, the agent (apply
-// step 2) -- with their [sources] hints. Removal markers are skipped:
-// removing something absent is a no-op, not an acquisition.
+// step 2) -- with their [sources] hints.
 func missingRefs(home string, preset config.Config) ([]missingRef, error) {
 	cat, err := builtins.LoadCatalogRaw(home)
 	if err != nil {
 		return nil, err
 	}
-	hintFor := func(canon string) *config.SourceHint {
-		if h, ok := preset.Sources[cat.ExpandAlias(canon)]; ok {
+	refs := append([]packageRef{{preset.Template, packages.KindTemplate}}, skillRefs(preset)...)
+	return missingPackageRefs(cat, refs, func(canon string) *config.SourceHint {
+		if h, ok := preset.Sources[canon]; ok {
 			h.From = "preset"
 			return &h
 		}
 		return nil
+	}), nil
+}
+
+// missingEffectiveRefs is missingRefs over a RESOLVED config: the agent and
+// skills of the set a proposal would actually run, inherited references
+// included, with the hints from its MERGED [sources] -- so a hint a layer
+// carries supplies the install command for a skill that layer enabled.
+// Resolution already stamped each hint with the layer it came from, so the
+// install line names it without this having to guess.
+//
+// The template is deliberately not here: the cascade cannot resolve at all
+// while the template it selects is missing, so its check runs before this one
+// (missingTemplateRef) on the only [sources] tables that exist that early.
+func missingEffectiveRefs(home string, effective config.Config) ([]missingRef, error) {
+	cat, err := builtins.LoadCatalogRaw(home)
+	if err != nil {
+		return nil, err
 	}
-	var out []missingRef
-	check := func(name string, kind packages.Kind) {
-		name = strings.TrimSpace(name)
-		if name == "" || name == config.NoneLabel || config.IsRemoval(name) {
-			return
+	return missingPackageRefs(cat, skillRefs(effective), func(canon string) *config.SourceHint {
+		if h, ok := effective.Sources[canon]; ok {
+			return &h
 		}
-		if _, err := cat.ResolveName(name); err != nil {
-			out = append(out, missingRef{Name: cat.ExpandAlias(name), Kind: kind, Hint: hintFor(name)})
+		return nil
+	}), nil
+}
+
+// missingTemplateRef is the template half of the same check, run BEFORE the
+// cascade loads because the cascade cannot load without the template. Only
+// the project layer selects a template (default.config's is a picker
+// favourite and is stripped), and the hint can only come from the two
+// [sources] tables that exist before the chain is read: default.config's and
+// the proposal's own, the proposal winning -- the loader's own rule
+// (resolveWith's mergeSources(def, proj)). nil means nothing is missing.
+//
+// hintFrom labels the proposal's own hints for the install line ("backup" on
+// restore's path); default.config's keep the loader's label.
+func missingTemplateRef(home string, proposal config.Config, hintFrom string) (*missingRef, error) {
+	cat, err := builtins.LoadCatalogRaw(home)
+	if err != nil {
+		return nil, err
+	}
+	name := strings.TrimSpace(config.FromNone(proposal.Template))
+	if name == "" || config.IsRemoval(name) {
+		return nil, nil
+	}
+	canon := cat.ExpandAlias(name)
+	if _, err := cat.ResolveName(name); err == nil {
+		return nil, nil
+	}
+	m := missingRef{Name: canon, Kind: packages.KindTemplate}
+	// default.config is the user's own home file, read the way the cascade
+	// reads it (follow: a dotfiles symlink there is a supported arrangement).
+	def, derr := config.ParseFile(filepath.Join(home, "default.config"), true)
+	if derr != nil {
+		return nil, derr
+	}
+	if h, ok := hintByID(cat, def.Sources, canon); ok {
+		h.From = orDefault(h.From, "default config")
+		m.Hint = &h
+	}
+	if h, ok := hintByID(cat, proposal.Sources, canon); ok {
+		h.From = hintFrom
+		m.Hint = &h
+	}
+	return &m, nil
+}
+
+// hintByID looks a [sources] hint up by canonical package id, expanding the
+// TABLE's keys as resolution would: a file may key its hint by an alias, and
+// the lookup must find it either way.
+func hintByID(cat *packages.Catalog, sources map[string]config.SourceHint, canon string) (config.SourceHint, bool) {
+	for id, h := range sources {
+		if cat.ExpandAlias(id) == canon {
+			return h, true
 		}
 	}
-	check(preset.Template, packages.KindTemplate)
-	check(preset.Agent, packages.KindSkill)
-	for _, sk := range preset.Skills {
-		check(sk, packages.KindSkill)
-	}
-	return out, nil
+	return config.SourceHint{}, false
 }
 
 // installForKind runs the normal, kind-specific install flow (apply step 3):
@@ -378,15 +478,20 @@ func installForKind(s Streams, kind packages.Kind, uri, digest string) error {
 // referenced package, provenance-labeled; still-missing references are marked
 // "not installed -- grants unknown" (the review never claims completeness it
 // does not have); against an existing byre.config the review shows the diff.
-func renderPresetReview(s Streams, paths project.Paths, preset config.Config, content []byte, missing []missingRef, verb string, store []byte, hasStore bool) {
+// subject is the noun the review calls the document it is reviewing:
+// "preset" for apply and inspect, "backup" for restore, which extends the
+// same review. sections is a caller's own block, printed after the header and
+// BEFORE the grant rows (restore's requirements, source note and volume
+// lists); nil for the preset paths.
+func renderPresetReview(s Streams, paths project.Paths, preset config.Config, content []byte, missing []missingRef, verb, subject string, store []byte, hasStore bool, sections func(io.Writer)) {
 	cfg, grants := effectiveReview(paths, preset)
 	// The credential annotation is a DIFF, so it cannot come off the resolved
 	// proposal the rest of the summary is built from: what a reader needs is
 	// which values and which identity moved, and both sides' raw bytes are the
 	// only place that is legible. A missing store is the first apply -- every
 	// credential in the preset is new, which is exactly what the lines say.
-	grants = sortGrantLines(append(grants, credentialReviewLines(store, content)...))
-	dataf(s.Err, "\n%s preset -- the box this composes:\n", verb)
+	grants = sortGrantLines(append(grants, credentialReviewLines(subject, store, content)...))
+	dataf(s.Err, "\n%s %s -- the box this composes:\n", verb, subject)
 	// Every rendered field below can carry preset-controlled bytes: the funnel
 	// renders them as data so hostile run_args/mount paths/skill names cannot
 	// forge grant rows or extra lines in the consent review.
@@ -400,6 +505,9 @@ func renderPresetReview(s Streams, paths project.Paths, preset config.Config, co
 		if chain, cerr := config.LoadExtendsChain(paths.Home, cat, preset.Extends); cerr == nil {
 			dataf(s.Err, "  extends: %s -> project\n", strings.Join(config.ChainNames(chain), " -> "))
 		}
+	}
+	if sections != nil {
+		sections(s.Err)
 	}
 	for _, g := range grants {
 		// Escaped BEFORE byre's own styling, and passed as escaped() so the
@@ -426,7 +534,7 @@ func renderPresetReview(s Streams, paths project.Paths, preset config.Config, co
 			fmt.Fprintln(s.Err, "------")
 		}
 	} else {
-		dataf(s.Err, "--- preset ---\n%s\n------\n", escaped(EscapeMultiline(string(content))))
+		dataf(s.Err, "--- %s ---\n%s\n------\n", subject, escaped(EscapeMultiline(string(content))))
 	}
 }
 
