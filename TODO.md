@@ -17,6 +17,40 @@ the rationale lives.
 
 ## Open
 
+- [ ] (XS) **`context list` / `mcp list` print a raw Go struct** (field QA
+  2026-10-03, since v1.10.0): the last line is `{ -> no agent selected; ...}`
+  -- a `deliveryVerdict` handed whole to `Fprintln` (context.go:227,
+  mcp.go:163; claudeskill.go:131 looks the same, unrun).
+
+- [ ] (XS) **Bash-owned credential refusal gives the wrong remedy for a new
+  row** (field QA 2026-10-03): at `credentials set` and in the editor it says
+  `unset X, then set it under another key`, but no row exists, so `unset`
+  fails. Right for a hand-planted row only; say "pick another key" when none.
+
+- [ ] (XS) **Env picker shows a stale argument beside `(no argument)`**
+  (field QA 2026-10-03): override a `git:user.name` row, move to `tz:`/`cwd:`/
+  `disabled` -> `(no argument) : user.name`. Saved value is clean; display only.
+
+- [ ] (XS) **QA wording nits** (field QA 2026-10-03): "holds 1 entries" /
+  "(1 files)"; missing-mount remedy says "create the directory" for a file
+  host path; `reset --ignore-docker` prints "no volumes to reset" right after
+  the ignored line; `--no-credentials` leaves an empty `[env_from_host]` header.
+
+- [ ] (S) **Restore interrupt: phantom helper + silent leftovers** (field QA
+  2026-10-03, twice each): (1) Ctrl-C mid-pour can report "helper container
+  could not be removed ... backup, reset and forget refuse until it is gone"
+  for a helper its own `--rm` already took -- `removeRunHelpers` treats a
+  failed `rm -f` of a vanished container as a leftover (helpers.go:87); (2)
+  Ctrl-C right after the review's `y` leaves the new dir + store stub while
+  printing "nothing written" (ADR 0059 says it should say so). Evidence:
+  ~/scratch/fieldqa-20261003/evidence/bk-19,21,23.
+
+- [ ] (S) **Worktree `status` misses its own box after an engine flip**
+  (field QA 2026-10-03, twice): worktree box running on docker, config then
+  set to `engine = "podman"` -> status there says `Container: not running`
+  though the launch record says docker; `byre shell`/`deliver` find it.
+  Evidence: ~/scratch/fieldqa-20261003/evidence/A-lr-8.txt.
+
 - [ ] (S) **Retire the shared_auth legacy parser arms when their warnings go
   quiet** (ADR 0049 #1/#2, amended policy): the write side and the warning
   channel shipped 2026-08-23; the array and top-level parse arms

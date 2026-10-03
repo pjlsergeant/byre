@@ -1,6 +1,6 @@
 # Changes
 
-## v1.12.0 — unreleased
+## v1.12.0 — 2026-10-03
 
 - **`byre backup` writes one file holding a project's config and its state
   volumes, and `byre restore` makes a fresh project from it.** Move a box to
@@ -120,6 +120,23 @@
   -> Env vars offers it in the source picker. The value resolves at
   launch like every other passthrough, and the row is a grant: status
   attributes it and the exposure tally counts it.
+
+Known issues in this release:
+
+- Pressing Ctrl-C during `byre restore` can report a helper container
+  that "could not be removed" and say backup, reset and forget will refuse
+  until it is gone, when the container has in fact already removed
+  itself. Check with `docker ps -a --filter label=byre.helper` (or
+  `podman ps -a ...`); if it lists nothing, there is nothing to do.
+- Pressing Ctrl-C immediately after answering `y` at the restore review
+  can leave the new project directory and a partial project record behind
+  while saying "nothing written". Running the same restore again works.
+- In a worktree, `byre status` can show its own running box as not running
+  after the config's `engine` is switched while that box runs. `byre
+  shell` and `byre deliver` still find it.
+- Refusing a credential name bash owns tells you to `byre credentials
+  unset` it first even when no such row exists yet; just choose another
+  name.
 
 ## v1.11.0 — 2026-09-13
 
