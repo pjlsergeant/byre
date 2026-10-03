@@ -50,10 +50,8 @@ const restoreCancelledLine = "byre: restore cancelled; nothing written"
 type RestoreOptions struct {
 	// AllowNonempty is --allow-nonempty: the user saying THIS directory is the
 	// project directory even though it is neither empty nor the clean root of a
-	// checkout. The refusal it lifts protects byre's own guess about where the
-	// project is, so it hands over the switch (PRINCIPLES.md P1) -- and the run
-	// then states what the refusal would have said, in the review and again in
-	// the summary.
+	// checkout (PRINCIPLES.md P1). The run then states what the refusal would
+	// have said, in the review and again in the summary.
 	AllowNonempty bool
 }
 
@@ -133,8 +131,7 @@ func restoreTarget(dir string) (target string, created bool, err error) {
 
 // restoreTargetRefusal is the ONE spelling of the wrong-target refusal: the
 // rule, the directory, the reason it does not fit, and both ways past it --
-// name the project directory, or take the risk with the switch (PRINCIPLES.md
-// P1: a refusal that protects a claim hands over the switch).
+// name the project directory, or take the risk with the switch (PRINCIPLES.md P1).
 func restoreTargetRefusal(dir, reason string) error {
 	return fmt.Errorf("byre restore expects an empty directory or the clean root of a git checkout. %s is neither: %s — name the project directory as DIR (byre restore FILE DIR), or run with --allow-nonempty to restore here anyway",
 		dir, reason)
@@ -150,12 +147,11 @@ func restoreNonEmptyLine(dir, reason string) string {
 // restoreTargetState judges WHERE restore is being run and returns "" for a
 // target it accepts, or the one reason it does not.
 //
-// A restore with no DIR takes the current directory, and the field report is
-// what that costs: run from HOME, it made the home directory the project and
-// created six volumes under its id. An empty directory is unmistakably meant
-// for this, and so is the clean root of a checkout the user just cloned --
-// which is the move-to-another-machine flow. Anything else is a guess byre will
-// not make on its own.
+// A restore with no DIR takes the current directory, which is how a home
+// directory becomes the project. An empty directory is unmistakably meant for
+// this, and so is the clean root of a checkout just cloned -- the
+// move-to-another-machine flow. Anything else is a guess byre will not make on
+// its own.
 //
 // Git is the only thing that can prove a tree clean, so a host with no git, a
 // probe that fails, and a probe that times out all land in the same place as a
@@ -316,9 +312,8 @@ func (rr *restoreRun) run(file string) error {
 		// may be missing or unconfigured has no good answer.
 		return fmt.Errorf("%s is a linked worktree of %s; restore in the main worktree", rr.target, paths.Canonical)
 	}
-	// WHERE this is being run, before the file is opened: nothing is read,
-	// staged or prompted for into a directory that was never meant to be the
-	// project.
+	// WHERE this is being run, before the file is opened: nothing is read or
+	// staged into a directory that was never meant to be the project.
 	reason, err := restoreTargetState(rr.target, paths)
 	if err != nil {
 		return err
@@ -715,8 +710,8 @@ func (rr *restoreRun) renderSections(w io.Writer) {
 // list.
 //
 // It does MARK the ones that are not here now, from a probe that degrades: a
-// user answering y/n deserves to see that nine of the mount hosts the first
-// develop needs are already absent. A mark, not a gate.
+// mark, not a gate -- a user answering y/n should see which of these names the
+// first develop will not find.
 func (rr *restoreRun) renderRequirements(w io.Writer) {
 	if rr.nonEmpty != "" {
 		dataf(w, "  %s\n", restoreNonEmptyLine(rr.target, rr.nonEmpty))
@@ -772,10 +767,8 @@ func (rr *restoreRun) renderRequirements(w io.Writer) {
 }
 
 // missingNowMark is the review's mark for a host name that is not on this
-// machine at the moment the review is rendered. Pre-rendered on purpose: the
-// row composes it into its own format string, and the probe behind it degrades
-// (hostPathMissing), so a path byre could not look at carries no mark rather
-// than a wrong one.
+// machine at the moment the review is rendered. Already escaped, because the
+// row composes it into its own format string.
 func missingNowMark(path string) escaped {
 	if hostPathMissing(path) {
 		return escaped("   (missing on this machine now)")

@@ -1225,9 +1225,8 @@ func TestDevelopSelfEditSharingLineIsWorktreeOnly(t *testing.T) {
 
 // --------------------------------------------- mount hosts, before the build
 
-// Every missing mount host in ONE message, before anything is built. The field
-// report is a restored config naming nine absent `~/dev/...` paths: the engine
-// refused at container create, naming one of them, after the build.
+// Every missing mount host in ONE message, before anything is built -- where
+// the engine refuses at container create, naming one of them, after the build.
 func TestDevelopRefusesMissingMountHostsBeforeBuilding(t *testing.T) {
 	p, _ := testPaths(t)
 	first := filepath.Join(t.TempDir(), "notes")

@@ -61,12 +61,9 @@ func engineSuffix(multi bool, r engineRunner) string {
 
 // IgnoreEngines is the --ignore-docker / --ignore-podman choice the totals
 // commands (backup, reset, forget, rehome) take: the user saying "that engine
-// is installed but not running -- go ahead without it". byre never infers it.
-// An engine one of these commands cannot query is a refusal naming this flag,
-// because a skip byre chose for itself is how "completely removed" becomes a
-// false claim, and because the engine may hold this project's volumes (a
-// stopped podman machine still has them). The flag is the user's judgment,
-// printed on every surface wherever it changed what byre checked.
+// is installed but not running -- go ahead without it". byre never infers it,
+// because a skip it chose for itself is how "completely removed" becomes a
+// false claim over an engine that may still hold this project's volumes.
 type IgnoreEngines struct {
 	Docker bool
 	Podman bool
@@ -128,9 +125,10 @@ func splitEngines(engines []engineRunner, ignore IgnoreEngines) ignoreSplit {
 }
 
 // note discloses what the flags cost, in the one shape every command uses
-// (P4: an engine byre did not look at is never silent). consequence is the
-// verb's own -- what went unchecked, unremoved or unmigrated -- because that
-// is the only part that differs.
+// (P4: an engine byre did not look at is never silent). Every command prints
+// it on BOTH its surfaces, preview and summary, because off a terminal there
+// is no preview and the summary is all the user reads. consequence is the
+// verb's own -- what went unchecked, unremoved or unmigrated.
 func (sp ignoreSplit) note(w io.Writer, consequence func(eng string) string) {
 	for _, eng := range sp.ignored {
 		dataf(w, "byre: %s ignored (--ignore-%s): %s\n", eng, eng, consequence(eng))
@@ -141,9 +139,8 @@ func (sp ignoreSplit) note(w io.Writer, consequence func(eng string) string) {
 }
 
 // refuseIfEmpty is the refusal for a command with nothing left to ask: every
-// installed engine was named by a flag, so there is no total to speak in and
-// reporting zero volumes would be exactly the false success the flag exists to
-// make visible.
+// installed engine was named by a flag, so there is no total to speak in, and
+// reporting zero volumes would be the false success the flag exists to expose.
 func (sp ignoreSplit) refuseIfEmpty(verb string) error {
 	if len(sp.query) > 0 {
 		return nil
@@ -174,10 +171,8 @@ type totalsVerb struct {
 
 // queryErr is the ONE refusal a totals command gives for an engine query it
 // could not make. A cleanly unreachable engine (deliver.IsUnreachable, the only
-// classifier in play) names both ways forward -- start it, or say to skip it --
-// because the bare wrapped error was a dead end on every Mac with podman
-// installed and its machine never started (field report, 2026-10-03). The
-// source engine has only the one way forward: it is what the file is made of.
+// classifier in play) names both ways forward -- start it, or say to skip it;
+// the source engine has only the one, because it is what the file is made of.
 // Any other failure keeps the caller's own wrapping, so a permission or TLS
 // failure against a daemon that IS running reads as the engine problem it is.
 func (v totalsVerb) queryErr(eng runner.Engine, what string, err error) error {

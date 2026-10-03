@@ -829,16 +829,14 @@ func TestBackupRefusesUnlessTheProjectIsCompletelyStill(t *testing.T) {
 
 // ------------------------------------------------- an unreachable engine
 
-// unreachableEngineErr is what an engine whose daemon was never started
-// answers every query with: podman's own text from the field report
-// (2026-10-03, a Mac with podman installed and its machine not started), and
-// docker's from its client. deliver.IsUnreachable is the only classifier in
-// play, and it reads these messages.
+// unreachableEngineErr is what an engine whose daemon was never started answers
+// every query with, in each CLI's own words -- deliver.IsUnreachable is the only
+// classifier in play, and it reads these messages.
 func unreachableEngineErr(eng runner.Engine) error {
 	if eng == runner.Podman {
-		return fmt.Errorf("exit status 125: Cannot connect to Podman. Please verify your connection to the Linux system using `podman system connection list`, or try `podman machine init` and `podman machine start`")
+		return errors.New("exit status 125: Cannot connect to Podman. Please verify your connection to the Linux system using `podman system connection list`, or try `podman machine init` and `podman machine start`")
 	}
-	return fmt.Errorf("exit status 1: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")
+	return errors.New("exit status 1: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")
 }
 
 // downEngine is an engine that answers every query byre makes of it with that
@@ -849,8 +847,7 @@ func downEngine(eng runner.Engine) *fakeRunner {
 }
 
 // An engine byre cannot query is still a refusal -- backup speaks in totals --
-// but the refusal names the two ways past it, which is the whole of the fix:
-// the bare wrapped error was a dead end (field report, 2026-10-03).
+// but the refusal names the two ways past it.
 func TestBackupRefusesAnUnreachableEngineNamingTheIgnoreFlag(t *testing.T) {
 	rv := combine(merged(config.Config{Volumes: []config.Volume{
 		{Name: ".claude", Role: "state", Target: "/home/dev/.claude"},

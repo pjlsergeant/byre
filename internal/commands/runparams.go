@@ -155,16 +155,12 @@ func checkContainedHostSource(host, workDir string) error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Nothing exists at host -- including a dangling symlink or a dangling
-			// interior component. develop refuses a plainly-absent mount host
-			// before the build (refuseMissingMountHosts), so few of these reach a
-			// container create at all; what makes passing one on safe is still the
-			// engine, which is the backstop here and the authority everywhere:
-			// binds ride `--mount type=bind` (runner.RunArgs), which REFUSES a
-			// missing source: the daemon resolves the path, finds nothing, and the
-			// run fails loudly with nothing created host-side. `-v` would
-			// instead auto-create the resolved target (as root, wherever a
-			// dangling link points), so if binds ever switch to -v this branch
-			// must refuse instead.
+			// interior component. Passing it on is safe ONLY because binds ride
+			// `--mount type=bind` (runner.RunArgs), which REFUSES a missing source:
+			// the daemon resolves the path, finds nothing, and the run fails loudly
+			// with nothing created host-side. `-v` would instead auto-create the
+			// resolved target (as root, wherever a dangling link points), so if
+			// binds ever switch to -v this branch must refuse instead.
 			return nil
 		}
 		return fmt.Errorf("host source %q under the project tree could not be resolved (a swapped or broken symlink?): %w", host, err)
@@ -177,12 +173,11 @@ func checkContainedHostSource(host, workDir string) error {
 
 // hostPathMissing answers "is there nothing at this path on this machine?" for
 // the two surfaces that report a config-named host path to the user: develop's
-// pre-build refusal and restore's review mark. It FOLLOWS (a mount host that is
-// a symlink to a real directory is there, and the engine will bind it) and it
-// degrades: only genuine absence is evidence. Any other probe failure -- EACCES
-// on an interior component, an automount that would not answer -- means byre
-// could not look, which is not the same answer as "it is not there", and
-// reporting it as missing would send the user to create a path that exists.
+// pre-build refusal and restore's review mark. It FOLLOWS -- a mount host that
+// is a symlink to a real directory is there, and the engine will bind it -- and
+// only genuine absence counts: any other probe failure (EACCES on an interior
+// component, an automount that will not answer) means byre could not look, and
+// reporting that as missing would send the user to create a path that exists.
 func hostPathMissing(p string) bool {
 	if _, err := hostopen.PlainStat(p, hostopen.UserNamed); err != nil {
 		return errors.Is(err, fs.ErrNotExist)

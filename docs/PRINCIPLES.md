@@ -85,13 +85,11 @@ to act in order to keep a claim of its own true -- "completely removed", "the
 project is completely still", "every installed engine checked" -- the refusal
 names an explicit command-line switch that takes the risk on the user's behalf,
 and the run then says exactly what went unchecked. byre may decline to CLAIM; it
-never declines to OBEY. First instance: `--ignore-docker` / `--ignore-podman` on
-`backup`, `reset`, `forget` and `rehome`, for the engine that is installed but
-not running -- without it they refuse naming the flag, with it they skip that
-engine entirely and print what was not checked or not removed. The degrade-only
-sibling is `develop`'s cross-engine session check: it never refused in the first
-place, so it needs no switch -- it notes the engine it could not reach and
-carries on.
+never declines to OBEY. Instances: `--ignore-docker` / `--ignore-podman` on
+`backup`, `reset`, `forget` and `rehome`, for an engine installed but not
+running; `byre restore --allow-nonempty`, for a target byre cannot tell was
+meant to be the project. A check that only degrades needs no switch, having
+refused nothing: `develop`'s cross-engine session note is that sibling.
 
 Precedents: no path nannying (byre runs on `~/.byre` itself); `run_args`
 overrides byre's own flags by design; the firewall is disabled by

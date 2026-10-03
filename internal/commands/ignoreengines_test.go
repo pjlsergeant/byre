@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
-	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -43,10 +42,9 @@ func totalsCommands() []totalsCommand {
 	}
 }
 
-// The refusal names the switch, and the switch is honoured: the two halves of
-// the P1 rule, for every totals command. (backup's own pair is
+// backup's own pair of this is
 // TestBackupRefusesAnUnreachableEngineNamingTheIgnoreFlag and
-// TestBackupIgnoredEngineIsNeverQueriedAndEverySurfaceSaysSo.)
+// TestBackupIgnoredEngineIsNeverQueriedAndEverySurfaceSaysSo.
 func TestTotalsCommandsRefusalNamesTheSwitchAndHonoursIt(t *testing.T) {
 	for _, tc := range totalsCommands() {
 		t.Run(tc.name+" refuses naming the switch", func(t *testing.T) {
@@ -207,22 +205,5 @@ func TestSplitEnginesReportsIgnoredAndAbsentSeparately(t *testing.T) {
 	}
 	if len(sp.ignored) != 1 || sp.ignored[0] != "podman" || len(sp.notInstalled) != 0 {
 		t.Errorf("ignored = %v, notInstalled = %v, want [podman] and none", sp.ignored, sp.notInstalled)
-	}
-}
-
-// lifecycleEngines keeps its own contract: the ignore filter is applied AFTER
-// it, so an absent engine still drops out and a declined one still fails the
-// enumeration (the arm above drives that through Reset).
-func TestLifecycleEnginesIsUnchangedByTheIgnoreFlags(t *testing.T) {
-	safe := t.TempDir()
-	stubBin(t, safe, "docker")
-	stubBin(t, safe, "podman")
-	fakePATH(t, safe)
-	rs, err := lifecycleEngines(hostexec.NewRoots(t.TempDir()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rs) != 2 {
-		t.Fatalf("engines = %v, want both installed engines", rs)
 	}
 }

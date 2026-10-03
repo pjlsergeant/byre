@@ -64,10 +64,6 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 		return fmt.Errorf("already homed here (id %s)", newID)
 	}
 	verb := totalsVerb{name: "rehome"}
-	// --ignore-<engine> applied once: from here `engines` is what rehome asks and
-	// migrates within. Volumes are engine-local, so an ignored engine's copies
-	// simply never happen -- and the old id keeps them, which is what the note
-	// says.
 	sp := splitEngines(engines, ignore)
 	if err := sp.refuseIfEmpty(verb.name); err != nil {
 		return err
@@ -194,8 +190,6 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 			}
 		}
 		fmt.Fprintf(s.Err, "byre: rehomed %s -> %s. Run `byre develop` to rebuild the image.\n", oldID, newID)
-		// The summary surface: "rehomed" is the claim, and an engine rehome never
-		// asked is part of what that word does not cover (P4).
 		noteIgnoredForRehome(s.Err, sp, oldID)
 		return nil
 	}); err != nil {
@@ -464,11 +458,11 @@ func lastUsed(projectDir string) time.Time {
 	return t
 }
 
-// noteIgnoredForRehome is rehome's ignored-engine consequence, in one place
-// because both surfaces print it: nothing moved there, so the old id still owns
-// those volumes and the new identity will not find them.
+// noteIgnoredForRehome is rehome's ignored-engine consequence: nothing moved
+// there, so the old id still owns those volumes and the new identity will not
+// find them.
 func noteIgnoredForRehome(w io.Writer, sp ignoreSplit, oldID string) {
-	sp.note(w, func(eng string) string {
+	sp.note(w, func(string) string {
 		return fmt.Sprintf("volumes of the old id there, if any, were not migrated — they stay under %s", volumePrefix(oldID))
 	})
 }

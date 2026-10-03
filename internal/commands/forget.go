@@ -48,10 +48,6 @@ func Forget(s Streams, projectDir string, force bool, ignore IgnoreEngines) erro
 
 func forget(s Streams, paths project.Paths, engines []engineRunner, force bool, ignore IgnoreEngines) error {
 	verb := totalsVerb{name: "forget"}
-	// --ignore-<engine> applied once: from here `engines` is what forget asks and
-	// deletes. The note carries the consequence forget alone has -- the store
-	// goes anyway, so an unremoved volume there is an orphan nothing will name
-	// again unless the user goes looking.
 	sp := splitEngines(engines, ignore)
 	if err := sp.refuseIfEmpty(verb.name); err != nil {
 		return err
@@ -176,16 +172,13 @@ func forget(s Streams, paths project.Paths, engines []engineRunner, force bool, 
 		return rerr
 	}
 	fmt.Fprintf(s.Err, "byre: forgot %s\n", paths.ID)
-	// The summary surface: "forgot <id>" is the claim, and an engine forget never
-	// asked is part of what that word does not cover (P4).
 	noteIgnoredForForget(s.Err, sp, paths.ID)
 	return nil
 }
 
-// noteIgnoredForForget is forget's ignored-engine consequence, in one place
-// because both surfaces print it. Forget alone has a lasting one: the store
-// dies whatever happened engine-side, so a volume left on the ignored engine
-// has nothing pointing at it afterwards -- hence the line that finds it again.
+// noteIgnoredForForget is forget's ignored-engine consequence, the only lasting
+// one: the store dies whatever happened engine-side, so a volume left on the
+// ignored engine has nothing pointing at it -- hence the line that finds it.
 func noteIgnoredForForget(w io.Writer, sp ignoreSplit, id string) {
 	sp.note(w, func(eng string) string {
 		return fmt.Sprintf("volumes and images of this project there, if any, were NOT removed; byre removes the store anyway, so they stay behind as orphans under this project's prefix — list them later with `%s volume ls --filter name=%s`",

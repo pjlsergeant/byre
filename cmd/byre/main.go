@@ -1243,13 +1243,9 @@ it runs, and prints every list the preview would have shown.`,
 }
 
 // ignoreEngineFlags wires --ignore-docker/--ignore-podman onto one totals
-// command. One owner for the pair and for the help text: these commands refuse
-// over an engine they cannot query to protect a claim they make, and the
-// refusal names the flag by which the user takes that risk themselves
-// (PRINCIPLES.md P1), so the two must stay spelled the same everywhere.
-// consequence is the ONE part that differs -- what skipping that engine costs
-// in THIS command -- because a flag whose help describes another verb's effect
-// is a flag the user has to translate.
+// command: one owner for the pair, so the flag a refusal names is spelled the
+// same everywhere (PRINCIPLES.md P1). consequence is the ONE part that differs
+// -- what skipping that engine costs in THIS command.
 func ignoreEngineFlags(c *cobra.Command, ignore *commands.IgnoreEngines, consequence string) {
 	c.Flags().BoolVar(&ignore.Docker, "ignore-docker", false, ignoreEngineFlagHelp("docker", consequence))
 	c.Flags().BoolVar(&ignore.Podman, "ignore-podman", false, ignoreEngineFlagHelp("podman", consequence))

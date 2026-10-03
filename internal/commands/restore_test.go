@@ -1004,8 +1004,8 @@ func TestRestoreNeverEntersTheCredentialDecryptPath(t *testing.T) {
 	if got := storeConfig(t, fx.paths); got != cfg {
 		t.Error("the carried ciphertext did not land byte-for-byte")
 	}
-	// A login file inside a volume is restored without a word of warning
-	// (Pete's ruling): nothing here reads the host, and nothing lectures.
+	// A login file inside a volume is restored without a word of warning:
+	// nothing here reads the host, and nothing lectures.
 	if out := fx.errb.String(); strings.Contains(strings.ToLower(out), "warning") {
 		t.Errorf("restore printed a warning:\n%s", out)
 	}
@@ -1693,18 +1693,53 @@ func (f readerFunc) Read(p []byte) (int, error) { return f(p) }
 // ------------------------------------------- where restore may be run at all
 
 // The rule: the target must be an empty directory or the clean root of a git
-// checkout. The field report is a `byre restore FILE` with no DIR, run from
-// HOME, which made the home directory the project.
+// checkout, because a `byre restore FILE` with no DIR takes the directory it
+// was typed in -- a home directory included.
 
-func TestRestoreProceedsInAnEmptyTarget(t *testing.T) {
-	f := &fakeRunner{}
-	fx := restoreHarness(t, f, restoreOpts{cfg: claudeVolumeConfig, in: "y\n"})
-	if err := fx.run(); err != nil {
+// Each of the three fixtures below builds a target restore must refuse and
+// returns it with the one reason the refusal gives, shared with the
+// --allow-nonempty arm, which has to state exactly that reason.
+
+func nonCheckoutTarget(t *testing.T) (dir, reason string) {
+	t.Helper()
+	dir = t.TempDir()
+	// A dotfile counts: a home directory is "empty" by every listing that hides
+	// them.
+	for _, name := range []string{".bash_history", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir, "it holds 2 entries and is not a git checkout"
+}
+
+func dirtyCheckoutTarget(t *testing.T) (dir, reason string) {
+	t.Helper()
+	dir = initRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "scratch.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if storeConfig(t, fx.paths) == "" {
-		t.Error("an empty target did not proceed to the config write")
+	return dir, "it is a git checkout with uncommitted changes (1 files)"
+}
+
+// git prints its own resolution of the root, which is what the refusal names,
+// so the reason resolves the fixture the same way rather than assuming the temp
+// path contains no symlink.
+func insideCheckoutTarget(t *testing.T) (dir, reason string) {
+	t.Helper()
+	repo := initRepo(t)
+	dir = filepath.Join(repo, "sub")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir, "it is inside a git checkout whose root is " + root
 }
 
 // A directory restore itself just created is empty by construction, so the
@@ -1729,14 +1764,7 @@ func TestRestoreTargetItCreatedIsEmpty(t *testing.T) {
 }
 
 func TestRestoreRefusesANonEmptyNonCheckoutBeforeReadingTheFile(t *testing.T) {
-	dir := t.TempDir()
-	// A dotfile counts: the field report's HOME was "empty" by every listing
-	// that hides them.
-	for _, name := range []string{".bash_history", "notes.txt"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	dir, reason := nonCheckoutTarget(t)
 	f := &fakeRunner{}
 	fx := restoreHarness(t, f, restoreOpts{cfg: claudeVolumeConfig, in: "y\n", dir: dir})
 	err := fx.run()
@@ -1745,7 +1773,7 @@ func TestRestoreRefusesANonEmptyNonCheckoutBeforeReadingTheFile(t *testing.T) {
 	}
 	for _, want := range []string{
 		"empty directory or the clean root of a git checkout",
-		"it holds 2 entries and is not a git checkout",
+		reason,
 		"--allow-nonempty",
 	} {
 		if !strings.Contains(err.Error(), want) {
@@ -1760,6 +1788,32 @@ func TestRestoreRefusesANonEmptyNonCheckoutBeforeReadingTheFile(t *testing.T) {
 	}
 }
 
+func TestRestoreRefusesADirtyGitRoot(t *testing.T) {
+	dir, reason := dirtyCheckoutTarget(t)
+	f := &fakeRunner{}
+	fx := restoreHarness(t, f, restoreOpts{cfg: claudeVolumeConfig, in: "y\n", dir: dir})
+	err := fx.run()
+	if err == nil {
+		t.Fatal("restore accepted a checkout with uncommitted changes")
+	}
+	if !strings.Contains(err.Error(), reason) {
+		t.Errorf("error = %v, want the dirty-tree rule with the count", err)
+	}
+}
+
+func TestRestoreRefusesASubdirectoryOfACheckout(t *testing.T) {
+	dir, reason := insideCheckoutTarget(t)
+	f := &fakeRunner{}
+	fx := restoreHarness(t, f, restoreOpts{cfg: claudeVolumeConfig, in: "y\n", dir: dir})
+	err := fx.run()
+	if err == nil {
+		t.Fatal("restore accepted a subdirectory of a checkout as its root")
+	}
+	if !strings.Contains(err.Error(), reason) {
+		t.Errorf("error = %v, want the enclosing root named (%s)", err, reason)
+	}
+}
+
 func TestRestoreProceedsInACleanGitRoot(t *testing.T) {
 	repo := initRepo(t)
 	f := &fakeRunner{}
@@ -1769,49 +1823,6 @@ func TestRestoreProceedsInACleanGitRoot(t *testing.T) {
 	}
 	if storeConfig(t, fx.paths) == "" {
 		t.Error("a clean git root did not proceed to the config write")
-	}
-}
-
-func TestRestoreRefusesADirtyGitRoot(t *testing.T) {
-	repo := initRepo(t)
-	if err := os.WriteFile(filepath.Join(repo, "scratch.txt"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	f := &fakeRunner{}
-	fx := restoreHarness(t, f, restoreOpts{cfg: claudeVolumeConfig, in: "y\n", dir: repo})
-	err := fx.run()
-	if err == nil {
-		t.Fatal("restore accepted a checkout with uncommitted changes")
-	}
-	if !strings.Contains(err.Error(), "it is a git checkout with uncommitted changes (1 files)") {
-		t.Errorf("error = %v, want the dirty-tree rule with the count", err)
-	}
-}
-
-func TestRestoreRefusesASubdirectoryOfACheckout(t *testing.T) {
-	repo := initRepo(t)
-	sub := filepath.Join(repo, "sub")
-	if err := os.Mkdir(sub, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(sub, "file.txt"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	f := &fakeRunner{}
-	fx := restoreHarness(t, f, restoreOpts{cfg: claudeVolumeConfig, in: "y\n", dir: sub})
-	err := fx.run()
-	if err == nil {
-		t.Fatal("restore accepted a subdirectory of a checkout as its root")
-	}
-	// git prints its own resolution of the root, which is what the refusal
-	// names: the test resolves the fixture the same way rather than assuming
-	// the temp path contains no symlink.
-	root, rerr := filepath.EvalSymlinks(repo)
-	if rerr != nil {
-		t.Fatal(rerr)
-	}
-	if !strings.Contains(err.Error(), "it is inside a git checkout whose root is "+root) {
-		t.Errorf("error = %v, want the enclosing root named (%s)", err, root)
 	}
 }
 
@@ -1849,35 +1860,9 @@ func TestRestoreAllowNonemptyProceedsAndStatesTheReason(t *testing.T) {
 		name  string
 		setup func(t *testing.T) (dir, reason string)
 	}{
-		{"not a checkout", func(t *testing.T) (string, string) {
-			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("x"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			return dir, "it holds 1 entries and is not a git checkout"
-		}},
-		{"dirty checkout", func(t *testing.T) (string, string) {
-			repo := initRepo(t)
-			if err := os.WriteFile(filepath.Join(repo, "scratch.txt"), []byte("x"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			return repo, "it is a git checkout with uncommitted changes (1 files)"
-		}},
-		{"inside a checkout", func(t *testing.T) (string, string) {
-			repo := initRepo(t)
-			sub := filepath.Join(repo, "sub")
-			if err := os.Mkdir(sub, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(sub, "file.txt"), []byte("x"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			root, rerr := filepath.EvalSymlinks(repo)
-			if rerr != nil {
-				t.Fatal(rerr)
-			}
-			return sub, "it is inside a git checkout whose root is " + root
-		}},
+		{"not a checkout", nonCheckoutTarget},
+		{"dirty checkout", dirtyCheckoutTarget},
+		{"inside a checkout", insideCheckoutTarget},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

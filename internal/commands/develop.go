@@ -484,13 +484,6 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	if err != nil {
 		return none, err
 	}
-	// Every enabled mount's host path, before anything is built or asked for.
-	// The engine does refuse a missing bind source -- that is what makes
-	// checkContainedHostSource's absent-path branch safe -- but it refuses deep
-	// in container create, with its own wording, naming ONE path, after a build
-	// the user has already waited through. A restored config naming nine absent
-	// `~/dev/...` mounts is the field report (2026-10-03): byre knows all nine
-	// now, so it says all nine now.
 	if err := refuseMissingMountHosts(r, s.Err, rv.mounts); err != nil {
 		return none, err
 	}
@@ -689,9 +682,10 @@ func decodeAgentExit(runErr error) error {
 
 // refuseMissingMountHosts refuses the launch, before the build, when an enabled
 // mount names a host path that is not on this machine -- in one message naming
-// every one of them and the three ways out. A mount's host path is the user's
-// own arrangement and byre does not nanny it (P1); what it does is tell the
-// user, once, while the information is still cheap to act on.
+// every one of them and the three ways out. The engine refuses a missing bind
+// source itself (which is what makes checkContainedHostSource's absent-path
+// branch safe), but it does so deep in container create, naming ONE path, after
+// a build the user has already waited through.
 //
 // Under Docker Desktop this WARNS instead: binds resolve inside Desktop's VM,
 // where a path the host cannot stat can still be served, so a host probe there

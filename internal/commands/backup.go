@@ -40,9 +40,8 @@ type BackupOptions struct {
 	NoCredentials bool
 	// Yes skips the terminal prompt.
 	Yes bool
-	// Ignore is every --ignore-<engine>: the user saying an installed engine is
-	// not running and backup should go ahead without checking it. The engine
-	// backup READS cannot be ignored -- see Backup.
+	// Ignore is every --ignore-<engine>. The engine backup READS cannot be one
+	// of them; see run().
 	Ignore IgnoreEngines
 }
 
@@ -144,10 +143,8 @@ type backupRun struct {
 	gid    int
 	runID  string
 	opts   BackupOptions
-	// ignore is what --ignore-<engine> came to over the OTHER installed engines:
-	// which ones were dropped from others, and which flag named an engine that
-	// is not here at all. Set by run(), so the filter has one owner
-	// (splitEngines) and a test can hand in an engine it must never query.
+	// ignore is what --ignore-<engine> came to over the OTHER installed engines.
+	// Set by run(), so a test can hand in an engine backup must never query.
 	ignore ignoreSplit
 	// image is the helper image step 2 picked and proved -- a project image
 	// this engine already had, or the resolved base it pulled. Named in the
@@ -221,22 +218,17 @@ func (b *backupRun) engineSet() []engineRunner {
 }
 
 // verb is how backup names itself in an engine-query refusal, and which engine
-// that refusal must NOT offer to skip: the source engine is what the file is
-// made of.
+// that refusal must NOT offer to skip.
 func (b *backupRun) verb() totalsVerb {
 	return totalsVerb{name: "backup", source: b.source.Engine()}
 }
 
 func (b *backupRun) run() error {
 	// The one engine --ignore cannot name: every volume in the file comes from
-	// it, so "go ahead without checking it" has no meaning here. Refused rather
-	// than ignored with a note, because the user asked for something backup
-	// cannot do.
+	// it, so the user asked for something backup cannot do.
 	if src := b.source.Engine(); b.opts.Ignore.Has(src) {
 		return fmt.Errorf("--ignore-%s: %s is the engine this backup reads, so it cannot be skipped — drop the flag, or point `engine` at the other engine", src, src)
 	}
-	// --ignore-<engine> is applied ONCE, here: from this point `others` is the
-	// set backup queries, and b.ignore is what it was told to leave out.
 	b.ignore = splitEngines(b.others, b.opts.Ignore)
 	b.others = b.ignore.query
 	// Step 2: what the backup would contain, on this engine, with these flags.
@@ -307,9 +299,8 @@ func (b *backupRun) locked(reviewed backupPlan, out string, hp helperPlan, pulle
 		return fmt.Errorf("%s changed while you were reviewing; re-run byre backup", what)
 	}
 	// The stillness sweep: reset's project-label, any-state, every-engine
-	// check with the removal taken out. Nothing is stopped or removed. An
-	// --ignore-<engine> engine is not in this set at all, which is the whole of
-	// what the flag does.
+	// check with the removal taken out. Nothing is stopped or removed, and an
+	// ignored engine is not in this set at all.
 	for _, r := range b.engineSet() {
 		if err := refuseUnlessStill(b.s.Err, b.verb(), r, b.paths.ID); err != nil {
 			return err
@@ -507,8 +498,7 @@ func (p backupPlan) drift(q backupPlan) string {
 // records, from one read of the engine and one resolution of the project.
 //
 // Every volume query failure refuses: backup speaks in totals, and an engine
-// it could not ask cannot be reported on. A cleanly unreachable engine's
-// refusal names the way past it -- start it, or --ignore-<engine> (totalsVerb).
+// it could not ask cannot be reported on.
 func planBackup(paths project.Paths, rv resolved, source engineRunner, others []engineRunner, uid int, opts BackupOptions, verb totalsVerb) (backupPlan, error) {
 	var p backupPlan
 	raw, err := hostopen.ReadFileBounded(filepath.Join(paths.Dir, config.ProjectConfigName), false, config.MaxConfigBytes)
@@ -1139,10 +1129,8 @@ func checkOutputSpace(out string, staged int64) error {
 // container prints the remedies and refuses; one in any other state refuses
 // with the engine's own `rm` line; a leftover helper refuses with its
 // `rm -f` line; a query byre could not make refuses too, because an engine it
-// cannot inspect cannot be declared idle -- an unreachable one through the
-// verb, so the refusal names the two ways past it. Nothing is stopped or
-// removed --
-// the container is still there after the refusal.
+// cannot inspect cannot be declared idle. Nothing is stopped or removed -- the
+// container is still there after the refusal.
 func refuseUnlessStill(w io.Writer, verb totalsVerb, r sessionRunner, id string) error {
 	live, err := liveSession(r, id)
 	if err != nil {
@@ -1318,10 +1306,8 @@ func (b *backupRun) renderBody(w io.Writer, ran string, p backupPlan) {
 	b.renderVolumeLists(w, p)
 	fmt.Fprintln(w, "  references (the destination must have these before `byre develop` runs there):")
 	renderReferences(w, "    ", p.refs)
-	// renderBody is both surfaces, so an ignored engine is named in the preview
-	// AND in the summary -- off a terminal the summary is the only surface there
-	// is, and an engine byre did not look at must not be silent (P4).
-	b.ignore.note(w, func(eng string) string {
+	// renderBody is both surfaces, so the note lands on each of them.
+	b.ignore.note(w, func(string) string {
 		return "volumes of this project there, if any, are not in this backup, and a session there could not be ruled out"
 	})
 }

@@ -176,8 +176,7 @@ byre backup". One resolution is what the file records.
 An engine byre cannot account for is a refusal, and a **declined binary**
 (ADR 0047) is always one: byre will not run that file, and no flag talks it
 into doing so. An engine whose daemon byre cannot REACH is a refusal too, but
-the refusal names the two ways past it (PRINCIPLES.md P1 -- a refusal that
-protects a claim hands over the switch):
+one that names the two ways past it (PRINCIPLES.md P1):
 
     byre backup expects to check every installed engine for containers of this
     project. podman isn't reachable (<the engine's own first line>): start
@@ -189,12 +188,12 @@ queried at all, and both surfaces say what that cost: "podman ignored
 (--ignore-podman): volumes of this project there, if any, are not in this
 backup, and a session there could not be ruled out". The SOURCE engine cannot
 be ignored -- every volume in the file comes from it -- so `--ignore-<source>`
-is refused outright and an unreachable source engine refuses with the start
-remedy alone. `deliver.IsUnreachable` is the classifier, the only one: a
-permission or TLS failure against a daemon that IS running keeps its own
-refusal and is never offered as skippable. The same flags, the same classifier
-and the same shape are on `reset`, `forget` and `rehome`, each with its own
-consequence sentence. The sweep queries the helper labels too (below).
+is refused outright and an unreachable source engine gets the start remedy
+alone. `deliver.IsUnreachable` is the only classifier: a permission or TLS
+failure against a daemon that IS running keeps its own refusal and is never
+offered as skippable. `reset`, `forget` and `rehome` take the same flags
+through the same code, each with its own consequence sentence. The sweep
+queries the helper labels too (below).
 
 **One interrupt handler per run, with two behaviours.** It goes on the moment
 the verb makes the first thing of its own -- the staging directory, which holds
@@ -496,12 +495,11 @@ for the first develop.
   shape (pinned resolver, 5s bound, capped output), and no git, a probe that
   fails and a probe that times out all land where a dirty tree does: byre
   cannot prove the tree clean, so it refuses and says that is why.
-  **`--allow-nonempty` is the switch** -- the refusal protects byre's own
-  guess about where the project is, and a refusal that protects a claim hands
-  over the switch (PRINCIPLES.md P1). With it restore proceeds and STATES what
-  it would have refused over, in the review above the "Names this machine must
-  satisfy" block and again in the summary ("restoring into <DIR>, which is not
-  empty (--allow-nonempty): <reason>").
+  **`--allow-nonempty` is the switch** over a refusal that protects byre's own
+  guess at where the project is (PRINCIPLES.md P1). With it restore proceeds
+  and STATES what it would have refused over, in the review above the "Names
+  this machine must satisfy" block and again in the summary ("restoring into
+  <DIR>, which is not empty (--allow-nonempty): <reason>").
 - **It creates DIR first**, before resolving the project's identity, because
   identity is computed from the real directory and `Canonicalize` falls back
   to the cleaned pathname for a path that does not exist -- an alias path
@@ -699,12 +697,10 @@ can find it:
 - **Stillness is cooperative.** The sweep covers containers byre can see at
   the moment it asks; a hand-run engine command can start a box during a
   backup, outside the setup lock and outside what byre can serialize.
-- **An engine the user ignored is not checked, and the output says so.**
-  `--ignore-<engine>` skips that engine entirely: a box of this project there is
-  not ruled out (Docker live-restore or a remote Podman can keep one running
-  while the daemon is unreachable), and its project volumes are not in the file
-  and were never even named. byre refuses until the user asks for this, and
-  names what it did not check when they do -- PRINCIPLES.md P1.
+- **An engine the user ignored is not checked.** `--ignore-<engine>` leaves a
+  box of this project there unruled-out -- Docker live-restore or a remote
+  Podman can keep one running while the daemon is unreachable -- and its
+  project volumes out of the file.
 - **A file's authorship is not proven.** The digests detect corruption, not
   authorship, and the restore review says so.
 - **A restored agent login shares its rotating token with the source box.**

@@ -603,10 +603,9 @@ Two mount species:
    (marked), but produces no bind -- a switch for long-lived entries,
    distinct from `!target` removal. `mode` survives the off state, and a
    disabled mount's host path may be absent without blocking develop --
-   where an ENABLED mount with an absent host path refuses the launch
-   before the image is built, in one message naming every such mount
-   (under Docker Desktop, where a bind resolves inside the VM, it warns
-   and leaves the engine the authority).
+   an ENABLED mount with an absent host path refuses the launch before the
+   image is built, in one message naming every such mount (under Docker
+   Desktop, where a bind resolves inside the VM, it warns instead).
 2. **named volume** -- Docker-managed, project-scoped
    (`byre-<project_id>-<name>`), survives rebuilds. Usually contributed
    by a skill; a project can declare ad-hoc ones via `volumes`. Carries:

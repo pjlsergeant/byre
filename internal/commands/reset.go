@@ -100,9 +100,6 @@ func clearSessionMarkers(w io.Writer, verb totalsVerb, r sessionRunner, id strin
 
 func reset(s Streams, paths project.Paths, engines []engineRunner, force bool, ignore IgnoreEngines) error {
 	verb := totalsVerb{name: "reset"}
-	// --ignore-<engine> applied once: from here `engines` is what reset asks and
-	// deletes, and the note below says what that cost. An engine byre was told
-	// to skip is never queried at all.
 	sp := splitEngines(engines, ignore)
 	if err := sp.refuseIfEmpty(verb.name); err != nil {
 		return err
@@ -187,9 +184,6 @@ func reset(s Streams, paths project.Paths, engines []engineRunner, force bool, i
 				fmt.Fprintf(s.Err, "byre: removed %s%s\n", v, engineSuffix(multi, r))
 			}
 		}
-		// The summary surface: an engine reset did not touch is said again where
-		// the user reads what reset DID (P4) -- off a terminal, with --force, the
-		// preview line above scrolled past unprompted.
 		noteIgnoredForReset(s.Err, sp)
 		if len(failed) > 0 {
 			return fmt.Errorf("reset incomplete: %d of %d volumes not removed (%s)", len(failed), volsTotal, strings.Join(failed, ", "))
@@ -198,11 +192,10 @@ func reset(s Streams, paths project.Paths, engines []engineRunner, force bool, i
 	})
 }
 
-// noteIgnoredForReset is reset's ignored-engine consequence, in one place
-// because both surfaces print it: nothing was removed there, and reset's whole
-// claim is that the project's volumes are gone.
+// noteIgnoredForReset is reset's ignored-engine consequence: nothing was
+// removed there, and reset's whole claim is that the project's volumes are gone.
 func noteIgnoredForReset(w io.Writer, sp ignoreSplit) {
-	sp.note(w, func(eng string) string {
+	sp.note(w, func(string) string {
 		return "volumes of this project there, if any, were NOT removed"
 	})
 }
