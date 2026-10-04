@@ -69,9 +69,10 @@ provision:
       # guard test fails (found live on this template's first re-create,
       # 2026-07-16).
       # tmux: the TUI test tier (BYRE_TUI_TESTS=1) drives byre inside a
-      # private tmux server.
+      # private tmux server. jq: the codex shared-auth reconcile hook tests
+      # need it (with bash) and skip without it.
       apt-get install -y --no-install-recommends git rsync ca-certificates curl golang-go \
-        podman crun uidmap passt slirp4netns aardvark-dns tmux
+        podman crun uidmap passt slirp4netns aardvark-dns tmux jq
       # Second sshd port for the bridge-bound portForward above (Lima refuses
       # forwarding guest 22). Both Port lines: naming any port drops the
       # implicit 22, and 22 must stay for Lima's own control channel.

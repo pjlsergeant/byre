@@ -29,6 +29,25 @@ features leave stale "today this is manual" / "planned" prose behind
 them -- that drift is the docs' main rot vector (the 2026-07-16 audit
 found seven such claims, all left by ship waves days earlier).
 
+Before tagging, run the engine-side gate: the WHOLE suite on the inttest
+runner, every gated tier the wrapper sets (Docker, ssh-loop, TUI). The
+agent-contract tier (`BYRE_AGENT_TESTS`) runs live agent installers on its
+own schedule and is not part of this gate, so its tests are the expected
+skips. Pass explicit args, so the wrapper's no-arg default (`-run
+Integration`) does not apply, and no `-run` filter. Redirect, never pipe: a
+pipe takes the exit status and a red suite reports success.
+
+```sh
+byre-inttest ./... -count=1 -v > ~/scratch/release-gate.log 2>&1; echo "exit $?"
+```
+
+Then read the log: zero `--- FAIL`, no package reporting
+`[no tests to run]`, and every `--- SKIP` reviewed -- a skip is a test that
+did not run, so zero is the target and each one left needs a reason. The
+filter is banned because the v1.12.0 gate ran with `-run Integration`: every
+unit package reported `[no tests to run]`, and "0 SKIP" could not see tests
+that never ran -- 12 runner-only failures hid behind it (fixed in de900284).
+
 Also before tagging: run the field-QA playbook against the release
 candidate -- the journey recipes in `docs/QA-PLAYBOOK.md`, driven on the
 sacrificial inttest VM. Report-only, NEVER a gate: findings go to TODO.md

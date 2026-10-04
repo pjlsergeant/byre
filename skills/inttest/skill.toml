@@ -1,6 +1,6 @@
 [package]
 id = "pjlsergeant/inttest"
-version = "1.0.2"
+version = "1.0.3"
 kind = "skill"
 package_api = 1
 requires_byre = ">=0.4.0"
@@ -40,7 +40,7 @@ executable = true
 [[package.files]]
 src = "byre-inttest.yaml"
 dest = "byre-inttest.yaml"
-sha256 = "3a02af2a83f947738611ba99e472ba33f5205c73906c306663477293bcef3401"
+sha256 = "6d5590d3d749ff76ee44eb8764657bb236df12877e8b1df394e65c4ba314429d"
 
 [[package.files]]
 src = "context.md"
@@ -50,7 +50,7 @@ sha256 = "48d238783fceff9c1f2a0e87c693861658359756bd3076716762f948f65e254a"
 [[package.files]]
 src = "dind/Dockerfile"
 dest = "dind/Dockerfile"
-sha256 = "88dfc8ebb2b1dcbc79ec0e6dc1904cded9d8a74af5a930e93c6d6dc3f5ee09dd"
+sha256 = "90e045c14765420c3dbe027a1c918332493657302bcf6d13b1b415962653dfdf"
 
 [[package.files]]
 src = "dind/entrypoint.sh"

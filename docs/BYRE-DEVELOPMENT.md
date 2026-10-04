@@ -195,7 +195,7 @@ sacrificial runner is a **privileged Docker-in-Docker container** instead:
 `skills/inttest/dind/`. It runs its OWN `dockerd`, so the suite's
 containers, images and networks are invisible to the engine hosting your
 boxes. It satisfies the same contract the VM does -- an ssh endpoint
-carrying docker, podman, go, tmux and git -- so the wrapper's TRANSPORT is
+carrying docker, podman, go, tmux, jq and git -- so the wrapper's TRANSPORT is
 unchanged.
 
 Its **configuration** is not: address, port and egress all differ from the

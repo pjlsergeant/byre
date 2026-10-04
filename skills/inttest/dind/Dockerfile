@@ -23,10 +23,11 @@ ENV GOTOOLCHAIN=auto
 # is part of the gated suite. aardvark-dns is a netavark Recommends that
 # --no-install-recommends would drop -- without it container DNS is off and the
 # netns-init helper races v6 address setup, failing the v6 firewall guard.
-# tmux: the TUI tier (BYRE_TUI_TESTS=1). openssh-server: the wrapper's transport.
+# tmux: the TUI tier (BYRE_TUI_TESTS=1). jq: the codex shared-auth reconcile
+# hook tests need it and skip without it. openssh-server: the wrapper's transport.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git rsync ca-certificates curl golang-go \
-      podman crun uidmap passt slirp4netns aardvark-dns tmux \
+      podman crun uidmap passt slirp4netns aardvark-dns tmux jq \
       openssh-server sudo iproute2 iptables \
  && rm -rf /var/lib/apt/lists/*
 
