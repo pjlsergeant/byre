@@ -38,9 +38,6 @@ Delete-on-absorb: cut a line when it ships or is ruled out for good.
 - **No fuzz tests, no `testdata/`.** Obvious targets: `config.Parse`, and a
   `tomldoc` Load→edit→Bytes→Parse round-trip, since every config write rides
   go-toml's *unstable* parser (ADR 0044). *(Opus.)*
-- **No Claude leg in the agent canary** -- the flagship agent, installed
-  unpinned via `curl | bash`, is the one whose upstream drift nothing catches.
-  The matrix runs Opencode, Codex, Gemini and Grok. *(Opus.)*
 - **`forget`/`reset` from a worktree under-warn**: `noteSharedVolumes` warns
   about volumes only, but `forget` from a worktree also deletes the shared
   store and image. *(Fable; the sibling half of this finding — the

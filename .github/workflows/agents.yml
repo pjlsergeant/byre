@@ -38,7 +38,7 @@ jobs:
         # construction — the interactive two-box credential gate is named
         # OUTSIDE the TestAgentContract prefix (TestOpencodeSharedAuthLiveGate)
         # precisely so no pattern here can pick it up.
-        agent: [Opencode, Codex, Gemini, Grok]
+        agent: [Claude, Opencode, Codex, Gemini, Grok]
     runs-on: ubuntu-latest
     # Roomy enough for two full attempts (below) plus setup.
     timeout-minutes: 35

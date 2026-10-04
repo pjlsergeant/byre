@@ -42,13 +42,6 @@ the rationale lives.
   actually guarantee. Bring any gap and design choices back to Pete before
   specifying or implementing a change.
 
-- [ ] (S) **Claude agent-contract canary** (security-gap review 2026-09-05):
-  the flagship agent is installed by an unpinned live installer and byre
-  leans on its CLI flags and state layout, yet the scheduled agent-contract
-  matrix (.github/workflows/agents.yml) covers opencode/codex/gemini/grok
-  and not Claude. Add the loginless `TestAgentContractClaude` beside the
-  four, in the matrix.
-
 - [ ] (S) **GitHub build attestation on releases** (Pete, 2026-09-05): pull
   ADR 0051's deferred trigger early -- the no-key-management option the ADR
   itself names. Checksum wording stays honest (transport integrity); this

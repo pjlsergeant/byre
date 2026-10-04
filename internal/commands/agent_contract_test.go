@@ -28,11 +28,15 @@ package commands
 // the drift detector.
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -205,6 +209,209 @@ func TestAgentContractGrok(t *testing.T) {
 			fmt.Sprintf(`grep -ac %s "$(readlink -f "$(command -v grok)")" || true`, seam))
 		if strings.TrimSpace(out) == "0" {
 			t.Errorf("grok binary no longer carries %s — the broker/relocation seam is gone (ADR 0036)", seam)
+		}
+	}
+}
+
+// claudeAuthWall is the stable fragment of the logged-out CLI's refusal
+// ("Not logged in · Please run /login" on 2.1.289).
+const claudeAuthWall = "Not logged in"
+
+// TestAgentContractClaude: the assumptions the claude + claude-shared-auth
+// skills stake on the binary the live installer pulls (curl claude.ai/
+// install.sh, unpinned).
+//   - The SHIPPED agent command end to end, headless and logged out: the
+//     baked /etc/byre/agent-cmd (byre-claude-launch + --dangerously-skip-
+//     permissions --mcp-config --add-dir, plus the wrapper's
+//     --append-system-prompt-file) starts a session whose stream-json init
+//     message names both declared MCP servers (the mcp = "inject" vouch:
+//     the CLI accepts a baked file carrying both shapes byre writes -- a
+//     stdio entry with byre's x_byre_env key, an http entry with a ${NAME}
+//     header template -- and lists both; whether it EXPANDS the template
+//     at connect time is not pinned, that needs a login), the
+//     delivered Claude Skill by its BARE name (the claude_skills = "inject"
+//     vouch: --add-dir discovers <dir>/.claude/skills/<name>), and
+//     bypassPermissions as the non-root dev user. The init line is emitted
+//     first; the turn then stops at the auth wall, asserted as a non-zero
+//     exit plus the "Not logged in" fragment, so a run that authenticates
+//     or exits 0 goes red. A dropped or renamed flag fails the parse
+//     ("unknown option") before init.
+//   - CLAUDE_CONFIG_DIR relocates ALL state into the .claude volume: `claude
+//     auth status` (offline, loginless) reports it as the config directory,
+//     and the session creates .claude.json inside it while leaving the
+//     home-root ~/.claude.json untouched. The image may already HOLD a
+//     home-root file (the installer runs claude without CLAUDE_CONFIG_DIR at
+//     build time, and the skill clears only ~/.claude), so the probe pins
+//     the session's writes by checksum before/after, not by absence.
+//   - CLAUDE_CODE_OAUTH_TOKEN (what claude-shared-auth's env hook exports)
+//     is an auth method the CLI recognizes: a dummy value flips `auth status`
+//     to oauth_token, offline.
+//   - The rest has no loginless CLI surface, so it is pinned by PRESENCE in
+//     the binary (grok's pattern): the keys the shared-auth firstrun hook
+//     seeds or greps for, and the env var that keeps account connectors out.
+func TestAgentContractClaude(t *testing.T) {
+	r := requireAgentRunner(t)
+	skillDir := writeTestClaudeSkill(t, "byre-probe-skill")
+	image, rv, _, _ := buildAgentBox(t, r, `agent = "claude"
+
+[[mcp]]
+name = "byre-probe"
+command = ["echo", "hi"]
+env = ["BYRE_PROBE_ENV"]
+
+[[mcp]]
+name = "byre-probe-remote"
+url = "http://127.0.0.1:9/mcp"
+headers = { Authorization = "Bearer ${BYRE_PROBE_TOKEN}" }
+
+[[claude_skills]]
+name = "byre-probe-skill"
+path = "`+skillDir+`"
+`)
+
+	// The skill's runtime env rides `docker run -e` in a real launch (not the
+	// image), so the probes carry it too: CLAUDE_CONFIG_DIR above all.
+	var env []string
+	for _, k := range slices.Sorted(maps.Keys(rv.skills.Env())) {
+		env = append(env, k+"="+rv.skills.Env()[k])
+	}
+
+	t.Logf("claude version: %s", strings.TrimSpace(agentProbe(t, r, image, env, "claude", "--version")))
+
+	// The shipped launch path, headless. stdin carries the prompt (a bare
+	// `docker run` has none); the session exits non-zero at the auth wall,
+	// so the exit code is echoed rather than failing the probe.
+	// state() fingerprints a file as one marker line: its cksum, or "absent".
+	out := agentProbe(t, r, image, env, "sh", "-c", `
+state() { if [ -e "$2" ]; then echo "$1=$(cksum < "$2")"; else echo "$1=absent"; fi; }
+state BYRE_HOME_BEFORE "$HOME/.claude.json"
+state BYRE_CFG_BEFORE "$CLAUDE_CONFIG_DIR/.claude.json"
+echo probe | /etc/byre/agent-cmd -p --output-format stream-json --verbose
+echo "BYRE_RC=$?"
+state BYRE_HOME_AFTER "$HOME/.claude.json"
+state BYRE_CFG_AFTER "$CLAUDE_CONFIG_DIR/.claude.json"
+true`)
+	marker := func(name string) string {
+		for _, line := range strings.Split(out, "\n") {
+			if v, ok := strings.CutPrefix(line, name+"="); ok {
+				return strings.TrimSpace(v)
+			}
+		}
+		return ""
+	}
+	if rc := marker("BYRE_RC"); rc == "" || rc == "0" {
+		t.Errorf("the logged-out headless session exited %q, want non-zero at the auth wall -- the logged-out exit-code contract drifted:\n%s", rc, out)
+	}
+	if !strings.Contains(out, claudeAuthWall) {
+		t.Errorf("the logged-out headless session printed no %q -- the auth-wall contract drifted (reworded refusal, or the turn no longer stops there):\n%s", claudeAuthWall, out)
+	}
+	var initMsg struct {
+		MCPServers []struct {
+			Name string `json:"name"`
+		} `json:"mcp_servers"`
+		SlashCommands  []string `json:"slash_commands"`
+		PermissionMode string   `json:"permissionMode"`
+	}
+	found := false
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, `"subtype":"init"`) {
+			continue
+		}
+		if err := json.Unmarshal([]byte(line), &initMsg); err != nil {
+			t.Fatalf("claude's stream-json init line no longer parses: %v\n%s", err, line)
+		}
+		found = true
+		break
+	}
+	if !found {
+		t.Fatalf("the shipped agent command never reached a session init -- a launch flag byre passes may be gone (unknown option) or the wrapper broke:\n%s", out)
+	}
+	var mcpNames []string
+	for _, s := range initMsg.MCPServers {
+		mcpNames = append(mcpNames, s.Name)
+	}
+	for _, name := range []string{"byre-probe", "byre-probe-remote"} {
+		if !slices.Contains(mcpNames, name) {
+			t.Errorf("claude no longer loads %s from --mcp-config /etc/byre/mcp.json -- the ADR 0033 inject vouch broke (mcp_servers: %v)", name, mcpNames)
+		}
+	}
+	if !slices.Contains(initMsg.SlashCommands, "byre-probe-skill") {
+		t.Errorf("claude no longer discovers the --add-dir /etc/byre/claude-skills tree as BARE skills -- the claude_skills inject vouch broke (slash_commands: %v)", initMsg.SlashCommands)
+	}
+	if initMsg.PermissionMode != "bypassPermissions" {
+		t.Errorf("--dangerously-skip-permissions no longer yields bypassPermissions for the dev user (permissionMode %q)", initMsg.PermissionMode)
+	}
+	cfgBefore, cfgAfter := marker("BYRE_CFG_BEFORE"), marker("BYRE_CFG_AFTER")
+	if cfgBefore != "absent" || cfgAfter == "" || cfgAfter == "absent" {
+		t.Errorf("the session no longer creates .claude.json under CLAUDE_CONFIG_DIR (the persisted .claude volume): before %q, after %q\n%s", cfgBefore, cfgAfter, out)
+	}
+	homeBefore, homeAfter := marker("BYRE_HOME_BEFORE"), marker("BYRE_HOME_AFTER")
+	t.Logf("home-root ~/.claude.json in the image: %s", homeBefore)
+	if homeBefore == "" || homeAfter != homeBefore {
+		t.Errorf("the session wrote the home-root ~/.claude.json despite CLAUDE_CONFIG_DIR -- state escapes the .claude volume: before %q, after %q\n%s", homeBefore, homeAfter, out)
+	}
+
+	// auth status is offline and needs no login; it exits 1 when logged out,
+	// so the probe swallows the code (the JSON is the assertion).
+	// *bool: an absent or renamed loggedIn must not read as "logged out".
+	type authStatus struct {
+		LoggedIn        *bool  `json:"loggedIn"`
+		AuthMethod      string `json:"authMethod"`
+		ConfigDirectory string `json:"configDirectory"`
+	}
+	var status authStatus
+	parseStatus := func(raw string) {
+		t.Helper()
+		start, end := strings.Index(raw, "{"), strings.LastIndex(raw, "}")
+		if start < 0 || end < start {
+			t.Fatalf("claude auth status no longer prints JSON:\n%s", raw)
+		}
+		status = authStatus{}
+		if err := json.Unmarshal([]byte(raw[start:end+1]), &status); err != nil {
+			t.Fatalf("claude auth status JSON no longer parses: %v\n%s", err, raw)
+		}
+	}
+	parseStatus(agentProbe(t, r, image, env, "sh", "-c", "claude auth status --json; true"))
+	if want := rv.skills.Env()["CLAUDE_CONFIG_DIR"]; want == "" || status.ConfigDirectory != want {
+		t.Errorf("claude no longer honors CLAUDE_CONFIG_DIR=%q (auth status configDirectory %q) -- state would escape the .claude volume", want, status.ConfigDirectory)
+	}
+	if status.LoggedIn == nil {
+		t.Fatalf("claude auth status no longer reports loggedIn -- the loginless baseline is unverifiable")
+	}
+	if *status.LoggedIn {
+		t.Fatalf("a fresh box reports loggedIn -- the probe is no longer loginless (authMethod %q)", status.AuthMethod)
+	}
+	// Baseline for the token seam below: the dummy token must FLIP the
+	// method, not find it already set ("none" on 2.1.289).
+	if status.AuthMethod == "" || status.AuthMethod == "oauth_token" {
+		t.Fatalf("a fresh box reports authMethod %q, want present and not oauth_token -- the token-seam probe below would prove nothing", status.AuthMethod)
+	}
+
+	// The claude-shared-auth seam: a dummy token, never sent anywhere
+	// (auth status does not call the API).
+	parseStatus(agentProbe(t, r, image, append(env, "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-byre-probe"),
+		"sh", "-c", "claude auth status --json; true"))
+	if status.LoggedIn == nil {
+		t.Errorf("claude auth status no longer reports loggedIn under CLAUDE_CODE_OAUTH_TOKEN")
+	}
+	if status.AuthMethod != "oauth_token" {
+		t.Errorf("claude no longer treats CLAUDE_CODE_OAUTH_TOKEN as an auth method (authMethod %q) -- the claude-shared-auth env hook exports a dead variable (docs/AGENT-CREDENTIAL-MECHANICS.md, Claude Code section)", status.AuthMethod)
+	}
+
+	for _, token := range []string{
+		"hasCompletedOnboarding",      // the .claude.json key the shared-auth firstrun hook seeds on a fresh volume
+		"claudeAiOauth",               // the stored-login block the firstrun hook detects as the 8h hijacker
+		"mcpOAuth",                    // the MCP-login block the hook must NOT treat as a stale login
+		".credentials.json",           // the file both blocks live in
+		"ENABLE_CLAUDEAI_MCP_SERVERS", // keeps the account's claude.ai connectors out of the box
+	} {
+		// -F: ".credentials.json" is a literal, not a pattern. The count must
+		// parse as a number, so a grep that never reached the binary (a moved
+		// install path) fails here rather than passing on its error text.
+		out := agentProbe(t, r, image, nil, "sh", "-c",
+			fmt.Sprintf(`grep -acF -- %q "$(readlink -f "$(command -v claude)")" || true`, token))
+		if n, err := strconv.Atoi(strings.TrimSpace(out)); err != nil || n == 0 {
+			t.Errorf("claude binary no longer carries %q (grep: %q) -- the claude/claude-shared-auth skill contract needs a re-pass", token, strings.TrimSpace(out))
 		}
 	}
 }
