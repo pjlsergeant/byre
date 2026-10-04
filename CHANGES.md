@@ -49,7 +49,8 @@
   line, and OpenSSH rejects a key whose `-----END ...-----` line has none,
   so the editor (and the form, before you save) warns in rainbow when the
   draft ends that way: press Enter at the end. It warns only; the draft is
-  never changed for you. `byre credentials set` is unchanged:
+  never changed for you. At its minimum size the editor keeps a long error
+  and every control fully on screen. `byre credentials set` is unchanged:
   piped file values are stored byte for byte, and env values drop one
   trailing newline.
 

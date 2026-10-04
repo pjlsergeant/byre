@@ -406,20 +406,28 @@ func (m model) viewCredText() string {
 		}
 		return strings.Join(paragraphs, "\n\n") + "\n\n" + helpLine("^e", "show draft + open editor", "esc", "cancel")
 	}
-	help := helpLine("enter", "newline", "^s", "use draft (NOT save)", "esc", "discard changes", "^t", "line endings")
-	if ansi.StringWidth(help) > m.width {
-		help = helpLine("enter", "newline", "^s", "use draft (NOT save)", "esc", "discard changes") + "\n" + helpLine("^t", "line endings")
-	}
+	help := packedHelp(m.width, "enter", "newline", "^s", "use draft (NOT save)", "esc", "discard changes", "^t", "line endings")
 	var warning []string
 	if endsInBareEndLine(m.credText.value) {
 		warning = wrapLine("⚠ "+credentialEndNoBreak+" Press Enter at the end.", m.width)
 	}
+	// The error block is rendered once, so the rows it is budgeted and the
+	// rows it prints cannot disagree.
+	var errBlock string
+	if m.credText.err != "" {
+		errBlock = m.errLine(m.credText.err) + "\n" +
+			strings.Join(wrapLine("^s blocked until another edit or cursor move. Esc cancels.", m.width), "\n") + "\n"
+	}
 	width := max(8, m.width-2)
 	rows, cursorRow := m.credText.rows(width)
-	// Reserve the six header lines, the position line, the end-line warning
-	// when it shows, two lines for an error so the text does not jump when
-	// one appears, the controls, and one spare line.
-	height := max(1, m.height-10-len(warning)-strings.Count(help, "\n")-1)
+	// The text gets what is left after the six header lines, the position
+	// line, the end-line warning when it shows, the error block, the
+	// controls, and the row clipHeight keeps for the inline renderer. The
+	// error block always reserves at least two rows, so the text does not
+	// jump when a short error appears; a taller one takes rows from the text.
+	errRows := max(2, strings.Count(errBlock, "\n"))
+	helpRows := strings.Count(help, "\n") + 1
+	height := max(1, m.height-6-1-len(warning)-errRows-helpRows-1)
 	from := max(0, cursorRow-height+1)
 	to := min(len(rows), from+height)
 	var b strings.Builder
@@ -433,10 +441,7 @@ func (m model) viewCredText() string {
 	for _, l := range warning {
 		b.WriteString(rainbow(l) + "\n")
 	}
-	if m.credText.err != "" {
-		b.WriteString(m.errLine(m.credText.err) + "\n")
-		b.WriteString("^s blocked until another edit or cursor move. Esc cancels.\n")
-	}
+	b.WriteString(errBlock)
 	b.WriteString(help)
 	return b.String()
 }
@@ -446,8 +451,9 @@ func (m model) credentialTextMinHeight() int {
 		return 16 // room for the pre-entry disclosure
 	}
 	// Six header lines + two text rows + the position line + the two-line
-	// end-line warning + an error's two lines (message and "^s blocked") +
-	// two-line controls + one spare line = 16.
+	// end-line warning + the error block's two reserved rows (message and
+	// "^s blocked") + two-line controls + clipHeight's inline-renderer row
+	// = 16. An error that wraps to a third row leaves one text row.
 	return 16
 }
 

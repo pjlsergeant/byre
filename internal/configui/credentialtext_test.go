@@ -453,6 +453,21 @@ func TestCredentialVisibilityNoticeAndResize(t *testing.T) {
 	if len(strings.Split(m.View(), "\n")) > m.height-1 {
 		t.Fatal("minimum live editor does not fit its minimum height")
 	}
+	// The controls pack into lines that fit: every entry whole, no line
+	// wider than the pane, so clipLines never has to cut one.
+	for _, l := range strings.Split(m.viewCredText(), "\n") {
+		if ansi.StringWidth(l) > 60 || strings.HasSuffix(ansi.Strip(l), "…") {
+			t.Fatalf("line does not fit 60 columns: %q", ansi.Strip(l))
+		}
+	}
+	if l := lineWith(t, m.View(), "discard"); !strings.Contains(ansi.Strip(l), "discard changes") {
+		t.Fatalf("controls entry cut: %q", ansi.Strip(l))
+	}
+	m.width = 100
+	if l := lineWith(t, m.View(), "newline"); !strings.Contains(ansi.Strip(l), "line endings") {
+		t.Fatalf("wide controls must stay on one line: %q", ansi.Strip(l))
+	}
+	m.width = 60
 	m.height = min - 1
 	if strings.Contains(m.View(), "private") || !strings.Contains(m.View(), "enlarge") {
 		t.Fatal("editor below its minimum height must pause")
@@ -476,6 +491,30 @@ func TestCredentialVisibilityNoticeAndResize(t *testing.T) {
 	m = credKey(m, tea.KeyCtrlS)
 	if !strings.Contains(m.View(), "Not saved yet") || !strings.Contains(m.View(), "hidden") {
 		t.Fatal("narrow form must keep the unsaved/hidden draft summary visible")
+	}
+}
+
+// At the minimum size a wrapped error takes rows from the text, never from
+// the warning, the error itself, or the controls: the frame must not reach
+// clipHeight's marker.
+func TestCredentialMinimumEditorKeepsATallErrorWhole(t *testing.T) {
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindFile, "KEY", "")
+	m = openVisibleCredText(t, m)
+	m.width, m.height = 60, m.credentialTextMinHeight()
+	m = credPaste(m, crPastedKey)
+	m = credPaste(m, strings.Repeat("x", credentials.MaxValue))
+	if m.credText.err == "" || len(strings.Split(ansi.Strip(m.errLine(m.credText.err)), "\n")) < 2 {
+		t.Fatalf("the check needs an error that wraps at width 60, got %q", m.credText.err)
+	}
+	raw := m.View()
+	view := strings.Join(strings.Fields(ansi.Strip(raw)), " ")
+	for _, fragment := range []string{credentialEndNoBreak, "Press Enter at the end", "exceeds 256 KiB", "Nothing inserted", "^s blocked", "bytes · 4 lines · view 4–4/4", "-----END OPENSSH PRIVATE KEY-----", "discard changes", "line endings"} {
+		if !strings.Contains(view, fragment) {
+			t.Fatalf("minimum editor with a tall error hides %q:\n%s", fragment, ansi.Strip(raw))
+		}
+	}
+	if strings.Contains(view, "more below") || strings.Contains(view, "more above") {
+		t.Fatalf("minimum editor with a tall error was clipped:\n%s", ansi.Strip(raw))
 	}
 }
 

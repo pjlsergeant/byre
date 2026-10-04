@@ -1570,6 +1570,22 @@ func helpLine(pairs ...string) string {
 	return strings.Join(parts, dimStyle.Render(" · "))
 }
 
+// packedHelp is helpLine packed into as many lines as width needs, breaking
+// only between entries, so no entry is cut off at the pane edge.
+func packedHelp(width int, pairs ...string) string {
+	var lines []string
+	var line []string
+	for i := 0; i+1 < len(pairs); i += 2 {
+		next := append(append([]string{}, line...), pairs[i], pairs[i+1])
+		if len(line) > 0 && ansi.StringWidth(helpLine(next...)) > width {
+			lines = append(lines, helpLine(line...))
+			next = []string{pairs[i], pairs[i+1]}
+		}
+		line = next
+	}
+	return strings.Join(append(lines, helpLine(line...)), "\n")
+}
+
 // statusNote renders a transient status line: the save confirmation gets its
 // own green (the state the eye checks most often), everything else stays dim.
 func statusNote(s string) string {
