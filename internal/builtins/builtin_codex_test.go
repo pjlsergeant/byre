@@ -78,6 +78,7 @@ func TestCodexSharedAuthCompositionResolves(t *testing.T) {
 // against a temp identity base + CODEX_HOME (the BYRE_IDENTITY_BASE seam).
 func runCodexSharedAuthHook(t *testing.T, identityBase, codexHome string) {
 	t.Helper()
+	needCodexReconciler(t)
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "firstrun.sh")
 	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
@@ -91,9 +92,11 @@ func runCodexSharedAuthHook(t *testing.T, identityBase, codexHome string) {
 
 // codexLoginHookEnv is the environment every login-hook invocation uses.
 // Reap grace is shortened so live_probe's TERM/KILL escalation does not spend
-// two wall-clock seconds per call; production still defaults to 1.
+// two wall-clock seconds per call; production still defaults to 1. Every
+// caller runs the hook under bash, so the env is where that need is declared.
 func codexLoginHookEnv(t *testing.T, cat *packages.Catalog, extra ...string) []string {
 	t.Helper()
+	testtools.NeedTool(t, "bash")
 	return append(append(os.Environ(), extra...),
 		"BYRE_CODEX_REAP_GRACE=0.05", sharedAuthLibSeam(t, cat, "codex"))
 }
@@ -104,8 +107,19 @@ func codexLoginHookEnv(t *testing.T, cat *packages.Catalog, extra ...string) []s
 // /usr/local/lib).
 func codexReconcileEnv(t *testing.T, cat *packages.Catalog, base, home string, extra ...string) []string {
 	t.Helper()
+	needCodexReconciler(t)
 	return append(append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CODEX_HOME="+home,
 		sharedAuthLibSeam(t, cat, "codex-shared-auth")), extra...)
+}
+
+// needCodexReconciler gates every test that runs reconcile.sh on the tools
+// it shells out to. jq is the one that matters: auth_valid answers through
+// it, so without jq every credential reads as invalid and the hook takes the
+// leave-it-untouched branch -- a jq-less machine then reports wrong-winner
+// and missing-publish failures instead of the missing dependency.
+func needCodexReconciler(t *testing.T) {
+	t.Helper()
+	testtools.NeedTool(t, "bash", "jq")
 }
 
 // writeCodexSetsidShim supplies setsid on macOS; Linux uses util-linux.
@@ -552,15 +566,20 @@ func TestCodexSharedAuthConcurrentPromotesKeepNewest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	run := func(home string, done chan<- error) {
+	// The environments are built here, not in the goroutines: building one
+	// can skip or fail the test, and t.Skip/t.Fatal off the test goroutine
+	// leaves the receive below waiting forever.
+	envOld := codexReconcileEnv(t, cat, base, homeOld, "BYRE_CODEX_AUTH_RECONCILE="+reconcile)
+	envNew := codexReconcileEnv(t, cat, base, homeNew, "BYRE_CODEX_AUTH_RECONCILE="+reconcile)
+	run := func(env []string, done chan<- error) {
 		cmd := exec.Command("bash", hook)
-		cmd.Env = codexReconcileEnv(t, cat, base, home, "BYRE_CODEX_AUTH_RECONCILE="+reconcile)
+		cmd.Env = env
 		_, err := cmd.CombinedOutput()
 		done <- err
 	}
 	done := make(chan error, 2)
-	go run(homeOld, done)
-	go run(homeNew, done)
+	go run(envOld, done)
+	go run(envNew, done)
 	for range 2 {
 		if err := <-done; err != nil {
 			t.Fatalf("concurrent reconciliation failed: %v", err)
@@ -1068,6 +1087,7 @@ func TestCodexLoginHookRefusesNonRegularCredential(t *testing.T) {
 }
 
 func TestCodexLoginHookPublishesSuccessfulDeviceLogin(t *testing.T) {
+	needCodexReconciler(t)
 	_, cat := testCat(t)
 	loginHook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
 	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
