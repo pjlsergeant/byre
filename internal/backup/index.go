@@ -293,7 +293,8 @@ func CredentialState(raw []byte) (string, error) {
 // StripCredentials returns a copy of a config file's bytes with the
 // [credentials] block and every credential row deleted, through tomldoc so
 // every other byte survives. The source bytes are untouched. A zero-row
-// identity block goes too.
+// identity block goes too, and so does an env_from_host table the deletions
+// leave empty.
 func StripCredentials(raw []byte) ([]byte, error) {
 	cfg, err := config.Parse(raw)
 	if err != nil {
@@ -306,11 +307,21 @@ func StripCredentials(raw []byte) ([]byte, error) {
 	// Sorted, not map order: removing a member of the INLINE spelling
 	// rewrites the whole construct (tomldoc's house shape), so two removals
 	// in different orders would publish different bytes for one input.
+	removed := 0
 	for _, key := range slices.Sorted(maps.Keys(cfg.EnvFromHost)) {
 		if config.IsCredentialSource(cfg.EnvFromHost[key]) {
 			if err := doc.RemoveKey([]string{"env_from_host"}, key); err != nil {
 				return nil, fmt.Errorf("removing credential row %s: %w", key, err)
 			}
+			removed++
+		}
+	}
+	// A table the strip emptied goes with its rows: a bare [env_from_host]
+	// header (or `env_from_host = {}`) is residue of the strip, not the
+	// user's. One the user left empty themselves is theirs, so it stays.
+	if removed > 0 && removed == len(cfg.EnvFromHost) {
+		if err := doc.RemoveTable([]string{"env_from_host"}); err != nil {
+			return nil, fmt.Errorf("removing the emptied [env_from_host] table: %w", err)
 		}
 	}
 	if err := doc.RemoveTableTree("credentials"); err != nil {

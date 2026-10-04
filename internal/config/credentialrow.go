@@ -73,14 +73,42 @@ const ReservedCredentialItem = "manifest"
 // extra ones a CREDENTIAL carries, because a credential value travels to the
 // box under its config key -- so not under the name the manifest travels
 // under, and not under a name bash owns (the launcher would refuse it).
+//
+// Its remedy is for a credential row that already sits under the key -- a
+// hand-written one, since every byre write path refuses the key first: unset
+// that row and set the value again under another name. A set asks
+// ValidateCredentialSetKey, which knows whether there is a row to unset.
 func ValidateCredentialKey(key string) error {
+	return credentialKeyRefusal(key, CredentialUnsetRemedy(key))
+}
+
+// CredentialUnsetRemedy is the remedy a refused key carries when a credential
+// row already sits under it.
+func CredentialUnsetRemedy(key string) string {
+	return fmt.Sprintf("rename the row (byre credentials unset %s, then set it under another key)", key)
+}
+
+// ValidateCredentialSetKey is ValidateCredentialKey for a set: overRow says a
+// credential row already sits under key. Without one there is nothing to
+// unset, so the refusal carries NewCredentialKeyRemedy instead.
+func ValidateCredentialSetKey(key string, overRow bool) error {
+	if overRow {
+		return ValidateCredentialKey(key)
+	}
+	return credentialKeyRefusal(key, NewCredentialKeyRemedy)
+}
+
+// NewCredentialKeyRemedy is the remedy a refused key carries when no
+// credential row sits under it yet.
+const NewCredentialKeyRemedy = "choose another key name for this credential"
+
+func credentialKeyRefusal(key, remedy string) error {
 	if key == ReservedCredentialItem {
-		return fmt.Errorf("%s %s: %q is reserved — a credential travels to the box under its config key, and byre's own export manifest travels under that name; rename the row (byre credentials unset %s, then set it under another key)",
-			EnvFromHostTable, key, ReservedCredentialItem, key)
+		return fmt.Errorf("%s %s: %q is reserved — a credential travels to the box under its config key, and byre's own export manifest travels under that name; %s",
+			EnvFromHostTable, key, ReservedCredentialItem, remedy)
 	}
 	if BashOwnsName(key) {
-		return fmt.Errorf("%s %s: bash owns this name; rename the row (byre credentials unset %s, then set it under another key)",
-			EnvFromHostTable, key, key)
+		return fmt.Errorf("%s %s: bash owns this name; %s", EnvFromHostTable, key, remedy)
 	}
 	return nil
 }
@@ -93,7 +121,7 @@ func ValidateCredentialKey(key string) error {
 //     value that is not a number aborts the launcher, with the value in
 //     bash's own error message.
 //   - readonly: UID, EUID, PPID, SHELLOPTS, BASHOPTS -- the export fails.
-//   - dynamic: LINENO, EPOCHSECONDS, EPOCHREALTIME, BASHPID -- bash rewrites
+//   - dynamic: _, LINENO, EPOCHSECONDS, EPOCHREALTIME, BASHPID -- bash rewrites
 //     the value, so what the agent reads is never what was delivered.
 //   - arrays: GROUPS, DIRSTACK, FUNCNAME, PIPESTATUS, BASH_REMATCH, and the
 //     BASH_/COMP_/READLINE_ families -- never passed to a child at all, so
@@ -121,7 +149,7 @@ var (
 	// "BASH" prefix would refuse a user's BASHFUL_KEY, which bash never owns.
 	bashOwnedCredentialPrefixes = []string{"BASH_", "COMP_", "READLINE_"}
 	bashOwnedCredentialNames    = []string{
-		"BASH", "BASHPID", "BASHOPTS", "SECONDS", "RANDOM", "SRANDOM", "LINENO", "EPOCHSECONDS", "EPOCHREALTIME",
+		"_", "BASH", "BASHPID", "BASHOPTS", "SECONDS", "RANDOM", "SRANDOM", "LINENO", "EPOCHSECONDS", "EPOCHREALTIME",
 		"HISTCMD", "OPTIND", "OPTERR", "UID", "EUID", "PPID", "GROUPS", "DIRSTACK",
 		"FUNCNAME", "PIPESTATUS", "SHELLOPTS", "SHLVL", "PWD", "OLDPWD",
 		"PS0", "PS1", "PS2", "PS3", "PS4", "PROMPT_COMMAND",

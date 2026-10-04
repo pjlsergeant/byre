@@ -148,6 +148,37 @@ func TestIgnoreFlagForAnAbsentEngineIsANoOpWithANote(t *testing.T) {
 	}
 }
 
+// With an engine ignored, an empty total speaks for the engines queried, never
+// for the one byre did not look at: the ignored-engine note has just said its
+// volumes, if any, were not removed.
+func TestResetEmptyTotalUnderAnIgnoredEngineNamesTheEnginesQueried(t *testing.T) {
+	p, _ := testPaths(t)
+	docker := &fakeRunner{}
+	podman := downEngine(runner.Podman)
+	s, _, errb := testStreams("", false)
+	if err := reset(s, p, engines(docker, podman), true, IgnoreEngines{Podman: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errb.String(), "no volumes to reset on docker for "+p.ID) {
+		t.Errorf("the empty total must be scoped to the engine queried:\n%s", errb.String())
+	}
+}
+
+// rehome's empty result is the same claim: its "no volumes" covers the
+// engines queried, never the ignored one.
+func TestRehomeNothingFoundUnderAnIgnoredEngineNamesTheEnginesQueried(t *testing.T) {
+	p, _ := testPaths(t)
+	docker := &fakeRunner{}
+	podman := downEngine(runner.Podman)
+	s, _, errb := testStreams("", false)
+	if err := rehome(s, p, "oldid", engines(docker, podman), 1000, 1000, IgnoreEngines{Podman: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errb.String(), "nothing found for old id oldid (no volumes on docker, no stored config)") {
+		t.Errorf("the empty result must be scoped to the engine queried:\n%s", errb.String())
+	}
+}
+
 // Ignoring every installed engine leaves no total to speak in, so it is a
 // refusal rather than a cheerful "no volumes to reset".
 func TestIgnoringEveryInstalledEngineIsRefused(t *testing.T) {

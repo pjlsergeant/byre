@@ -157,9 +157,6 @@ func (a *credentialAdmin) Set(w configui.CredentialWrite) (configui.CredentialRe
 	if err := config.ValidateEnvFromHostKey(w.Key); err != nil {
 		return configui.CredentialResult{}, err
 	}
-	if err := config.ValidateCredentialKey(w.Key); err != nil {
-		return configui.CredentialResult{}, err
-	}
 	// The RESIDUAL this re-read accepts, disclosed rather than closed: a
 	// foreign write that landed BEFORE the accept is what the compare-and-swap
 	// bases on, and its bytes come back as the editor's new baseline — so the
@@ -169,6 +166,9 @@ func (a *credentialAdmin) Set(w configui.CredentialWrite) (configui.CredentialRe
 	// refusing every credential set on a file somebody else touched.
 	f, err := readCredTarget(a.t)
 	if err != nil {
+		return configui.CredentialResult{}, err
+	}
+	if err := config.ValidateCredentialSetKey(w.Key, config.IsCredentialSource(f.cfg.EnvFromHost[w.Key])); err != nil {
 		return configui.CredentialResult{}, err
 	}
 	// The identity question is answered TWICE — at accept (which decides
@@ -429,11 +429,6 @@ func CredentialsSet(s Streams, projectDir, key string, fileKind bool, layer stri
 	if err := config.ValidateEnvFromHostKey(key); err != nil {
 		return err
 	}
-	// Refused before the value prompt, not after the row is written: the key
-	// the delivery stream reserves for its manifest cannot be a credential.
-	if err := config.ValidateCredentialKey(key); err != nil {
-		return err
-	}
 	kind := credentials.KindEnv
 	if fileKind {
 		kind = credentials.KindFile
@@ -444,6 +439,11 @@ func CredentialsSet(s Streams, projectDir, key string, fileKind bool, layer stri
 	}
 	f, err := readCredTarget(t)
 	if err != nil {
+		return err
+	}
+	// Refused before the value prompt, not after the row is written: a key
+	// the delivery stream reserves or bash owns cannot carry a credential.
+	if err := config.ValidateCredentialSetKey(key, config.IsCredentialSource(f.cfg.EnvFromHost[key])); err != nil {
 		return err
 	}
 	// The disclosure lands BEFORE the value is accepted: a user typing a

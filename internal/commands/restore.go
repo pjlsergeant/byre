@@ -175,7 +175,7 @@ func restoreTargetState(target string, paths project.Paths) (reason string, err 
 		// checkout here, which is an ANSWER. A probe killed by the deadline
 		// exits on a signal (ExitCode -1) and is not one.
 		if errors.As(perr, &exit) && exit.ExitCode() > 0 {
-			return fmt.Sprintf("it holds %d entries and is not a git checkout", len(entries)), nil
+			return fmt.Sprintf("it holds %d %s and is not a git checkout", len(entries), plural(len(entries), "entry", "entries")), nil
 		}
 		return restoreGitUncheckable(perr), nil
 	}
@@ -202,7 +202,7 @@ func restoreTargetState(target string, paths project.Paths) (reason string, err 
 		return restoreGitUncheckable(serr), nil
 	}
 	if n := porcelainFiles(out); n > 0 {
-		return fmt.Sprintf("it is a git checkout with uncommitted changes (%d files)", n), nil
+		return fmt.Sprintf("it is a git checkout with uncommitted changes (%d %s)", n, plural(n, "file", "files")), nil
 	}
 	return "", nil
 }

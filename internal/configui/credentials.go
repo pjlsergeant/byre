@@ -21,6 +21,7 @@ package configui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -135,6 +136,14 @@ func (m model) canWriteCredentials() bool { return m.creds != nil }
 // row in another file instead of repairing the one they are looking at.
 const credentialNoWritePathNote = "nothing here can write a credential to this file — set credentials in a project config or a layer"
 
+// validateCredentialKey holds key to the credential-key rules, with the
+// remedy that fits whether this file already has a credential row under it.
+func (m model) validateCredentialKey(key string) error {
+	return config.ValidateCredentialSetKey(key, slices.ContainsFunc(m.hostEnv, func(it kvItem) bool {
+		return it.Key == key && config.IsCredentialSource(it.Value)
+	}))
+}
+
 // commitCredentialRow is the credential arm of commitEnvRow: hold the key to
 // the same rules a save would, decide what an empty Value means for this row,
 // and either write it or open the passphrase modal that must precede the first
@@ -156,7 +165,7 @@ func (m model) commitCredentialRow(orig model, key string, moving bool) model {
 		orig.itemErr = err.Error()
 		return orig
 	}
-	if err := config.ValidateCredentialKey(key); err != nil {
+	if err := m.validateCredentialKey(key); err != nil {
 		orig.itemErr = err.Error()
 		return orig
 	}

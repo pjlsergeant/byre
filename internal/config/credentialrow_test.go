@@ -495,11 +495,21 @@ func TestCascadeFilesDegradation(t *testing.T) {
 // against the launcher's own spelling in internal/gen; these are the exact and
 // prefix shapes plus one name of each export failure mode.
 func TestValidateCredentialKeyRefusesBashOwnedNames(t *testing.T) {
-	for _, k := range []string{"SECONDS", "UID", "LINENO", "GROUPS", "BASH_REMATCH", "COMP_LINE", "SHLVL", "PS1", "PROMPT_COMMAND"} {
+	for _, k := range []string{"SECONDS", "UID", "LINENO", "_", "GROUPS", "BASH_REMATCH", "COMP_LINE", "SHLVL", "PS1", "PROMPT_COMMAND"} {
 		err := ValidateCredentialKey(k)
 		if err == nil || !strings.Contains(err.Error(), "bash owns this name") ||
 			!strings.Contains(err.Error(), k) {
 			t.Errorf("ValidateCredentialKey(%q) = %v, want the bash-owned refusal naming the key", k, err)
+		}
+		// The two remedies: an existing row is unset; a new key just
+		// takes another name, since there is nothing to unset.
+		if err != nil && !strings.Contains(err.Error(), CredentialUnsetRemedy(k)) {
+			t.Errorf("ValidateCredentialKey(%q) = %v, want the unset remedy for an existing row", k, err)
+		}
+		nerr := ValidateCredentialSetKey(k, false)
+		if nerr == nil || !strings.Contains(nerr.Error(), "bash owns this name") ||
+			!strings.Contains(nerr.Error(), NewCredentialKeyRemedy) || strings.Contains(nerr.Error(), "credentials unset") {
+			t.Errorf("ValidateCredentialSetKey(%q, false) = %v, want the bash-owned refusal with the new-key remedy", k, nerr)
 		}
 	}
 	// The names bash merely reads stay the user's to use (P1), and the list

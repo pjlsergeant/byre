@@ -206,9 +206,7 @@ name = "!closed-one"
 	if !strings.Contains(got, "github — local: gh-mcp") || !strings.Contains(got, "GITHUB_TOKEN (NOT provided by this box)") {
 		t.Errorf("list must render via the status line: %s", got)
 	}
-	if !strings.Contains(got, "no agent selected") {
-		t.Errorf("delivery line missing: %s", got)
-	}
+	assertDeliveryRow(t, got, "-> no agent selected")
 	if !strings.Contains(got, "!closed-one") {
 		t.Errorf("closures must list: %s", got)
 	}

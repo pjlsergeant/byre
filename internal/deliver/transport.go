@@ -324,11 +324,11 @@ func deliverDir(cfg Config, sess Session, src string) (string, error) {
 		// count carry the truth — the path alone never asserts completeness.
 		// `failed` counts ENTRIES (files and interior dirs both), so a
 		// dirs-only failure can't hide behind an "N of N files" line.
-		reportf(cfg, "byre: delivered %s — %d of %d files, %s; %d %s failed",
-			root, okFiles, files, sizeString(bytes), failed, plural(failed, "entry", "entries"))
-		return root, fmt.Errorf("delivering %s/: %d entries failed", src, failed)
+		reportf(cfg, "byre: delivered %s — %d of %d %s, %s; %d %s failed",
+			root, okFiles, files, plural(files, "file", "files"), sizeString(bytes), failed, plural(failed, "entry", "entries"))
+		return root, fmt.Errorf("delivering %s/: %d %s failed", src, failed, plural(failed, "entry", "entries"))
 	}
-	reportf(cfg, "byre: delivered %s — %d files, %s", root, files, sizeString(bytes))
+	reportf(cfg, "byre: delivered %s — %d %s, %s", root, files, plural(files, "file", "files"), sizeString(bytes))
 	return root, nil
 }
 

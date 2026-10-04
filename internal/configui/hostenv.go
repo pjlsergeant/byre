@@ -101,6 +101,9 @@ func credKindSel(src string) int {
 	return credKindEnv
 }
 
+// hostEnvNoArgLabel labels the argument input for a scheme that has none.
+const hostEnvNoArgLabel = "(no argument)"
+
 // hostEnvArgLabel is the second input's label for a scheme. Deliberately
 // SHORT and near-uniform in width: the label column is sized from the longest
 // label, so a scheme-dependent sentence here made the whole form jump
@@ -121,7 +124,15 @@ func hostEnvArgLabel(scheme int) string {
 		// bullets say without spending label width on it.
 		return "Value"
 	}
-	return "(no argument)"
+	return hostEnvNoArgLabel
+}
+
+// hostEnvTakesArgument reports whether a scheme reads the argument input.
+// The input keeps its text across a picker move (moving back must not
+// destroy what was typed), so the form needs this to show such a scheme's
+// input as empty: text beside "(no argument)" reads as part of the row.
+func hostEnvTakesArgument(scheme int) bool {
+	return hostEnvArgLabel(scheme) != hostEnvNoArgLabel
 }
 
 // hostEnvArgHint is the placeholder for the argument input: an example where

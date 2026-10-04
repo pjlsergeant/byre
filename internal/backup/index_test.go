@@ -355,6 +355,48 @@ env_from_host = { TZ = "host:TZ", STRIPE = "encrypted:AAAA" }
 	}
 }
 
+// A table holding nothing but credentials goes with them: the strip's own
+// residue, a bare header, is not a byte the user wrote. An [env_from_host]
+// the user left empty is theirs and stays.
+func TestStripCredentialsRemovesATableItEmptied(t *testing.T) {
+	for _, c := range []struct{ name, src, want string }{
+		{
+			name: "table",
+			src:  "base = \"debian:bookworm\"\n\n[env_from_host]\nSTRIPE = \"encrypted:AAAA\"\n\n[env]\nKEEP = \"me\"\n",
+			// The blank lines around the block stay, as for the identity
+			// block below: tomldoc takes a block, never the whitespace.
+			want: "base = \"debian:bookworm\"\n\n\n[env]\nKEEP = \"me\"\n",
+		},
+		{
+			name: "inline",
+			src:  "base = \"debian:bookworm\"\nenv_from_host = { STRIPE = \"encrypted:AAAA\" }\n",
+			want: "base = \"debian:bookworm\"\n",
+		},
+		{
+			// The table goes as tomldoc removes any table: a comment glued
+			// to the header goes with it, one a blank line separates stays.
+			name: "comments above the header",
+			src:  "base = \"debian:bookworm\"\n\n# separated: stays\n\n# glued: goes\n[env_from_host]\nSTRIPE = \"encrypted:AAAA\"\n",
+			want: "base = \"debian:bookworm\"\n\n# separated: stays\n\n",
+		},
+		{
+			name: "already empty",
+			src:  "base = \"debian:bookworm\"\n\n[env_from_host]\n",
+			want: "base = \"debian:bookworm\"\n\n[env_from_host]\n",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := StripCredentials([]byte(c.src))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != c.want {
+				t.Fatalf("StripCredentials\n--- got ---\n%q\n--- want ---\n%q", got, c.want)
+			}
+		})
+	}
+}
+
 func TestStripCredentialsRemovesAZeroRowIdentityBlock(t *testing.T) {
 	src := "base = \"debian:bookworm\"\n" + credBlock(t)
 	if state, err := CredentialState([]byte(src)); err != nil || state != CredIdentityOnly {

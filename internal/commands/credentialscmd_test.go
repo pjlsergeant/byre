@@ -200,8 +200,11 @@ func TestCredentialsSetRefusals(t *testing.T) {
 	}
 	// A name bash itself owns: the box's launcher would refuse the delivery,
 	// so the key is refused here first, with the reason, before any prompt.
+	// No row sits under the key yet, so there is nothing to unset: the
+	// remedy is another name.
 	if err := CredentialsSet(s, proj, "SECONDS", false, ""); err == nil ||
-		!strings.Contains(err.Error(), "bash owns this name") || !strings.Contains(err.Error(), "SECONDS") {
+		!strings.Contains(err.Error(), "bash owns this name") || !strings.Contains(err.Error(), "SECONDS") ||
+		!strings.Contains(err.Error(), config.NewCredentialKeyRemedy) || strings.Contains(err.Error(), "credentials unset") {
 		t.Fatalf("bash-owned key: %v", err)
 	}
 	// Minting an identity needs a terminal — a passphrase never rides a pipe.
@@ -229,6 +232,24 @@ func TestCredentialsSetRefusals(t *testing.T) {
 		if strings.Contains(string(raw), "[credentials]") {
 			t.Fatalf("an aborted set must write nothing:\n%s", raw)
 		}
+	}
+}
+
+// A hand-written credential row already under a bash-owned key is renamed by
+// unsetting it, and the set refusal says so -- the remedy for a key no row
+// holds would leave that row in place.
+func TestCredentialsSetBashOwnedKeyOverAPlantedRowNamesUnset(t *testing.T) {
+	_, proj := testPaths(t)
+	var errBuf bytes.Buffer
+	row, err := config.FormatEncryptedRow(credentials.KindEnv, []byte("ciphertext"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWriteFile(t, projectConfigPath(t, proj), []byte("[env_from_host]\nSECONDS = \""+row+"\"\n"), 0o644)
+	err = CredentialsSet(ttyStreams(&errBuf), proj, "SECONDS", false, "")
+	if err == nil || !strings.Contains(err.Error(), "bash owns this name") ||
+		!strings.Contains(err.Error(), config.CredentialUnsetRemedy("SECONDS")) {
+		t.Fatalf("planted bash-owned row: %v", err)
 	}
 }
 

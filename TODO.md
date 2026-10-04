@@ -17,25 +17,6 @@ the rationale lives.
 
 ## Open
 
-- [ ] (XS) **`context list` / `mcp list` print a raw Go struct** (field QA
-  2026-10-03, since v1.10.0): the last line is `{ -> no agent selected; ...}`
-  -- a `deliveryVerdict` handed whole to `Fprintln` (context.go:227,
-  mcp.go:163; claudeskill.go:131 looks the same, unrun).
-
-- [ ] (XS) **Bash-owned credential refusal gives the wrong remedy for a new
-  row** (field QA 2026-10-03): at `credentials set` and in the editor it says
-  `unset X, then set it under another key`, but no row exists, so `unset`
-  fails. Right for a hand-planted row only; say "pick another key" when none.
-
-- [ ] (XS) **Env picker shows a stale argument beside `(no argument)`**
-  (field QA 2026-10-03): override a `git:user.name` row, move to `tz:`/`cwd:`/
-  `disabled` -> `(no argument) : user.name`. Saved value is clean; display only.
-
-- [ ] (XS) **QA wording nits** (field QA 2026-10-03): "holds 1 entries" /
-  "(1 files)"; missing-mount remedy says "create the directory" for a file
-  host path; `reset --ignore-docker` prints "no volumes to reset" right after
-  the ignored line; `--no-credentials` leaves an empty `[env_from_host]` header.
-
 - [ ] (S) **Restore interrupt: phantom helper + silent leftovers** (field QA
   2026-10-03, twice each): (1) Ctrl-C mid-pour can report "helper container
   could not be removed ... backup, reset and forget refuse until it is gone"

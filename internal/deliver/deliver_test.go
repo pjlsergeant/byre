@@ -317,6 +317,21 @@ func TestDirectoryDeliveryPreservesStructure(t *testing.T) {
 	}
 }
 
+// The summary's noun agrees with its count at one.
+func TestDirectoryDeliverySummaryCountsOneFileInTheSingular(t *testing.T) {
+	eng := box("docker", "aaa")
+	cfg, _, errw := testConfig(eng)
+	proj := filepath.Join(t.TempDir(), "proj")
+	mustMkdir(t, proj)
+	mustWrite(t, filepath.Join(proj, "a.txt"), "A")
+	if _, err := RunSources(cfg, Options{}, PathSources([]string{proj})); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errw.String(), "delivered /inbox/proj — 1 file,") {
+		t.Fatalf("summary = %q, want the singular", errw.String())
+	}
+}
+
 func TestDirectoryPartialStillPrintsPath(t *testing.T) {
 	eng := box("docker", "aaa")
 	cfg, out, errw := testConfig(eng)

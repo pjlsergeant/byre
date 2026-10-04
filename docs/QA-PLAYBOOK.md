@@ -660,8 +660,9 @@ prompts answered in tmux.
    overwrites — move it, or name another path with --output`, rc 1.
    `--output <existing dir>` refuses the same way; `--output
    <missing-dir>/x` names the missing directory. `--no-credentials` → the
-   copy has no `[credentials]` and no `encrypted:` rows (the source keeps
-   them). `--no-volume <state>` → `left behind: <name>: not carried
+   copy has no `[credentials]`, no `encrypted:` rows, and no `[env_from_host]`
+   header those rows alone filled (the source keeps them).
+   `--no-volume <state>` → `left behind: <name>: not carried
    (--no-volume)`; an unknown name lists the carried candidates; a cache
    name says it is not carried anyway. All refusals rc 1.
 5. Off a terminal, `byre restore FILE DIR </dev/null` → `restore is
@@ -774,8 +775,9 @@ its image ID.
    one that exists, and one missing with `disabled = true`.
 2. `byre develop` → `N mount host path(s) do not exist on this machine:`
    listing every enabled missing one (the dangling symlink included, the
-   disabled one NOT), then `create the directory, disable the mount in
-   `byre config` (Mounts), or remove it ...`, rc 1, image ID unchanged.
+   disabled one NOT), then `create each missing path (the file or
+   directory the mount names), disable the mount in `byre config`
+   (Mounts), or remove it ...`, rc 1, image ID unchanged.
 3. Same config with `engine = "podman"` and no podman image: the same
    list before any build; still no podman image afterwards.
 4. TEARDOWN: restore the config.
@@ -795,8 +797,8 @@ hook at `/etc/byre/firstrun.d/50-qa-credhook.sh` that prints
    disclosed residual); every value intact, QA_FILE a path whose file
    holds both lines, zero BYRE_cred* vars. The session shell sees the
    same values.
-3. Refused at `set` (rc 1, `bash owns this name; rename the row ...`):
-   SECONDS UID PS0 PS1 PS4 PROMPT_COMMAND SHLVL EUID RANDOM LINENO HISTCMD
+3. Refused at `set` (rc 1, `bash owns this name; choose another key name ...`):
+   SECONDS UID _ PS0 PS1 PS4 PROMPT_COMMAND SHLVL EUID RANDOM LINENO HISTCMD
    BASHOPTS BASH_ENV BASH_FOO COMP_WORDS READLINE_LINE. Accepted: IFS PATH
    HOME BASHFUL_KEY2 COMPUTE_KEY PS5 bash_lower (unset them straight away;
    a delivered PATH would break the box).

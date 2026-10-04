@@ -1926,6 +1926,13 @@ func (m model) viewItem() string {
 		if m.credentialItem() && i == 1 && m.credMultiline {
 			val = m.credentialDraftSummary()
 		}
+		if m.listField == fEnv && len(m.inputs) == 2 && i == 1 && m.itemHasMode && !hostEnvTakesArgument(m.itemMode) {
+			// What was typed for another scheme waits in the box for a move
+			// back; this scheme reads none of it, so it shows the hint.
+			shown := in
+			shown.SetValue("")
+			val = shown.View()
+		}
 		if i == m.itemInputIndex() {
 			cursor = cursorStyle.Render("▸ ")
 			val += dimStyle.Render(m.ghostSuffix()) // autocomplete/suggestion ghost

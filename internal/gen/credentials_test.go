@@ -543,12 +543,13 @@ func TestLauncherCredNamedLikeLauncherStateSurvives(t *testing.T) {
 // is on config.bashOwnedCredentialNames), so the launcher refuses the delivery
 // as corrupt: the agent never runs, the message names the line, and the value
 // never appears. MEMBERSHIP is the pin's job (the case arm is byte-identical
-// to the Go list, TestLauncherBashOwnedListMatchesConfig); these three are one
-// name per failure mode that reaches this path -- arithmetic, readonly, and
-// one of the two that export cleanly past the read-back backstop.
+// to the Go list, TestLauncherBashOwnedListMatchesConfig); these are one
+// name per failure mode that reaches this path -- arithmetic, readonly,
+// dynamic (`_`, which bash rewrites after every command), and one of the two
+// that export cleanly past the read-back backstop.
 func TestLauncherRefusesBashOwnedCredentialNames(t *testing.T) {
 	secret := "sk live+do-not-echo"
-	for _, k := range []string{"SECONDS", "UID", "SHLVL"} {
+	for _, k := range []string{"SECONDS", "UID", "_", "SHLVL"} {
 		t.Run(k, func(t *testing.T) {
 			dir := t.TempDir()
 			deliverTree(t, dir, "GOOD_ONE env\n"+k+" env\n",
@@ -583,15 +584,22 @@ func TestLauncherRefusesBashOwnedCredentialNames(t *testing.T) {
 
 // The denylist is a list, so the export behind it is checked too: whatever
 // the list misses must still fail CLOSED, naming the line and not the value.
-// `_` is not on the list -- bash rewrites it after every command, so its
-// read-back never matches -- which makes it the probe for that backstop. The
-// wording is the export failure's own: byre wrote the key, so the refusal does
-// not blame the manifest.
+// The probe is a name bash does not own that already carries an attribute
+// when the FIRST pass runs -- a bash startup file (BASH_ENV) can give it one
+// before the launcher's first line. An array attribute lets the export
+// return 0, so it is the read-back, not the export, that catches it. The
+// wording is the export failure's own: byre wrote the key, so the refusal
+// does not blame the manifest.
 func TestLauncherCredExportBackstopFailsClosed(t *testing.T) {
 	secret := "sk-live-do-not-echo"
 	dir := t.TempDir()
-	deliverTree(t, dir, "GOOD_ONE env\n_ env\n",
-		map[string][]byte{"GOOD_ONE": []byte("z"), "_": []byte(secret)})
+	deliverTree(t, dir, "GOOD_ONE env\nSTRIPE_KEY env\n",
+		map[string][]byte{"GOOD_ONE": []byte("z"), "STRIPE_KEY": []byte(secret)})
+	startup := filepath.Join(t.TempDir(), "bash_env")
+	if err := os.WriteFile(startup, []byte("declare -a STRIPE_KEY\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BASH_ENV", startup)
 	code, out := runLauncherCreds(t, dir, true, "5", `printf 'ran:%s' "${GOOD_ONE:-unset}"`)
 	if code == 0 || strings.Contains(out, "ran:") {
 		t.Fatalf("the agent must never run on an export that did not survive: exit %d out %q", code, out)

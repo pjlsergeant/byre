@@ -106,13 +106,11 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	// product), and the ←/→ counts below are read off this same order, so a
 	// new scheme cannot shift a count without failing here first.
 	//
-	// The line is what this screen can prove about an argument-FREE scheme. Not
-	// its hint: this row opened prefilled from the inherited `git:` source, and
-	// a text input paints its placeholder only when empty, so `tz:` and `cwd:`
-	// show that leftover argument beside their "(no argument)" label instead --
-	// kept on purpose, so moving back to `git:` does not destroy what was
-	// typed, and dropped at encode (a model test pins that it never reaches the
-	// file).
+	// The line is what this screen proves about an argument-FREE scheme. This
+	// row opened prefilled from the inherited `git:` source; `tz:` and `cwd:`
+	// keep that argument in the box (so moving back to `git:` does not destroy
+	// it) but show their hint instead, and drop it at encode -- model tests
+	// pin both the paint and the file.
 	s.WaitFor("[" + strings.Join(hostEnvSchemeOrder, "] [") + "]")
 	// On to `credential`, the picker's last option and the product's one
 	// masked-input form: the kind picker appears beside it, and the notes

@@ -70,8 +70,8 @@ func (u *tarUnpack) run(archive io.Reader) error {
 		return fmt.Errorf("the archive contained no entries")
 	}
 	if u.failed > 0 {
-		reportf(u.cfg, "byre: delivered %d of %d files, %s; %d %s failed",
-			u.okFiles, u.files, sizeString(u.bytes), u.failed, plural(u.failed, "entry", "entries"))
+		reportf(u.cfg, "byre: delivered %d of %d %s, %s; %d %s failed",
+			u.okFiles, u.files, plural(u.files, "file", "files"), sizeString(u.bytes), u.failed, plural(u.failed, "entry", "entries"))
 		return fmt.Errorf("%d %s failed", u.failed, plural(u.failed, "entry", "entries"))
 	}
 	reportf(u.cfg, "byre: delivered %d %s, %s",

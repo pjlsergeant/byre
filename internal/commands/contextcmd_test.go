@@ -141,6 +141,26 @@ func TestContextList(t *testing.T) {
 	if !strings.Contains(got, "conventions  (file: ~/notes/conv.md)") {
 		t.Fatalf("file line wrong:\n%s", got)
 	}
+	assertDeliveryRow(t, got, "-> no agent selected")
+}
+
+// assertDeliveryRow pins that a list command's delivery verdict prints as
+// the sentence it carries, on a row of its own, and never as the verdict
+// value itself (a struct handed whole to Fprintln renders as "{...}").
+func assertDeliveryRow(t *testing.T, out, prefix string) {
+	t.Helper()
+	found := false
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "{") {
+			t.Errorf("delivery verdict printed as a raw value: %q", line)
+		}
+		if strings.HasPrefix(line, prefix) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no row starting %q:\n%s", prefix, out)
+	}
 }
 
 // The empty-editor refusal's remove hint only fits an EXISTING declaration —

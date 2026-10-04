@@ -1719,7 +1719,7 @@ func dirtyCheckoutTarget(t *testing.T) (dir, reason string) {
 	if err := os.WriteFile(filepath.Join(dir, "scratch.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return dir, "it is a git checkout with uncommitted changes (1 files)"
+	return dir, "it is a git checkout with uncommitted changes (1 file)"
 }
 
 // git prints its own resolution of the root, which is what the refusal names,
@@ -1760,6 +1760,24 @@ func TestRestoreTargetItCreatedIsEmpty(t *testing.T) {
 	}
 	if reason != "" {
 		t.Errorf("a directory restore just created was judged %q", reason)
+	}
+}
+
+// The count in the reason agrees with its noun at one.
+func TestRestoreTargetReasonCountsOneEntryInTheSingular(t *testing.T) {
+	t.Setenv("BYRE_HOME", t.TempDir())
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "notes.txt"), []byte("x"), 0o644)
+	paths, err := project.Resolve(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reason, err := restoreTargetState(dir, paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reason, "it holds 1 entry and") {
+		t.Errorf("reason = %q, want the singular count", reason)
 	}
 }
 

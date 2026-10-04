@@ -750,7 +750,7 @@ func refuseMissingMountHosts(r sessionRunner, w io.Writer, mounts []config.Mount
 	for _, m := range missing {
 		fmt.Fprintf(&b, "\n  - %s", m)
 	}
-	b.WriteString("\ncreate the directory, disable the mount in `byre config` (Mounts), or remove it; a mount's host path must exist on this machine before the box can start")
+	b.WriteString("\ncreate each missing path (the file or directory the mount names), disable the mount in `byre config` (Mounts), or remove it; a mount's host path must exist on this machine before the box can start")
 	return errors.New(b.String())
 }
 

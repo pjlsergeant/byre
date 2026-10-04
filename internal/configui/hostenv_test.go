@@ -277,8 +277,8 @@ func TestHostEnvPickerOffersEveryScheme(t *testing.T) {
 	}
 	// A picker move off an argument-ful scheme leaves what was typed in the
 	// argument box -- deliberately, so moving back does not destroy it (the
-	// form shows it beside the "(no argument)" label, as it has for tz:). It
-	// must not reach the FILE: an argument-free scheme encodes to itself.
+	// form hides it while the scheme takes none). It must not reach the FILE:
+	// an argument-free scheme encodes to itself.
 	m.inputs[1].SetValue("user.email")
 	got := m.commitItem()
 	if got.itemErr != "" {
@@ -289,6 +289,29 @@ func TestHostEnvPickerOffersEveryScheme(t *testing.T) {
 	}
 	if err := (config.Config{EnvFromHost: got.assemble().EnvFromHost}).Validate(); err != nil {
 		t.Fatalf("the editor wrote a source config refuses: %v", err)
+	}
+}
+
+// The argument typed for one scheme waits in the box across a picker move,
+// but an argument-less scheme must not SHOW it: "(no argument) : user.email"
+// reads as a row that takes user.email. Moving back shows it again.
+func TestHostEnvArgumentlessSchemeShowsNoStaleArgument(t *testing.T) {
+	m := hostEnvModel(t, map[string]string{"GIT_AUTHOR_EMAIL": "git:user.email"})
+	m = openHostEnvRow(t, m, "GIT_AUTHOR_EMAIL")
+	if v := m.viewItem(); !strings.Contains(v, "user.email") {
+		t.Fatalf("premise: the git: row must show its argument:\n%s", v)
+	}
+	for _, scheme := range []int{schemeTZ, schemeCWD, schemeDisabled} {
+		m.itemMode = scheme
+		m = m.syncHostEnvLabel()
+		if v := m.viewItem(); strings.Contains(v, "user.email") {
+			t.Errorf("%s shows the stale argument:\n%s", hostEnvSchemes[scheme], v)
+		}
+	}
+	m.itemMode = schemeGit
+	m = m.syncHostEnvLabel()
+	if v := m.viewItem(); !strings.Contains(v, "user.email") {
+		t.Fatalf("moving back to git: must show the argument again:\n%s", v)
 	}
 }
 

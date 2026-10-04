@@ -128,7 +128,7 @@ func reset(s Streams, paths project.Paths, engines []engineRunner, force bool, i
 		noteMachineVolumes(s.Err, r, os.Getuid())
 	}
 	if total == 0 {
-		fmt.Fprintf(s.Err, "byre: no volumes to reset for %s\n", paths.ID)
+		fmt.Fprintf(s.Err, "byre: no volumes to reset%s for %s\n", sp.emptyScope(), paths.ID)
 		return nil
 	}
 

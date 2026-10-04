@@ -160,7 +160,7 @@ func MCPList(s Streams, projectDir string) error {
 		fmt.Fprintln(s.Out, mcpStatusLine(d, info))
 	}
 	if len(info.MCPs) > 0 {
-		fmt.Fprintln(s.Out, mcpDeliveryLine(info))
+		fmt.Fprintln(s.Out, mcpDeliveryLine(info).Full)
 	}
 	for _, c := range info.MCPClosed {
 		fmt.Fprintf(s.Out, "!%s  (config — removed from the declared set)\n", c)

@@ -1236,7 +1236,7 @@ it runs, and prints every list the preview would have shown.`,
 	}
 	c.Flags().StringVar(&opts.Output, "output", "", "write the file here instead of <folder>-<date>.byre-backup.tar.gz in the current directory")
 	c.Flags().StringArrayVar(&opts.NoVolumes, "no-volume", nil, "leave this volume out, by its logical name (.claude, .grok); repeatable")
-	c.Flags().BoolVar(&opts.NoCredentials, "no-credentials", false, "delete the [credentials] block and every credential row from the config COPY in the file (the project's own file is untouched)")
+	c.Flags().BoolVar(&opts.NoCredentials, "no-credentials", false, "delete the [credentials] block and every credential row from the config COPY in the file, and an [env_from_host] table those deletions leave empty (the project's own file is untouched)")
 	c.Flags().BoolVar(&opts.Yes, "yes", false, "skip the preview prompt")
 	ignoreEngineFlags(c, &opts.Ignore, "its containers and volumes of this project are not checked and not carried")
 	return c

@@ -1250,6 +1250,9 @@ func TestDevelopRefusesMissingMountHostsBeforeBuilding(t *testing.T) {
 		first + " -> /notes",
 		second + " -> /data",
 		"disable the mount in `byre config` (Mounts)",
+		// byre cannot tell a file mount from a directory one, so the
+		// remedy names neither alone.
+		"create each missing path (the file or directory",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error = %v, want %q in it", err, want)

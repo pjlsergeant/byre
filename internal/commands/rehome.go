@@ -145,7 +145,7 @@ func rehome(s Streams, paths project.Paths, oldID string, engines []engineRunner
 			return serr
 		}
 		if !migratedAny && !storeFound {
-			fmt.Fprintf(s.Err, "byre: nothing found for old id %s (no volumes, no stored config); nothing to migrate\n", oldID)
+			fmt.Fprintf(s.Err, "byre: nothing found for old id %s (no volumes%s, no stored config); nothing to migrate\n", oldID, sp.emptyScope())
 			return nil
 		}
 

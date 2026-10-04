@@ -128,7 +128,7 @@ func ClaudeSkillList(s Streams, projectDir string) error {
 		fmt.Fprintln(s.Out, claudeSkillStatusLine(d))
 	}
 	if len(info.ClaudeSkills) > 0 {
-		fmt.Fprintln(s.Out, claudeSkillsDeliveryLine(info))
+		fmt.Fprintln(s.Out, claudeSkillsDeliveryLine(info).Full)
 	}
 	for _, c := range info.ClaudeSkillsClosed {
 		fmt.Fprintf(s.Out, "!%s  (config — removed from the declared set)\n", c)

@@ -100,7 +100,8 @@ Backup rewrites nothing in the config, with one exception: `--no-credentials`
 deletes the `[credentials]` block and every credential row (an
 `env_from_host` value with the `encrypted:` or `encrypted-file:` scheme) from
 the COPY that goes in the file, through `internal/tomldoc` so every other
-byte survives (ADR 0044). The source file is never touched. Host paths,
+byte survives (ADR 0044); an `env_from_host` table those deletions leave
+empty goes with them (below). The source file is never touched. Host paths,
 `engine`, `worktree_base`, `extends`, seeds: all carried as they are, and
 restore lists what this machine must satisfy, each with the verb that reads
 it and how it fails.
@@ -123,7 +124,12 @@ an identity with no rows, so the file records which of four states it is
 says it. That state is DERIVED from the verified config bytes at restore,
 never read off the index: a file whose index misstates it is not refused, it
 is simply described correctly. A zero-row `[credentials]` block goes with the
-rows under `--no-credentials`.
+rows under `--no-credentials`, and so does an `env_from_host` table that held
+nothing but credential rows: a bare header is residue of the strip, not a
+byte the user wrote. It goes as tomldoc removes any table -- header, body,
+and the comments glued directly above the header; a comment a blank line
+separates from it stays, as do the blank lines around it. A table the user
+left empty themselves is untouched.
 
 ## References, not payloads
 

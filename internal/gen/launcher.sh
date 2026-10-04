@@ -350,7 +350,7 @@ byre_credentials_apply() {
     # only. The arm below is pinned byte-identical to
     # config.BashOwnedCredentialPattern by test; edit the Go list.
     case "$BYRE_cred_key" in
-    BASH_* | COMP_* | READLINE_* | BASH | BASHPID | BASHOPTS | SECONDS | RANDOM | SRANDOM | LINENO | EPOCHSECONDS | EPOCHREALTIME | HISTCMD | OPTIND | OPTERR | UID | EUID | PPID | GROUPS | DIRSTACK | FUNCNAME | PIPESTATUS | SHELLOPTS | SHLVL | PWD | OLDPWD | PS0 | PS1 | PS2 | PS3 | PS4 | PROMPT_COMMAND)
+    BASH_* | COMP_* | READLINE_* | _ | BASH | BASHPID | BASHOPTS | SECONDS | RANDOM | SRANDOM | LINENO | EPOCHSECONDS | EPOCHREALTIME | HISTCMD | OPTIND | OPTERR | UID | EUID | PPID | GROUPS | DIRSTACK | FUNCNAME | PIPESTATUS | SHELLOPTS | SHLVL | PWD | OLDPWD | PS0 | PS1 | PS2 | PS3 | PS4 | PROMPT_COMMAND)
       cred_fail "$BYRE_cred_lineno" "the export key is a name bash itself owns"
       ;;
     esac

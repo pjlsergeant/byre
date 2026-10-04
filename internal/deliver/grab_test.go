@@ -213,7 +213,7 @@ func TestGrabDirectoryPartialEnumeration(t *testing.T) {
 	cfg, _, errw := testConfig(eng)
 	dest := t.TempDir()
 	landed, err := RunGrab(cfg, Options{}, "proj", dest)
-	if err == nil || !strings.Contains(err.Error(), "1 entries failed") {
+	if err == nil || !strings.Contains(err.Error(), "1 entry failed") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(landed) != 1 {

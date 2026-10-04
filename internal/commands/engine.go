@@ -138,6 +138,21 @@ func (sp ignoreSplit) note(w io.Writer, consequence func(eng string) string) {
 	}
 }
 
+// emptyScope is the qualifier an empty total carries: "" when every
+// installed engine was queried, and " on <engines queried>" when a flag left
+// one out -- unscoped, "none found" reads as covering the ignored engine
+// that the note just said byre did not look at.
+func (sp ignoreSplit) emptyScope() string {
+	if len(sp.ignored) == 0 {
+		return ""
+	}
+	queried := make([]string, len(sp.query))
+	for i, r := range sp.query {
+		queried[i] = string(r.Engine())
+	}
+	return " on " + strings.Join(queried, " or ")
+}
+
 // refuseIfEmpty is the refusal for a command with nothing left to ask: every
 // installed engine was named by a flag, so there is no total to speak in, and
 // reporting zero volumes would be the false success the flag exists to expose.

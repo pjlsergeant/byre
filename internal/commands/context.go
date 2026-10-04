@@ -224,7 +224,7 @@ func ContextList(s Streams, projectDir string) error {
 			info.AgentContext = res.Agent.Context
 		}
 	}
-	fmt.Fprintln(s.Out, contextDeliveryLine(info))
+	fmt.Fprintln(s.Out, contextDeliveryLine(info).Full)
 	return nil
 }
 

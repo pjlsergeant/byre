@@ -538,6 +538,35 @@ func TestCredentialRowRefusesARenameAndAKindChangeWithoutAValue(t *testing.T) {
 	}
 }
 
+// A key bash owns is refused at accept, and the remedy fits the file: with
+// no credential row under the key there is nothing to unset, so the user is
+// told to choose another name; a hand-written credential row already under
+// it is renamed through `byre credentials unset`.
+func TestCredentialRowRefusesABashOwnedKeyWithTheRemedyThatFits(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.identity, admin.recipient = mintFor(t, "pw")
+
+	fresh := addCredential(credModel(t, admin, nil), credKindEnv, "SECONDS", "v")
+	got := fresh.commitItem().itemErr
+	if !strings.Contains(got, "bash owns this name") || !strings.Contains(got, config.NewCredentialKeyRemedy) {
+		t.Fatalf("itemErr = %q, want the bash-owned rule with the new-key remedy", got)
+	}
+	if strings.Contains(got, "credentials unset") {
+		t.Fatalf("a key with no row must not be sent to unset: %q", got)
+	}
+
+	planted := encryptedRow(t, admin.recipient, "SECONDS", credentials.KindEnv, "v")
+	m := credModel(t, admin, map[string]string{"SECONDS": planted})
+	if err := m.validateCredentialKey("SECONDS"); err == nil ||
+		!strings.Contains(err.Error(), "bash owns this name") ||
+		!strings.Contains(err.Error(), config.CredentialUnsetRemedy("SECONDS")) {
+		t.Fatalf("a planted row's refusal = %v, want the unset remedy", err)
+	}
+	if admin.sets != 0 {
+		t.Fatal("a refused key still wrote")
+	}
+}
+
 // Switching a credential row to another source is an UNSET of that row: the
 // ciphertext leaves with it, and byre keeps no copy. The editor says so
 // instead of quietly dropping a value nothing can bring back.

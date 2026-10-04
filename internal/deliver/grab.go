@@ -252,9 +252,9 @@ func grabDir(cfg Config, sess Session, abs, phys, hostPath string) ([]string, er
 	if failed > 0 {
 		// `failed` counts ENTRIES (files, dirs, and the enumeration itself),
 		// so a dirs-only failure can't hide behind an "N of N files" line.
-		reportf(cfg, "byre: grabbed %s — %d of %d files, %s; %d %s failed",
-			landed, okFiles, files, sizeString(nbytes), failed, plural(failed, "entry", "entries"))
-		return []string{landed}, fmt.Errorf("grabbing %s/: %d entries failed", abs, failed)
+		reportf(cfg, "byre: grabbed %s — %d of %d %s, %s; %d %s failed",
+			landed, okFiles, files, plural(files, "file", "files"), sizeString(nbytes), failed, plural(failed, "entry", "entries"))
+		return []string{landed}, fmt.Errorf("grabbing %s/: %d %s failed", abs, failed, plural(failed, "entry", "entries"))
 	}
 	reportf(cfg, "byre: grabbed %s — %d %s, %s", landed, files, plural(files, "file", "files"), sizeString(nbytes))
 	return []string{landed}, nil

@@ -164,9 +164,7 @@ func TestClaudeSkillListRendersEffectiveSet(t *testing.T) {
 	if !strings.Contains(out.String(), "tdd-loop — "+src+"  (config)") {
 		t.Errorf("list row missing: %s", out.String())
 	}
-	if !strings.Contains(out.String(), "no agent selected") {
-		t.Errorf("agentless delivery line missing: %s", out.String())
-	}
+	assertDeliveryRow(t, out.String(), "-> no agent selected")
 }
 
 // A project [files] entry that overwrites the staged Claude Skills dir must
