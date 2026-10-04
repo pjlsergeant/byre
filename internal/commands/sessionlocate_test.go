@@ -50,12 +50,10 @@ func worktreesRows(t *testing.T, info statusInfo) string {
 	return strings.Join(statusRows(b.String())["Worktrees"], " ")
 }
 
-// The field-QA bug (2026-10-03): a box running under docker, the config then
-// flipped to podman. shell and deliver walked straight into the box while
-// status said "not running", because status asked only the configured
-// engine. ADR 0004: status must always be able to find the session -- on the
-// engine it actually runs on, with its launch record as the page's subject,
-// whatever the engine record says.
+// A box running under docker with the config since flipped to podman is
+// found (ADR 0004: status must always be able to find the session), on the
+// engine it runs on, with its launch record as the page's subject, whatever
+// the engine record says.
 func TestStatusFindsTheBoxOnTheEngineItLaunchedUnder(t *testing.T) {
 	for _, worktree := range []bool{true, false} {
 		name := "main tree"
@@ -88,17 +86,16 @@ func TestStatusFindsTheBoxOnTheEngineItLaunchedUnder(t *testing.T) {
 			if len(info.SiblingSessions) != 0 {
 				t.Errorf("the box must not be listed as its own sibling: %v", info.SiblingSessions)
 			}
-			if got := containerRow(t, info); !strings.Contains(got, "running (") {
-				t.Errorf("Container row must report the running box, got %q", got)
+			if got := containerRow(t, info); !strings.Contains(got, "running on docker (dockerbox012") {
+				t.Errorf("Container row must report the running box on docker, got %q", got)
 			}
 		})
 	}
 }
 
-// The plain case is unchanged: a box on the configured engine is running.
-// The one extra query per status (asking the other installed engine) is the
-// accepted cost of never missing a box.
-func TestStatusPlainCaseStillReportsRunning(t *testing.T) {
+// A box on the configured engine, beside another engine that answered
+// empty, is running with nothing unknown.
+func TestStatusReportsABoxOnTheConfiguredEngine(t *testing.T) {
 	p := statusPaths(t, false)
 	docker := &fakeRunner{env: ownEnv, live: map[string][]string{workdirLabel(p): {"dockerbox0123"}}}
 	podman := &fakeRunner{engine: runner.Podman}
@@ -109,7 +106,7 @@ func TestStatusPlainCaseStillReportsRunning(t *testing.T) {
 	}
 }
 
-// Item 1, implicated: an unreachable engine this worktree's engine record
+// An unreachable engine this worktree's engine record
 // names (last or unresolved) may hold its box, so it is disclosed and, with
 // no box found, the state is unknown on the page AND in --data, never
 // "not running"/"stopped".
@@ -135,7 +132,7 @@ func TestStatusImplicatedUnreachableEngineIsUnknown(t *testing.T) {
 	}
 }
 
-// Item 1, steady state (ADR 0004's ambient-noise ruling): an unreachable
+// ADR 0004's ambient-noise ruling: an unreachable
 // engine the record does not name -- the installed-but-stopped podman beside
 // docker on a Mac, or any engine when there is no record -- is skipped
 // silently. No note, "not running", --data "stopped", and siblings are not
@@ -183,7 +180,7 @@ func TestStatusUnimplicatedUnreachableEngineIsQuiet(t *testing.T) {
 	}
 }
 
-// Item 2: siblings are gathered from every engine that answered -- a sibling
+// Siblings are gathered from every engine that answered -- a sibling
 // left on the old engine after THIS worktree moved stays visible -- and a box
 // found on one engine does not clear another engine's failure: a partial
 // list and the failure are both on the page.
@@ -231,7 +228,7 @@ func TestStatusSiblingsComeFromEveryEngine(t *testing.T) {
 			t.Errorf("same-engine sibling untagged, claim narrowed: %q", got)
 		}
 	})
-	t.Run("same engine keeps the row byte-identical", func(t *testing.T) {
+	t.Run("same-engine row is a byte-exact contract", func(t *testing.T) {
 		info := statusInfo{Engine: "docker", Canonical: "/p", Container: "abcdef0123456789",
 			SiblingSessions: []string{"proj-wt1 (beef0123)"}}
 		if got := worktreesRows(t, info); got != "1 other session(s) live: proj-wt1 (beef0123)  (share these volumes)" {
@@ -408,22 +405,7 @@ func TestBoxRunningForEditLooksAcrossEngines(t *testing.T) {
 	}
 }
 
-// The boundary of the absent-configured-engine rule: "not running" needs an
-// engine that answered. With the configured engine not installed and no
-// other engine to ask, nothing was asked, so the row stays unknown.
-func TestStatusAbsentConfiguredEngineAndNothingAsked(t *testing.T) {
-	p := statusPaths(t, false)
-	if err := os.Remove(engineRecordPath(p)); err != nil {
-		t.Fatal(err)
-	}
-	info := statusInfo{Engine: "podman", EngineErr: "podman: not installed"}
-	statusSession(discardStreams().Err, &info, p, nil, runner.Podman, true, nil, nil, testUID)
-	if got := containerRow(t, info); got != "unknown (no engine)" {
-		t.Errorf("Container row = %q, want unknown (no engine)", got)
-	}
-}
-
-// Item 4: a failure from an engine other than the configured one carries the
+// A failure from an engine other than the configured one carries the
 // engine's name; the configured engine's own failure is already pinned to the
 // Engine row and stays bare.
 func TestStatusNamesTheEngineThatDidNotAnswer(t *testing.T) {
@@ -442,27 +424,30 @@ func TestStatusNamesTheEngineThatDidNotAnswer(t *testing.T) {
 	}
 }
 
-// Item 5, the precedence when the configured engine is unresolved: a box
-// found elsewhere is running; another engine's hard error is the error shown;
-// an engine that is simply not installed beside engines that all answered
-// empty is not running; and a configured engine byre REFUSED (it may hold a
-// box byre won't look at) stays unknown.
+// The precedence when the configured engine is unresolved: a box found
+// elsewhere is running; another engine's hard error is the error shown; an
+// engine that is simply not installed beside engines that all answered empty
+// is not running, but with no other engine to ask stays unknown; and a
+// configured engine byre REFUSED (it may hold a box byre won't look at) stays
+// unknown.
 func TestStatusUnresolvedConfiguredEnginePrecedence(t *testing.T) {
 	p := statusPaths(t, false)
-	// No record: a record naming the absent engine is item 3's case
-	// (TestStatusNamedEngineNoLongerInstalled), not this precedence.
+	// No record: a record naming the absent engine is
+	// TestStatusNamedEngineNoLongerInstalled's case.
 	if err := os.Remove(engineRecordPath(p)); err != nil {
 		t.Fatal(err)
 	}
-	run := func(absent bool, docker *fakeRunner) statusInfo {
+	run := func(absent bool, others ...sessionRunner) statusInfo {
 		info := statusInfo{Engine: "podman", EngineErr: "podman: not installed"}
-		statusSession(discardStreams().Err, &info, p, nil, runner.Engine(info.Engine), absent, []sessionRunner{docker}, nil, testUID)
+		statusSession(discardStreams().Err, &info, p, nil, runner.Engine(info.Engine), absent, others, nil, testUID)
 		return info
 	}
 
 	found := run(true, &fakeRunner{env: ownEnv, live: map[string][]string{workdirLabel(p): {"dockerbox0123"}}})
-	if got := containerRow(t, found); !strings.Contains(got, "running (") {
-		t.Errorf("found box: %q", got)
+	// The Engine row names no working engine here, so the row names the
+	// one the box is on.
+	if got := containerRow(t, found); !strings.Contains(got, "running on docker (") {
+		t.Errorf("found box must name its engine: %q", got)
 	}
 	if st := statusDataContainerOf(found).State; st != "running" {
 		t.Errorf("found box --data: %q", st)
@@ -484,13 +469,17 @@ func TestStatusUnresolvedConfiguredEnginePrecedence(t *testing.T) {
 		t.Errorf("--data: %q", st)
 	}
 
+	if got := containerRow(t, run(true)); got != "unknown (no engine)" {
+		t.Errorf("an absent configured engine with nothing asked: %q", got)
+	}
+
 	refused := run(false, &fakeRunner{})
 	if got := containerRow(t, refused); !strings.Contains(got, "unknown") {
 		t.Errorf("a refused configured engine may hold the box: %q", got)
 	}
 }
 
-// Item 6: a declined other engine is disclosed by the shared declined note
+// A declined other engine is disclosed by the shared declined note
 // (never as "no longer installed" -- that is develop's record wording) and
 // leaves the state unknown, since byre could not look there.
 func TestStatusDeclinedEngineIsDisclosedAndUnknown(t *testing.T) {
@@ -511,19 +500,35 @@ func TestStatusDeclinedEngineIsDisclosedAndUnknown(t *testing.T) {
 	}
 }
 
-// The orphan row's stop command names the engine the box is ON: telling the
-// user to `podman stop` a docker box is a command that cannot work.
-func TestRenderStatusOrphanStopNamesTheSessionEngine(t *testing.T) {
-	got := containerRow(t, statusInfo{Engine: "podman", SessionEngine: "docker", Canonical: "/p",
-		Container: "deadbeefcafe4567", Orphaned: true})
-	if !strings.Contains(got, "docker stop deadbeefcafe") {
-		t.Errorf("orphan stop must name the session's engine, got %q", got)
+// The Container row names the engine holding the box only when the Engine
+// row (the next launch's engine) does not already. The same-engine row is a
+// contract: the README and quickstart copy that page.
+func TestRenderStatusContainerRowNamesAnEngineOtherThanTheConfigured(t *testing.T) {
+	box := func(engine, session string) statusInfo {
+		return statusInfo{Engine: engine, SessionEngine: session, Canonical: "/p", Container: "deadbeefcafe4567"}
+	}
+	if got := containerRow(t, box("podman", "docker")); got != "running on docker (deadbeefcafe)" {
+		t.Errorf("a box on another engine must name it, got %q", got)
+	}
+	if got := containerRow(t, box("docker", "docker")); got != "running (deadbeefcafe)" {
+		t.Errorf("a box on the configured engine names no engine, got %q", got)
+	}
+	unresolved := box("docker", "docker")
+	unresolved.EngineErr = "docker: not installed"
+	if got := containerRow(t, unresolved); got != "running on docker (deadbeefcafe)" {
+		t.Errorf("an unresolved configured engine names the holding one even when equal, got %q", got)
+	}
+	// The orphan row's stop command names the engine the box is ON:
+	// `podman stop` against a docker box cannot work.
+	orphan := box("podman", "docker")
+	orphan.Orphaned = true
+	if got := containerRow(t, orphan); !strings.HasPrefix(got, "running on docker (deadbeefcafe) ") || !strings.Contains(got, "docker stop deadbeefcafe") {
+		t.Errorf("an orphaned box on another engine must name it, in the row and the stop command, got %q", got)
 	}
 }
 
-// Round-2 items 1 and 2 through the real path: the full declined set, the
-// configured engine's refusal included, goes into statusSession. That
-// refusal stays out of the stderr note (the Engine row states it) but is a
+// The full declined set, the configured engine's refusal included, goes
+// into statusSession. That refusal stays out of the stderr note (the Engine row states it) but is a
 // failure: the sibling list gathered from docker is qualified as partial,
 // the Container row falls to "unknown (no engine)", and --data carries the
 // siblings and their error on that branch too.
@@ -556,7 +561,7 @@ func TestStatusConfiguredRefusalQualifiesSiblings(t *testing.T) {
 	}
 }
 
-// Round-2 item 3: an engine the record names that is neither installed nor
+// An engine the record names that is neither installed nor
 // declined cannot be asked, which is the named-unreachable case by another
 // route -- one note, and unknown rather than "not running".
 func TestStatusNamedEngineNoLongerInstalled(t *testing.T) {

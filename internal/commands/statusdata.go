@@ -41,7 +41,10 @@ import (
 // without the key to migrate.
 // 3 (2026-08-23): `warnings` — the compat-path warnings the page prints
 // (kind, layer, path, text), absent when the cascade is clean.
-const StatusDataVersion = 3
+// 4 (2026-10-04): `container.engine` names the engine holding a found box,
+// omitted when there is none. It can differ from `engine.name`, so a reader
+// acting on `container.id` must now take the engine from here.
+const StatusDataVersion = 4
 
 type statusData struct {
 	Version int `json:"version"`
@@ -300,13 +303,18 @@ type statusDataContainer struct {
 	// State is running / stopped / unknown. "unknown" is never collapsed to
 	// "stopped": a found engine that will not answer leaves the box's state
 	// genuinely unknown, which the lifecycle commands already refuse on.
-	State    string   `json:"state"`
-	ID       string   `json:"id,omitempty"`
+	State string `json:"state"`
+	ID    string `json:"id,omitempty"`
+	// Engine is the engine holding the box, set whenever one was found. It
+	// can differ from engine.name, the engine the NEXT develop uses.
+	Engine   string   `json:"engine,omitempty"`
 	Orphaned bool     `json:"orphaned,omitempty"`
 	Error    string   `json:"error,omitempty"`
 	Siblings []string `json:"siblings,omitempty"`
-	// SiblingsError means the sibling query failed while the own-session one
-	// worked: other live sessions are unknown, not absent.
+	// SiblingsError is why Siblings is partial, one error per engine that
+	// could not be asked, each prefixed with its engine's name except the
+	// configured one's, which engine.name already shows. Other live sessions
+	// there are unknown, not absent.
 	SiblingsError string `json:"siblings_error,omitempty"`
 }
 
@@ -572,25 +580,18 @@ func statusDataNetworkOf(s statusInfo) statusDataNetwork {
 }
 
 func statusDataContainerOf(s statusInfo) statusDataContainer {
-	// Same precedence as the page's Container row (statusSession states the
-	// rule): running, then an engine that failed, then an unresolved
-	// configured engine, and "stopped" only when every engine that could
-	// hold the box answered.
-	switch {
-	case s.Container != "":
-		return statusDataContainer{
-			State: "running", ID: s.Container, Orphaned: s.Orphaned,
-			Siblings: s.SiblingSessions, SiblingsError: s.SiblingQueryErr,
-		}
-	case s.ContainerQueryErr != "":
-		return statusDataContainer{State: "unknown", Error: s.ContainerQueryErr, Siblings: s.SiblingSessions, SiblingsError: s.SiblingQueryErr}
-	case s.EngineErr != "" && !s.SessionAbsent:
-		return statusDataContainer{State: "unknown", Error: s.EngineErr, Siblings: s.SiblingSessions, SiblingsError: s.SiblingQueryErr}
+	c := statusDataContainer{Siblings: s.SiblingSessions, SiblingsError: s.SiblingQueryErr}
+	switch s.containerState() {
+	case containerRunning:
+		c.State, c.ID, c.Engine, c.Orphaned = "running", s.Container, s.SessionEngine, s.Orphaned
+	case containerQueryFailed:
+		c.State, c.Error = "unknown", s.ContainerQueryErr
+	case containerNoEngine:
+		c.State, c.Error = "unknown", s.EngineErr
 	default:
-		return statusDataContainer{
-			State: "stopped", Siblings: s.SiblingSessions, SiblingsError: s.SiblingQueryErr,
-		}
+		c.State = "stopped"
 	}
+	return c
 }
 
 func bindData(m config.Mount) statusDataBind {

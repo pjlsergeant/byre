@@ -110,9 +110,9 @@ type statusInfo struct {
 	ProjectRunArgs    bool     // the PROJECT's own raw run_args present (degrades the posture claim)
 	Container         string   // this dir's running container id, or "" if none
 	SessionEngine     string   // the engine holding Container -- not necessarily Engine, the configured one
-	SessionAbsent     bool     // no engine failed, one answered, none holds this worktree's box (an unreachable engine the engine record doesn't name is skipped, not failed)
-	ContainerQueryErr string   // engine found but the container query failed — state is UNKNOWN, not absent
-	SiblingQueryErr   string   // sibling-session query failed while the own-session query worked
+	SessionAbsent     bool     // no engine failed and one answered without this worktree's box: "not running" even with EngineErr set
+	ContainerQueryErr string   // with no box found, the errors of the engines that could not be asked, each named but the configured one (the Engine row shows it) — state is UNKNOWN, not absent
+	SiblingQueryErr   string   // the errors of the engines missing from SiblingSessions, named as ContainerQueryErr names them
 	Orphaned          bool     // Container is running but its byre client is gone (terminal died; box survives)
 	SiblingSessions   []string // OTHER live sessions in this project, "workdir-id (short-id)" (worktrees sharing these volumes)
 	SiblingsElsewhere int      // how many of SiblingSessions run on another engine than this page's session (tagged "on <engine>"; they do not share these volumes)
@@ -343,10 +343,10 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 	// is knowable whatever happened to resolution, and this line is now the
 	// only place a shadow is reported.
 	info.ManagedShadows = managedPathShadows(cfg.Config, res)
-	// The configured engine is what the Engine row describes: the one the
-	// NEXT develop builds and runs with. The session itself is looked for
-	// wherever it may be (statusSession), so a failure here does not decide
-	// the Container row.
+	// The Engine row describes the configured engine, the one the NEXT
+	// develop uses. The session is looked for on every engine
+	// (statusSession), so failing to resolve this one does not decide the
+	// Container row.
 	self := runner.Engine(cfg.Engine)
 	var configured sessionRunner
 	configuredAbsent := false
@@ -372,29 +372,56 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 	return nil
 }
 
+// runningAs opens the Container row for a found box, naming the engine that
+// holds it whenever the Engine row does not: a different engine holds it, or
+// the configured one is unresolved. Any command against the box must use
+// that engine.
+func runningAs(s statusInfo) string {
+	if s.SessionEngine != "" && (s.EngineErr != "" || s.SessionEngine != s.Engine) {
+		return "running on " + s.SessionEngine + " (" + shortID(s.Container) + ")"
+	}
+	return "running (" + shortID(s.Container) + ")"
+}
+
+// containerState is the Container row's verdict, shared by the page and
+// --data; statusSession states the precedence.
+type containerState int
+
+const (
+	containerStopped     containerState = iota
+	containerRunning                    // Container is set
+	containerQueryFailed                // ContainerQueryErr carries the failures
+	containerNoEngine                   // EngineErr says why
+)
+
+func (s statusInfo) containerState() containerState {
+	switch {
+	case s.Container != "":
+		return containerRunning
+	case s.ContainerQueryErr != "":
+		return containerQueryFailed
+	case s.EngineErr != "" && !s.SessionAbsent:
+		return containerNoEngine
+	}
+	return containerStopped
+}
+
 // statusSession fills the engine-dependent half of the page: the configured
-// engine's identity mode (Engine row) and this worktree's running session,
-// found on whichever installed engine holds it (locateSession) -- the
-// configured engine is only where the NEXT develop runs, not necessarily
-// where the box is. configured is nil when the configured engine could not be
-// resolved; configuredAbsent then says whether that was "not installed" (it
-// can hold no box) rather than a refusal (it may hold one byre won't look at).
-// self is the configured engine's name either way, and declined is the full
-// declined set, the configured engine's refusal included (locateSession keeps
-// that one out of its stderr note but counts it as a failure). callerUID is
-// the uid the session's ownership is judged against (deliver.JudgeBox), so
-// the box described is the one `byre shell` would enter.
+// engine's identity mode (Engine row) and this worktree's session, found on
+// whichever engine holds it (locateSession). configured is nil when the
+// configured engine is unresolved; configuredAbsent then says it is not
+// installed (it can hold no box) rather than refused (it may hold one byre
+// won't look at). declined is the full declined set, the configured engine's
+// refusal included. callerUID is the uid ownership is judged against.
 //
-// The Container row's states follow from what the engines said:
+// The Container row, in precedence order (containerState):
 //   - a box found on any engine: running, whatever else failed;
-//   - otherwise any engine that could not be asked: unknown, naming it --
-//     an unasked engine is never reported as holding nothing (P4);
-//   - otherwise no engine failed and at least one answered, with no box
-//     (SessionAbsent): not running, even beside an absent configured engine.
-//     An unreachable engine the engine record does not name was skipped
-//     silently and counts as neither (locateSession has the ruling);
-//   - otherwise (the configured engine refused, or no engine at all): the
-//     Engine row's error decides it, as "unknown (no engine)".
+//   - any engine that could not be asked: unknown, naming it -- an unasked
+//     engine is never reported as holding nothing (P4);
+//   - no engine failed and at least one answered (SessionAbsent): not
+//     running, even beside an absent configured engine;
+//   - otherwise (the configured engine refused, or nothing to ask):
+//     "unknown (no engine)", the Engine row's error deciding it.
 func statusSession(w io.Writer, info *statusInfo, paths project.Paths, configured sessionRunner, self runner.Engine, configuredAbsent bool, others []sessionRunner, declined []declinedEngine, callerUID int) {
 	if configured != nil {
 		// The probe decides which identity a session is built and run with, so
@@ -412,26 +439,7 @@ func statusSession(w io.Writer, info *statusInfo, paths project.Paths, configure
 			}
 		}
 	}
-	// This dir's own session: the worktree label, so it reflects THIS worktree,
-	// not a sibling (both carry the project label).
 	loc := locateSession(w, configured, self, others, declined, paths, callerUID)
-	// failures decide the Container row. The row's text leaves out an
-	// UNRESOLVED configured engine's own failure: the Engine row already
-	// states it, and the row falls to "unknown (no engine)" on it. The
-	// sibling qualifier takes only queryFailures: a box whose identity
-	// could not be settled leaves this worktree's session unknown, but its
-	// engine still answered the project-wide query, so it does not make the
-	// sibling list partial.
-	var failures, rowFailures, queryFailures []string
-	for _, f := range loc.failed {
-		failures = append(failures, f.String())
-		if !f.configured || configured != nil {
-			rowFailures = append(rowFailures, f.String())
-		}
-		if !f.identity {
-			queryFailures = append(queryFailures, f.String())
-		}
-	}
 	if r := loc.r; r != nil {
 		info.Container = loc.ids[0]
 		info.SessionEngine = string(r.Engine())
@@ -463,33 +471,34 @@ func statusSession(w io.Writer, info *statusInfo, paths project.Paths, configure
 			// Not knowing the labels is not knowing there is no record.
 			info.LaunchState = launchUnreadable
 		}
-	} else if len(failures) > 0 {
-		// A failed query is NOT "not running" — a found binary whose daemon
-		// is down/unreachable must render as unknown, not as a confident
-		// negative (the lifecycle commands refuse in this state; status must
-		// not contradict them).
+	} else if len(loc.failed) > 0 {
+		// An unresolved configured engine's own failure is left out of the
+		// row's text: the Engine row states it, and alone it leaves the row
+		// at "unknown (no engine)".
+		var rowFailures []string
+		for _, f := range loc.failed {
+			if !f.configured || configured != nil {
+				rowFailures = append(rowFailures, f.String())
+			}
+		}
 		info.ContainerQueryErr = strings.Join(rowFailures, "; ")
 	} else if len(loc.answered) > 0 && (configured != nil || configuredAbsent) {
 		info.SessionAbsent = true
 	}
 	// Other live sessions in the same project (worktrees sharing these
-	// volumes). Surfaced so status doesn't imply "nothing running" while
-	// reset/forget correctly refuse on the project label. Empty for a plain
-	// project (no worktree siblings). Asked of every engine whose own-session
-	// query succeeded -- a sibling may run on any of them, whichever engine
-	// this worktree's box is on -- and only those: siblingNames subtracts
-	// that engine's own ids from the family, so a failed own query with a
-	// succeeding family one (a transient engine flap between them) would list
-	// THIS box as its own sibling. A sibling on another engine than the
-	// page's own (the session's, else the configured one) is tagged with its
-	// engine and counted, so the Worktrees row keeps it out of the shared-
-	// volumes claim.
+	// volumes), so status doesn't imply "nothing running" while reset/forget
+	// refuse on the project label. Asked of every engine whose own-session
+	// query succeeded, and only those: each engine's family minus its own
+	// ids, so a failed own query beside a succeeding family one (an engine
+	// flap between them) cannot list THIS box as its own sibling. A sibling
+	// on another engine than the page's own (the session's, else the
+	// configured one) mounts that engine's volumes, not these: it is tagged
+	// and counted so the Worktrees row keeps it out of the sharing claim.
 	home := ""
-	if knownEngine(string(self)) {
-		home = string(self)
-	}
 	if loc.r != nil {
 		home = string(loc.r.Engine())
+	} else if knownEngine(string(self)) {
+		home = string(self)
 	}
 	var siblingFailures []string
 	for _, a := range loc.answered {
@@ -504,16 +513,23 @@ func statusSession(w io.Writer, info *statusInfo, paths project.Paths, configure
 				info.SiblingsElsewhere += len(names)
 			}
 		} else {
-			siblingFailures = append(siblingFailures, engineFailure{engine: string(a.r.Engine()), err: cerr, configured: a.r == configured}.String())
+			siblingFailures = append(siblingFailures, engineFailure{engine: string(a.r.Engine()), err: cerr, configured: a.r.Engine() == self}.String())
 		}
 	}
 	// An engine that could not be asked about this worktree could not be
 	// asked about its siblings either, so a sibling list, a running box with
-	// no siblings listed, or a sibling query that itself failed is short by
-	// that engine and says so. Where none of those holds, the Container row's
-	// unknown already carries the failures and repeating them adds nothing.
+	// none listed, or a sibling query that itself failed is short by that
+	// engine and says so. An identity failure is excluded: that engine did
+	// answer. Otherwise the Container row's unknown already carries the
+	// failures.
 	if info.Container != "" || len(info.SiblingSessions) > 0 || len(siblingFailures) > 0 {
-		siblingFailures = append(queryFailures, siblingFailures...)
+		var unasked []string
+		for _, f := range loc.failed {
+			if !f.identity {
+				unasked = append(unasked, f.String())
+			}
+		}
+		siblingFailures = append(unasked, siblingFailures...)
 	}
 	info.SiblingQueryErr = strings.Join(siblingFailures, "; ")
 }
@@ -659,10 +675,8 @@ func siblingNames(r interface {
 }
 
 // siblingNamesOn is siblingNames with an engine tag: a non-empty onEngine
-// renders "workdir-id (short-id, on docker)", for a sibling running on a
-// different engine from the one the page's session (or, with none, the
-// configured engine) is on -- a box there mounts that engine's volumes, not
-// these, so it must not read as sharing them.
+// renders "workdir-id (short-id, on docker)", for siblings on another engine
+// than the page's own.
 func siblingNamesOn(r interface {
 	ContainerLabels(id string) (map[string]string, error)
 }, mine, fam []string, onEngine string) []string {
@@ -1124,21 +1138,18 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 			n, plural(n, "line", "lines"), FullHint))
 	}
 
-	// A box found running outranks an engine byre could not resolve or ask:
-	// the session lookup goes past the configured engine, so a box on the
-	// engine it was launched under is a fact whatever the config now names.
-	// An engine that failed outranks the configured engine's absence (its
-	// error is the specific one), and an absent configured engine beside
-	// engines that all answered empty is "not running" (statusSession).
-	if s.Container != "" && s.Orphaned {
-		row("Container", "running ("+shortID(s.Container)+") — orphaned: the byre that started it is gone; the box runs on. Reach it with 'byre shell', or stop it: "+orDefault(s.SessionEngine, s.Engine)+" stop "+shortID(s.Container))
-	} else if s.Container != "" {
-		row("Container", "running ("+shortID(s.Container)+")")
-	} else if s.ContainerQueryErr != "" {
+	switch s.containerState() {
+	case containerRunning:
+		if s.Orphaned {
+			row("Container", runningAs(s)+" — orphaned: the byre that started it is gone; the box runs on. Reach it with 'byre shell', or stop it: "+orDefault(s.SessionEngine, s.Engine)+" stop "+shortID(s.Container))
+		} else {
+			row("Container", runningAs(s))
+		}
+	case containerQueryFailed:
 		row("Container", "unknown — the engine didn't answer: "+s.ContainerQueryErr)
-	} else if s.EngineErr != "" && !s.SessionAbsent {
+	case containerNoEngine:
 		row("Container", "unknown (no engine)")
-	} else {
+	default:
 		row("Container", "not running")
 	}
 	// What the page is ABOUT, as a continuation of the row where a reader

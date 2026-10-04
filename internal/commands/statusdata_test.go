@@ -221,6 +221,31 @@ func TestStatusDataKeepsAnUnknownContainerStateUnknown(t *testing.T) {
 	}
 }
 
+// container.engine (version 4) names the engine HOLDING a found box -- which can differ
+// from engine.name, the next launch's engine -- and is absent with no box.
+func TestStatusDataNamesTheEngineHoldingTheBox(t *testing.T) {
+	got := decodeStatusData(t, statusInfo{Engine: "podman", SessionEngine: "docker", Container: "deadbeefcafe4567"})
+	c, _ := got["container"].(map[string]any)
+	if c["engine"] != "docker" {
+		t.Errorf("container.engine = %v, want docker (the engine holding the box)", c["engine"])
+	}
+	if e, _ := got["engine"].(map[string]any); e["name"] != "podman" {
+		t.Errorf("engine.name = %v, want podman (the configured engine)", e["name"])
+	}
+
+	got = decodeStatusData(t, statusInfo{Engine: "docker", SessionEngine: "docker", Container: "deadbeefcafe4567"})
+	c, _ = got["container"].(map[string]any)
+	if c["engine"] != "docker" {
+		t.Errorf("a box on the configured engine: container.engine = %v, want docker", c["engine"])
+	}
+
+	got = decodeStatusData(t, statusInfo{Engine: "docker", SessionAbsent: true})
+	c, _ = got["container"].(map[string]any)
+	if _, ok := c["engine"]; ok || c["state"] != "stopped" {
+		t.Errorf("no box: container.engine must be absent, got %v", c)
+	}
+}
+
 // The self-edit grant is a bind like any other here: a reader asking "what
 // can this box write?" must not have to know it is spelled differently.
 func TestStatusDataListsTheSelfEditGrantAsABind(t *testing.T) {
