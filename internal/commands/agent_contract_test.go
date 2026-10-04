@@ -239,10 +239,11 @@ const claudeAuthWall = "Not logged in"
 //   - CLAUDE_CONFIG_DIR relocates ALL state into the .claude volume: `claude
 //     auth status` (offline, loginless) reports it as the config directory,
 //     and the session creates .claude.json inside it while leaving the
-//     home-root ~/.claude.json untouched. The image may already HOLD a
-//     home-root file (the installer runs claude without CLAUDE_CONFIG_DIR at
-//     build time, and the skill clears only ~/.claude), so the probe pins
-//     the session's writes by checksum before/after, not by absence.
+//     home-root ~/.claude.json untouched. The installer runs claude without
+//     CLAUDE_CONFIG_DIR at build time and writes a home-root file, which the
+//     skill removes from the image; the probe compares checksums
+//     before/after (absent both times passes), so it pins the session's
+//     writes whether or not a home-root file is present.
 //   - CLAUDE_CODE_OAUTH_TOKEN (what claude-shared-auth's env hook exports)
 //     is an auth method the CLI recognizes: a dummy value flips `auth status`
 //     to oauth_token, offline.

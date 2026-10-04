@@ -228,7 +228,7 @@ func TestSelfHostBuildStagesAndOrders(t *testing.T) {
 func TestAgentSkillsCleanStateDir(t *testing.T) {
 	_, cat := testCat(t)
 	for _, c := range []struct{ agent, install, clean string }{
-		{"claude", "install.sh", "rm -rf /home/dev/.claude"},
+		{"claude", "install.sh", "rm -rf /home/dev/.claude /home/dev/.claude.json"},
 		{"gemini", "npm install -g", "rm -rf /home/dev/.gemini"},
 		{"opencode", "opencode.ai/install", "rm -rf /home/dev/.local/share/opencode"},
 	} {

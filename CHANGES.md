@@ -29,6 +29,11 @@
   longer assumes a directory; `reset` and `rehome` under `--ignore-<engine>`
   say which engines they found nothing on; and `backup --no-credentials`
   drops an `[env_from_host]` table its deletions left empty.
+- **Claude boxes no longer share a baked-in machine ID.** The Claude
+  installer writes a `~/.claude.json` holding a machine ID, which stayed in
+  the image, so every box built from it carried the same one. In a byre box
+  Claude keeps its state elsewhere and leaves that file unchanged; the
+  image no longer keeps it. Boxes using the Claude agent rebuild once.
 
 ## v1.12.0 — 2026-10-03
 

@@ -34,7 +34,10 @@ dockerfile = [
   # print a first-run "config not found / restore from backup" notice. Remove the
   # residue so the state volume starts clean (the binary lives in ~/.local/bin,
   # not ~/.claude, so this doesn't touch it; Claude recreates ~/.claude at runtime).
-  "RUN rm -rf /home/dev/.claude",
+  # The installer also writes ~/.claude.json (first-start bookkeeping with a
+  # machine ID). With CLAUDE_CONFIG_DIR set, Claude keeps its state in the
+  # volume instead, but left in the image every box would carry the same ID.
+  "RUN rm -rf /home/dev/.claude /home/dev/.claude.json",
 ]
 
 [runtime]

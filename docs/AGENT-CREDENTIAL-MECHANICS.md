@@ -74,6 +74,14 @@ Inside `~/.claude/`:
   effect). Docs: "If you set CLAUDE_CONFIG_DIR, every ~/.claude path on this
   page lives under that directory instead"
   (https://code.claude.com/docs/en/claude-directory).
+  2026-10-04: the stale home-root file came from the image -- the installer
+  runs claude at build time without `CLAUDE_CONFIG_DIR` and writes
+  `~/.claude.json` (first-start bookkeeping incl. a machine ID). With
+  `CLAUDE_CONFIG_DIR` set, TestAgentContractClaude found it unchanged across
+  a session (checksum), and a probe with a planted marker file found none of
+  its contents in the session's `$CLAUDE_CONFIG_DIR/.claude.json` (which got
+  its own fresh machine ID). Neither can rule out a read. The claude skill
+  removes it at build, so images built since carry none.
 - `projects/<encoded-cwd>/` -- **per-project, directory-keyed** (path with `/`
   -> `-`, e.g. `-workspace`): session transcripts `<session-id>.jsonl`,
   per-session subdirs, and `memory/MEMORY.md` (auto memory). Empirical.
