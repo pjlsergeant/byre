@@ -98,14 +98,21 @@ exceptions noted inline.
   prompt or piped stdin, never a command-line
   argument. The configuration editor's Env screen writes the same encrypted
   row through a masked single-line field; `^e` opens an **unmasked** multiline
-  draft after a warning. It preserves tabs, CRs and trailing newlines without
+  draft after a warning. It keeps tabs and does not strip trailing
+  newlines; pasted CR/CRLF become LF by default (see below). It writes no
   plaintext editor files. Enter inserts a newline in the editor and never
   saves the value form. Editor `^s` returns a hidden draft; Esc discards
   editor changes. Form `^s` saves only that credential, with passphrase
   confirmation on a file's first credential. Use terminal bracketed paste,
   not Ctrl-V's host clipboard lookup.
-  Check the LF (`↵`) and CR (`␍`) markers: terminals can change pasted line
-  endings before byre receives them; the editor does not normalize them.
+  Terminals send pasted line breaks as CR, so by default the editor turns
+  pasted CR and CRLF into LF; the line under the marker legend says which
+  mode is on. `^t` switches to keeping line endings exactly as pasted, and
+  switching back converts the draft's CRs to LF. Check the LF (`↵`) and CR
+  (`␍`) markers before accepting the draft.
+  A paste has no line break after its last line, and OpenSSH rejects a key
+  file whose `-----END ...-----` line lacks one, so the editor and the form
+  warn when a draft ends that way; press Enter at the end of the draft.
   Blue markers display CR/LF as line breaks (CRLF once) and tabs as guides
   to eight-column stops, without changing the stored bytes.
   For byte-exact **file-kind** input, use `byre credentials set KEY --file < path`.

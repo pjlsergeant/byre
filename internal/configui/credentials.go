@@ -325,6 +325,12 @@ func (m model) envItemNotes() []string {
 		return []string{"⚠ " + credentialNoWritePathNote}
 	}
 	var notes []string
+	// The end-line warning leads because the clip takes notes from the bottom:
+	// at the editor's minimum size (60x15), after a disclosure it would fall
+	// off screen, and no screen after this form repeats it before ^s saves.
+	if m.credMultiline && endsInBareEndLine(m.credDraft) {
+		notes = append(notes, "⚠ "+credentialEndNoBreak+" Open ^e and press Enter at the end.")
+	}
 	if d := m.creds.Disclosure(); d != "" {
 		notes = append(notes, "⚠ "+d)
 	}

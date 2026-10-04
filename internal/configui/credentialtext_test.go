@@ -111,6 +111,7 @@ func TestMultilineCredentialDraftRoundTrip(t *testing.T) {
 			m := addCredential(credModel(t, admin, nil), kind, "KEY", "")
 			m.width, m.height = 80, 24
 			m = openVisibleCredText(t, m)
+			m = credKey(m, tea.KeyCtrlT) // keep line endings as pasted
 			value := "  -----BEGIN PRIVATE KEY-----\r\n\t秘密 key\n" + strings.Repeat("line\n", 150) + "-----END PRIVATE KEY-----\n\n"
 			m = credPaste(m, value)
 			if m.credText.value != value {
@@ -211,6 +212,7 @@ func TestCredentialTextEditingPreservesTextAndEscapesControls(t *testing.T) {
 	if e.value != "α β\n\t" || e.pos != 5 {
 		t.Fatalf("edit = %q cursor %d", e.value, e.pos)
 	}
+	e.keepCR = true
 	e = e.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("\x1b[2J\r\t\x00"), Paste: true})
 	rows, _ := e.rows(80)
 	view := ansi.Strip(strings.Join(rows, "\n"))
@@ -423,7 +425,7 @@ func TestCredentialVisibilityNoticeAndResize(t *testing.T) {
 	if len(strings.Split(m.viewCredText(), "\n")) > m.height-1 {
 		t.Fatal("consent notice does not fit its minimum height")
 	}
-	for _, fragment := range []string{"without masking", "^e"} {
+	for _, fragment := range []string{"without masking", "^e", "CRLF line endings become LF", "^t"} {
 		if !strings.Contains(m.View(), fragment) {
 			t.Fatalf("minimum consent screen hides %q: %s", fragment, m.View())
 		}
@@ -437,13 +439,34 @@ func TestCredentialVisibilityNoticeAndResize(t *testing.T) {
 	if m.credText.value != "private" {
 		t.Fatal("editor modified an invisible draft")
 	}
-	m.width, m.height = 60, 12
-	if !strings.Contains(m.View(), "VISIBLE") || !strings.Contains(m.View(), "NOT loaded") || !strings.Contains(m.View(), "NOT save") {
-		t.Fatal("minimum live editor hides visibility or save-boundary notice")
+	min := m.credentialTextMinHeight()
+	m.width, m.height = 60, min
+	for _, fragment := range []string{"VISIBLE", "NOT loaded", "NOT save", credentialLineEndingsLF, "^t", "line endings", "private"} {
+		if !strings.Contains(m.View(), fragment) {
+			t.Fatalf("minimum live editor hides %q:\n%s", fragment, m.View())
+		}
 	}
+	if len(strings.Split(m.View(), "\n")) > m.height-1 {
+		t.Fatal("minimum live editor does not fit its minimum height")
+	}
+	m.height = min - 1
+	if strings.Contains(m.View(), "private") || !strings.Contains(m.View(), "enlarge") {
+		t.Fatal("editor below its minimum height must pause")
+	}
+	m.height = min
+	// The end-line warning and an error together still fit, with two text
+	// rows, and clipping drops none of them.
+	m = credPaste(m, "\n-----END OPENSSH PRIVATE KEY-----")
 	m = credKey(m, tea.KeyCtrlV)
-	if !strings.Contains(m.View(), "^s blocked") {
-		t.Fatal("editor error must explain why the draft cannot be accepted")
+	if len(strings.Split(m.viewCredText(), "\n")) > m.height-1 {
+		t.Fatalf("warning and error do not fit the minimum height:\n%s", m.View())
+	}
+	// Join the wrapped lines so the warning's fragment is found whole.
+	view := strings.Join(strings.Fields(ansi.Strip(m.View())), " ")
+	for _, fragment := range []string{"VISIBLE", credentialEndNoBreak, "Press Enter at the end", "terminal's paste", "^s blocked", "line endings", "view 1–2/2"} {
+		if !strings.Contains(view, fragment) {
+			t.Fatalf("minimum editor with warning and error hides %q:\n%s", fragment, m.View())
+		}
 	}
 	m = credKey(m, tea.KeyLeft)
 	m = credKey(m, tea.KeyCtrlS)
@@ -474,5 +497,228 @@ func TestCredentialRefusalIsOneRedError(t *testing.T) {
 				t.Fatalf("width %d: missing %q", width, fragment)
 			}
 		}
+	}
+}
+
+// A key as a terminal pastes it: CR line breaks, and none after the last line.
+const crPastedKey = "-----BEGIN OPENSSH PRIVATE KEY-----\rb3BlbnNzaC1rZXktdjE=\rAAAA\r-----END OPENSSH PRIVATE KEY-----"
+
+const lfKey = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjE=\nAAAA\n-----END OPENSSH PRIVATE KEY-----"
+
+func TestCredentialPasteNormalizesLineEndingsByDefault(t *testing.T) {
+	for _, tt := range []struct{ pasted, want string }{
+		{crPastedKey, lfKey},
+		{strings.ReplaceAll(crPastedKey, "\r", "\r\n"), lfKey},
+		{crPastedKey + "\r", lfKey + "\n"},
+		{crPastedKey + "\r\n", lfKey + "\n"},
+		{lfKey + "\n", lfKey + "\n"},
+	} {
+		e := credentialText{}.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tt.pasted), Paste: true})
+		if e.value != tt.want || e.pos != len([]rune(tt.want)) {
+			t.Fatalf("%q: value %q cursor %d", tt.pasted, e.value, e.pos)
+		}
+	}
+	// Only line breaks change: tabs and other controls stay as pasted.
+	e := credentialText{}.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a\tb\x1b\r\r\nc"), Paste: true})
+	if e.value != "a\tb\x1b\n\nc" {
+		t.Fatalf("value %q", e.value)
+	}
+}
+
+func TestCredentialEndLineWithoutFinalBreak(t *testing.T) {
+	for _, tt := range []struct {
+		draft string
+		want  bool
+	}{
+		{lfKey, true},
+		{"-----END OPENSSH PRIVATE KEY-----", true},
+		{"-----END CERTIFICATE-----", true},
+		{lfKey + "\n", false},
+		{lfKey + "\r\n", false},
+		{crPastedKey + "\r", false}, // as-pasted: the ␍ marker shows it
+		{lfKey + " ", false},
+		{lfKey + "\nmore", false},
+		{"  -----END OPENSSH PRIVATE KEY-----", false},
+		{"-----END-----", false},
+		{"-----BEGIN OPENSSH PRIVATE KEY-----", false},
+		{"", false},
+		{"ghp_0123456789abcdef", false},
+	} {
+		if got := endsInBareEndLine(tt.draft); got != tt.want {
+			t.Errorf("%q: got %v, want %v", tt.draft, got, tt.want)
+		}
+	}
+}
+
+func TestCredentialEditorWarnsUntilTheEndLineIsTerminated(t *testing.T) {
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindFile, "KEY", "")
+	m = credPaste(openVisibleCredText(t, m), crPastedKey)
+	if view := ansi.Strip(m.View()); !strings.Contains(view, credentialEndNoBreak) || !strings.Contains(view, "Press Enter") {
+		t.Fatalf("pasted key must show the end-line warning and its remedy:\n%s", view)
+	}
+	m = credKey(m, tea.KeyEnter)
+	if m.credText.value != lfKey+"\n" || strings.Contains(m.View(), credentialEndNoBreak) {
+		t.Fatal("Enter at the end must terminate the key and clear the warning")
+	}
+	m = credKey(m, tea.KeyBackspace)
+	m = credPaste(m, "\nnot a key")
+	if strings.Contains(m.View(), credentialEndNoBreak) {
+		t.Fatal("a draft not ending in an END line must not warn")
+	}
+}
+
+func TestCredentialFormWarnsBeforeSavingAnUnterminatedEndLine(t *testing.T) {
+	admin := newFakeCredAdmin()
+	m := addCredential(credModel(t, admin, nil), credKindFile, "KEY", "")
+	m = credPaste(openVisibleCredText(t, m), crPastedKey)
+	m = credKey(m, tea.KeyCtrlS)
+	view := ansi.Strip(m.View())
+	if m.mode != modeItem || !strings.Contains(view, credentialEndNoBreak) || !strings.Contains(view, "^e") || strings.Contains(view, "PRIVATE KEY") {
+		t.Fatalf("form must warn about the accepted draft without showing it:\n%s", view)
+	}
+	// A warning, not a gate: the form still saves the draft as accepted.
+	m = credKey(m, tea.KeyCtrlS)
+	m = typeCredPass(t, m, "pw", "pw")
+	if m.mode != modeList || string(admin.open(t, "KEY", "pw")) != lfKey {
+		t.Fatal("warning must not block or alter the save")
+	}
+	m.itemHostEnv = true
+	m = m.startItem(0)
+	m = credPaste(openVisibleCredText(t, m), lfKey+"\n")
+	m = credKey(m, tea.KeyCtrlS)
+	if m.mode != modeItem || !m.credentialItem() || !m.credMultiline || m.credDraft != lfKey+"\n" {
+		t.Fatal("the negative check below needs the credential form holding the accepted draft")
+	}
+	if strings.Contains(m.View(), credentialEndNoBreak) {
+		t.Fatal("a terminated key must not warn on the form")
+	}
+}
+
+// The form's ^s saves without another screen in between, so the warning and
+// its remedy must survive the height clip at the editor's minimum size, with
+// a layer disclosure competing for the same rows.
+func TestCredentialFormEndLineWarningSurvivesTheMinimumSize(t *testing.T) {
+	admin := newFakeCredAdmin()
+	admin.disclosure = "writes to layer acme (/x/layer.config), used by 3 projects — this changes the value for every project extending it"
+	m := addCredential(credModel(t, admin, nil), credKindFile, "KEY", "")
+	m = openVisibleCredText(t, m)
+	m.width, m.height = 60, m.credentialTextMinHeight()
+	m = credPaste(m, crPastedKey)
+	m = credKey(m, tea.KeyCtrlS)
+	if m.mode != modeItem || m.height != 15 {
+		t.Fatalf("want the form at 60x15, got mode %v at height %d", m.mode, m.height)
+	}
+	// Join the wrapped lines so each fragment is found whole.
+	view := strings.Join(strings.Fields(ansi.Strip(m.View())), " ")
+	for _, fragment := range []string{credentialEndNoBreak, "Open ^e and press Enter at the end", "layer acme"} {
+		if !strings.Contains(view, fragment) {
+			t.Fatalf("the 60x15 form hides %q:\n%s", fragment, ansi.Strip(m.View()))
+		}
+	}
+}
+
+func TestCredentialAsPastedKeepsLineEndingsByteExact(t *testing.T) {
+	pasted := "a\rb\r\nc\n"
+	e := credentialText{}.update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	if !e.keepCR {
+		t.Fatal("^t must switch to as-pasted")
+	}
+	e = e.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(pasted), Paste: true})
+	if e.value != pasted {
+		t.Fatalf("value %q", e.value)
+	}
+}
+
+func TestCredentialTypedEnterInsertsLFInEitherMode(t *testing.T) {
+	for _, keepCR := range []bool{false, true} {
+		for _, key := range []tea.KeyType{tea.KeyEnter, tea.KeyCtrlJ} {
+			e := credentialText{value: "ab", pos: 1, keepCR: keepCR}.update(tea.KeyMsg{Type: key})
+			if e.value != "a\nb" || e.pos != 2 {
+				t.Fatalf("keepCR=%v: value %q cursor %d", keepCR, e.value, e.pos)
+			}
+		}
+	}
+}
+
+func TestCredentialSwitchingToLFConvertsDraftInPlace(t *testing.T) {
+	value := "ab\r\ncd\rEF\r\n"
+	for _, tt := range []struct {
+		pos  int
+		want int // the same logical character after conversion
+	}{
+		{0, 0},  // a
+		{2, 2},  // the CR opening a CRLF: the LF that replaces it
+		{3, 2},  // between CR and LF: the LF that replaces the pair
+		{4, 3},  // c
+		{6, 5},  // lone CR
+		{7, 6},  // E
+		{11, 9}, // end
+	} {
+		e := credentialText{value: value, pos: tt.pos, keepCR: true}
+		e = e.update(tea.KeyMsg{Type: tea.KeyCtrlT})
+		if e.keepCR || e.value != "ab\ncd\nEF\n" || e.pos != tt.want {
+			t.Fatalf("pos %d: value %q cursor %d, want cursor %d", tt.pos, e.value, e.pos, tt.want)
+		}
+	}
+	// Switching back changes nothing already in the draft.
+	e := credentialText{value: "a\nb", pos: 1}.update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	if !e.keepCR || e.value != "a\nb" || e.pos != 1 {
+		t.Fatalf("value %q cursor %d", e.value, e.pos)
+	}
+}
+
+func TestCredentialCapAppliesToConvertedInsertion(t *testing.T) {
+	// CRLF counts as one byte once converted, so this fits exactly.
+	e := credentialText{value: strings.Repeat("x", credentials.MaxValue-2)}
+	e = e.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("\r\n\r\n"), Paste: true})
+	if len(e.value) != credentials.MaxValue || e.err != "" {
+		t.Fatalf("len %d err %q", len(e.value), e.err)
+	}
+}
+
+func TestCredentialEditorShowsLineEndingMode(t *testing.T) {
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+	m = openVisibleCredText(t, m)
+	if view := ansi.Strip(m.View()); !strings.Contains(view, credentialLineEndingsLF) || !strings.Contains(view, "^t") {
+		t.Fatalf("editor must name LF mode and its toggle:\n%s", view)
+	}
+	m = credKey(m, tea.KeyCtrlT)
+	if view := ansi.Strip(m.View()); !strings.Contains(view, credentialLineEndingsAsPasted) || strings.Contains(view, credentialLineEndingsLF) {
+		t.Fatalf("editor must name as-pasted mode:\n%s", view)
+	}
+}
+
+func TestCredentialCRPasteReachesTheSavePathAsLF(t *testing.T) {
+	admin := newFakeCredAdmin()
+	m := addCredential(credModel(t, admin, nil), credKindFile, "KEY", "")
+	m = credPaste(openVisibleCredText(t, m), crPastedKey)
+	m = credKey(m, tea.KeyEnter) // the final line break a paste does not carry
+	m = credKey(m, tea.KeyCtrlS)
+	want := lfKey + "\n"
+	if m.credDraft != want {
+		t.Fatalf("draft %q", m.credDraft)
+	}
+	m = credKey(m, tea.KeyCtrlS)
+	m = typeCredPass(t, m, "pw", "pw")
+	if m.mode != modeList || string(admin.open(t, "KEY", "pw")) != want {
+		t.Fatal("saved credential is not the LF draft")
+	}
+}
+
+func TestCredentialReopenedCRDraftOpensAsPasted(t *testing.T) {
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+	m = openVisibleCredText(t, m)
+	m = credKey(m, tea.KeyCtrlT)
+	m = credPaste(m, "a\rb")
+	m = credKey(m, tea.KeyCtrlS)
+	m = openVisibleCredText(t, m)
+	if !m.credText.keepCR || m.credText.value != "a\rb" || !strings.Contains(m.View(), credentialLineEndingsAsPasted) {
+		t.Fatal("reopening must neither convert a CR draft nor claim LF mode")
+	}
+	m = credKey(m, tea.KeyEsc)
+	m.credDraft = "a\nb"
+	m = openVisibleCredText(t, m)
+	if m.credText.keepCR {
+		t.Fatal("a draft without CRs must reopen in LF mode")
 	}
 }

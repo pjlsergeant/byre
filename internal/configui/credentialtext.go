@@ -22,6 +22,53 @@ type credentialText struct {
 	value string
 	pos   int // rune offset, never a byte offset
 	err   string
+	// Terminals send pasted line breaks as CR, which key parsers such as
+	// ssh-keygen reject, so pastes become LF unless the user keeps them.
+	keepCR bool
+}
+
+// The mode line's stable openings, shared by the view and its tests.
+const (
+	credentialLineEndingsLF       = "Line endings: LF"
+	credentialLineEndingsAsPasted = "Line endings: as pasted"
+)
+
+// credentialEndNoBreak opens the warning for a draft ending in a PEM END
+// line: OpenSSH refuses a private key file whose END line has no final line
+// break, and a terminal paste carries none. Shared by the editor, the form
+// note, and their tests.
+const credentialEndNoBreak = "No final line break: -----END----- lines usually need one."
+
+// endsInBareEndLine reports whether the draft's last line is a PEM END line
+// ("-----END ...-----") with nothing after it. The match is exact: leading
+// whitespace, or any trailing character including CR, is no match.
+func endsInBareEndLine(draft string) bool {
+	last := draft[strings.LastIndexAny(draft, "\r\n")+1:]
+	return strings.HasPrefix(last, "-----END ") && strings.HasSuffix(last, "-----")
+}
+
+// toLF rewrites CRLF and lone CR as LF.
+func toLF(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+}
+
+// toggleLineEndings flips the mode. Entering LF converts the draft's CRs in
+// place, keeping the cursor on the same character; a cursor between the
+// halves of a CRLF lands on the LF that replaces the pair. Leaving LF only
+// changes later pastes: a converted break cannot be told from a typed one.
+func (e credentialText) toggleLineEndings() credentialText {
+	e.keepCR = !e.keepCR
+	if e.keepCR {
+		return e
+	}
+	r := []rune(e.value)
+	prefix := r[:e.pos]
+	if e.pos > 0 && e.pos < len(r) && r[e.pos-1] == '\r' && r[e.pos] == '\n' {
+		prefix = r[:e.pos-1]
+	}
+	e.pos = utf8.RuneCountInString(toLF(string(prefix)))
+	e.value = toLF(e.value)
+	return e
 }
 
 const credentialTabWidth = 8
@@ -204,7 +251,10 @@ func (m model) updateCredText(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.credInputWarning != "" {
 				value = ""
 			}
-			m.credText = credentialText{value: value, pos: utf8.RuneCountInString(value)}
+			// LF mode unless the draft already holds CRs, which only an
+			// as-pasted session can have put there: the mode line must
+			// describe the draft on screen, and reopening never converts it.
+			m.credText = credentialText{value: value, pos: utf8.RuneCountInString(value), keepCR: strings.ContainsRune(value, '\r')}
 			m.credTextTransition = credentialTextEntering
 			return m, tea.Sequence(tea.EnterAltScreen, func() tea.Msg { return credentialRevealMsg{} })
 		}
@@ -287,9 +337,14 @@ func (e credentialText) update(msg tea.KeyMsg) credentialText {
 	case tea.KeyCtrlV:
 		e.err = "Use your terminal's paste command."
 		return e
+	case tea.KeyCtrlT:
+		e = e.toggleLineEndings()
 	default:
 		if msg.Type == tea.KeyRunes {
 			insert = string(msg.Runes)
+			if !e.keepCR {
+				insert = toLF(insert)
+			}
 		}
 	}
 	if insert != "" {
@@ -317,28 +372,48 @@ func (m model) viewCredText() string {
 			"Visible replacement",
 			"Your draft will be shown without masking: anyone watching or recording can read it. Stored credentials are never loaded; no plaintext editor file is created.",
 			"Use bracketed paste. Invalid UTF-8/U+FFFD can be lost; binary files need CLI input and an existing identity (see configuration reference).",
+			"Pasted CR and CRLF line endings become LF; ^t in the editor keeps them as pasted.",
 		} {
 			paragraphs = append(paragraphs, strings.Join(wrapLine(note, m.width), "\n"))
 		}
 		return strings.Join(paragraphs, "\n\n") + "\n\n" + helpLine("^e", "show draft + open editor", "esc", "cancel")
 	}
+	mode := credentialLineEndingsLF + " (pasted CR/CRLF → LF) · ^t keep as pasted"
+	if m.credText.keepCR {
+		mode = credentialLineEndingsAsPasted + " (CR/CRLF kept) · ^t convert to LF"
+	}
+	help := helpLine("enter", "newline", "^s", "use draft (NOT save)", "esc", "discard changes", "^t", "line endings")
+	if ansi.StringWidth(help) > m.width {
+		help = helpLine("enter", "newline", "^s", "use draft (NOT save)", "esc", "discard changes") + "\n" + helpLine("^t", "line endings")
+	}
+	var warning []string
+	if endsInBareEndLine(m.credText.value) {
+		warning = wrapLine("⚠ "+credentialEndNoBreak+" Press Enter at the end.", m.width)
+	}
 	width := max(8, m.width-2)
 	rows, cursorRow := m.credText.rows(width)
-	// Reserve space for the persistent warning, position, errors and controls.
-	height := max(1, m.height-9)
+	// Reserve the five header lines, the position line, the end-line warning
+	// when it shows, two lines for an error so the text does not jump when
+	// one appears, the controls, and one spare line.
+	height := max(1, m.height-9-len(warning)-strings.Count(help, "\n")-1)
 	from := max(0, cursorRow-height+1)
 	to := min(len(rows), from+height)
 	var b strings.Builder
 	b.WriteString("VISIBLE replacement — not saved\n")
 	b.WriteString("Stored credential NOT loaded.\n")
-	b.WriteString(credentialMarkerStyle.Render("Tabs: ⇥ (8 cols)  CR: ␍  LF: ↵  End: ∎") + " (display only)\n\n")
+	b.WriteString(credentialMarkerStyle.Render("Tabs: ⇥ (8 cols)  CR: ␍  LF: ↵  End: ∎") + " (display only)\n")
+	b.WriteString(lipgloss.NewStyle().Bold(true).Render(mode) + "\n\n")
 	b.WriteString(strings.Join(rows[from:to], "\n"))
 	fmt.Fprintf(&b, "\n%d bytes · %s · view %d–%d/%d\n", len(m.credText.value), credentialLines(m.credText.value), from+1, to, len(rows))
+	// Bold, not yellow: warnStyle stays cross-project reach's.
+	for _, l := range warning {
+		b.WriteString(errStyle.Render(l) + "\n")
+	}
 	if m.credText.err != "" {
 		b.WriteString(m.errLine(m.credText.err) + "\n")
 		b.WriteString("^s blocked until another edit or cursor move. Esc cancels.\n")
 	}
-	b.WriteString(helpLine("enter", "newline", "^s", "use draft (NOT save)", "esc", "discard changes"))
+	b.WriteString(help)
 	return b.String()
 }
 
@@ -346,7 +421,9 @@ func (m model) credentialTextMinHeight() int {
 	if !m.credTextVisible {
 		return 16 // room for the pre-entry disclosure
 	}
-	return 12
+	// The header, two text rows, the two-line end-line warning, an error and
+	// two-line controls.
+	return 15
 }
 
 // Soft-wrap the display, not the value. Controls are inert visible notation,

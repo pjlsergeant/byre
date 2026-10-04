@@ -113,7 +113,8 @@ What it deliberately does NOT do:
 
 Multiline editing exposes the replacement to viewers/recorders after a warning;
 stored values are never loaded and no plaintext editor file is created.
-Terminal paste may translate LF to CR or drop invalid UTF-8/U+FFFD;
+Pasted CR/CRLF become LF unless `^t` keeps them; terminal paste may drop
+invalid UTF-8/U+FFFD;
 unbracketed controls can act as
 shortcuts, and text pasted into the Key field is visible. Passphrase widgets
 remain single-line and can normalize pasted controls. For binary file-kind

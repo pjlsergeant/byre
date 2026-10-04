@@ -287,13 +287,24 @@ the standing limit of a review gate, not of credentials.
   in Value requires explicit re-entry (`^e`): typed and pasted Return cannot
   be distinguished. `^e` warns before displaying a replacement in memory,
   without plaintext editor files; stored credentials are never loaded.
-  Text/newlines are preserved. Editor `^s` returns a hidden unsaved draft;
-  Esc discards editor changes. Form `^s` uses `set`, with first-file
+  Text is preserved; pasted CR and CRLF become LF by default, and a mode
+  line names the setting and its `^t` toggle to keep line endings as
+  pasted. Switching back to LF converts the draft's CRs in place. Each
+  editor session starts in LF mode unless the draft it opens already holds
+  CRs. The editor and the form warn, without modifying the draft, when it
+  ends in an `-----END ...-----` line with no final line break; `byre
+  credentials set` is out of scope, storing the bytes it is given without
+  that warning. (Amended 2026-10-04: pastes were kept verbatim, and
+  terminals send pasted line breaks as CR, so a pasted OpenSSH key arrived
+  with no LF and ssh-keygen rejected it. A paste also carries no final line
+  break: OpenSSH 9.2p1 `ssh-keygen -lf` answers "is not a key file" for an
+  LF-separated ed25519 key without a final LF and loads the same key with
+  one, measured 2026-10-04; hence the warning.) Editor `^s` returns a
+  hidden unsaved draft; Esc discards editor changes. Form `^s` uses `set`, with first-file
   passphrase confirmation as before, leaving unrelated edits unsaved.
   Empty keeps the stored value. Residuals: viewers/recorders can read the
   visible draft; unbracketed controls can act as shortcuts; Key-field text
-  is visible; terminals may translate pasted LF to CR, and the decoder
-  drops invalid UTF-8 and U+FFFD. The
+  is visible; the decoder drops invalid UTF-8 and U+FFFD. The
   creation/rekey passphrase widgets are unchanged and may normalize pasted
   controls. The configuration reference owns the
   binary file-kind CLI/bootstrap instructions and CLI trailing-LF difference.
