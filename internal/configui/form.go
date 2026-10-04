@@ -127,9 +127,11 @@ const labelWidth = 17
 
 // accentColor is the ONE structural color: the cursor, section headers, and
 // the focused picker selection. ANSI 4-bit, so the terminal theme picks the
-// shade and monochrome terminals drop it cleanly. The other colors carry
-// fixed semantics — red = errors, green = saved — and yellow stays reserved
-// for warnStyle alone (cross-project reach must never blend in).
+// shade and monochrome terminals drop it cleanly. A single-colour run
+// carries fixed semantics: red = errors, green = saved or the right
+// line-ending mode, and yellow is warnStyle's alone (cross-project reach
+// must never blend in). Rainbow cycles every hue per character, so it is
+// its own signal, reserved for warnings whose failure is silent (rainbow).
 var accentColor = lipgloss.Color("6")
 
 var (
@@ -149,6 +151,35 @@ var (
 	// escapes the current scope must not blend in (ANSI yellow, bold).
 	warnStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3"))
 )
+
+// rainbowStyles cycle bold red, orange, yellow, green, blue, purple.
+var rainbowStyles = func() []lipgloss.Style {
+	var styles []lipgloss.Style
+	for _, hue := range []string{"196", "208", "226", "46", "33", "129"} {
+		styles = append(styles, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(hue)))
+	}
+	return styles
+}()
+
+// rainbow paints each non-space rune the next hue. It is reserved for
+// warnings whose failure is silent until later -- a key that saves fine and
+// that ssh rejects at use time -- so they cannot read as one more note.
+// Spaces pass through unpainted. Through lipgloss the colour profile
+// applies: on a monochrome terminal (and under go test) the text comes out
+// plain and contiguous.
+func rainbow(s string) string {
+	var b strings.Builder
+	i := 0
+	for _, r := range s {
+		if r == ' ' {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteString(rainbowStyles[i%len(rainbowStyles)].Render(string(r)))
+		i++
+	}
+	return b.String()
+}
 
 // uiMode is the current screen: the field form, a list field's item browser, or
 // a single-item add/edit editor.

@@ -27,10 +27,15 @@ type credentialText struct {
 	keepCR bool
 }
 
-// The mode line's stable openings, shared by the view and its tests.
+// The mode lines' stable fragments, shared by the view and its tests: the
+// openings name the mode, the marks say which mode suits a key, and the
+// suggestion to switch shows only while the wrong mode is on.
 const (
 	credentialLineEndingsLF       = "Line endings: LF"
 	credentialLineEndingsAsPasted = "Line endings: as pasted"
+	credentialLineEndingsRight    = "✓ right for keys"
+	credentialLineEndingsWrong    = "✗ usually wrong"
+	credentialConvertToLF         = "Press ^t to convert to LF " + credentialLineEndingsRight
 )
 
 // credentialEndNoBreak opens the warning for a draft ending in a PEM END
@@ -73,7 +78,30 @@ func (e credentialText) toggleLineEndings() credentialText {
 
 const credentialTabWidth = 8
 
-var credentialMarkerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))
+var (
+	credentialMarkerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))
+	credentialModeStyle   = lipgloss.NewStyle().Bold(true)
+	credentialRightStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))
+	credentialWrongStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("1"))
+)
+
+// credentialModeLines says which line-ending mode is on and whether it suits
+// a key. LF mode does not advertise switching away; as-pasted mode paints its
+// suggestion to switch in rainbow, because a CR-broken key saves fine and
+// fails only when ssh reads it.
+func (e credentialText) credentialModeLines() string {
+	if e.keepCR {
+		return credentialModeStyle.Render(credentialLineEndingsAsPasted+" ") +
+			credentialWrongStyle.Render(credentialLineEndingsWrong) +
+			credentialModeStyle.Render(" (CR/CRLF kept)") + "\n" +
+			rainbow(credentialConvertToLF)
+	}
+	return credentialModeStyle.Render(credentialLineEndingsLF+" ") +
+		credentialRightStyle.Render(credentialLineEndingsRight) +
+		credentialModeStyle.Render(" (pasted CR/CRLF → LF)") + "\n" +
+		credentialModeStyle.Render("^t keeps them as pasted ") +
+		credentialWrongStyle.Render(credentialLineEndingsWrong)
+}
 
 func credentialLines(value string) string {
 	n := strings.Count(value, "\n") + strings.Count(value, "\r") - strings.Count(value, "\r\n") + 1
@@ -378,10 +406,6 @@ func (m model) viewCredText() string {
 		}
 		return strings.Join(paragraphs, "\n\n") + "\n\n" + helpLine("^e", "show draft + open editor", "esc", "cancel")
 	}
-	mode := credentialLineEndingsLF + " (pasted CR/CRLF → LF) · ^t keep as pasted"
-	if m.credText.keepCR {
-		mode = credentialLineEndingsAsPasted + " (CR/CRLF kept) · ^t convert to LF"
-	}
 	help := helpLine("enter", "newline", "^s", "use draft (NOT save)", "esc", "discard changes", "^t", "line endings")
 	if ansi.StringWidth(help) > m.width {
 		help = helpLine("enter", "newline", "^s", "use draft (NOT save)", "esc", "discard changes") + "\n" + helpLine("^t", "line endings")
@@ -392,22 +416,22 @@ func (m model) viewCredText() string {
 	}
 	width := max(8, m.width-2)
 	rows, cursorRow := m.credText.rows(width)
-	// Reserve the five header lines, the position line, the end-line warning
+	// Reserve the six header lines, the position line, the end-line warning
 	// when it shows, two lines for an error so the text does not jump when
 	// one appears, the controls, and one spare line.
-	height := max(1, m.height-9-len(warning)-strings.Count(help, "\n")-1)
+	height := max(1, m.height-10-len(warning)-strings.Count(help, "\n")-1)
 	from := max(0, cursorRow-height+1)
 	to := min(len(rows), from+height)
 	var b strings.Builder
 	b.WriteString("VISIBLE replacement — not saved\n")
 	b.WriteString("Stored credential NOT loaded.\n")
 	b.WriteString(credentialMarkerStyle.Render("Tabs: ⇥ (8 cols)  CR: ␍  LF: ↵  End: ∎") + " (display only)\n")
-	b.WriteString(lipgloss.NewStyle().Bold(true).Render(mode) + "\n\n")
+	b.WriteString(m.credText.credentialModeLines() + "\n\n")
 	b.WriteString(strings.Join(rows[from:to], "\n"))
 	fmt.Fprintf(&b, "\n%d bytes · %s · view %d–%d/%d\n", len(m.credText.value), credentialLines(m.credText.value), from+1, to, len(rows))
-	// Bold, not yellow: warnStyle stays cross-project reach's.
+	// Rainbow, wrapped first so each painted line fits the width.
 	for _, l := range warning {
-		b.WriteString(errStyle.Render(l) + "\n")
+		b.WriteString(rainbow(l) + "\n")
 	}
 	if m.credText.err != "" {
 		b.WriteString(m.errLine(m.credText.err) + "\n")
@@ -421,9 +445,10 @@ func (m model) credentialTextMinHeight() int {
 	if !m.credTextVisible {
 		return 16 // room for the pre-entry disclosure
 	}
-	// The header, two text rows, the two-line end-line warning, an error and
-	// two-line controls.
-	return 15
+	// Six header lines + two text rows + the position line + the two-line
+	// end-line warning + an error's two lines (message and "^s blocked") +
+	// two-line controls + one spare line = 16.
+	return 16
 }
 
 // Soft-wrap the display, not the value. Controls are inert visible notation,

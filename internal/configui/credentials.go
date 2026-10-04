@@ -306,6 +306,16 @@ func (m model) writeCredential(p pendingCredential, passphrase string) model {
 	return m
 }
 
+// credentialEndNoBreakNote is the form's end-line warning: the note the
+// item view paints in rainbow rather than dim (rainbowNote).
+const credentialEndNoBreakNote = "⚠ " + credentialEndNoBreak + " Open ^e and press Enter at the end."
+
+// rainbowNote reports whether an item note is one of the loud ones whose
+// failure would otherwise stay silent until the value is used.
+func rainbowNote(note string) bool {
+	return note == credentialEndNoBreakNote
+}
+
 // envItemNotes is the Env item editor's guidance. The ordinary schemes explain
 // themselves through the picker and the placeholder (hostEnvArgHint); a
 // credential carries consequences a placeholder cannot hold — where the write
@@ -326,10 +336,10 @@ func (m model) envItemNotes() []string {
 	}
 	var notes []string
 	// The end-line warning leads because the clip takes notes from the bottom:
-	// at the editor's minimum size (60x15), after a disclosure it would fall
+	// at the editor's minimum size (60x16), after a disclosure it would fall
 	// off screen, and no screen after this form repeats it before ^s saves.
 	if m.credMultiline && endsInBareEndLine(m.credDraft) {
-		notes = append(notes, "⚠ "+credentialEndNoBreak+" Open ^e and press Enter at the end.")
+		notes = append(notes, credentialEndNoBreakNote)
 	}
 	if d := m.creds.Disclosure(); d != "" {
 		notes = append(notes, "⚠ "+d)

@@ -40,14 +40,16 @@
 - **Line breaks pasted into the credential editor become LF.** Terminals
   send pasted line breaks as CR, so a key pasted at `^e` was stored without
   a single LF and ssh-keygen rejected it. The editor now turns pasted CR
-  and CRLF into LF by default, and a line under the marker legend says so.
-  `^t` switches to keeping line endings exactly as pasted; switching back
-  converts the draft's CRs to LF in place, so a draft already full of `␍`
-  markers is fixed without pasting again. A paste carries no line break
-  after its last line, and OpenSSH rejects a key whose `-----END ...-----`
-  line has none, so the editor (and the form, before you save) warns when
-  the draft ends that way: press Enter at the end. It warns only; the
-  draft is never changed for you. `byre credentials set` is unchanged:
+  and CRLF into LF by default, and two lines under the marker legend say
+  which mode is on: LF is marked right for keys, as pasted usually wrong.
+  `^t` switches to keeping line endings exactly as pasted -- that mode
+  suggests `^t` back to LF in rainbow; switching back converts the draft's
+  CRs to LF in place, so a draft already full of `␍` markers is fixed
+  without pasting again. A paste carries no line break after its last
+  line, and OpenSSH rejects a key whose `-----END ...-----` line has none,
+  so the editor (and the form, before you save) warns in rainbow when the
+  draft ends that way: press Enter at the end. It warns only; the draft is
+  never changed for you. `byre credentials set` is unchanged:
   piped file values are stored byte for byte, and env values drop one
   trailing newline.
 

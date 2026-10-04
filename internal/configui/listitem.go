@@ -1951,8 +1951,12 @@ func (m model) viewItem() string {
 	// layer's path -- and the view's clip would take the end off exactly the
 	// sentence that matters most.
 	for _, note := range m.itemNotes() {
+		paint := func(l string) string { return dimStyle.Render(l) }
+		if rainbowNote(note) {
+			paint = rainbow
+		}
 		for _, l := range wrapLine("  "+note, m.width) {
-			b.WriteString(dimStyle.Render(l) + "\n")
+			b.WriteString(paint(l) + "\n")
 		}
 	}
 	// The stored prose, read-only: the editing path is ^e, but READING the

@@ -2,6 +2,7 @@ package configui
 
 import (
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -440,8 +441,11 @@ func TestCredentialVisibilityNoticeAndResize(t *testing.T) {
 		t.Fatal("editor modified an invisible draft")
 	}
 	min := m.credentialTextMinHeight()
+	if min != 16 || !strings.Contains(m.View(), "60×16") {
+		t.Fatalf("live editor minimum is %d; the pause must name it:\n%s", min, m.View())
+	}
 	m.width, m.height = 60, min
-	for _, fragment := range []string{"VISIBLE", "NOT loaded", "NOT save", credentialLineEndingsLF, "^t", "line endings", "private"} {
+	for _, fragment := range []string{"VISIBLE", "NOT loaded", "NOT save", credentialLineEndingsLF, credentialLineEndingsRight, credentialLineEndingsWrong, "^t", "line endings", "private"} {
 		if !strings.Contains(m.View(), fragment) {
 			t.Fatalf("minimum live editor hides %q:\n%s", fragment, m.View())
 		}
@@ -463,7 +467,7 @@ func TestCredentialVisibilityNoticeAndResize(t *testing.T) {
 	}
 	// Join the wrapped lines so the warning's fragment is found whole.
 	view := strings.Join(strings.Fields(ansi.Strip(m.View())), " ")
-	for _, fragment := range []string{"VISIBLE", credentialEndNoBreak, "Press Enter at the end", "terminal's paste", "^s blocked", "line endings", "view 1–2/2"} {
+	for _, fragment := range []string{"VISIBLE", credentialLineEndingsRight, credentialLineEndingsWrong, credentialEndNoBreak, "Press Enter at the end", "terminal's paste", "^s blocked", "line endings", "view 1–2/2"} {
 		if !strings.Contains(view, fragment) {
 			t.Fatalf("minimum editor with warning and error hides %q:\n%s", fragment, m.View())
 		}
@@ -605,14 +609,14 @@ func TestCredentialFormEndLineWarningSurvivesTheMinimumSize(t *testing.T) {
 	m.width, m.height = 60, m.credentialTextMinHeight()
 	m = credPaste(m, crPastedKey)
 	m = credKey(m, tea.KeyCtrlS)
-	if m.mode != modeItem || m.height != 15 {
-		t.Fatalf("want the form at 60x15, got mode %v at height %d", m.mode, m.height)
+	if m.mode != modeItem || m.height != 16 {
+		t.Fatalf("want the form at 60x16, got mode %v at height %d", m.mode, m.height)
 	}
 	// Join the wrapped lines so each fragment is found whole.
 	view := strings.Join(strings.Fields(ansi.Strip(m.View())), " ")
 	for _, fragment := range []string{credentialEndNoBreak, "Open ^e and press Enter at the end", "layer acme"} {
 		if !strings.Contains(view, fragment) {
-			t.Fatalf("the 60x15 form hides %q:\n%s", fragment, ansi.Strip(m.View()))
+			t.Fatalf("the 60x16 form hides %q:\n%s", fragment, ansi.Strip(m.View()))
 		}
 	}
 }
@@ -720,5 +724,138 @@ func TestCredentialReopenedCRDraftOpensAsPasted(t *testing.T) {
 	m = openVisibleCredText(t, m)
 	if m.credText.keepCR {
 		t.Fatal("a draft without CRs must reopen in LF mode")
+	}
+}
+
+// useANSI256 renders with 256 colours for the test, so each rainbow hue is a
+// distinct 38;5;N sequence.
+func useANSI256(t *testing.T) {
+	t.Helper()
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+}
+
+var hue256 = regexp.MustCompile(`38;5;(\d+)`)
+
+// isRainbow reports whether a rendered line is painted in several 256-colour
+// hues, which only rainbow does in this UI.
+func isRainbow(line string) bool {
+	hues := map[string]bool{}
+	for _, m := range hue256.FindAllStringSubmatch(line, -1) {
+		hues[m[1]] = true
+	}
+	return len(hues) >= 3
+}
+
+// lineWith returns the rendered line whose stripped text contains fragment.
+func lineWith(t *testing.T, view, fragment string) string {
+	t.Helper()
+	for _, l := range strings.Split(view, "\n") {
+		if strings.Contains(ansi.Strip(l), fragment) {
+			return l
+		}
+	}
+	t.Fatalf("no line contains %q:\n%s", fragment, ansi.Strip(view))
+	return ""
+}
+
+// A key with no final line break saves fine and fails at ssh time, so its
+// warning is rainbow in the editor and on the form; ordinary notes stay dim.
+func TestCredentialEndLineWarningIsRainbow(t *testing.T) {
+	useANSI256(t)
+	admin := newFakeCredAdmin()
+	admin.disclosure = "writes to layer acme"
+	m := addCredential(credModel(t, admin, nil), credKindFile, "KEY", "")
+	m.width, m.height = 60, 24 // narrow enough that the warning wraps
+	m = credPaste(openVisibleCredText(t, m), crPastedKey)
+	for _, screen := range []string{"editor", "form"} {
+		if screen == "form" {
+			m = credKey(m, tea.KeyCtrlS)
+			if m.mode != modeItem {
+				t.Fatal("^s must return to the form")
+			}
+		}
+		view := m.View()
+		joined := strings.Join(strings.Fields(ansi.Strip(view)), " ")
+		if !strings.Contains(joined, credentialEndNoBreak) || strings.Contains(view, credentialEndNoBreak) {
+			t.Fatalf("%s: the warning must be present and painted per character:\n%s", screen, joined)
+		}
+		first := lineWith(t, view, "No final line break")
+		if !isRainbow(first) {
+			t.Fatalf("%s: warning line is not rainbow: %q", screen, first)
+		}
+		// The continuation carries the remedy; it must be as loud.
+		cont := lineWith(t, view, "at the end.")
+		if cont == first || strings.Contains(ansi.Strip(cont), "No final line break") {
+			t.Fatalf("%s: the warning must wrap at width 60 for this check:\n%s", screen, ansi.Strip(view))
+		}
+		if !isRainbow(cont) {
+			t.Fatalf("%s: warning continuation is not rainbow: %q", screen, cont)
+		}
+	}
+	if l := lineWith(t, m.View(), "layer acme"); isRainbow(l) || !strings.Contains(l, "writes to layer acme") {
+		t.Fatalf("an ordinary note must stay one dim run: %q", l)
+	}
+}
+
+func TestCredentialLFModeMarksItselfRight(t *testing.T) {
+	useANSI256(t)
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+	view := openVisibleCredText(t, m).View()
+	lines := strings.Split(view, "\n")
+	for i, l := range lines {
+		if !strings.Contains(ansi.Strip(l), credentialLineEndingsLF) {
+			continue
+		}
+		next := lines[i+1]
+		if !strings.Contains(l, credentialRightStyle.Render(credentialLineEndingsRight)) {
+			t.Fatalf("LF mode must mark itself right in green: %q", l)
+		}
+		if !strings.Contains(ansi.Strip(next), "^t") || !strings.Contains(next, credentialWrongStyle.Render(credentialLineEndingsWrong)) {
+			t.Fatalf("the ^t alternative must be marked wrong in red: %q", next)
+		}
+		if isRainbow(l) || isRainbow(next) || strings.Contains(ansi.Strip(view), credentialConvertToLF) {
+			t.Fatal("LF mode must not advertise switching away")
+		}
+		return
+	}
+	t.Fatalf("no LF mode line:\n%s", ansi.Strip(view))
+}
+
+func TestCredentialAsPastedModeSuggestsLFInRainbow(t *testing.T) {
+	useANSI256(t)
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+	m = credKey(openVisibleCredText(t, m), tea.KeyCtrlT)
+	view := m.View()
+	if l := lineWith(t, view, credentialLineEndingsAsPasted); !strings.Contains(l, credentialWrongStyle.Render(credentialLineEndingsWrong)) {
+		t.Fatalf("as-pasted mode must mark itself wrong in red: %q", l)
+	}
+	if l := lineWith(t, view, credentialConvertToLF); !isRainbow(l) || strings.Contains(l, credentialConvertToLF) {
+		t.Fatalf("the suggestion to convert must be rainbow: %q", l)
+	}
+}
+
+// Without colour every fragment is one plain run, so the text still reads
+// and still matches.
+func TestCredentialLoudTextDegradesToPlainText(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.Ascii)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindFile, "KEY", "")
+	m = credPaste(openVisibleCredText(t, m), crPastedKey)
+	view := m.View()
+	for _, fragment := range []string{credentialLineEndingsLF + " " + credentialLineEndingsRight, credentialLineEndingsWrong, credentialEndNoBreak} {
+		if !strings.Contains(view, fragment) {
+			t.Fatalf("missing plain %q:\n%s", fragment, view)
+		}
+	}
+	m = credKey(m, tea.KeyCtrlT)
+	if view := m.View(); !strings.Contains(view, credentialLineEndingsAsPasted+" "+credentialLineEndingsWrong) || !strings.Contains(view, credentialConvertToLF) {
+		t.Fatalf("as-pasted fragments must be plain runs:\n%s", view)
+	}
+	m = credKey(credKey(m, tea.KeyCtrlT), tea.KeyCtrlS)
+	if view := m.View(); m.mode != modeItem || !strings.Contains(view, credentialEndNoBreak) || strings.Contains(view, "\x1b[") {
+		t.Fatalf("the form note must be plain:\n%q", view)
 	}
 }
