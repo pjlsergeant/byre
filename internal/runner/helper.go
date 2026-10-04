@@ -122,7 +122,14 @@ func (r *Runner) ContainerForceRemove(container string) error {
 // ContainersByLabelBounded is ContainersByLabel (any state) under
 // CleanupTimeout, for the cleanup path's lookup of a verb's own helpers.
 func (r *Runner) ContainersByLabelBounded(label string) ([]string, error) {
-	out, err := r.captureBounded(CleanupTimeout, r.bin(), "ps", "-q", "-a", "--filter", "label="+label)
+	return r.ContainersByLabelWithin(CleanupTimeout, label)
+}
+
+// ContainersByLabelWithin is the same listing under deadline d, for a cleanup
+// step whose own budget is shorter than CleanupTimeout: a stalled engine must
+// not carry one listing past the window the caller promised.
+func (r *Runner) ContainersByLabelWithin(d time.Duration, label string) ([]string, error) {
+	out, err := r.captureBounded(d, r.bin(), "ps", "-q", "-a", "--filter", "label="+label)
 	if err != nil {
 		return nil, err
 	}

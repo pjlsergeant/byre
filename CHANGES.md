@@ -1,5 +1,18 @@
 # Changes
 
+## Unreleased
+
+- **Ctrl-C during `byre restore` no longer reports a helper container that
+  is already gone.** A helper removes itself when it ends, and the removal
+  byre asks for on Ctrl-C can lose that race and fail. byre now checks
+  whether the container is still there before calling it a leftover; only a
+  container that really remains is named, with the command that removes it.
+- **Ctrl-C right after answering `y` at the restore review says what it
+  left.** By then restore has enrolled the project, so the new project
+  directory and the project's store stay. It used to say "nothing written";
+  it now names both paths and ends "restore cancelled; no config written
+  and no volume created". Running the same restore again carries on.
+
 ## v1.12.0 — 2026-10-03
 
 - **`byre backup` writes one file holding a project's config and its state

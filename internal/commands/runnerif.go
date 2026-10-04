@@ -72,6 +72,7 @@ type helperRunner interface {
 	RunHelper(h runner.Helper, stdin io.Reader, stdout io.Writer) (stderr string, err error)
 	ImagePull(image string) error
 	ContainersByLabelBounded(label string) ([]string, error)
+	ContainersByLabelWithin(d time.Duration, label string) ([]string, error)
 	ContainerForceRemove(container string) error
 	VolumeExistsBounded(name string) (bool, error)
 	VolumeRemoveBounded(name string) error

@@ -727,11 +727,15 @@ coarse. Record `docker events --filter label=byre.helper` alongside.
   reports the kept volume `exists here; the backed-up copy is dropped`
   and pours the rest whole (compare a sha256 inside both volumes).
 - Sweep the delay after the first helper appears (0-2 s): every point
-  must leave no helper container. (2026-10-03: at ~0.3 s byre printed
-  `helper container <id> could not be removed ... remove it by hand`
-  for a helper its own `--rm` had already taken; and a cancel just after
-  `y` left the new empty DIR plus an enrolment stub while saying only
-  `nothing written`.)
+  must leave no helper container, and name none as `could not be
+  removed` unless `docker ps -a --filter label=byre.helper` still lists
+  it. A cancel after `y` but before the first pour leaves the DIR and the
+  store, names both paths, and ends `restore cancelled; no config written
+  and no volume created`, never `nothing written`. (Seen 2026-10-03: at
+  ~0.3 s byre printed `helper container <id> could not be removed ...
+  remove it by hand` for a helper its own `--rm` had already taken; and a
+  cancel just after `y` left the new empty DIR plus an enrolment stub while
+  saying only `nothing written`.)
 
 ## Journey: --ignore-docker / --ignore-podman (backup, reset, forget, rehome)
 

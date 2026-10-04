@@ -17,15 +17,6 @@ the rationale lives.
 
 ## Open
 
-- [ ] (S) **Restore interrupt: phantom helper + silent leftovers** (field QA
-  2026-10-03, twice each): (1) Ctrl-C mid-pour can report "helper container
-  could not be removed ... backup, reset and forget refuse until it is gone"
-  for a helper its own `--rm` already took -- `removeRunHelpers` treats a
-  failed `rm -f` of a vanished container as a leftover (helpers.go:87); (2)
-  Ctrl-C right after the review's `y` leaves the new dir + store stub while
-  printing "nothing written" (ADR 0059 says it should say so). Evidence:
-  ~/scratch/fieldqa-20261003/evidence/bk-19,21,23.
-
 - [ ] (S) **Worktree `status` misses its own box after an engine flip**
   (field QA 2026-10-03, twice): worktree box running on docker, config then
   set to `engine = "podman"` -> status there says `Container: not running`

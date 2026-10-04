@@ -1685,6 +1685,74 @@ func TestRestoreCancellationBeforeTheCommitLeavesNothing(t *testing.T) {
 	}
 }
 
+// An interrupt after the review's y has enrolled the project, but before the
+// critical section, cannot leave "nothing written" as its last word: the store
+// (and the directory, when byre created it) stay, and the account names each
+// by path. Driven by calling the handler's pre-commit action from the under-
+// lock re-check's first volume query -- after the bootstrap, before any config
+// or volume.
+func TestRestoreCancellationAfterTheEnrolmentSaysWhatStays(t *testing.T) {
+	for _, created := range []bool{true, false} {
+		t.Run(fmt.Sprintf("created=%v", created), func(t *testing.T) {
+			root := t.TempDir()
+			f := &fakeRunner{}
+			fx := restoreHarness(t, f, restoreOpts{cfg: claudeVolumeConfig, in: "y\n",
+				vols: []testVol{{name: ".claude", tar: volumeTar(t, nil)}}, dir: root})
+			target := root
+			if created {
+				got, made, err := restoreTarget(filepath.Join(root, "fresh"))
+				if err != nil || !made {
+					t.Fatalf("restoreTarget: %v (created=%v)", err, made)
+				}
+				target = got
+				fx.rr.target, fx.rr.created = got, true
+			}
+			fired := false
+			f.probeHook = func(what string) {
+				if what != "query" || !fx.rr.bootstrapped || fired {
+					return
+				}
+				fired = true
+				fx.rr.cancelBeforeTheCommit()
+				// Judged HERE: the real handler ends the process next.
+				out := fx.errb.String()
+				for _, want := range []string{fx.rr.paths.Dir, restoreCancelledEnrolledLine} {
+					if !strings.Contains(out, want) {
+						t.Errorf("the cancellation's account is missing %q:\n%s", want, out)
+					}
+				}
+				if created && !strings.Contains(out, target+" and this project's store") {
+					t.Errorf("the directory byre created is not named as staying:\n%s", out)
+				}
+				if strings.Contains(out, restoreCancelledLine) {
+					t.Errorf("the cancellation says nothing was written after the enrolment:\n%s", out)
+				}
+				for _, p := range []string{target, fx.rr.paths.Dir} {
+					if ok, _ := hostopen.ExistsNoFollow(p); !ok {
+						t.Errorf("%s was removed, though the account says it stays", p)
+					}
+				}
+				if storeConfig(t, fx.rr.paths) != "" {
+					t.Error("a config was written before the critical section")
+				}
+				// Stop the run here, where the real process would have ended.
+				f.volQueryErr = errors.New("unwind")
+			}
+			if err := fx.run(); err == nil {
+				t.Fatal("the run did not unwind after the cancellation")
+			}
+			if !fired {
+				t.Fatal("no volume query ran after the enrolment; the cancellation was never driven")
+			}
+			// The ordinary exit's cleanup ran after the cancellation's: the
+			// account is still given once.
+			if n := strings.Count(fx.errb.String(), "(byre had enrolled the project by then)"); n != 1 {
+				t.Errorf("the account of what stays was given %d times, want 1:\n%s", n, fx.errb.String())
+			}
+		})
+	}
+}
+
 // readerFunc is a Streams.In whose Read a test drives.
 type readerFunc func([]byte) (int, error)
 

@@ -46,6 +46,16 @@ const forgetFallback = "`byre forget`, run in the project directory, is the fall
 // commit point ends on, after the account of what it cleared.
 const restoreCancelledLine = "byre: restore cancelled; nothing written"
 
+// restoreCancelledEnrolledLine replaces it once the project is enrolled: the
+// store and its path record are written by then and stay (the line before it
+// names them). The config and the volumes are still untouched.
+const restoreCancelledEnrolledLine = "byre: restore cancelled; no config written and no volume created"
+
+// errRestoreCancelled is the run error the pre-commit cancellation hands
+// cleanup, so a post-enrolment cancellation gets the account of what stays
+// any failed post-enrolment exit gets.
+var errRestoreCancelled = errors.New("restore cancelled")
+
 // RestoreOptions are `byre restore`'s flags.
 type RestoreOptions struct {
 	// AllowNonempty is --allow-nonempty: the user saying THIS directory is the
@@ -239,6 +249,7 @@ type restoreRun struct {
 
 	created      bool
 	bootstrapped bool
+	staysNoted   bool // noteWhatStays has printed its account
 
 	// allowNonempty is --allow-nonempty, and nonEmpty is the reason the target
 	// did not fit, kept for the review and the summary to state. Computed ONCE
@@ -885,10 +896,18 @@ func (rr *restoreRun) commit() error {
 		cleanupRun(rr.s.Err, rr.r, rr.runID, nil)
 		return err
 	}
-	if err := rr.paths.Bootstrap(); err != nil {
-		return err
+	// Exclusive with the interrupt handler, so a Ctrl-C cannot land mid-
+	// bootstrap or between it and the bootstrapped flag, where the clearing
+	// would act as if nothing were enrolled and leave the store unmentioned.
+	var berr error
+	rr.sig.exclusive(func() {
+		if berr = rr.paths.Bootstrap(); berr == nil {
+			rr.bootstrapped = true
+		}
+	})
+	if berr != nil {
+		return berr
 	}
-	rr.bootstrapped = true
 	return withSetupLockProject(rr.s.Err, rr.paths, rr.locked)
 }
 
@@ -1153,7 +1172,9 @@ func (rr *restoreRun) renderSummary() {
 // written nothing of the user's: this run's helpers go (a preflight may be
 // mid-run), then staging -- a 0700 directory holding the backup's volume
 // contents in plaintext -- and the project directory byre created while it is
-// still empty. Then the one closing line; the handler ends the process after it.
+// still empty. Once the project is enrolled (the bootstrap, after the review's
+// y and before the lock) the directory and the store stay, and cleanup names
+// them. Then the one closing line; the handler ends the process after it.
 //
 // A test calls this directly: it is the only way to reach the pre-commit
 // behaviour without a terminal to interrupt from.
@@ -1165,7 +1186,11 @@ func (rr *restoreRun) cancelBeforeTheCommit() {
 			dataf(rr.s.Err, "byre: %v\n", err)
 		}
 	}
-	rr.cleanup(nil)
+	rr.cleanup(errRestoreCancelled)
+	if rr.bootstrapped {
+		fmt.Fprintln(rr.s.Err, restoreCancelledEnrolledLine)
+		return
+	}
 	fmt.Fprintln(rr.s.Err, restoreCancelledLine)
 }
 
@@ -1178,16 +1203,16 @@ func (rr *restoreRun) cleanup(runErr error) {
 	rr.sig.stop()
 	removeStaging(rr.s.Err, rr.st)
 	rr.st = nil
-	if !rr.created {
-		return
-	}
 	if rr.bootstrapped {
 		// An exit after the bootstrap leaves the directory and the enrolled
 		// store, as preset apply's same window does by design. The next
 		// restore of that path proceeds: no config, same id.
 		if runErr != nil {
-			dataf(rr.s.Err, "byre: %s and this project's store stay (byre had enrolled the project by then); the next byre restore into that path carries on.\n", rr.target)
+			rr.noteWhatStays()
 		}
+		return
+	}
+	if !rr.created {
 		return
 	}
 	if err := removeIn(filepath.Dir(rr.target), filepath.Base(rr.target)); err != nil {
@@ -1196,6 +1221,22 @@ func (rr *restoreRun) cleanup(runErr error) {
 	}
 	rr.created = false
 	dataf(rr.s.Err, "byre: removed the empty directory byre created for this restore (%s).\n", rr.target)
+}
+
+// noteWhatStays is the account of a post-enrolment exit that did not finish:
+// the store byre enrolled stays, and so does the directory when byre created
+// it, each by path.
+// Once, as cleanup runs twice on a cancellation.
+func (rr *restoreRun) noteWhatStays() {
+	if rr.staysNoted {
+		return
+	}
+	rr.staysNoted = true
+	if rr.created {
+		dataf(rr.s.Err, "byre: %s and this project's store (%s) stay (byre had enrolled the project by then); the next byre restore into that path carries on.\n", rr.target, rr.paths.Dir)
+		return
+	}
+	dataf(rr.s.Err, "byre: this project's store (%s) stays (byre had enrolled the project by then); the next byre restore into %s carries on.\n", rr.paths.Dir, rr.target)
 }
 
 // ------------------------------------------------------------- the pour tool

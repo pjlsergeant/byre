@@ -119,7 +119,11 @@ type fakeRunner struct {
 	pullErr      error
 	forceRemoved []string // ContainerForceRemove: ids
 	forceRmErr   map[string]bool
-	seedLabels   []string // the helper label each seed/migrate ran with
+	// forceRmGone: ids whose `rm -f` fails because the helper's own --rm took
+	// it first -- the error comes back and the container has left every
+	// listing.
+	forceRmGone map[string]bool
+	seedLabels  []string // the helper label each seed/migrate ran with
 
 	// images
 	images         map[string]bool   // tag -> exists
@@ -561,14 +565,28 @@ func (f *fakeRunner) ContainersByLabelBounded(label string) ([]string, error) {
 	return f.ContainersByLabel(label)
 }
 
+func (f *fakeRunner) ContainersByLabelWithin(_ time.Duration, label string) ([]string, error) {
+	return f.ContainersByLabel(label)
+}
+
 func (f *fakeRunner) ContainerForceRemove(container string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.forceRmErr[container] {
 		return fmt.Errorf("rm -f %s: engine gone", container)
 	}
+	if f.forceRmGone[container] {
+		f.dropContainer(container)
+		return fmt.Errorf("rm -f %s: removal of container %s is already in progress", container, container)
+	}
 	f.forceRemoved = append(f.forceRemoved, container)
 	f.ops = append(f.ops, "rm-f "+container)
+	f.dropContainer(container)
+	return nil
+}
+
+// dropContainer takes container out of every listing. Called holding f.mu.
+func (f *fakeRunner) dropContainer(container string) {
 	for label, ids := range f.allContainers {
 		var kept []string
 		for _, id := range ids {
@@ -578,7 +596,12 @@ func (f *fakeRunner) ContainerForceRemove(container string) error {
 		}
 		f.allContainers[label] = kept
 	}
-	return nil
+}
+
+func init() {
+	// A helper whose `rm -f` failed is watched this long for leaving the
+	// listing; the fakes answer at once, so the real wait is pure drag.
+	helperGoneWait = 20 * time.Millisecond
 }
 
 var _ engineRunner = (*fakeRunner)(nil)

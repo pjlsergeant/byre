@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -64,6 +65,7 @@ func leftoverHelperText(eng runner.Engine, ids []string) string {
 type helperCleaner interface {
 	Engine() runner.Engine
 	ContainersByLabelBounded(label string) ([]string, error)
+	ContainersByLabelWithin(d time.Duration, label string) ([]string, error)
 	ContainerForceRemove(container string) error
 	VolumeExistsBounded(name string) (bool, error)
 	VolumeRemoveBounded(name string) error
@@ -73,9 +75,11 @@ type helperCleaner interface {
 // id (never another invocation's), on a path that has already failed or been
 // cancelled. Both calls are bounded (runner.CleanupTimeout): a daemon that
 // never answers makes the cleanup stop, and the summary then says what may
-// remain rather than hanging. Returns nil when nothing is left; otherwise the
-// text the summary prints -- the container, and the `rm -f` line the user
-// runs by hand -- as the error.
+// remain rather than hanging. An `rm -f` that fails for a helper the listing
+// then no longer shows is a removal (helperGone says why that race is the
+// ordinary one); only a helper still listed is a leftover. Returns nil when
+// nothing is left; otherwise the text the summary prints -- the container,
+// and the `rm -f` line the user runs by hand -- as the error.
 func removeRunHelpers(w io.Writer, r helperCleaner, runID string) error {
 	ids, err := r.ContainersByLabelBounded(helperRunLabel(runID))
 	if err != nil {
@@ -84,7 +88,7 @@ func removeRunHelpers(w io.Writer, r helperCleaner, runID string) error {
 	}
 	var left []string
 	for _, id := range ids {
-		if rerr := r.ContainerForceRemove(id); rerr != nil {
+		if rerr := r.ContainerForceRemove(id); rerr != nil && !helperGone(r, runID, id) {
 			left = append(left, shortID(id))
 			continue
 		}
@@ -95,6 +99,42 @@ func removeRunHelpers(w io.Writer, r helperCleaner, runID string) error {
 	}
 	return fmt.Errorf("helper container %s could not be removed on %s; it may still hold the volume it was filling — remove it by hand: %s rm -f %s (backup, reset and forget refuse until it is gone)",
 		strings.Join(left, ", "), r.Engine(), r.Engine(), strings.Join(left, " "))
+}
+
+// helperGoneWait bounds how long removeRunHelpers watches a helper whose
+// `rm -f` failed for it to leave the engine's listing. A helper runs with
+// --rm, so the engine is removing it on its own the moment its process dies --
+// and the `rm -f` that killed it then races that removal: Docker answers
+// "removal already in progress" while the container is still listed, Podman
+// "no such container" once it is not. Either way the helper is going, and the
+// listing, not the error text, is what says whether it went. A var so tests
+// can reach the still-present outcome without the real wait.
+var helperGoneWait = 5 * time.Second
+
+// helperGonePoll is the interval between those listings.
+const helperGonePoll = 100 * time.Millisecond
+
+// helperGone reports whether helper id of this run has left the engine's
+// any-state listing within helperGoneWait. Each listing gets only what remains
+// of that window, so a stalled engine cannot stretch it to CleanupTimeout. A
+// listing that fails, or the window running out, is not proof of absence: the
+// helper counts as still there, and the caller names it.
+func helperGone(r helperCleaner, runID, id string) bool {
+	deadline := time.Now().Add(helperGoneWait)
+	for {
+		left := time.Until(deadline)
+		if left <= 0 {
+			return false
+		}
+		ids, err := r.ContainersByLabelWithin(left, helperRunLabel(runID))
+		if err != nil {
+			return false
+		}
+		if !slices.Contains(ids, id) {
+			return true
+		}
+		time.Sleep(min(helperGonePoll, time.Until(deadline)))
+	}
 }
 
 // endCancelledHelper ends the synchronous helper a cancelled verb left in
@@ -145,8 +185,9 @@ func orCleanupTimeout(d time.Duration) time.Duration {
 //
 // Before that commit point nothing the user owns has been touched, and what
 // byre has made is a staging directory, a project directory restore created,
-// and perhaps a preflight helper. An interrupt there is handled where it lands:
-// before clears those and the process ends, 1. It cannot merely cancel a
+// perhaps a preflight helper, and -- once restore has enrolled the project --
+// its store. An interrupt there is handled where it lands: before clears what
+// it can, says what stays, and the process ends, 1. It cannot merely cancel a
 // context, because the verb is sitting in an install offer, a review prompt or
 // a lock wait and none of them watches one -- Go holds SIGINT off the process
 // while a handler is installed, so a cancel-only handler would swallow the
@@ -170,6 +211,11 @@ type runInterrupts struct {
 	mu     sync.Mutex
 	before func()
 	cancel context.CancelFunc
+
+	// unnotify takes the handler's signal subscription off. A field so a test
+	// can observe WHEN fire releases the signal relative to the wait on mu,
+	// which no real signal can show it.
+	unnotify func()
 }
 
 // armRunInterrupts installs the run's handler. existing is the caller's own
@@ -181,6 +227,7 @@ func armRunInterrupts(existing context.Context, before func()) *runInterrupts {
 		return nil
 	}
 	ri := &runInterrupts{ch: make(chan os.Signal, 1), done: make(chan struct{}), before: before}
+	ri.unnotify = func() { signal.Stop(ri.ch) }
 	signal.Notify(ri.ch, os.Interrupt)
 	go func() {
 		select {
@@ -194,11 +241,13 @@ func armRunInterrupts(existing context.Context, before func()) *runInterrupts {
 
 // fire is the handler's one action, in whichever phase the interrupt landed.
 func (ri *runInterrupts) fire() {
+	// Off first, before the wait on mu: a SECOND Ctrl-C must kill byre the
+	// ordinary way rather than queue behind the clearing this one is about to
+	// do -- or behind an exclusive step (enrolment) that holds mu and may be
+	// stalled on a wedged filesystem.
+	ri.unnotify()
 	ri.mu.Lock()
 	defer ri.mu.Unlock()
-	// Off first: a SECOND Ctrl-C must kill byre the ordinary way rather than
-	// queue behind the clearing this one is about to do.
-	signal.Stop(ri.ch)
 	if ri.cancel != nil {
 		ri.cancel()
 		return
@@ -227,6 +276,24 @@ func (ri *runInterrupts) enterCritical(existing context.Context) (context.Contex
 	ri.cancel = cancel
 	ri.mu.Unlock()
 	return ctx, func() { cancel(); ri.stop() }
+}
+
+// exclusive runs f with the handler's action held off, for a pre-commit step
+// that creates something AND records that it did: an interrupt then lands
+// wholly before f (and ends the process before f runs) or wholly after it,
+// where the clearing reads the record f left -- never between the creation and
+// the record, where it would report the phase's state wrongly. Only the FIRST
+// interrupt waits for f: fire releases the signal before it waits on mu, so a
+// second Ctrl-C still kills byre outright if f stalls. A nil receiver runs f
+// as it stands.
+func (ri *runInterrupts) exclusive(f func()) {
+	if ri == nil {
+		f()
+		return
+	}
+	ri.mu.Lock()
+	defer ri.mu.Unlock()
+	f()
 }
 
 // stop takes the handler off for good. Safe to call more than once, and never

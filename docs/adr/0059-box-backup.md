@@ -219,11 +219,21 @@ from the handler is safe in that phase and nowhere else: the setup lock is an
 flock the kernel drops with the process, and the clearing above is the whole of
 what the phase made.
 
+Restore's pre-commit stretch has a second phase: after the review's y it
+enrols the project (the store bootstrap) before taking the lock. From then on
+a cancellation leaves the directory and the enrolled store, as every
+post-bootstrap exit does (below), names both by path, and ends "byre: restore
+cancelled; no config written and no volume created". The enrolment and its
+record are one step the handler's action cannot land inside, so a
+cancellation is never told the wrong phase.
+
 From the critical section on -- restore's config write, backup's first capture
 -- the SAME handler switches to cancelling the context that stretch watches,
 because a created volume, a written config or a helper mid-archive has to be
 UNDONE, and only the code doing it knows how. A second Ctrl-C always kills byre
-outright: firing restores the default disposition before it acts.
+outright: firing restores the default disposition before it acts, and before
+it waits out an enrolment in progress, so a stalled enrolment holds back only
+the first Ctrl-C's clearing.
 
 ## The helpers
 
@@ -513,8 +523,8 @@ for the first develop.
   before the store is bootstrapped removes that directory again if restore
   created it and it is still EMPTY (`rmdir` semantics, so nothing a user put
   there is ever touched). An exit after the bootstrap leaves the directory
-  and the enrolled store, as apply's same window does by design, and says so;
-  the next restore of that path proceeds.
+  and the enrolled store, as apply's same window does by design, and says so,
+  naming both by path; the next restore of that path proceeds.
 - **One lock hold covers the config write and every pour**, so a develop
   waiting on the lock sees the config and every poured volume together. Under
   the lock, in order: `requireRecorded` first (a forget that won the lock
