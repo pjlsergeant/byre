@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/pjlsergeant/byre/internal/deliver"
 	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
@@ -183,13 +184,12 @@ func shell(s Streams, projectDir string, engines []sessionRunner, callerUID int,
 				queryErr = eerr
 				continue
 			}
-			uid, uerr := strconv.Atoi(strings.TrimSpace(env["BYRE_UID"]))
-			gid, gerr := strconv.Atoi(strings.TrimSpace(env["BYRE_GID"]))
-			if uerr != nil || gerr != nil || uid < 0 || gid < 0 {
+			ident := deliver.JudgeBox(env, callerScoped, callerUID)
+			if !ident.Valid {
 				unreadable++ // a box whose dev identity we can't read -- can't safely enter it, and it must not shadow a valid candidate on another engine
 				continue
 			}
-			if !callerScoped && !skipUIDCheck && uid != callerUID {
+			if ident.Foreign && !skipUIDCheck {
 				hidden++
 				if rerr != nil {
 					modeUnknown = rerr

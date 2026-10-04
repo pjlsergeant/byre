@@ -753,4 +753,16 @@ func TestDeclinedAndRecordDisclosuresEscapeExternalText(t *testing.T) {
 	}
 	assertNoESC(t, "imageRecord disclosure", buf.String())
 	assertKept(t, "imageRecord disclosure", buf.String(), "daemon said no", "pins the tag only")
+
+	// Status's session lookup names engine-supplied container ids when one
+	// worktree's session runs on two engines.
+	buf.Reset()
+	own := map[string]string{"BYRE_UID": "1000", "BYRE_GID": "1000"}
+	sp := project.Paths{ID: "p", WorktreeID: "p"}
+	dockerBox, podmanBox := escCSI+"dock"+escOSC, escCSI+"podm"+escOSC
+	locateSession(&buf, &fakeRunner{env: own, live: map[string][]string{workdirLabel(sp): {dockerBox}}}, runner.Docker,
+		[]sessionRunner{&fakeRunner{engine: runner.Podman, env: own, live: map[string][]string{workdirLabel(sp): {podmanBox}}}},
+		nil, sp, 1000)
+	assertNoESC(t, "locateSession two-engine note", buf.String())
+	assertKept(t, "locateSession two-engine note", buf.String(), "dock", "podm", "both docker")
 }

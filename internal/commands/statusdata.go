@@ -572,16 +572,20 @@ func statusDataNetworkOf(s statusInfo) statusDataNetwork {
 }
 
 func statusDataContainerOf(s statusInfo) statusDataContainer {
+	// Same precedence as the page's Container row (statusSession states the
+	// rule): running, then an engine that failed, then an unresolved
+	// configured engine, and "stopped" only when every engine that could
+	// hold the box answered.
 	switch {
-	case s.EngineErr != "":
-		return statusDataContainer{State: "unknown", Error: s.EngineErr}
-	case s.ContainerQueryErr != "":
-		return statusDataContainer{State: "unknown", Error: s.ContainerQueryErr}
 	case s.Container != "":
 		return statusDataContainer{
 			State: "running", ID: s.Container, Orphaned: s.Orphaned,
 			Siblings: s.SiblingSessions, SiblingsError: s.SiblingQueryErr,
 		}
+	case s.ContainerQueryErr != "":
+		return statusDataContainer{State: "unknown", Error: s.ContainerQueryErr, Siblings: s.SiblingSessions, SiblingsError: s.SiblingQueryErr}
+	case s.EngineErr != "" && !s.SessionAbsent:
+		return statusDataContainer{State: "unknown", Error: s.EngineErr, Siblings: s.SiblingSessions, SiblingsError: s.SiblingQueryErr}
 	default:
 		return statusDataContainer{
 			State: "stopped", Siblings: s.SiblingSessions, SiblingsError: s.SiblingQueryErr,

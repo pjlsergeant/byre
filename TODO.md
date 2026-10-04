@@ -17,12 +17,6 @@ the rationale lives.
 
 ## Open
 
-- [ ] (S) **Worktree `status` misses its own box after an engine flip**
-  (field QA 2026-10-03, twice): worktree box running on docker, config then
-  set to `engine = "podman"` -> status there says `Container: not running`
-  though the launch record says docker; `byre shell`/`deliver` find it.
-  Evidence: ~/scratch/fieldqa-20261003/evidence/A-lr-8.txt.
-
 - [ ] (S) **Retire the shared_auth legacy parser arms when their warnings go
   quiet** (ADR 0049 #1/#2, amended policy): the write side and the warning
   channel shipped 2026-08-23; the array and top-level parse arms

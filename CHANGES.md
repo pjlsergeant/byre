@@ -12,6 +12,23 @@
   directory and the project's store stay. It used to say "nothing written";
   it now names both paths and ends "restore cancelled; no config written
   and no volume created". Running the same restore again carries on.
+- **`byre status` finds a running box after you switch engines.** With a
+  box running on docker and the config then set to `engine = "podman"`,
+  status said "not running" while `byre shell` walked straight in. Status
+  now looks on every installed engine, the way shell and deliver do, judges
+  ownership with the same check, and describes the box shell would enter. A
+  sibling worktree on the other engine is listed with that engine named,
+  and is no longer said to share this one's volumes. An engine it cannot
+  reach stays quiet unless this worktree last ran there.
+- **Smaller fixes from field QA.** `context list`, `mcp list` and
+  `claude-skill list` print their delivery line as a sentence instead of a
+  raw struct. Refusing a credential key bash owns now says "choose another
+  key name" when there is no row to unset, and `_` joins those refused
+  names. The env picker no longer shows a stale argument beside `(no
+  argument)`. Counts read "1 entry" / "1 file"; the missing-mount remedy no
+  longer assumes a directory; `reset` and `rehome` under `--ignore-<engine>`
+  say which engines they found nothing on; and `backup --no-credentials`
+  drops an `[env_from_host]` table its deletions left empty.
 
 ## v1.12.0 — 2026-10-03
 

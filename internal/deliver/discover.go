@@ -113,24 +113,48 @@ func inspect(cfg Config, opts Options, eng Engine, id string) (Session, sessionV
 		reportf(cfg, "byre: warning: could not read the identity of %s (%v); it cannot be a target", shortID(id), err)
 		return s, sessionUnusable
 	}
-	uid, uerr := strconv.Atoi(strings.TrimSpace(env["BYRE_UID"]))
-	gid, gerr := strconv.Atoi(strings.TrimSpace(env["BYRE_GID"]))
-	if uerr != nil || gerr != nil || uid < 0 || gid < 0 {
+	ident := JudgeBox(env, eng.CallerScoped(), cfg.CallerUID)
+	if !ident.Valid {
 		// Not a box byre can attach to (shell.go's fail-closed rule).
 		reportf(cfg, "byre: warning: %s carries no valid BYRE_UID/BYRE_GID; it cannot be a target", shortID(id))
 		return s, sessionUnusable
 	}
-	s.UID, s.GID = uid, gid
-	// The uid filter is a cross-USER accident guard on a shared daemon. A
-	// caller-scoped engine (rootless Podman) can only show the caller's own
-	// boxes, so nothing there is foreign — and its keep-id boxes carry the
-	// in-container generic uid in BYRE_UID, which would misread as foreign if
-	// compared.
-	s.Foreign = !eng.CallerScoped() && uid != cfg.CallerUID
+	s.UID, s.GID = ident.UID, ident.GID
+	s.Foreign = ident.Foreign
 	if s.Foreign && !opts.SkipUIDCheck {
 		return s, sessionForeign
 	}
 	return s, sessionOK
+}
+
+// BoxIdentity is the dev identity a running box carries, judged against the
+// caller: the one predicate every surface that picks "the caller's box" --
+// deliver/grab discovery, `byre shell`, `byre status` -- uses, so they cannot
+// disagree about which box is the caller's.
+type BoxIdentity struct {
+	UID, GID int
+	// Valid is false when BYRE_UID/BYRE_GID are missing or not non-negative
+	// integers: not a box byre can attach to, whoever owns it.
+	Valid bool
+	// Foreign marks a box carrying another user's uid. The uid filter is a
+	// cross-USER accident guard on a shared daemon, not confinement (BYRE_UID
+	// is runtime env the box's own author can override). A caller-scoped
+	// engine (rootless Podman) can only show the caller's own boxes, so
+	// nothing there is foreign -- and its keep-id boxes carry the
+	// in-container generic uid in BYRE_UID, which would misread as foreign if
+	// compared.
+	Foreign bool
+}
+
+// JudgeBox reads a box's identity from its env and judges it against the
+// caller's uid on an engine that is, or is not, caller-scoped.
+func JudgeBox(env map[string]string, callerScoped bool, callerUID int) BoxIdentity {
+	uid, uerr := strconv.Atoi(strings.TrimSpace(env["BYRE_UID"]))
+	gid, gerr := strconv.Atoi(strings.TrimSpace(env["BYRE_GID"]))
+	if uerr != nil || gerr != nil || uid < 0 || gid < 0 {
+		return BoxIdentity{}
+	}
+	return BoxIdentity{UID: uid, GID: gid, Valid: true, Foreign: !callerScoped && uid != callerUID}
 }
 
 // selectSession runs the target cascade: --box, cwd ancestor walk, sole

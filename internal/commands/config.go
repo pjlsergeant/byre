@@ -249,13 +249,26 @@ const (
 // says nothing, because the user asked to edit a config, not to hear about
 // their engine. The claim it feeds is purely additive (a note appears), so the
 // worst a degraded probe costs is a note that would have been useful.
+//
+// The box is looked for where status looks (locateSession): a box launched
+// before `engine` was flipped still runs on its old engine, and an edit made
+// now still waits for the next launch.
 func boxRunningForEdit(paths project.Paths, cfg config.Config) bool {
-	eng, exe, err := runner.Detect(cfg.Engine, hostexec.Looker(boxWritableRoots(paths)))
-	if err != nil {
-		return false
+	roots := boxWritableRoots(paths)
+	self := runner.Engine(cfg.Engine)
+	var configured sessionRunner
+	if eng, exe, err := runner.Detect(cfg.Engine, hostexec.Looker(roots)); err == nil {
+		self, configured = eng, runner.New(eng, exe)
 	}
-	ids, err := runner.New(eng, exe).RunningContainersByLabel(workdirLabel(paths))
-	return err == nil && len(ids) > 0
+	others, declined := installedEnginesExcept(self, roots)
+	return boxRunningOn(paths, configured, self, others, declined, os.Getuid())
+}
+
+// boxRunningOn is boxRunningForEdit past engine resolution: the same lookup,
+// ownership judgement and failure set status uses, with every note discarded
+// and every failure read as "no box".
+func boxRunningOn(paths project.Paths, configured sessionRunner, self runner.Engine, others []sessionRunner, declined []declinedEngine, callerUID int) bool {
+	return locateSession(io.Discard, configured, self, others, declined, paths, callerUID).r != nil
 }
 
 // volumeAdmin is the engine-backed configui.VolumeAdmin for a project: it lists
