@@ -287,14 +287,14 @@ the standing limit of a review gate, not of credentials.
   in Value requires explicit re-entry (`^e`): typed and pasted Return cannot
   be distinguished. `^e` warns before displaying a replacement in memory,
   without plaintext editor files; stored credentials are never loaded.
-  Text is preserved; pasted CR and CRLF become LF by default, and two mode
-  lines name the setting and its `^t` toggle to keep line endings as
-  pasted. Switching back to LF converts the draft's CRs in place. Each
-  editor session starts in LF mode unless the draft it opens already holds
-  CRs. The editor and the form warn, without modifying the draft, when it
-  ends in an `-----END ...-----` line with no final line break; `byre
-  credentials set` is out of scope, storing the bytes it is given without
-  that warning. (Amended 2026-10-04: pastes were kept verbatim, and
+  Text is preserved; pasted CR and CRLF become LF by default, and a mode
+  line names the setting; `^t` toggles to keeping line endings as pasted.
+  Switching back to LF converts the draft's CRs in place. Each editor
+  session starts in LF mode unless the draft it opens already holds CRs.
+  The editor and the form warn, without modifying the draft, when it holds
+  CRs and when it ends in an `-----END ...-----` line with no final line
+  break; `byre credentials set` is out of scope, storing the bytes it is
+  given without those warnings. (Amended 2026-10-04: pastes were kept verbatim, and
   terminals send pasted line breaks as CR, so a pasted OpenSSH key arrived
   with no LF and ssh-keygen rejected it. A paste also carries no final line
   break: OpenSSH 9.2p1 `ssh-keygen -lf` answers "is not a key file" for an

@@ -128,10 +128,10 @@ const labelWidth = 17
 // accentColor is the ONE structural color: the cursor, section headers, and
 // the focused picker selection. ANSI 4-bit, so the terminal theme picks the
 // shade and monochrome terminals drop it cleanly. A single-colour run
-// carries fixed semantics: red = errors, green = saved or the right
-// line-ending mode, and yellow is warnStyle's alone (cross-project reach
-// must never blend in). Rainbow cycles every hue per character, so it is
-// its own signal, reserved for warnings whose failure is silent (rainbow).
+// carries fixed semantics: red = errors, green = saved, and yellow is
+// warnStyle's alone (cross-project reach must never blend in). Rainbow
+// cycles every hue per character, so it is its own signal, reserved for
+// warnings whose failure is silent (rainbow).
 var accentColor = lipgloss.Color("6")
 
 var (

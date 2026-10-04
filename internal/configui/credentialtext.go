@@ -27,16 +27,30 @@ type credentialText struct {
 	keepCR bool
 }
 
-// The mode lines' stable fragments, shared by the view and its tests: the
-// openings name the mode, the marks say which mode suits a key, and the
-// suggestion to switch shows only while the wrong mode is on.
+// The mode line's tails say in words which mode is on: the picker's reverse
+// video vanishes without colour and in a text capture. Shared by the view
+// and its tests.
 const (
-	credentialLineEndingsLF       = "Line endings: LF"
-	credentialLineEndingsAsPasted = "Line endings: as pasted"
-	credentialLineEndingsRight    = "✓ right for keys"
-	credentialLineEndingsWrong    = "✗ usually wrong"
-	credentialConvertToLF         = "Press ^t to convert to LF " + credentialLineEndingsRight
+	credentialLFModeTail       = "recommended · CR/CRLF → LF"
+	credentialAsPastedModeTail = "CR/CRLF kept as pasted"
 )
+
+// credentialCRsNeedLF follows the count in the CR warning, shared by the
+// editor, the form note, and their tests.
+const credentialCRsNeedLF = "in the draft: keys need LF."
+
+// credentialCRWarning opens the warning for a draft holding CRs: ssh-keygen
+// rejects a key whose line breaks are CR, and the draft saves fine, so the
+// failure would otherwise surface only when ssh reads the key. A CRLF holds
+// one CR and counts once.
+func credentialCRWarning(draft string) string {
+	n := strings.Count(draft, "\r")
+	noun := "CRs"
+	if n == 1 {
+		noun = "CR"
+	}
+	return fmt.Sprintf("⚠ %d %s %s", n, noun, credentialCRsNeedLF)
+}
 
 // credentialEndNoBreak opens the warning for a draft ending in a PEM END
 // line: OpenSSH refuses a private key file whose END line has no final line
@@ -78,29 +92,16 @@ func (e credentialText) toggleLineEndings() credentialText {
 
 const credentialTabWidth = 8
 
-var (
-	credentialMarkerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))
-	credentialModeStyle   = lipgloss.NewStyle().Bold(true)
-	credentialRightStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))
-	credentialWrongStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("1"))
-)
+var credentialMarkerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))
 
-// credentialModeLines says which line-ending mode is on and whether it suits
-// a key. LF mode does not advertise switching away; as-pasted mode paints its
-// suggestion to switch in rainbow, because a CR-broken key saves fine and
-// fails only when ssh reads it.
-func (e credentialText) credentialModeLines() string {
+// credentialModeLine is the line-ending picker, unfocused (^t is its key),
+// with a dim tail naming what the active mode does.
+func (e credentialText) credentialModeLine() string {
+	sel, tail := 0, credentialLFModeTail
 	if e.keepCR {
-		return credentialModeStyle.Render(credentialLineEndingsAsPasted+" ") +
-			credentialWrongStyle.Render(credentialLineEndingsWrong) +
-			credentialModeStyle.Render(" (CR/CRLF kept)") + "\n" +
-			rainbow(credentialConvertToLF)
+		sel, tail = 1, credentialAsPastedModeTail
 	}
-	return credentialModeStyle.Render(credentialLineEndingsLF+" ") +
-		credentialRightStyle.Render(credentialLineEndingsRight) +
-		credentialModeStyle.Render(" (pasted CR/CRLF → LF)") + "\n" +
-		credentialModeStyle.Render("^t keeps them as pasted ") +
-		credentialWrongStyle.Render(credentialLineEndingsWrong)
+	return "Line endings: " + renderSeg([]string{"LF", "as pasted"}, sel, false) + "  " + dimStyle.Render(tail)
 }
 
 func credentialLines(value string) string {
@@ -411,6 +412,12 @@ func (m model) viewCredText() string {
 	if endsInBareEndLine(m.credText.value) {
 		warning = wrapLine("⚠ "+credentialEndNoBreak+" Press Enter at the end.", m.width)
 	}
+	// Only as-pasted mode can hold CRs (LF mode converts on entry and on
+	// every insert); gating on both keeps "^t converts them" true.
+	var crWarning []string
+	if m.credText.keepCR && strings.ContainsRune(m.credText.value, '\r') {
+		crWarning = wrapLine(credentialCRWarning(m.credText.value)+" ^t converts them.", m.width)
+	}
 	// The error block is rendered once, so the rows it is budgeted and the
 	// rows it prints cannot disagree.
 	var errBlock string
@@ -420,24 +427,29 @@ func (m model) viewCredText() string {
 	}
 	width := max(8, m.width-2)
 	rows, cursorRow := m.credText.rows(width)
-	// The text gets what is left after the six header lines, the position
+	// The text gets what is left after the header (three fixed lines, the
+	// mode line, the CR warning when it shows, a blank line), the position
 	// line, the end-line warning when it shows, the error block, the
 	// controls, and the row clipHeight keeps for the inline renderer. The
 	// error block always reserves at least two rows, so the text does not
 	// jump when a short error appears; a taller one takes rows from the text.
+	headerRows := 3 + 1 + len(crWarning) + 1
 	errRows := max(2, strings.Count(errBlock, "\n"))
 	helpRows := strings.Count(help, "\n") + 1
-	height := max(1, m.height-6-1-len(warning)-errRows-helpRows-1)
+	height := max(1, m.height-headerRows-1-len(warning)-errRows-helpRows-1)
 	from := max(0, cursorRow-height+1)
 	to := min(len(rows), from+height)
 	var b strings.Builder
 	b.WriteString("VISIBLE replacement — not saved\n")
 	b.WriteString("Stored credential NOT loaded.\n")
 	b.WriteString(credentialMarkerStyle.Render("Tabs: ⇥ (8 cols)  CR: ␍  LF: ↵  End: ∎") + " (display only)\n")
-	b.WriteString(m.credText.credentialModeLines() + "\n\n")
-	b.WriteString(strings.Join(rows[from:to], "\n"))
+	b.WriteString(m.credText.credentialModeLine() + "\n")
+	// Warnings are rainbow, wrapped first so each painted line fits the width.
+	for _, l := range crWarning {
+		b.WriteString(rainbow(l) + "\n")
+	}
+	b.WriteString("\n" + strings.Join(rows[from:to], "\n"))
 	fmt.Fprintf(&b, "\n%d bytes · %s · view %d–%d/%d\n", len(m.credText.value), credentialLines(m.credText.value), from+1, to, len(rows))
-	// Rainbow, wrapped first so each painted line fits the width.
 	for _, l := range warning {
 		b.WriteString(rainbow(l) + "\n")
 	}
@@ -450,10 +462,12 @@ func (m model) credentialTextMinHeight() int {
 	if !m.credTextVisible {
 		return 16 // room for the pre-entry disclosure
 	}
-	// Six header lines + two text rows + the position line + the two-line
-	// end-line warning + the error block's two reserved rows (message and
-	// "^s blocked") + two-line controls + clipHeight's inline-renderer row
-	// = 16. An error that wraps to a third row leaves one text row.
+	// Worst case at 60 columns: six header lines (three fixed, the mode
+	// line, the one-line CR warning, a blank) + two text rows + the position
+	// line + the two-line end-line warning + the error block's two reserved
+	// rows (message and "^s blocked") + two-line controls + clipHeight's
+	// inline-renderer row = 16. An error that wraps to a third row leaves one
+	// text row.
 	return 16
 }
 

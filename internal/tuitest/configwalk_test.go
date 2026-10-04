@@ -129,8 +129,9 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	s.WaitForAfter(e, "without masking")
 	e = s.Keys("C-e")
 	s.WaitForAfter(e, "VISIBLE replacement")
-	// Pasted CR and CRLF arrive as LF by default, and the screen says so.
-	s.WaitFor("Line endings: LF")
+	// Pasted CR and CRLF arrive as LF by default, and the mode line's tail
+	// says so in words (the picker's highlight does not survive a capture).
+	s.WaitFor("recommended · CR/CRLF → LF")
 	e = s.Paste("not-a-secret\rsecond-line\r\n")
 	s.WaitForAfter(e, "second-line")
 	s.WaitFor("3 lines")

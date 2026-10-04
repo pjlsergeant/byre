@@ -445,7 +445,7 @@ func TestCredentialVisibilityNoticeAndResize(t *testing.T) {
 		t.Fatalf("live editor minimum is %d; the pause must name it:\n%s", min, m.View())
 	}
 	m.width, m.height = 60, min
-	for _, fragment := range []string{"VISIBLE", "NOT loaded", "NOT save", credentialLineEndingsLF, credentialLineEndingsRight, credentialLineEndingsWrong, "^t", "line endings", "private"} {
+	for _, fragment := range []string{"VISIBLE", "NOT loaded", "NOT save", credentialLFModeTail, "^t", "line endings", "private"} {
 		if !strings.Contains(m.View(), fragment) {
 			t.Fatalf("minimum live editor hides %q:\n%s", fragment, m.View())
 		}
@@ -482,7 +482,7 @@ func TestCredentialVisibilityNoticeAndResize(t *testing.T) {
 	}
 	// Join the wrapped lines so the warning's fragment is found whole.
 	view := strings.Join(strings.Fields(ansi.Strip(m.View())), " ")
-	for _, fragment := range []string{"VISIBLE", credentialLineEndingsRight, credentialLineEndingsWrong, credentialEndNoBreak, "Press Enter at the end", "terminal's paste", "^s blocked", "line endings", "view 1–2/2"} {
+	for _, fragment := range []string{"VISIBLE", credentialLFModeTail, credentialEndNoBreak, "Press Enter at the end", "terminal's paste", "^s blocked", "line endings", "view 1–2/2"} {
 		if !strings.Contains(view, fragment) {
 			t.Fatalf("minimum editor with warning and error hides %q:\n%s", fragment, m.View())
 		}
@@ -508,7 +508,7 @@ func TestCredentialMinimumEditorKeepsATallErrorWhole(t *testing.T) {
 	}
 	raw := m.View()
 	view := strings.Join(strings.Fields(ansi.Strip(raw)), " ")
-	for _, fragment := range []string{credentialEndNoBreak, "Press Enter at the end", "exceeds 256 KiB", "Nothing inserted", "^s blocked", "bytes · 4 lines · view 4–4/4", "-----END OPENSSH PRIVATE KEY-----", "discard changes", "line endings"} {
+	for _, fragment := range []string{credentialEndNoBreak, "Press Enter at the end", "exceeds 256 KiB", "Nothing inserted", "^s blocked", "bytes · 4 lines · view", "-----END OPENSSH PRIVATE KEY-----", "discard changes", "line endings"} {
 		if !strings.Contains(view, fragment) {
 			t.Fatalf("minimum editor with a tall error hides %q:\n%s", fragment, ansi.Strip(raw))
 		}
@@ -641,21 +641,32 @@ func TestCredentialFormWarnsBeforeSavingAnUnterminatedEndLine(t *testing.T) {
 // its remedy must survive the height clip at the editor's minimum size, with
 // a layer disclosure competing for the same rows.
 func TestCredentialFormEndLineWarningSurvivesTheMinimumSize(t *testing.T) {
-	admin := newFakeCredAdmin()
-	admin.disclosure = "writes to layer acme (/x/layer.config), used by 3 projects — this changes the value for every project extending it"
-	m := addCredential(credModel(t, admin, nil), credKindFile, "KEY", "")
-	m = openVisibleCredText(t, m)
-	m.width, m.height = 60, m.credentialTextMinHeight()
-	m = credPaste(m, crPastedKey)
-	m = credKey(m, tea.KeyCtrlS)
-	if m.mode != modeItem || m.height != 16 {
-		t.Fatalf("want the form at 60x16, got mode %v at height %d", m.mode, m.height)
-	}
-	// Join the wrapped lines so each fragment is found whole.
-	view := strings.Join(strings.Fields(ansi.Strip(m.View())), " ")
-	for _, fragment := range []string{credentialEndNoBreak, "Open ^e and press Enter at the end", "layer acme"} {
-		if !strings.Contains(view, fragment) {
-			t.Fatalf("the 60x16 form hides %q:\n%s", fragment, ansi.Strip(m.View()))
+	// As pasted, the same key also keeps its CRs, so the CR note competes
+	// for the rows too.
+	for _, asPasted := range []bool{false, true} {
+		admin := newFakeCredAdmin()
+		admin.disclosure = "writes to layer acme (/x/layer.config), used by 3 projects — this changes the value for every project extending it"
+		m := addCredential(credModel(t, admin, nil), credKindFile, "KEY", "")
+		m = openVisibleCredText(t, m)
+		m.width, m.height = 60, m.credentialTextMinHeight()
+		if asPasted {
+			m = credKey(m, tea.KeyCtrlT)
+		}
+		m = credPaste(m, crPastedKey)
+		m = credKey(m, tea.KeyCtrlS)
+		if m.mode != modeItem || m.height != 16 {
+			t.Fatalf("want the form at 60x16, got mode %v at height %d", m.mode, m.height)
+		}
+		fragments := []string{credentialEndNoBreak, "Open ^e and press Enter at the end", "layer acme"}
+		if asPasted {
+			fragments = append(fragments, "3 CRs "+credentialCRsNeedLF+credentialCRFormRemedy)
+		}
+		// Join the wrapped lines so each fragment is found whole.
+		view := strings.Join(strings.Fields(ansi.Strip(m.View())), " ")
+		for _, fragment := range fragments {
+			if !strings.Contains(view, fragment) {
+				t.Fatalf("as pasted %v: the 60x16 form hides %q:\n%s", asPasted, fragment, ansi.Strip(m.View()))
+			}
 		}
 	}
 }
@@ -722,11 +733,11 @@ func TestCredentialCapAppliesToConvertedInsertion(t *testing.T) {
 func TestCredentialEditorShowsLineEndingMode(t *testing.T) {
 	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
 	m = openVisibleCredText(t, m)
-	if view := ansi.Strip(m.View()); !strings.Contains(view, credentialLineEndingsLF) || !strings.Contains(view, "^t") {
+	if view := ansi.Strip(m.View()); !strings.Contains(view, credentialLFModeTail) || strings.Contains(view, credentialAsPastedModeTail) || !strings.Contains(view, "^t") {
 		t.Fatalf("editor must name LF mode and its toggle:\n%s", view)
 	}
 	m = credKey(m, tea.KeyCtrlT)
-	if view := ansi.Strip(m.View()); !strings.Contains(view, credentialLineEndingsAsPasted) || strings.Contains(view, credentialLineEndingsLF) {
+	if view := ansi.Strip(m.View()); !strings.Contains(view, credentialAsPastedModeTail) || strings.Contains(view, credentialLFModeTail) {
 		t.Fatalf("editor must name as-pasted mode:\n%s", view)
 	}
 }
@@ -755,7 +766,7 @@ func TestCredentialReopenedCRDraftOpensAsPasted(t *testing.T) {
 	m = credPaste(m, "a\rb")
 	m = credKey(m, tea.KeyCtrlS)
 	m = openVisibleCredText(t, m)
-	if !m.credText.keepCR || m.credText.value != "a\rb" || !strings.Contains(m.View(), credentialLineEndingsAsPasted) {
+	if !m.credText.keepCR || m.credText.value != "a\rb" || !strings.Contains(m.View(), credentialAsPastedModeTail) {
 		t.Fatal("reopening must neither convert a CR draft nor claim LF mode")
 	}
 	m = credKey(m, tea.KeyEsc)
@@ -838,40 +849,158 @@ func TestCredentialEndLineWarningIsRainbow(t *testing.T) {
 	}
 }
 
-func TestCredentialLFModeMarksItselfRight(t *testing.T) {
+// noRainbow fails the test if any line of the view is rainbow.
+func noRainbow(t *testing.T, view string) {
+	t.Helper()
+	for _, l := range strings.Split(view, "\n") {
+		if isRainbow(l) {
+			t.Fatalf("unexpected rainbow line: %q", ansi.Strip(l))
+		}
+	}
+}
+
+// The default state is one calm line: the picker shows LF chosen, the tail
+// says what it does, and nothing warns.
+func TestCredentialLFModeIsOneCalmLine(t *testing.T) {
 	useANSI256(t)
 	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
 	view := openVisibleCredText(t, m).View()
-	lines := strings.Split(view, "\n")
-	for i, l := range lines {
-		if !strings.Contains(ansi.Strip(l), credentialLineEndingsLF) {
-			continue
-		}
-		next := lines[i+1]
-		if !strings.Contains(l, credentialRightStyle.Render(credentialLineEndingsRight)) {
-			t.Fatalf("LF mode must mark itself right in green: %q", l)
-		}
-		if !strings.Contains(ansi.Strip(next), "^t") || !strings.Contains(next, credentialWrongStyle.Render(credentialLineEndingsWrong)) {
-			t.Fatalf("the ^t alternative must be marked wrong in red: %q", next)
-		}
-		if isRainbow(l) || isRainbow(next) || strings.Contains(ansi.Strip(view), credentialConvertToLF) {
-			t.Fatal("LF mode must not advertise switching away")
-		}
-		return
+	plain := ansi.Strip(view)
+	if strings.Count(plain, "[as pasted]") != 1 || !strings.Contains(plain, credentialLFModeTail) || strings.Contains(plain, credentialAsPastedModeTail) {
+		t.Fatalf("LF mode must be one picker line naming LF:\n%s", plain)
 	}
-	t.Fatalf("no LF mode line:\n%s", ansi.Strip(view))
+	if !strings.Contains(view, selStyle.Render("[LF]")) || strings.Contains(view, selStyle.Render("[as pasted]")) {
+		t.Fatal("the LF option must be the highlighted one")
+	}
+	if strings.Contains(plain, credentialCRsNeedLF) {
+		t.Fatal("LF mode must not warn about CRs")
+	}
+	noRainbow(t, view)
 }
 
-func TestCredentialAsPastedModeSuggestsLFInRainbow(t *testing.T) {
+// As pasted on a draft with no CRs has nothing to warn about.
+func TestCredentialAsPastedEmptyDraftDoesNotWarn(t *testing.T) {
 	useANSI256(t)
 	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
 	m = credKey(openVisibleCredText(t, m), tea.KeyCtrlT)
 	view := m.View()
-	if l := lineWith(t, view, credentialLineEndingsAsPasted); !strings.Contains(l, credentialWrongStyle.Render(credentialLineEndingsWrong)) {
-		t.Fatalf("as-pasted mode must mark itself wrong in red: %q", l)
+	plain := ansi.Strip(view)
+	if !strings.Contains(plain, credentialAsPastedModeTail) || !strings.Contains(view, selStyle.Render("[as pasted]")) || strings.Contains(view, selStyle.Render("[LF]")) {
+		t.Fatalf("as-pasted mode must be the highlighted option:\n%s", plain)
 	}
-	if l := lineWith(t, view, credentialConvertToLF); !isRainbow(l) || strings.Contains(l, credentialConvertToLF) {
-		t.Fatalf("the suggestion to convert must be rainbow: %q", l)
+	if strings.Contains(plain, credentialCRsNeedLF) {
+		t.Fatal("a draft without CRs must not warn about CRs")
+	}
+	noRainbow(t, view)
+}
+
+// A CR draft saves fine and fails at ssh time, so as-pasted mode warns in
+// rainbow with the count, and ^t's conversion clears it.
+func TestCredentialAsPastedCRDraftWarnsInRainbow(t *testing.T) {
+	useANSI256(t)
+	for _, tt := range []struct {
+		draft, count string
+	}{
+		{"a\rb", "1 CR " + credentialCRsNeedLF},
+		{"a\r\nb\rc\r\n", "3 CRs " + credentialCRsNeedLF}, // a CRLF counts once
+	} {
+		m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+		m.width = 60 // narrow, so a wrapped warning would show
+		m = credPaste(credKey(openVisibleCredText(t, m), tea.KeyCtrlT), tt.draft)
+		view := m.View()
+		if !strings.Contains(ansi.Strip(view), tt.count) {
+			t.Fatalf("%q: want %q:\n%s", tt.draft, tt.count, ansi.Strip(view))
+		}
+		for _, l := range strings.Split(view, "\n") {
+			if p := ansi.Strip(l); (strings.Contains(p, credentialCRsNeedLF) || strings.Contains(p, "^t converts")) && !isRainbow(l) {
+				t.Fatalf("%q: CR warning line is not rainbow: %q", tt.draft, p)
+			}
+		}
+		m = credKey(m, tea.KeyCtrlT)
+		if view := ansi.Strip(m.View()); strings.ContainsRune(m.credText.value, '\r') || strings.Contains(view, credentialCRsNeedLF) {
+			t.Fatalf("%q: ^t must convert the CRs and clear the warning:\n%s", tt.draft, view)
+		}
+	}
+}
+
+// The form saves without another screen, so it repeats the CR warning.
+func TestCredentialFormWarnsAboutCRsInRainbow(t *testing.T) {
+	useANSI256(t)
+	admin := newFakeCredAdmin()
+	admin.disclosure = "writes to layer acme"
+	m := addCredential(credModel(t, admin, nil), credKindEnv, "KEY", "")
+	m = credPaste(credKey(openVisibleCredText(t, m), tea.KeyCtrlT), "a\rb\rc")
+	m = credKey(m, tea.KeyCtrlS)
+	view := m.View()
+	if m.mode != modeItem || !strings.Contains(ansi.Strip(view), "2 CRs "+credentialCRsNeedLF) {
+		t.Fatalf("form must warn about the draft's CRs:\n%s", ansi.Strip(view))
+	}
+	if l := lineWith(t, view, credentialCRsNeedLF); !isRainbow(l) {
+		t.Fatalf("CR note is not rainbow: %q", l)
+	}
+	if l := lineWith(t, view, "layer acme"); isRainbow(l) {
+		t.Fatalf("an ordinary note must stay dim: %q", l)
+	}
+	m = credKey(openVisibleCredText(t, m), tea.KeyCtrlT) // reopens as pasted; ^t converts
+	m = credKey(m, tea.KeyCtrlS)
+	if m.mode != modeItem || m.credDraft != "a\nb\nc" || strings.Contains(ansi.Strip(m.View()), credentialCRsNeedLF) {
+		t.Fatalf("an LF draft must not warn on the form:\n%s", ansi.Strip(m.View()))
+	}
+}
+
+// A three-digit count wraps the form note at 60 columns; the remedy on the
+// continuation line must be as loud.
+func TestCredentialFormCRNoteContinuationIsRainbow(t *testing.T) {
+	useANSI256(t)
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+	m.width, m.height = 60, 40
+	m = credPaste(credKey(openVisibleCredText(t, m), tea.KeyCtrlT), strings.Repeat("\r", 1000))
+	m = credKey(m, tea.KeyCtrlS)
+	view := m.View()
+	first := lineWith(t, view, credentialCRsNeedLF)
+	cont := lineWith(t, view, "^t.")
+	if m.mode != modeItem || cont == first {
+		t.Fatalf("the check needs the CR note wrapped at width 60:\n%s", ansi.Strip(view))
+	}
+	if !isRainbow(first) || !isRainbow(cont) {
+		t.Fatalf("every line of the CR note must be rainbow: %q / %q", first, cont)
+	}
+}
+
+// The largest count a draft can hold keeps the editor's CR warning on one
+// line at 60 columns, which credentialTextMinHeight's budget assumes.
+func TestCredentialEditorCRWarningFitsOneLineAtMaxCount(t *testing.T) {
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+	m = openVisibleCredText(t, m)
+	m.width, m.height = 60, m.credentialTextMinHeight()
+	m.credText = credentialText{value: strings.Repeat("\r", credentials.MaxValue), keepCR: true}
+	l := ansi.Strip(lineWith(t, m.View(), credentialCRsNeedLF))
+	if !strings.Contains(l, "262144 CRs") || !strings.Contains(l, "^t converts them.") || ansi.StringWidth(l) > 60 {
+		t.Fatalf("max-count CR warning must fit one 60-column line: %q", l)
+	}
+}
+
+// Worst case at the minimum size: the CR warning, the end-line warning, and
+// a short error all show, with the text and controls, and nothing clips.
+func TestCredentialMinimumEditorFitsEveryWarning(t *testing.T) {
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindFile, "KEY", "")
+	m = openVisibleCredText(t, m)
+	m.width, m.height = 60, m.credentialTextMinHeight()
+	m = credKey(m, tea.KeyCtrlT)
+	m = credPaste(m, crPastedKey)
+	m = credKey(m, tea.KeyCtrlV)
+	raw := m.View()
+	if len(strings.Split(m.viewCredText(), "\n")) > m.height-1 {
+		t.Fatalf("worst case does not fit the minimum height:\n%s", ansi.Strip(raw))
+	}
+	view := strings.Join(strings.Fields(ansi.Strip(raw)), " ")
+	for _, fragment := range []string{"VISIBLE", credentialAsPastedModeTail, "3 CRs " + credentialCRsNeedLF, "^t converts", credentialEndNoBreak, "Press Enter at the end", "terminal's paste", "^s blocked", "-----END OPENSSH PRIVATE KEY-----", "discard changes", "line endings"} {
+		if !strings.Contains(view, fragment) {
+			t.Fatalf("worst-case minimum editor hides %q:\n%s", fragment, ansi.Strip(raw))
+		}
+	}
+	if strings.Contains(view, "more below") || strings.Contains(view, "more above") {
+		t.Fatalf("worst-case minimum editor was clipped:\n%s", ansi.Strip(raw))
 	}
 }
 
@@ -884,17 +1013,18 @@ func TestCredentialLoudTextDegradesToPlainText(t *testing.T) {
 	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindFile, "KEY", "")
 	m = credPaste(openVisibleCredText(t, m), crPastedKey)
 	view := m.View()
-	for _, fragment := range []string{credentialLineEndingsLF + " " + credentialLineEndingsRight, credentialLineEndingsWrong, credentialEndNoBreak} {
+	for _, fragment := range []string{"[LF] [as pasted]  " + credentialLFModeTail, credentialEndNoBreak} {
 		if !strings.Contains(view, fragment) {
 			t.Fatalf("missing plain %q:\n%s", fragment, view)
 		}
 	}
-	m = credKey(m, tea.KeyCtrlT)
-	if view := m.View(); !strings.Contains(view, credentialLineEndingsAsPasted+" "+credentialLineEndingsWrong) || !strings.Contains(view, credentialConvertToLF) {
+	m = credKey(credKey(m, tea.KeyCtrlT), tea.KeyCtrlA)
+	m = credPaste(m, "x\r")
+	if view := m.View(); !strings.Contains(view, "[LF] [as pasted]  "+credentialAsPastedModeTail) || !strings.Contains(view, "1 CR "+credentialCRsNeedLF) {
 		t.Fatalf("as-pasted fragments must be plain runs:\n%s", view)
 	}
-	m = credKey(credKey(m, tea.KeyCtrlT), tea.KeyCtrlS)
-	if view := m.View(); m.mode != modeItem || !strings.Contains(view, credentialEndNoBreak) || strings.Contains(view, "\x1b[") {
-		t.Fatalf("the form note must be plain:\n%q", view)
+	m = credKey(m, tea.KeyCtrlS)
+	if view := m.View(); m.mode != modeItem || !strings.Contains(view, "1 CR "+credentialCRsNeedLF) || !strings.Contains(view, credentialEndNoBreak) || strings.Contains(view, "\x1b[") {
+		t.Fatalf("the form notes must be plain:\n%q", view)
 	}
 }
