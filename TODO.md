@@ -17,6 +17,12 @@ the rationale lives.
 
 ## Open
 
+- [ ] (XS) **Bound the stdout read in the runner's capture path** (codex
+  review 2026-10-04, unobserved): `captureBoundedInExec` (runner.go ~918)
+  reads stdout before `cmd.Wait()`, so an engine subprocess that leaves the
+  process group holding stdout can outlive any timeout. Same fix shape as
+  `boundPipe` in internal/commands/procgroup.go.
+
 - [ ] (S) **Retire the shared_auth legacy parser arms when their warnings go
   quiet** (ADR 0049 #1/#2, amended policy): the write side and the warning
   channel shipped 2026-08-23; the array and top-level parse arms
