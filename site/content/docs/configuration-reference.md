@@ -108,13 +108,14 @@ exceptions noted inline.
   confirmation on a file's first credential. Use terminal bracketed paste,
   not Ctrl-V's host clipboard lookup.
   Terminals send pasted line breaks as CR, so by default the editor turns
-  pasted CR and CRLF into LF and says in rainbow how many pasted line
-  breaks it changed; the line under the marker legend shows both modes
-  with the active one highlighted, LF marked recommended. `^t`
-  switches to keeping line endings exactly as pasted, and switching back
-  converts the draft's CRs to LF. While the draft holds CRs, the editor
-  and the form warn in rainbow with their count. Check the LF (`↵`) and CR
-  (`␍`) markers before accepting the draft.
+  pasted CR and CRLF into LF, says in rainbow that it changed your line
+  breaks (until you have used `^t` on the draft), and explains why; the
+  line under the marker legend shows both modes with the active one
+  highlighted, LF marked recommended. `^t` switches the draft between LF
+  and exactly what was pasted, both ways.
+  While the draft holds CRs, the editor and the form warn in rainbow with
+  their count. Check the LF (`↵`) and CR (`␍`) markers before accepting the
+  draft.
   A paste has no line break after its last line, and OpenSSH rejects a key
   file whose `-----END ...-----` line lacks one, so the editor and the form
   warn, in rainbow, when a draft ends that way; press Enter at the end of

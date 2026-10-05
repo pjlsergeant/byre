@@ -40,19 +40,20 @@
 - **Line breaks pasted into the credential editor become LF.** Terminals
   send pasted line breaks as CR, so a key pasted at `^e` was stored without
   a single LF and ssh-keygen rejected it. The editor now turns pasted CR
-  and CRLF into LF by default and says in rainbow how many pasted line
-  breaks it changed; one line under the marker legend shows both modes
-  with the active one highlighted, LF marked recommended. `^t`
-  switches to keeping line endings exactly as pasted; switching back
-  converts the draft's CRs to LF in place, so a draft already full of `␍`
-  markers is fixed without pasting again. While the draft holds CRs, the
-  editor and the form warn in rainbow with their count. A paste carries no
-  line break after its last line, and OpenSSH rejects a key whose
-  `-----END ...-----` line has none, so the editor (and the form, before
-  you save) warns in rainbow when the draft ends that way: press Enter at
-  the end. It warns only; the draft is
-  never changed for you. At its minimum size the editor keeps a long error
-  and every control fully on screen. `byre credentials set` is unchanged:
+  and CRLF into LF by default, says in rainbow that it changed your line
+  breaks (until you have used `^t` on the draft), and explains why; one
+  line under the marker legend shows both modes with the active one
+  highlighted, LF marked recommended. `^t` switches the draft between LF
+  and exactly what was pasted, both ways: a draft already full of `␍`
+  markers is fixed without pasting again, and `^t` again restores the
+  pasted line breaks exactly. While the draft holds CRs, the editor and
+  the form warn in rainbow with their count. A
+  paste carries no line break after its last line, and OpenSSH rejects a
+  key whose `-----END ...-----` line has none, so the editor (and the
+  form, before you save) warns in rainbow when the draft ends that way:
+  press Enter at the end. It warns only; the draft is never changed for
+  you. At its minimum size the editor keeps a long error and every control
+  fully on screen. `byre credentials set` is unchanged:
   piped file values are stored byte for byte, and env values drop one
   trailing newline.
 

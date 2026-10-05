@@ -378,8 +378,16 @@ type model struct {
 	credPassErr    string
 	// credPending is the accepted value waiting on that passphrase; nil
 	// whenever the modal is not the reason the editor is here.
-	credPending        *pendingCredential
-	credDraft          string // hidden draft accepted by the multiline editor
+	credPending *pendingCredential
+	credDraft   string // hidden draft accepted by the multiline editor
+	// credDraftMarks are the accepted draft's converted line breaks
+	// (credentialText.marks), so a reopened editor reads the same bytes the
+	// same way and ^t still restores what was pasted. In memory only, never
+	// written or shown, and cleared or replaced with credDraft.
+	credDraftMarks []uint8
+	// credDraftCycled is credentialText.cycled for the accepted draft, with
+	// the same lifetime as credDraftMarks.
+	credDraftCycled    bool
 	credMultiline      bool
 	credText           credentialText
 	credTextVisible    bool // visibility warning acknowledged

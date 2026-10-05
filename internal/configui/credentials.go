@@ -340,7 +340,7 @@ func (m model) envItemNotes() []string {
 	}
 	var notes []string
 	// The CR and end-line warnings lead because the clip takes notes from
-	// the bottom: at the editor's minimum size (60x16), after a disclosure
+	// the bottom: at the editor's minimum size (60x17), after a disclosure
 	// they would fall off screen, and no screen after this form repeats them
 	// before ^s saves.
 	if m.credMultiline && strings.ContainsRune(m.credDraft, '\r') {
