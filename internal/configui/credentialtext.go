@@ -435,10 +435,26 @@ func (m model) viewCredText() string {
 	// controls, and the row clipHeight keeps for the inline renderer. The
 	// error block always reserves at least two rows, so the text does not
 	// jump when a short error appears; a taller one takes rows from the text.
+	// Blank lines set the warnings off from their neighbours (one above the
+	// CR warning, one either side of the end-line warning), all or none:
+	// they are spent only when the text still keeps two rows, so they never
+	// cost the minimum size. The one padRows decides budget and output.
 	headerRows := 3 + 1 + len(crWarning) + 1
 	errRows := max(2, strings.Count(errBlock, "\n"))
 	helpRows := strings.Count(help, "\n") + 1
-	height := max(1, m.height-headerRows-1-len(warning)-errRows-helpRows-1)
+	textRows := m.height - headerRows - 1 - len(warning) - errRows - helpRows - 1
+	padRows := 0
+	if len(crWarning) > 0 {
+		padRows++
+	}
+	if len(warning) > 0 {
+		padRows += 2
+	}
+	if textRows-padRows < 2 {
+		padRows = 0
+	}
+	padded := padRows > 0
+	height := max(1, textRows-padRows)
 	from := max(0, cursorRow-height+1)
 	to := min(len(rows), from+height)
 	var b strings.Builder
@@ -447,13 +463,22 @@ func (m model) viewCredText() string {
 	b.WriteString(credentialMarkerStyle.Render("Tabs: ⇥ (8 cols)  CR: ␍  LF: ↵  End: ∎") + " (display only)\n")
 	b.WriteString(m.credText.credentialModeLine() + "\n")
 	// Warnings are rainbow, wrapped first so each painted line fits the width.
+	if padded && len(crWarning) > 0 {
+		b.WriteString("\n")
+	}
 	for _, l := range crWarning {
 		b.WriteString(rainbow(l) + "\n")
 	}
 	b.WriteString("\n" + strings.Join(rows[from:to], "\n"))
 	fmt.Fprintf(&b, "\n%d bytes · %s · view %d–%d/%d\n", len(m.credText.value), credentialLines(m.credText.value), from+1, to, len(rows))
+	if padded && len(warning) > 0 {
+		b.WriteString("\n")
+	}
 	for _, l := range warning {
 		b.WriteString(rainbow(l) + "\n")
+	}
+	if padded && len(warning) > 0 {
+		b.WriteString("\n")
 	}
 	b.WriteString(errBlock)
 	b.WriteString(help)
@@ -469,7 +494,8 @@ func (m model) credentialTextMinHeight() int {
 	// line + the two-line end-line warning + the error block's two reserved
 	// rows (message and "^s blocked") + two-line controls + clipHeight's
 	// inline-renderer row = 16. An error that wraps to a third row leaves one
-	// text row.
+	// text row. The warnings' blank padding is spent only when the text keeps
+	// two rows besides, so it never raises this minimum.
 	return 16
 }
 

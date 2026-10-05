@@ -480,6 +480,11 @@ func TestCredentialVisibilityNoticeAndResize(t *testing.T) {
 	if len(strings.Split(m.viewCredText(), "\n")) > m.height-1 {
 		t.Fatalf("warning and error do not fit the minimum height:\n%s", m.View())
 	}
+	// At the minimum the warnings' padding is dropped: the warning follows
+	// the position line directly.
+	if above, _ := warningNeighbours(t, m.View(), "No final line break", "end."); !strings.Contains(above, "bytes ·") {
+		t.Fatalf("minimum editor must drop the warning padding, got %q above it:\n%s", above, ansi.Strip(m.View()))
+	}
 	// Join the wrapped lines so the warning's fragment is found whole.
 	view := strings.Join(strings.Fields(ansi.Strip(m.View())), " ")
 	for _, fragment := range []string{"VISIBLE", credentialLFModeNote, credentialEndNoBreak, "Press Enter at the end", "terminal's paste", "^s blocked", "line endings", "view 1–2/2"} {
@@ -1043,5 +1048,100 @@ func TestCredentialLoudTextDegradesToPlainText(t *testing.T) {
 	m = credKey(m, tea.KeyCtrlS)
 	if view := m.View(); m.mode != modeItem || !strings.Contains(view, "1 CR "+credentialCRsNeedLF) || !strings.Contains(view, credentialEndNoBreak) || strings.Contains(view, "\x1b[") {
 		t.Fatalf("the form notes must be plain:\n%q", view)
+	}
+}
+
+// warningNeighbours returns the stripped lines directly above the line
+// holding first and directly below the line holding last.
+func warningNeighbours(t *testing.T, view, first, last string) (above, below string) {
+	t.Helper()
+	lines := strings.Split(ansi.Strip(view), "\n")
+	top, bottom := -1, -1
+	for i, l := range lines {
+		if top < 0 && strings.Contains(l, first) {
+			top = i
+		}
+		if strings.Contains(l, last) {
+			bottom = i
+		}
+	}
+	if top < 1 || bottom < top || bottom+1 >= len(lines) {
+		t.Fatalf("no warning block %q … %q with neighbours:\n%s", first, last, ansi.Strip(view))
+	}
+	return strings.TrimSpace(lines[top-1]), strings.TrimSpace(lines[bottom+1])
+}
+
+// With room to spare, a blank line sets each warning off from its
+// neighbours: one above the CR warning (the blank before the text is below
+// it already), one either side of the end-line warning.
+func TestCredentialWarningsArePaddedWhenThereIsRoom(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		asPasted bool
+		draft    string
+		endLine  bool
+		crs      bool
+	}{
+		{"end line", false, lfKey, true, false},
+		{"CRs", true, "a\rb", false, true},
+		{"both", true, crPastedKey, true, true},
+	} {
+		m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindFile, "KEY", "")
+		m.width, m.height = 80, 30
+		m = openVisibleCredText(t, m)
+		if tt.asPasted {
+			m = credKey(m, tea.KeyCtrlT)
+		}
+		m = credPaste(m, tt.draft)
+		view := m.View()
+		if tt.endLine {
+			if above, below := warningNeighbours(t, view, "No final line break", "end."); above != "" || below != "" {
+				t.Fatalf("%s: end-line warning must be padded, got %q above and %q below:\n%s", tt.name, above, below, ansi.Strip(view))
+			}
+		}
+		if tt.crs {
+			above, below := warningNeighbours(t, view, credentialCRsNeedLF, "^t converts them.")
+			if above != "" || below != "" {
+				t.Fatalf("%s: CR warning must be padded, got %q above and %q below:\n%s", tt.name, above, below, ansi.Strip(view))
+			}
+			if l := strings.Split(ansi.Strip(view), "\n"); !strings.Contains(strings.Join(l, "\n"), "toggles\n\n"+credentialCRWarning(m.credText.value)) {
+				t.Fatalf("%s: the blank above the CR warning must follow the mode line:\n%s", tt.name, ansi.Strip(view))
+			}
+		}
+	}
+}
+
+// The padding is all or nothing and spent only when the text keeps two
+// rows. At 60 columns with no error the budget reserves two error rows and
+// two control rows, so the text has height-13 rows with the end-line
+// warning (header 5, position 1, warning 2, renderer 1) and height-14 with
+// both warnings (header 6): padding of 2 and 3 rows needs height 17 and 19.
+func TestCredentialWarningPaddingThreshold(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		asPasted bool
+		least    int
+	}{
+		{"end line", false, 17},
+		{"both", true, 19},
+	} {
+		for _, height := range []int{tt.least, tt.least - 1} {
+			m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindFile, "KEY", "")
+			m = openVisibleCredText(t, m)
+			m.width, m.height = 60, height
+			if tt.asPasted {
+				m = credKey(m, tea.KeyCtrlT)
+			}
+			m = credPaste(m, crPastedKey)
+			view := m.View()
+			above, below := warningNeighbours(t, view, "No final line break", "end.")
+			padded := above == "" && below == ""
+			if padded != (height == tt.least) || (padded && !strings.Contains(ansi.Strip(view), "view 3–4/4")) {
+				t.Fatalf("%s at 60x%d: padded %v, want %v with two text rows:\n%s", tt.name, height, padded, height == tt.least, ansi.Strip(view))
+			}
+			if !padded && !strings.Contains(above, "bytes ·") {
+				t.Fatalf("%s at 60x%d: unpadded warning must follow the position line, got %q", tt.name, height, above)
+			}
+		}
 	}
 }
