@@ -287,8 +287,9 @@ the standing limit of a review gate, not of credentials.
   in Value requires explicit re-entry (`^e`): typed and pasted Return cannot
   be distinguished. `^e` warns before displaying a replacement in memory,
   without plaintext editor files; stored credentials are never loaded.
-  Text is preserved; pasted CR and CRLF become LF by default, and a mode
-  line names the setting; `^t` toggles to keeping line endings as pasted.
+  Text is preserved; pasted CR and CRLF become LF by default, the editor
+  states how many pasted line breaks it changed, and a mode line names
+  the setting; `^t` toggles to keeping line endings as pasted.
   Switching back to LF converts the draft's CRs in place. Each editor
   session starts in LF mode unless the draft it opens already holds CRs.
   The editor and the form warn, without modifying the draft, when it holds

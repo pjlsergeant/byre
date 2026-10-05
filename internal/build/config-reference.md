@@ -106,8 +106,9 @@ exceptions noted inline.
   confirmation on a file's first credential. Use terminal bracketed paste,
   not Ctrl-V's host clipboard lookup.
   Terminals send pasted line breaks as CR, so by default the editor turns
-  pasted CR and CRLF into LF; the line under the marker legend shows both
-  modes with the active one highlighted, LF marked recommended. `^t`
+  pasted CR and CRLF into LF and says in rainbow how many pasted line
+  breaks it changed; the line under the marker legend shows both modes
+  with the active one highlighted, LF marked recommended. `^t`
   switches to keeping line endings exactly as pasted, and switching back
   converts the draft's CRs to LF. While the draft holds CRs, the editor
   and the form warn in rainbow with their count. Check the LF (`↵`) and CR

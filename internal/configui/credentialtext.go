@@ -25,6 +25,10 @@ type credentialText struct {
 	// Terminals send pasted line breaks as CR, which key parsers such as
 	// ssh-keygen reject, so pastes become LF unless the user keeps them.
 	keepCR bool
+	// converted counts the line breaks this editor session has rewritten to
+	// LF, so the editor can say what it did to the secret. Later edits do
+	// not undo it; the editor rebuilds the struct, and so the count, on open.
+	converted int
 }
 
 // The mode line's notes say in words which mode is on: the picker's reverse
@@ -38,6 +42,21 @@ const (
 // credentialCRsNeedLF follows the count in the CR warning, shared by the
 // editor, the form note, and their tests.
 const credentialCRsNeedLF = "in the draft: keys need LF."
+
+// credentialChangedToLF follows the count in the notice of line breaks the
+// editor converted, shared by the view and its tests.
+const credentialChangedToLF = "changed to LF."
+
+// credentialConvertedNotice says how many pasted line breaks the editor
+// rewrote to LF: anything byre does to a secret is stated, not silent. A
+// CRLF holds one CR and counts once.
+func credentialConvertedNotice(n int) string {
+	noun := "line breaks"
+	if n == 1 {
+		noun = "line break"
+	}
+	return fmt.Sprintf("⚠ %d pasted %s %s", n, noun, credentialChangedToLF)
+}
 
 // credentialCRWarning opens the warning for a draft holding CRs: ssh-keygen
 // rejects a key whose line breaks are CR, and the draft saves fine, so the
@@ -86,6 +105,7 @@ func (e credentialText) toggleLineEndings() credentialText {
 		prefix = r[:e.pos-1]
 	}
 	e.pos = utf8.RuneCountInString(toLF(string(prefix)))
+	e.converted += strings.Count(e.value, "\r")
 	e.value = toLF(e.value)
 	return e
 }
@@ -323,6 +343,7 @@ func (e credentialText) update(msg tea.KeyMsg) credentialText {
 		return p
 	}
 	var insert string
+	converts := 0 // CRs the insert rewrites to LF
 	switch msg.Type {
 	case tea.KeyLeft:
 		e.pos = max(0, p-1)
@@ -374,6 +395,7 @@ func (e credentialText) update(msg tea.KeyMsg) credentialText {
 		if msg.Type == tea.KeyRunes {
 			insert = string(msg.Runes)
 			if !e.keepCR {
+				converts = strings.Count(insert, "\r")
 				insert = toLF(insert)
 			}
 		}
@@ -385,6 +407,7 @@ func (e credentialText) update(msg tea.KeyMsg) credentialText {
 		}
 		e.value = string(r[:p]) + insert + string(r[p:])
 		e.pos += utf8.RuneCountInString(insert)
+		e.converted += converts
 	}
 	e.err = ""
 	return e
@@ -414,11 +437,18 @@ func (m model) viewCredText() string {
 	if endsInBareEndLine(m.credText.value) {
 		warning = wrapLine("⚠ "+credentialEndNoBreak+" Press Enter at the end.", m.width)
 	}
-	// Only as-pasted mode can hold CRs (LF mode converts on entry and on
-	// every insert); gating on both keeps "^t converts them" true.
-	var crWarning []string
-	if m.credText.keepCR && strings.ContainsRune(m.credText.value, '\r') {
-		crWarning = wrapLine(credentialCRWarning(m.credText.value)+" ^t converts them.", m.width)
+	// The header warning sits under the mode line and depends on the mode,
+	// so at most one shows. As pasted, it is the CR warning: only that mode
+	// can hold CRs (LF mode converts on entry and on every insert), and
+	// gating on both keeps "^t converts them" true. In LF mode, it is the
+	// notice of line breaks this session converted; "^t stops this" would
+	// be false as pasted.
+	var headerWarning []string
+	switch {
+	case m.credText.keepCR && strings.ContainsRune(m.credText.value, '\r'):
+		headerWarning = wrapLine(credentialCRWarning(m.credText.value)+" ^t converts them.", m.width)
+	case !m.credText.keepCR && m.credText.converted > 0:
+		headerWarning = wrapLine(credentialConvertedNotice(m.credText.converted)+" ^t stops this.", m.width)
 	}
 	// The error block is rendered once, so the rows it is budgeted and the
 	// rows it prints cannot disagree.
@@ -430,21 +460,21 @@ func (m model) viewCredText() string {
 	width := max(8, m.width-2)
 	rows, cursorRow := m.credText.rows(width)
 	// The text gets what is left after the header (three fixed lines, the
-	// mode line, the CR warning when it shows, a blank line), the position
+	// mode line, the header warning when it shows, a blank line), the position
 	// line, the end-line warning when it shows, the error block, the
 	// controls, and the row clipHeight keeps for the inline renderer. The
 	// error block always reserves at least two rows, so the text does not
 	// jump when a short error appears; a taller one takes rows from the text.
 	// Blank lines set the warnings off from their neighbours (one above the
-	// CR warning, one either side of the end-line warning), all or none:
+	// header warning, one either side of the end-line warning), all or none:
 	// they are spent only when the text still keeps two rows, so they never
 	// cost the minimum size. The one padRows decides budget and output.
-	headerRows := 3 + 1 + len(crWarning) + 1
+	headerRows := 3 + 1 + len(headerWarning) + 1
 	errRows := max(2, strings.Count(errBlock, "\n"))
 	helpRows := strings.Count(help, "\n") + 1
 	textRows := m.height - headerRows - 1 - len(warning) - errRows - helpRows - 1
 	padRows := 0
-	if len(crWarning) > 0 {
+	if len(headerWarning) > 0 {
 		padRows++
 	}
 	if len(warning) > 0 {
@@ -463,10 +493,10 @@ func (m model) viewCredText() string {
 	b.WriteString(credentialMarkerStyle.Render("Tabs: ⇥ (8 cols)  CR: ␍  LF: ↵  End: ∎") + " (display only)\n")
 	b.WriteString(m.credText.credentialModeLine() + "\n")
 	// Warnings are rainbow, wrapped first so each painted line fits the width.
-	if padded && len(crWarning) > 0 {
+	if padded && len(headerWarning) > 0 {
 		b.WriteString("\n")
 	}
-	for _, l := range crWarning {
+	for _, l := range headerWarning {
 		b.WriteString(rainbow(l) + "\n")
 	}
 	b.WriteString("\n" + strings.Join(rows[from:to], "\n"))
@@ -490,7 +520,8 @@ func (m model) credentialTextMinHeight() int {
 		return 16 // room for the pre-entry disclosure
 	}
 	// Worst case at 60 columns: six header lines (three fixed, the mode
-	// line, the one-line CR warning, a blank) + two text rows + the position
+	// line, the one-line header warning -- the CR warning or the converted
+	// notice, never both -- a blank) + two text rows + the position
 	// line + the two-line end-line warning + the error block's two reserved
 	// rows (message and "^s blocked") + two-line controls + clipHeight's
 	// inline-renderer row = 16. An error that wraps to a third row leaves one

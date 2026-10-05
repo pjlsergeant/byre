@@ -40,8 +40,9 @@
 - **Line breaks pasted into the credential editor become LF.** Terminals
   send pasted line breaks as CR, so a key pasted at `^e` was stored without
   a single LF and ssh-keygen rejected it. The editor now turns pasted CR
-  and CRLF into LF by default; one line under the marker legend shows
-  both modes with the active one highlighted, LF marked recommended. `^t`
+  and CRLF into LF by default and says in rainbow how many pasted line
+  breaks it changed; one line under the marker legend shows both modes
+  with the active one highlighted, LF marked recommended. `^t`
   switches to keeping line endings exactly as pasted; switching back
   converts the draft's CRs to LF in place, so a draft already full of `␍`
   markers is fixed without pasting again. While the draft holds CRs, the

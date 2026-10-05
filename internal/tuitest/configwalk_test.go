@@ -135,6 +135,8 @@ func TestIntegrationTUIConfigScreenWalk(t *testing.T) {
 	e = s.Paste("not-a-secret\rsecond-line\r\n")
 	s.WaitForAfter(e, "second-line")
 	s.WaitFor("3 lines")
+	// The conversion is stated, not silent: two pasted breaks became LF.
+	s.WaitFor("2 pasted line breaks changed to LF.")
 	// The marker legend always shows "CR: ␍"; only a ␍ beyond it is a CR in
 	// the draft.
 	if strings.Count(s.CaptureNow(), "␍") > strings.Count("CR: ␍", "␍") {

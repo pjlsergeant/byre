@@ -1045,6 +1045,12 @@ func TestCredentialLoudTextDegradesToPlainText(t *testing.T) {
 	if view := m.View(); !strings.Contains(view, "[LF] [as pasted]  "+credentialAsPastedModeNote) || !strings.Contains(view, "1 CR "+credentialCRsNeedLF) {
 		t.Fatalf("as-pasted fragments must be plain runs:\n%s", view)
 	}
+	// LF mode: a pasted CR is converted, and the notice says so plainly.
+	lf := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+	lf = credPaste(openVisibleCredText(t, lf), "a\rb\r\nc")
+	if view := lf.View(); !strings.Contains(view, credentialConvertedNotice(2)+" ^t stops this.") || strings.Contains(view, "\x1b[") {
+		t.Fatalf("the converted notice must be plain:\n%q", view)
+	}
 	m = credKey(m, tea.KeyCtrlS)
 	if view := m.View(); m.mode != modeItem || !strings.Contains(view, "1 CR "+credentialCRsNeedLF) || !strings.Contains(view, credentialEndNoBreak) || strings.Contains(view, "\x1b[") {
 		t.Fatalf("the form notes must be plain:\n%q", view)
@@ -1115,15 +1121,19 @@ func TestCredentialWarningsArePaddedWhenThereIsRoom(t *testing.T) {
 // rows. At 60 columns with no error the budget reserves two error rows and
 // two control rows, so the text has height-13 rows with the end-line
 // warning (header 5, position 1, warning 2, renderer 1) and height-14 with
-// both warnings (header 6): padding of 2 and 3 rows needs height 17 and 19.
+// a header warning as well (header 6): padding of 2 and 3 rows needs height
+// 17 and 19. An LF paste of the CR key converts its breaks, so the
+// converted notice is the header warning there.
 func TestCredentialWarningPaddingThreshold(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
 		asPasted bool
+		draft    string
 		least    int
 	}{
-		{"end line", false, 17},
-		{"both", true, 19},
+		{"end line", false, lfKey, 17},
+		{"CR warning and end line", true, crPastedKey, 19},
+		{"converted notice and end line", false, crPastedKey, 19},
 	} {
 		for _, height := range []int{tt.least, tt.least - 1} {
 			m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindFile, "KEY", "")
@@ -1132,7 +1142,7 @@ func TestCredentialWarningPaddingThreshold(t *testing.T) {
 			if tt.asPasted {
 				m = credKey(m, tea.KeyCtrlT)
 			}
-			m = credPaste(m, crPastedKey)
+			m = credPaste(m, tt.draft)
 			view := m.View()
 			above, below := warningNeighbours(t, view, "No final line break", "end.")
 			padded := above == "" && below == ""
@@ -1143,5 +1153,155 @@ func TestCredentialWarningPaddingThreshold(t *testing.T) {
 				t.Fatalf("%s at 60x%d: unpadded warning must follow the position line, got %q", tt.name, height, above)
 			}
 		}
+	}
+}
+
+// convertedLine returns the stripped line holding the converted notice, or
+// "" when none shows.
+func convertedLine(view string) string {
+	for _, l := range strings.Split(ansi.Strip(view), "\n") {
+		if strings.Contains(l, credentialChangedToLF) {
+			return l
+		}
+	}
+	return ""
+}
+
+// What the editor did to the secret is stated: an LF-mode paste that
+// rewrites line breaks says how many, in rainbow, and later pastes add up.
+func TestCredentialEditorStatesConvertedLineBreaks(t *testing.T) {
+	useANSI256(t)
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+	m = openVisibleCredText(t, m)
+	m = credPaste(m, "a\rb\r\nc\rd") // a CRLF holds one CR
+	view := m.View()
+	if strings.ContainsRune(m.credText.value, '\r') || !strings.Contains(convertedLine(view), credentialConvertedNotice(3)) || !strings.Contains(convertedLine(view), "^t stops this.") {
+		t.Fatalf("an LF paste must convert and say how many:\n%s", ansi.Strip(view))
+	}
+	if l := lineWith(t, view, credentialChangedToLF); !isRainbow(l) {
+		t.Fatalf("converted notice is not rainbow: %q", l)
+	}
+	m = credPaste(m, "\re")
+	if !strings.Contains(convertedLine(m.View()), credentialConvertedNotice(4)) {
+		t.Fatalf("a second paste must add to the count:\n%s", ansi.Strip(m.View()))
+	}
+	one := openVisibleCredText(t, addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", ""))
+	one = credPaste(one, "a\r\nb")
+	if !strings.Contains(convertedLine(one.View()), "1 pasted line break "+credentialChangedToLF) {
+		t.Fatalf("one conversion takes the singular:\n%s", ansi.Strip(one.View()))
+	}
+}
+
+func TestCredentialTypedLineBreaksAreNotReported(t *testing.T) {
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+	m = openVisibleCredText(t, m)
+	m = credPaste(m, "ab")
+	m = credKey(m, tea.KeyEnter)
+	m = credKey(m, tea.KeyCtrlJ)
+	m = credPaste(m, "c\nd")
+	if l := convertedLine(m.View()); l != "" || m.credText.value != "ab\n\nc\nd" {
+		t.Fatalf("typed and LF line breaks convert nothing, got %q", l)
+	}
+}
+
+// Entering LF converts the draft in place, which is also stated; leaving LF
+// hides the notice ("^t stops this" is false as pasted) and returning shows
+// the same count, since nothing new was converted.
+func TestCredentialToggleToLFStatesItsConversions(t *testing.T) {
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+	m = credKey(openVisibleCredText(t, m), tea.KeyCtrlT)
+	m = credPaste(m, "a\rb\r\nc")
+	if convertedLine(m.View()) != "" || !strings.Contains(ansi.Strip(m.View()), credentialCRsNeedLF) {
+		t.Fatal("as pasted, the CR warning shows and the converted notice does not")
+	}
+	m = credKey(m, tea.KeyCtrlT)
+	if view := ansi.Strip(m.View()); strings.Contains(view, credentialCRsNeedLF) || !strings.Contains(convertedLine(view), credentialConvertedNotice(2)) {
+		t.Fatalf("^t to LF must swap the CR warning for the converted notice:\n%s", view)
+	}
+	m = credKey(m, tea.KeyCtrlT)
+	if convertedLine(m.View()) != "" {
+		t.Fatal("as pasted, the converted notice must not show")
+	}
+	m = credKey(m, tea.KeyCtrlT)
+	if !strings.Contains(convertedLine(m.View()), credentialConvertedNotice(2)) {
+		t.Fatalf("back in LF the count must be unchanged:\n%s", ansi.Strip(m.View()))
+	}
+}
+
+// The count belongs to one editor session.
+func TestCredentialReopenedEditorStartsWithNoConversions(t *testing.T) {
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+	m = credPaste(openVisibleCredText(t, m), "a\rb")
+	m = credKey(m, tea.KeyCtrlS)
+	m = openVisibleCredText(t, m)
+	if m.credText.value != "a\nb" || convertedLine(m.View()) != "" {
+		t.Fatalf("a reopened editor must not repeat the last session's notice:\n%s", ansi.Strip(m.View()))
+	}
+}
+
+// A paste that arrives while the editor is still entering is queued and
+// replayed through Update, so it is converted and counted like any other.
+func TestCredentialQueuedPasteIsCounted(t *testing.T) {
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+	m.width, m.height = 80, 24
+	m = credKey(m, tea.KeyCtrlE)
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	m = next.(model)
+	if m.credTextTransition != credentialTextEntering {
+		t.Fatal("the check needs the editor still entering")
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a\rb\rc"), Paste: true})
+	m = settleCredScreen(next.(model))
+	if m.credText.value != "a\nb\nc" || !strings.Contains(convertedLine(m.View()), credentialConvertedNotice(2)) {
+		t.Fatalf("a queued paste must be converted and counted:\n%s", ansi.Strip(m.View()))
+	}
+}
+
+// Worst case at the minimum size in LF mode: the converted notice, the
+// end-line warning and a short error all show, with the text and controls.
+func TestCredentialMinimumEditorFitsTheConvertedNotice(t *testing.T) {
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindFile, "KEY", "")
+	m = openVisibleCredText(t, m)
+	m.width, m.height = 60, m.credentialTextMinHeight()
+	m = credPaste(m, crPastedKey)
+	m = credKey(m, tea.KeyCtrlV)
+	raw := m.View()
+	if len(strings.Split(m.viewCredText(), "\n")) > m.height-1 {
+		t.Fatalf("worst case does not fit the minimum height:\n%s", ansi.Strip(raw))
+	}
+	view := strings.Join(strings.Fields(ansi.Strip(raw)), " ")
+	for _, fragment := range []string{"VISIBLE", credentialLFModeNote, credentialConvertedNotice(3), "^t stops this", credentialEndNoBreak, "Press Enter at the end", "terminal's paste", "^s blocked", "-----END OPENSSH PRIVATE KEY-----", "discard changes", "line endings"} {
+		if !strings.Contains(view, fragment) {
+			t.Fatalf("worst-case minimum editor hides %q:\n%s", fragment, ansi.Strip(raw))
+		}
+	}
+	if strings.Contains(view, "more below") || strings.Contains(view, "more above") {
+		t.Fatalf("worst-case minimum editor was clipped:\n%s", ansi.Strip(raw))
+	}
+}
+
+// Roomy, the converted notice gets the header warning's blank lines.
+func TestCredentialConvertedNoticeIsPadded(t *testing.T) {
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+	m.width, m.height = 80, 30
+	m = credPaste(openVisibleCredText(t, m), "a\rb")
+	view := m.View()
+	if above, below := warningNeighbours(t, view, credentialChangedToLF, "^t stops this."); above != "" || below != "" {
+		t.Fatalf("converted notice must be padded, got %q above and %q below:\n%s", above, below, ansi.Strip(view))
+	}
+	if !strings.Contains(ansi.Strip(view), "toggles\n\n"+credentialConvertedNotice(1)) {
+		t.Fatalf("the blank above the notice must follow the mode line:\n%s", ansi.Strip(view))
+	}
+}
+
+// The largest count a draft can hold keeps the notice on one line at 60.
+func TestCredentialConvertedNoticeFitsOneLineAtMaxCount(t *testing.T) {
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+	m = openVisibleCredText(t, m)
+	m.width, m.height = 60, m.credentialTextMinHeight()
+	m.credText = credentialText{value: strings.Repeat("\n", credentials.MaxValue), converted: credentials.MaxValue}
+	l := convertedLine(m.View())
+	if !strings.Contains(l, "262144 pasted line breaks") || !strings.Contains(l, "^t stops this.") || ansi.StringWidth(l) > 60 {
+		t.Fatalf("max-count converted notice must fit one 60-column line: %q", l)
 	}
 }
