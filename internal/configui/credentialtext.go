@@ -27,12 +27,12 @@ type credentialText struct {
 	keepCR bool
 }
 
-// The mode line's tails say in words which mode is on: the picker's reverse
-// video vanishes without colour and in a text capture. Shared by the view
-// and its tests.
+// The mode line's notes say in words which mode is on: the picker's reverse
+// video vanishes without colour and in a text capture. Neither appears on
+// the other mode's line. Shared by the view and its tests.
 const (
-	credentialLFModeTail       = "recommended · CR/CRLF → LF"
-	credentialAsPastedModeTail = "CR/CRLF kept as pasted"
+	credentialLFModeNote       = "recommended"
+	credentialAsPastedModeNote = "CR/CRLF kept"
 )
 
 // credentialCRsNeedLF follows the count in the CR warning, shared by the
@@ -94,14 +94,16 @@ const credentialTabWidth = 8
 
 var credentialMarkerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))
 
-// credentialModeLine is the line-ending picker, unfocused (^t is its key),
-// with a dim tail naming what the active mode does.
+// credentialModeLine is the line-ending picker, unfocused, followed by a dim
+// note naming the active mode and its key, drawn as a controls-line entry
+// so ^t looks the same in both places.
 func (e credentialText) credentialModeLine() string {
-	sel, tail := 0, credentialLFModeTail
+	sel, note := 0, credentialLFModeNote
 	if e.keepCR {
-		sel, tail = 1, credentialAsPastedModeTail
+		sel, note = 1, credentialAsPastedModeNote
 	}
-	return "Line endings: " + renderSeg([]string{"LF", "as pasted"}, sel, false) + "  " + dimStyle.Render(tail)
+	return "Line endings: " + renderSeg([]string{"LF", "as pasted"}, sel, false) + "  " +
+		dimStyle.Render(note) + dimStyle.Render(" · ") + helpLine("^t", "toggles")
 }
 
 func credentialLines(value string) string {

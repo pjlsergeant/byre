@@ -445,7 +445,7 @@ func TestCredentialVisibilityNoticeAndResize(t *testing.T) {
 		t.Fatalf("live editor minimum is %d; the pause must name it:\n%s", min, m.View())
 	}
 	m.width, m.height = 60, min
-	for _, fragment := range []string{"VISIBLE", "NOT loaded", "NOT save", credentialLFModeTail, "^t", "line endings", "private"} {
+	for _, fragment := range []string{"VISIBLE", "NOT loaded", "NOT save", credentialLFModeNote, "^t", "line endings", "private"} {
 		if !strings.Contains(m.View(), fragment) {
 			t.Fatalf("minimum live editor hides %q:\n%s", fragment, m.View())
 		}
@@ -482,7 +482,7 @@ func TestCredentialVisibilityNoticeAndResize(t *testing.T) {
 	}
 	// Join the wrapped lines so the warning's fragment is found whole.
 	view := strings.Join(strings.Fields(ansi.Strip(m.View())), " ")
-	for _, fragment := range []string{"VISIBLE", credentialLFModeTail, credentialEndNoBreak, "Press Enter at the end", "terminal's paste", "^s blocked", "line endings", "view 1–2/2"} {
+	for _, fragment := range []string{"VISIBLE", credentialLFModeNote, credentialEndNoBreak, "Press Enter at the end", "terminal's paste", "^s blocked", "line endings", "view 1–2/2"} {
 		if !strings.Contains(view, fragment) {
 			t.Fatalf("minimum editor with warning and error hides %q:\n%s", fragment, m.View())
 		}
@@ -733,12 +733,29 @@ func TestCredentialCapAppliesToConvertedInsertion(t *testing.T) {
 func TestCredentialEditorShowsLineEndingMode(t *testing.T) {
 	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
 	m = openVisibleCredText(t, m)
-	if view := ansi.Strip(m.View()); !strings.Contains(view, credentialLFModeTail) || strings.Contains(view, credentialAsPastedModeTail) || !strings.Contains(view, "^t") {
+	if view := ansi.Strip(m.View()); !strings.Contains(view, credentialLFModeNote) || strings.Contains(view, credentialAsPastedModeNote) || !strings.Contains(view, "^t") {
 		t.Fatalf("editor must name LF mode and its toggle:\n%s", view)
 	}
 	m = credKey(m, tea.KeyCtrlT)
-	if view := ansi.Strip(m.View()); !strings.Contains(view, credentialAsPastedModeTail) || strings.Contains(view, credentialLFModeTail) {
+	if view := ansi.Strip(m.View()); !strings.Contains(view, credentialAsPastedModeNote) || strings.Contains(view, credentialLFModeNote) {
 		t.Fatalf("editor must name as-pasted mode:\n%s", view)
+	}
+}
+
+var dimRun = regexp.MustCompile("\x1b\\[2m.*?\x1b\\[0m")
+
+// The mode line names its own key in both modes, styled as a controls-line
+// key rather than folded into the dim note.
+func TestCredentialModeLineNamesItsToggle(t *testing.T) {
+	useANSI256(t)
+	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
+	m = openVisibleCredText(t, m)
+	for _, mode := range []string{"LF", "as pasted"} {
+		l := lineWith(t, m.View(), "Line endings:")
+		if !strings.Contains(ansi.Strip(dimRun.ReplaceAllString(l, "")), "^t") {
+			t.Fatalf("%s: the mode line must show ^t outside its dim note: %q", mode, l)
+		}
+		m = credKey(m, tea.KeyCtrlT)
 	}
 }
 
@@ -766,7 +783,7 @@ func TestCredentialReopenedCRDraftOpensAsPasted(t *testing.T) {
 	m = credPaste(m, "a\rb")
 	m = credKey(m, tea.KeyCtrlS)
 	m = openVisibleCredText(t, m)
-	if !m.credText.keepCR || m.credText.value != "a\rb" || !strings.Contains(m.View(), credentialAsPastedModeTail) {
+	if !m.credText.keepCR || m.credText.value != "a\rb" || !strings.Contains(m.View(), credentialAsPastedModeNote) {
 		t.Fatal("reopening must neither convert a CR draft nor claim LF mode")
 	}
 	m = credKey(m, tea.KeyEsc)
@@ -866,7 +883,7 @@ func TestCredentialLFModeIsOneCalmLine(t *testing.T) {
 	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindEnv, "KEY", "")
 	view := openVisibleCredText(t, m).View()
 	plain := ansi.Strip(view)
-	if strings.Count(plain, "[as pasted]") != 1 || !strings.Contains(plain, credentialLFModeTail) || strings.Contains(plain, credentialAsPastedModeTail) {
+	if strings.Count(plain, "[as pasted]") != 1 || !strings.Contains(plain, credentialLFModeNote) || strings.Contains(plain, credentialAsPastedModeNote) {
 		t.Fatalf("LF mode must be one picker line naming LF:\n%s", plain)
 	}
 	if !strings.Contains(view, selStyle.Render("[LF]")) || strings.Contains(view, selStyle.Render("[as pasted]")) {
@@ -885,7 +902,7 @@ func TestCredentialAsPastedEmptyDraftDoesNotWarn(t *testing.T) {
 	m = credKey(openVisibleCredText(t, m), tea.KeyCtrlT)
 	view := m.View()
 	plain := ansi.Strip(view)
-	if !strings.Contains(plain, credentialAsPastedModeTail) || !strings.Contains(view, selStyle.Render("[as pasted]")) || strings.Contains(view, selStyle.Render("[LF]")) {
+	if !strings.Contains(plain, credentialAsPastedModeNote) || !strings.Contains(view, selStyle.Render("[as pasted]")) || strings.Contains(view, selStyle.Render("[LF]")) {
 		t.Fatalf("as-pasted mode must be the highlighted option:\n%s", plain)
 	}
 	if strings.Contains(plain, credentialCRsNeedLF) {
@@ -994,7 +1011,7 @@ func TestCredentialMinimumEditorFitsEveryWarning(t *testing.T) {
 		t.Fatalf("worst case does not fit the minimum height:\n%s", ansi.Strip(raw))
 	}
 	view := strings.Join(strings.Fields(ansi.Strip(raw)), " ")
-	for _, fragment := range []string{"VISIBLE", credentialAsPastedModeTail, "3 CRs " + credentialCRsNeedLF, "^t converts", credentialEndNoBreak, "Press Enter at the end", "terminal's paste", "^s blocked", "-----END OPENSSH PRIVATE KEY-----", "discard changes", "line endings"} {
+	for _, fragment := range []string{"VISIBLE", credentialAsPastedModeNote, "3 CRs " + credentialCRsNeedLF, "^t converts", credentialEndNoBreak, "Press Enter at the end", "terminal's paste", "^s blocked", "-----END OPENSSH PRIVATE KEY-----", "discard changes", "line endings"} {
 		if !strings.Contains(view, fragment) {
 			t.Fatalf("worst-case minimum editor hides %q:\n%s", fragment, ansi.Strip(raw))
 		}
@@ -1013,14 +1030,14 @@ func TestCredentialLoudTextDegradesToPlainText(t *testing.T) {
 	m := addCredential(credModel(t, newFakeCredAdmin(), nil), credKindFile, "KEY", "")
 	m = credPaste(openVisibleCredText(t, m), crPastedKey)
 	view := m.View()
-	for _, fragment := range []string{"[LF] [as pasted]  " + credentialLFModeTail, credentialEndNoBreak} {
+	for _, fragment := range []string{"[LF] [as pasted]  " + credentialLFModeNote, credentialEndNoBreak} {
 		if !strings.Contains(view, fragment) {
 			t.Fatalf("missing plain %q:\n%s", fragment, view)
 		}
 	}
 	m = credKey(credKey(m, tea.KeyCtrlT), tea.KeyCtrlA)
 	m = credPaste(m, "x\r")
-	if view := m.View(); !strings.Contains(view, "[LF] [as pasted]  "+credentialAsPastedModeTail) || !strings.Contains(view, "1 CR "+credentialCRsNeedLF) {
+	if view := m.View(); !strings.Contains(view, "[LF] [as pasted]  "+credentialAsPastedModeNote) || !strings.Contains(view, "1 CR "+credentialCRsNeedLF) {
 		t.Fatalf("as-pasted fragments must be plain runs:\n%s", view)
 	}
 	m = credKey(m, tea.KeyCtrlS)
