@@ -68,10 +68,8 @@ dockerfile = [
   # isn't a mystery to anyone inspecting it.
   "# byre: TEMP workaround for openai/codex#28334 — codex install.sh's SHA256SUMS check needs gawk (Debian's mawk lacks {64}-interval regex). Remove this + gawk once upstream fixes the installer.",
   "RUN update-alternatives --set awk /usr/bin/gawk",
-  # Fetch then run, never pipe: a pipeline exits with the shell's status, so a
-  # failed fetch (a 429 from the download host) would run an empty script,
-  # exit 0, and be cached as a layer with no binary in it.
-  "RUN HOME=/home/dev gosu dev sh -c 'curl -fsSL --retry 5 --retry-all-errors -o /tmp/codex-install.sh https://chatgpt.com/codex/install.sh && sh /tmp/codex-install.sh && rm -f /tmp/codex-install.sh'",
+  # byre-fetch-run (core block): fetch, check it is a script, then run -- never a curl|sh pipe.
+  "RUN HOME=/home/dev gosu dev byre-fetch-run https://chatgpt.com/codex/install.sh sh",
   # codex installs its BINARY into ~/.codex (~/.codex/packages/.../bin/codex, with
   # ~/.local/bin/codex symlinked to it). ~/.codex is NOT a volume — the state
   # volume mounts at CODEX_HOME (/home/dev/.codex-home) instead — so the binary

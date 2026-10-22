@@ -700,6 +700,13 @@ Build-time (the **core block**, identical everywhere, always cached):
   at the tail alongside `USER`/`ENTRYPOINT`, so a raw skill or
   `dockerfile_post` line can't reintroduce one.
 - Install the launcher as the constant ENTRYPOINT.
+- Ship `byre-fetch-run <url> <interpreter>`, the build-only helper agent
+  skills install their vendor CLIs with: fetch the installer to a file
+  (bounded retries), refuse it unless it starts with `#!`, then run it.
+  Never a `curl | sh` pipe -- a pipeline exits with the shell's status, so
+  a failed fetch would run an empty script and Docker would cache a layer
+  with no binary in it; the shebang check catches the download host
+  answering 200 with an error page or an empty body.
 
 Runtime constants:
 

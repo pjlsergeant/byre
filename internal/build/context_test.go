@@ -65,12 +65,15 @@ func TestAssembleWritesDockerfileAndLauncher(t *testing.T) {
 		t.Error("persisted Dockerfile != returned text")
 	}
 
-	info, err := os.Stat(paths.ContextDir + "/" + gen.LauncherName)
-	if err != nil {
-		t.Fatalf("launcher not written: %v", err)
-	}
-	if info.Mode().Perm()&0o100 == 0 {
-		t.Errorf("launcher not executable: mode %v", info.Mode())
+	// Every executable the core block COPYs must land in the context.
+	for _, name := range []string{gen.LauncherName, gen.FetchRunName} {
+		info, err := os.Stat(paths.ContextDir + "/" + name)
+		if err != nil {
+			t.Fatalf("%s not written: %v", name, err)
+		}
+		if info.Mode().Perm()&0o100 == 0 {
+			t.Errorf("%s not executable: mode %v", name, info.Mode())
+		}
 	}
 }
 

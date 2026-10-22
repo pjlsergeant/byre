@@ -40,6 +40,22 @@ var receiverScript []byte
 // build-context assembler writes these to <context>/byre-credential-receiver.
 func ReceiverScript() []byte { return receiverScript }
 
+// FetchRunName is the build-context filename of the installer helper the core
+// block COPYs to FetchRunPath: agent skills install their vendor CLIs with
+// `byre-fetch-run <url> <interpreter>` (fetch, check it is a script, run).
+const FetchRunName = "byre-fetch-run"
+
+// FetchRunPath is where the core block installs the installer helper (on PATH
+// for every later build step).
+const FetchRunPath = "/usr/local/bin/" + FetchRunName
+
+//go:embed fetch-run.sh
+var fetchRunScript []byte
+
+// FetchRunScript returns the constant installer-helper script bytes. The
+// build-context assembler writes these to <context>/byre-fetch-run.
+func FetchRunScript() []byte { return fetchRunScript }
+
 // ProfileEnvName is the build-context filename of the /etc/profile.d shim that
 // sources env.d for login shells (so `byre shell` sessions get the same
 // env.d-provided environment the launcher gives the agent).
@@ -246,7 +262,11 @@ const coreBlock = "ARG BYRE_UID=1000\n" +
 	// environment the launcher gives the agent (COMPOSE_PROJECT_NAME, shared
 	// tokens). Safe and quiet because env.d hooks owe the ADR 0028 purity
 	// contract: the environment they export is their only lasting effect.
-	"COPY " + ProfileEnvName + " " + profileEnvPath + "\n"
+	"COPY " + ProfileEnvName + " " + profileEnvPath + "\n" +
+	// The installer helper precedes the skill blocks that call it; a build
+	// step only, so it is not re-asserted by the security guard.
+	"COPY " + FetchRunName + " " + FetchRunPath + "\n" +
+	"RUN chmod +x " + FetchRunPath + "\n"
 
 // Dockerfile renders the generated Dockerfile in byre's canonical order:
 // FROM, the template block, the constant core block, the hoisted skill apt

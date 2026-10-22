@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -380,6 +381,59 @@ func TestBundledStubClassification(t *testing.T) {
 		}
 		if skills.IsStub(sk.File) {
 			t.Errorf("bundled skill %s classifies as a stub", name)
+		}
+	}
+}
+
+// Agent installers ride byre-fetch-run (fetch, check it is a script, run),
+// each exactly once, with its vendor URL.
+func TestAgentInstallersUseFetchRun(t *testing.T) {
+	_, cat := testCat(t)
+	for _, c := range []struct{ agent, url string }{
+		{"claude", "https://claude.ai/install.sh"},
+		{"codex", "https://chatgpt.com/codex/install.sh"},
+		{"grok", "https://x.ai/cli/install.sh"},
+		{"opencode", "https://opencode.ai/install"},
+	} {
+		sk, err := skills.Load(cat, c.agent)
+		if err != nil {
+			t.Fatalf("%s: %v", c.agent, err)
+		}
+		var hits int
+		for _, line := range sk.File.Build.Dockerfile {
+			if strings.Contains(line, gen.FetchRunName+" ") {
+				hits++
+				if !strings.Contains(line, gen.FetchRunName+" "+c.url+" ") {
+					t.Errorf("%s: fetch-run rule: %s line does not install from %s: %q", c.agent, gen.FetchRunName, c.url, line)
+				}
+			}
+		}
+		if hits != 1 {
+			t.Errorf("%s: fetch-run rule: want exactly one %s line, got %d", c.agent, gen.FetchRunName, hits)
+		}
+	}
+}
+
+// pipeToShell matches a fetch piped into a shell: the pipeline exits with
+// the shell's status, so a failed fetch runs an empty script and Docker
+// caches the layer as good.
+var pipeToShell = regexp.MustCompile(`\|\s*(ba)?sh\b`)
+
+func TestNoBundledSkillPipesIntoShell(t *testing.T) {
+	_, cat := testCat(t)
+	names := skills.ListSkills(cat)
+	if len(names) == 0 {
+		t.Fatal("no bundled skills listed — the negative assertion would check nothing")
+	}
+	for _, name := range names {
+		sk, err := skills.Load(cat, name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for _, line := range sk.File.Build.Dockerfile {
+			if pipeToShell.MatchString(line) {
+				t.Errorf("%s: no-pipe-to-shell rule: use %s instead of piping into a shell: %q", name, gen.FetchRunName, line)
+			}
 		}
 	}
 }

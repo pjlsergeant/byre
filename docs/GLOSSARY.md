@@ -394,8 +394,8 @@ _Avoid_: plumbing (the old spec's word), fittings, infra
 **Core block**:
 The build-time slice of the chassis -- core's constant contribution to
 the generated Dockerfile: the `dev` user
-baked at the host UID/GID, home/workspace ownership, the launcher install
-(plus the `USER dev` + ENTRYPOINT tail, emitted last so earlier steps build
+baked at the host UID/GID, home/workspace ownership, the launcher install,
+the `byre-fetch-run` installer helper skills build with (plus the `USER dev` + ENTRYPOINT tail, emitted last so earlier steps build
 as root). The block family is named by contributor: template block, core
 block, skill blocks, project block.
 _Avoid_: infra layer (collides with cascade layers and Docker image
