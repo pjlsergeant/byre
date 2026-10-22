@@ -78,7 +78,14 @@ provision:
       # implicit 22, and 22 must stay for Lima's own control channel.
       printf 'Port 22\nPort 2222\n' > /etc/ssh/sshd_config.d/10-byre-bridge.conf
       systemctl restart ssh
-      command -v docker >/dev/null 2>&1 || curl -fsSL https://get.docker.com | sh
+      # Fetch, check, then run: a failed fetch, or a 200 whose body is not a
+      # script, would otherwise exit 0 and leave the VM with no docker.
+      if ! command -v docker >/dev/null 2>&1; then
+        curl -fsSL --retry 5 --retry-all-errors --retry-max-time 120 -o /tmp/get-docker.sh https://get.docker.com
+        [ "$(head -c 2 /tmp/get-docker.sh)" = '#!' ] || { echo 'get.docker.com did not return a script' >&2; exit 1; }
+        sh /tmp/get-docker.sh
+        rm -f /tmp/get-docker.sh
+      fi
   - mode: user
     script: |
       #!/bin/bash

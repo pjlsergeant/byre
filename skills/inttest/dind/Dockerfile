@@ -31,10 +31,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       openssh-server sudo iproute2 iptables \
  && rm -rf /var/lib/apt/lists/*
 
-# Fetch then run, never pipe: under sh the pipeline exits with the shell's
-# status, so a failed fetch would run an empty script and cache a layer with
-# no docker in it.
+# Fetch, check, then run: a failed fetch, or a 200 whose body is not a
+# script, would otherwise exit 0 and cache a layer with no docker in it.
 RUN curl -fsSL --retry 5 --retry-all-errors --retry-max-time 120 -o /tmp/get-docker.sh https://get.docker.com \
+ && { [ "$(head -c 2 /tmp/get-docker.sh)" = '#!' ] || { echo 'get.docker.com did not return a script' >&2; exit 1; }; } \
  && sh /tmp/get-docker.sh \
  && rm -f /tmp/get-docker.sh
 
