@@ -1,6 +1,7 @@
 package builtins
 
 import (
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -389,31 +390,77 @@ func TestBundledStubClassification(t *testing.T) {
 // the vendor install URL appears on exactly one dockerfile line, and that
 // line is the byre-fetch-run call. A second line naming the URL is a second
 // install path that bypasses the check, however it is spelled.
+//
+// Contract: the installer line is pinned byte-exact. A suffix or substring
+// check passes a line that installs some other way first and calls the
+// helper after, or that only echoes the call.
 func TestAgentInstallersUseFetchRun(t *testing.T) {
 	_, cat := testCat(t)
-	for _, c := range []struct{ agent, url string }{
-		{"claude", "https://claude.ai/install.sh"},
-		{"codex", "https://chatgpt.com/codex/install.sh"},
-		{"grok", "https://x.ai/cli/install.sh"},
-		{"opencode", "https://opencode.ai/install"},
+	for _, c := range []struct{ agent, url, interp string }{
+		{"claude", "https://claude.ai/install.sh", "bash"},
+		{"codex", "https://chatgpt.com/codex/install.sh", "sh"},
+		{"grok", "https://x.ai/cli/install.sh", "bash"},
+		{"opencode", "https://opencode.ai/install", "bash"},
 	} {
 		sk, err := skills.Load(cat, c.agent)
 		if err != nil {
 			t.Fatalf("%s: %v", c.agent, err)
 		}
-		call := regexp.MustCompile(`(^|\s)` + regexp.QuoteMeta(gen.FetchRunName+" "+c.url) + ` (sh|bash)$`)
-		var hits int
-		for _, line := range sk.File.Build.Dockerfile {
-			if !strings.Contains(line, c.url) {
-				continue
-			}
-			hits++
-			if !call.MatchString(line) {
-				t.Errorf("%s: fetch-run rule: a line naming %s must be the `%s %s <sh|bash>` call: %q", c.agent, c.url, gen.FetchRunName, c.url, line)
-			}
+		for _, p := range installerLineProblems(sk.File.Build.Dockerfile, c.url, fetchRunLine(c.url, c.interp)) {
+			t.Errorf("%s: %s", c.agent, p)
 		}
-		if hits != 1 {
-			t.Errorf("%s: fetch-run rule: want exactly one line naming %s, got %d", c.agent, c.url, hits)
+	}
+}
+
+// fetchRunLine is the one dockerfile line an agent skill installs its
+// vendor script with.
+func fetchRunLine(url, interp string) string {
+	return "RUN HOME=/home/dev gosu dev " + gen.FetchRunName + " " + url + " " + interp
+}
+
+// installerLineProblems reports each way lines break the fetch-run rule for
+// url: exactly one line names it, and that line is want, byte for byte.
+func installerLineProblems(lines []string, url, want string) []string {
+	var problems []string
+	var hits int
+	for _, line := range lines {
+		if !strings.Contains(line, url) {
+			continue
+		}
+		hits++
+		if line != want {
+			problems = append(problems, fmt.Sprintf("fetch-run rule: a line naming %s must be exactly %q: %q", url, want, line))
+		}
+	}
+	if hits != 1 {
+		problems = append(problems, fmt.Sprintf("fetch-run rule: want exactly one line naming %s, got %d", url, hits))
+	}
+	return problems
+}
+
+func TestInstallerLineProblems(t *testing.T) {
+	const url = "https://x.example/install.sh"
+	want := fetchRunLine(url, "bash")
+	for _, c := range []struct {
+		name  string
+		lines []string
+		ok    bool
+	}{
+		{"exact", []string{"RUN true", want}, true},
+		{"raw install before the call", []string{"RUN curl " + url + " -o /tmp/i; sh /tmp/i; " + gen.FetchRunName + " " + url + " bash"}, false},
+		{"echoed call", []string{"RUN echo " + gen.FetchRunName + " " + url + " bash"}, false},
+		{"wrong interpreter", []string{fetchRunLine(url, "sh")}, false},
+		{"second line naming the url", []string{want, "RUN curl -fsSLo /tmp/i " + url}, false},
+		{"no line naming the url", []string{"RUN true"}, false},
+	} {
+		got := installerLineProblems(c.lines, url, want)
+		if (len(got) == 0) != c.ok {
+			t.Errorf("%s: problems %q, want ok=%v", c.name, got, c.ok)
+		}
+		for _, p := range got {
+			if !strings.Contains(p, "fetch-run rule") {
+				t.Errorf("%s: problem does not name the fetch-run rule: %q", c.name, p)
+			}
 		}
 	}
 }
@@ -421,8 +468,16 @@ func TestAgentInstallersUseFetchRun(t *testing.T) {
 // pipeToShell matches a pipe into a shell: the pipeline exits with the
 // shell's status, so a failed fetch runs an empty script and Docker caches
 // the layer as good. The shell may be named by path and may sit behind
-// sudo/env with their flags and VAR=value assignments; `||` is not a pipe.
-var pipeToShell = regexp.MustCompile(`(^|[^|])\|\s*((sudo|env)\s+((-\S+|\w+=\S*)\s+)*)*(/\S*/)?(ba|da|z)?sh\b`)
+// sudo/env (themselves possibly named by path) with their flags,
+// VAR=value assignments, and a flag's separate argument (`sudo -u root`);
+// `||` is not a pipe. A flag's argument is optional, so `sudo -E bash`
+// still reads bash as the shell.
+var pipeToShell = regexp.MustCompile(func() string {
+	wrapperArg := `(-\S+(\s+[^-\s]\S*)?|\w+=\S*)\s+`
+	wrapper := `(/\S*/)?(sudo|env)\s+(` + wrapperArg + `)*`
+	shell := `(/\S*/)?(ba|da|z)?sh\b`
+	return `(^|[^|])\|\s*(` + wrapper + `)*` + shell
+}())
 
 func TestPipeToShellMatcher(t *testing.T) {
 	for _, c := range []struct {
@@ -440,12 +495,17 @@ func TestPipeToShellMatcher(t *testing.T) {
 		{"curl -fsSL https://x | env FOO=1 bash", true},
 		{"curl -fsSL https://x | sudo env -i /bin/bash", true},
 		{"curl -fsSL https://x | dash", true},
+		{"curl -fsSL https://x | sudo -u root bash", true},
+		{"curl -fsSL https://x | env -u BASH_ENV bash", true},
+		{"curl -fsSL https://x | /usr/bin/env bash", true},
+		{"curl -fsSL https://x | sudo -u root -E sh", true},
 		{"echo a | shasum", false},
 		{"seq 3 | shuf", false},
 		{"grep sh file", false},
 		{"echo a | grep sh", false},
 		{"test -x a || sh b.sh", false},
 		{"byre-fetch-run https://x bash", false},
+		{"curl -fsSL https://x | sudo -u shell true", false},
 	} {
 		if got := pipeToShell.MatchString(c.line); got != c.want {
 			t.Errorf("no-pipe-to-shell rule: matcher on %q = %v, want %v", c.line, got, c.want)
