@@ -1,7 +1,21 @@
 # Changes
 
-## Unreleased
+## v1.13.0 — 2026-10-22
 
+- **A failed agent install can no longer be cached as a success.** The
+  claude, codex, grok and opencode skills installed their CLI with
+  `curl ... | bash`. When the download host refused the fetch (a 429 while
+  Anthropic's download quota was exhausted), the shell ran an empty script
+  and exited 0, so Docker kept a layer with no binary in it; every later
+  `byre develop` reused that layer and failed one step on, until a
+  `byre rebuild`. Agent skills now install through `byre-fetch-run`, a
+  helper in every image that downloads the installer with bounded retries,
+  refuses anything that is not a script (the host can answer 200 with an
+  error page or an empty body), and only then runs it. A failed fetch fails
+  the build loudly and the next `byre develop` simply tries again. Every
+  box rebuilds once for the new helper; a box already stuck on a cached
+  empty layer is fixed by that rebuild, no `--no-cache` needed. The inttest
+  runner recipes carry the same guard for their Docker install.
 - **Ctrl-C during `byre restore` no longer reports a helper container that
   is already gone.** A helper removes itself when it ends, so byre's own
   removal can lose that race and fail. Only a container still there
