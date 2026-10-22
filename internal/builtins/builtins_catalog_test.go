@@ -385,8 +385,10 @@ func TestBundledStubClassification(t *testing.T) {
 	}
 }
 
-// Agent installers ride byre-fetch-run (fetch, check it is a script, run),
-// each exactly once, with its vendor URL.
+// Agent installers ride byre-fetch-run (fetch, check it is a script, run):
+// the vendor install URL appears on exactly one dockerfile line, and that
+// line is the byre-fetch-run call. A second line naming the URL is a second
+// install path that bypasses the check, however it is spelled.
 func TestAgentInstallersUseFetchRun(t *testing.T) {
 	_, cat := testCat(t)
 	for _, c := range []struct{ agent, url string }{
@@ -399,25 +401,57 @@ func TestAgentInstallersUseFetchRun(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", c.agent, err)
 		}
+		call := regexp.MustCompile(`(^|\s)` + regexp.QuoteMeta(gen.FetchRunName+" "+c.url) + ` (sh|bash)$`)
 		var hits int
 		for _, line := range sk.File.Build.Dockerfile {
-			if strings.Contains(line, gen.FetchRunName+" ") {
-				hits++
-				if !strings.Contains(line, gen.FetchRunName+" "+c.url+" ") {
-					t.Errorf("%s: fetch-run rule: %s line does not install from %s: %q", c.agent, gen.FetchRunName, c.url, line)
-				}
+			if !strings.Contains(line, c.url) {
+				continue
+			}
+			hits++
+			if !call.MatchString(line) {
+				t.Errorf("%s: fetch-run rule: a line naming %s must be the `%s %s <sh|bash>` call: %q", c.agent, c.url, gen.FetchRunName, c.url, line)
 			}
 		}
 		if hits != 1 {
-			t.Errorf("%s: fetch-run rule: want exactly one %s line, got %d", c.agent, gen.FetchRunName, hits)
+			t.Errorf("%s: fetch-run rule: want exactly one line naming %s, got %d", c.agent, c.url, hits)
 		}
 	}
 }
 
-// pipeToShell matches a fetch piped into a shell: the pipeline exits with
-// the shell's status, so a failed fetch runs an empty script and Docker
-// caches the layer as good.
-var pipeToShell = regexp.MustCompile(`\|\s*(ba)?sh\b`)
+// pipeToShell matches a pipe into a shell: the pipeline exits with the
+// shell's status, so a failed fetch runs an empty script and Docker caches
+// the layer as good. The shell may be named by path and may sit behind
+// sudo/env with their flags and VAR=value assignments; `||` is not a pipe.
+var pipeToShell = regexp.MustCompile(`(^|[^|])\|\s*((sudo|env)\s+((-\S+|\w+=\S*)\s+)*)*(/\S*/)?(ba|da|z)?sh\b`)
+
+func TestPipeToShellMatcher(t *testing.T) {
+	for _, c := range []struct {
+		line string
+		want bool
+	}{
+		{"curl -fsSL https://x | sh", true},
+		{"curl -fsSL https://x|sh", true},
+		{"curl -fsSL https://x | bash -s --", true},
+		{"curl -fsSL https://x | /bin/sh", true},
+		{"curl -fsSL https://x | /usr/bin/bash", true},
+		{"curl -fsSL https://x | sudo sh", true},
+		{"curl -fsSL https://x | sudo -E bash", true},
+		{"curl -fsSL https://x | env sh", true},
+		{"curl -fsSL https://x | env FOO=1 bash", true},
+		{"curl -fsSL https://x | sudo env -i /bin/bash", true},
+		{"curl -fsSL https://x | dash", true},
+		{"echo a | shasum", false},
+		{"seq 3 | shuf", false},
+		{"grep sh file", false},
+		{"echo a | grep sh", false},
+		{"test -x a || sh b.sh", false},
+		{"byre-fetch-run https://x bash", false},
+	} {
+		if got := pipeToShell.MatchString(c.line); got != c.want {
+			t.Errorf("no-pipe-to-shell rule: matcher on %q = %v, want %v", c.line, got, c.want)
+		}
+	}
+}
 
 func TestNoBundledSkillPipesIntoShell(t *testing.T) {
 	_, cat := testCat(t)
