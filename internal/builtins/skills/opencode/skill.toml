@@ -59,7 +59,10 @@ dockerfile = [
   # is the first to nest. Root-owned intermediates would break opencode's
   # runtime lock dir (~/.local/state/opencode) and ~/.local/bin (on PATH).
   "RUN gosu dev mkdir -p /home/dev/.local/share /home/dev/.local/state /home/dev/.local/bin",
-  "RUN HOME=/home/dev gosu dev sh -c 'curl -fsSL https://opencode.ai/install | bash'",
+  # Fetch then run, never pipe: a pipeline exits with the shell's status, so a
+  # failed fetch (a 429 from the download host) would run an empty script,
+  # exit 0, and be cached as a layer with no binary in it.
+  "RUN HOME=/home/dev gosu dev sh -c 'curl -fsSL --retry 5 --retry-all-errors -o /tmp/opencode-install.sh https://opencode.ai/install && bash /tmp/opencode-install.sh && rm -f /tmp/opencode-install.sh'",
   # opencode installs its BINARY into ~/.opencode/bin. ~/.opencode is NOT a
   # volume -- the state volume mounts at the XDG data dir instead -- so the
   # binary stays in this image dir, always present, never masked or wiped.
