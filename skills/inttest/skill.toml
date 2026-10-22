@@ -1,6 +1,6 @@
 [package]
 id = "pjlsergeant/inttest"
-version = "1.0.3"
+version = "1.0.4"
 kind = "skill"
 package_api = 1
 requires_byre = ">=0.4.0"
@@ -50,7 +50,7 @@ sha256 = "48d238783fceff9c1f2a0e87c693861658359756bd3076716762f948f65e254a"
 [[package.files]]
 src = "dind/Dockerfile"
 dest = "dind/Dockerfile"
-sha256 = "90e045c14765420c3dbe027a1c918332493657302bcf6d13b1b415962653dfdf"
+sha256 = "65ce0d4379f218cdf5995bdb1f51190136ab709bea2947f21b3ab60868f7d51d"
 
 [[package.files]]
 src = "dind/entrypoint.sh"

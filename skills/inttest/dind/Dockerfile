@@ -31,7 +31,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       openssh-server sudo iproute2 iptables \
  && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://get.docker.com | sh
+# Fetch then run, never pipe: under sh the pipeline exits with the shell's
+# status, so a failed fetch would run an empty script and cache a layer with
+# no docker in it.
+RUN curl -fsSL --retry 5 --retry-all-errors --retry-max-time 120 -o /tmp/get-docker.sh https://get.docker.com \
+ && sh /tmp/get-docker.sh \
+ && rm -f /tmp/get-docker.sh
 
 RUN useradd -m -s /bin/bash "${INTTEST_USER}" \
  && usermod -aG docker "${INTTEST_USER}" \
