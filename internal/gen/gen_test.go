@@ -72,6 +72,17 @@ func TestDockerfileDefaultBase(t *testing.T) {
 	}
 }
 
+// TestDefaultBaseContract pins the default base as a contract (ADR 0060):
+// the codename is spelled out so the Debian release family only moves when
+// byre says so. A bump is a deliberate commit that changes this line, the
+// shipped templates' bases (pinned in internal/builtins), and CHANGES.md
+// together.
+func TestDefaultBaseContract(t *testing.T) {
+	if DefaultBase != "debian:trixie" {
+		t.Fatalf("DefaultBase = %q; the contract is \"debian:trixie\" -- a bump updates this test, the templates, and CHANGES.md together (ADR 0060)", DefaultBase)
+	}
+}
+
 func TestDockerfileUsesConfiguredBase(t *testing.T) {
 	out := Dockerfile(Input{Base: "ubuntu:24.04"})
 	if !strings.Contains(out, "FROM ubuntu:24.04\n") {

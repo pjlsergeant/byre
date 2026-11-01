@@ -71,6 +71,48 @@ func TestCatalogTemplatesAndListAgents(t *testing.T) {
 	}
 }
 
+// TestTemplateBasesContract pins the shipped templates' bases as a contract
+// (ADR 0060), read from the real embedded template files. Each tag's
+// -<codename> suffix must match gen.DefaultBase's codename, so a codename bump
+// that misses a template (or the default) fails here instead of shipping a
+// mixed set of Debian releases.
+func TestTemplateBasesContract(t *testing.T) {
+	want := map[string]string{
+		"go":     "golang:1.27-trixie",
+		"node":   "node:24-trixie",
+		"python": "python:3.13-trixie",
+	}
+	codename, ok := strings.CutPrefix(gen.DefaultBase, "debian:")
+	if !ok || codename == "" {
+		t.Fatalf("gen.DefaultBase = %q is not debian:<codename>", gen.DefaultBase)
+	}
+	entries, err := fs.ReadDir(fsys, "templates")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != len(want) {
+		t.Errorf("shipped templates = %d, contract covers %d: pin the new template's base here", len(entries), len(want))
+	}
+	for name, wantBase := range want {
+		raw, err := fs.ReadFile(fsys, "templates/"+name+"/template.config")
+		if err != nil {
+			t.Errorf("template %s: %v", name, err)
+			continue
+		}
+		c, err := config.ParseTemplateBody(raw)
+		if err != nil {
+			t.Errorf("template %s: %v", name, err)
+			continue
+		}
+		if c.Base != wantBase {
+			t.Errorf("template %s: base = %q; the contract is %q", name, c.Base, wantBase)
+		}
+		if !strings.HasSuffix(c.Base, "-"+codename) {
+			t.Errorf("template %s: base %q does not end in -%s, the codename of gen.DefaultBase %q", name, c.Base, codename, gen.DefaultBase)
+		}
+	}
+}
+
 // TestSelfHostCompositionResolves verifies the BUNDLED slice of byre's own
 // self-hosting config (Claude agent + codex + grok). codereview and devlog
 // moved out of the binary (2026-07-13, ADR 0029) -- their content is pinned
