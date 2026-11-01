@@ -22,8 +22,10 @@ at each bump and recorded here, not derived by one rule. This bump:
   Python tooling in the box and the template's interpreter agree on a
   version.
 
-(Node and Python facts checked 2026-11-02 against nodejs.org/dist/index.json
-and the nodejs/Release schedule.json.)
+(Checked 2026-11-02: Go against go.dev/dl, which lists Go 1.27 as current
+and two lines supported; Node dates against nodejs.org/dist/index.json and
+the nodejs/Release schedule.json; Python against Debian trixie's `python3`
+package, 3.13.5-1, packages.debian.org/trixie/python3.)
 
 What the codename pins is the Debian RELEASE FAMILY, not an image.
 `debian:trixie` and the template tags are mutable: Docker republishes them
@@ -72,7 +74,10 @@ The move costs byre's own surface nothing:
 Verified 2026-11-02: the agent-contract tier built every agent's box cold on
 `debian:trixie` and the full gated integration suite passed. docker-host's
 apt step and the three template images were exercised directly on the
-runner.
+runner. The gemini skill's keep-the-base-Node branch was exercised on
+`node:24-trixie` (Node 24 kept) and its install branch on bare
+`debian:trixie` (Node 22 fetched, checksum OK), and the gemini
+agent-contract test passed on trixie.
 
 ## Consequences
 
@@ -102,8 +107,9 @@ runner.
 - **Template projects may break on the new toolchain.** Project code can
   fail on a new Node or Python major/minor (or a Go release) with no change
   of its own. The remedy is the same pin of `base` to the old line's tag:
-  `node:22-trixie` and `python:3.12-trixie` exist, so the codename can move
-  while the language stays put.
+  `golang:1.26-trixie`, `node:22-trixie` and `python:3.12-trixie` exist
+  (checked on Docker Hub, 2026-11-02), so the codename can move while the
+  language stays put.
 
 ## Rejected
 

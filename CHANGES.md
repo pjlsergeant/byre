@@ -10,10 +10,12 @@
   go, node and python templates move to `golang:1.27-trixie`,
   `node:24-trixie` and `python:3.13-trixie` -- a new Go, Node and Python
   as well as a new Debian, so project code can notice. To stay where you
-  were, set the base in `byre config` (Base image), or put
-  `base = "debian:bookworm"` (or the old template tag, e.g.
-  `node:22-bookworm`; `node:22-trixie` keeps just the language) in the
-  config. ADR 0060 has the rule for future bumps.
+  were, set the base in `byre config` (Base image row), or in the config:
+  a project with no `base` key pins `base = "debian:bookworm"`; a project
+  on a template pins that template's previous tag (`golang:1.26-bookworm`,
+  `node:22-bookworm`, `python:3.12-bookworm`), or the `-trixie` variant of
+  the same language line to take the new Debian and keep the language.
+  ADR 0060 has the rule for future bumps.
 - **The gemini skill keeps a Node the base already has.** It installed
   Node 22 over whatever was there, so on the node template it replaced
   Node 24 with 22. A base with Node 20 or newer AND npm now keeps its own;
