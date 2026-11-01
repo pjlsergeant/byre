@@ -130,6 +130,14 @@ agent-contract test passed on trixie.
   story with no reason behind it; the default and the templates are one
   claim about what byre builds on, and they move together.
 
+The gemini skill's keep-the-base-Node branch has one gated arm,
+`TestAgentContractGeminiKeepsTheTemplatesNode` (`BYRE_AGENT_TESTS=1`,
+`internal/commands/agent_contract_test.go`): it builds `template = "node"`
+with `agent = "gemini"` and asserts the box still runs Node 24 with npm and
+the gemini CLI. It is absent from the list below because an index line
+carries one marker: `go test ./...` says nothing about it, and the
+agent-contract tier is where it fires.
+
 [arm: TestDockerfileDefaultBase, TestDefaultBaseContract,
 TestTemplateBasesContract,
 TestBackupReferencesBaseDefaultsToTheGeneratorsBase,

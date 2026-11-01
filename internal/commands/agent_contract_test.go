@@ -194,6 +194,25 @@ func TestAgentContractGemini(t *testing.T) {
 	}
 }
 
+// TestAgentContractGeminiKeepsTheTemplatesNode: the gemini skill's first RUN
+// keeps a base image's Node when it is 20+ with npm, and that branch exists
+// for the node template, whose base carries Node 24. TestAgentContractGemini
+// builds on the bare default base, so it only ever takes the install branch
+// (Node 22) and cannot stand in for this one. Kept means the template's
+// major survives the gemini build and the CLI still runs on it.
+func TestAgentContractGeminiKeepsTheTemplatesNode(t *testing.T) {
+	r := requireAgentRunner(t)
+	image, _, _, _ := buildAgentBox(t, r, "template = \"node\"\nagent = \"gemini\"\n")
+
+	t.Logf("gemini version: %s", strings.TrimSpace(agentProbe(t, r, image, nil, "gemini", "--version")))
+
+	node := strings.TrimSpace(agentProbe(t, r, image, nil, "node", "--version"))
+	if major, _, _ := strings.Cut(strings.TrimPrefix(node, "v"), "."); major != "24" {
+		t.Errorf("node --version in the node-template gemini box is %q, want major 24 (the template's) -- the keep branch did not fire and the skill's install branch replaced the base's Node", node)
+	}
+	t.Logf("npm version: %s", strings.TrimSpace(agentProbe(t, r, image, nil, "npm", "--version")))
+}
+
 // TestAgentContractGrok: the grok-shared-auth v2 broker (ADR 0036) hangs off
 // GROK_AUTH_PROVIDER_COMMAND, and the skill relocates state via GROK_HOME.
 // Both are closed-source env seams — presence in the shipped binary is the
