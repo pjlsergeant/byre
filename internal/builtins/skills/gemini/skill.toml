@@ -5,9 +5,12 @@
 # flag and the auth flow (GEMINI_API_KEY env or an OAuth login).
 #
 # Unlike claude/codex, gemini-cli is an npm package, so this skill brings Node.
-# Debian's apt node is too old for gemini-cli, so it installs Node 22 from
-# nodejs.org's own dist tarballs (checksum-verified, both arches), then
-# `npm install -g` (global, on PATH). NOT NodeSource: their setup_22.x script
+# A base that already carries node >= 20 AND npm on PATH keeps them (the
+# official node images; a user's own Node install). Anything else -- a bare
+# Debian, or Debian's `nodejs` package, which is 20 on trixie but ships
+# without npm -- gets Node 22 from nodejs.org's own dist tarballs
+# (checksum-verified, both arches). Then `npm install -g` (global, on PATH).
+# NOT NodeSource: their setup_22.x script
 # and the node_2x.x apt repos behind it went 403 on 2026-07-27 (the agent
 # canary caught it; the still-served setup_lts.x configures a repo that also
 # 403s), and a vendor whose convenience layer can vanish under a running
@@ -27,16 +30,20 @@ description = "The Gemini CLI agent; login persists per project. EXPERIMENTAL: a
 # carry xz.
 apt = ["curl", "ca-certificates", "ripgrep", "xz-utils"]
 dockerfile = [
-  # gemini-cli needs Node >=20. A base that already ships Node 20+ (the
-  # node template does, under /usr/local) keeps it: an unconditional extract
-  # would overwrite the base's newer Node with 22. Otherwise Node 22 comes from
+  # gemini-cli needs Node >=20, and the next RUN needs npm. A base that
+  # already ships Node 20+ with npm (the node template does, under
+  # /usr/local) keeps it: an unconditional extract would overwrite the base's
+  # newer Node with 22. Debian's own nodejs package has no npm, so it takes
+  # the install branch. Otherwise Node 22 comes from
   # nodejs.org dist, pinned to the latest-v22.x channel: the filename is
   # discovered from SHASUMS256.txt and the tarball verified against it, so a
   # tampered or truncated download fails the build instead of shipping.
   # --strip-components puts node/npm under /usr/local (bin, lib/node_modules),
-  # the standard layout npm -g expects. A non-numeric version answer fails the
-  # -ge test and takes the install branch.
-  "RUN if command -v node >/dev/null 2>&1 && [ \"$(node -p 'parseInt(process.versions.node)')\" -ge 20 ] 2>/dev/null; then echo \"gemini skill: using the base image's node $(node --version)\"; else arch=$(dpkg --print-architecture) && case \"$arch\" in amd64) narch=x64 ;; arm64) narch=arm64 ;; *) echo \"gemini skill: unsupported arch $arch\" >&2; exit 1 ;; esac && curl -fsSL https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt -o /tmp/SHASUMS256.txt && f=$(grep -o \"node-v22[0-9A-Za-z.-]*-linux-$narch.tar.xz\" /tmp/SHASUMS256.txt | head -1) && curl -fsSL \"https://nodejs.org/dist/latest-v22.x/$f\" -o \"/tmp/$f\" && (cd /tmp && grep \" $f$\" SHASUMS256.txt | sha256sum -c -) && tar -xJf \"/tmp/$f\" -C /usr/local --strip-components=1 && rm \"/tmp/$f\" /tmp/SHASUMS256.txt; fi",
+  # the standard layout npm -g expects. The major is read with
+  # process.stdout.write, not node -p: -p prints through util.inspect, which
+  # colours the number when FORCE_COLOR is set and breaks the -ge test. A
+  # non-numeric answer still fails the test and takes the install branch.
+  "RUN if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1 && [ \"$(node -e 'process.stdout.write(String(parseInt(process.versions.node,10)))')\" -ge 20 ] 2>/dev/null; then echo \"gemini skill: using the base image's node $(node --version)\"; else arch=$(dpkg --print-architecture) && case \"$arch\" in amd64) narch=x64 ;; arm64) narch=arm64 ;; *) echo \"gemini skill: unsupported arch $arch\" >&2; exit 1 ;; esac && curl -fsSL https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt -o /tmp/SHASUMS256.txt && f=$(grep -o \"node-v22[0-9A-Za-z.-]*-linux-$narch.tar.xz\" /tmp/SHASUMS256.txt | head -1) && curl -fsSL \"https://nodejs.org/dist/latest-v22.x/$f\" -o \"/tmp/$f\" && (cd /tmp && grep \" $f$\" SHASUMS256.txt | sha256sum -c -) && tar -xJf \"/tmp/$f\" -C /usr/local --strip-components=1 && rm \"/tmp/$f\" /tmp/SHASUMS256.txt; fi",
   "RUN npm install -g @google/gemini-cli",
   # Clear any install residue from ~/.gemini (the .gemini state-volume mount
   # point) so a fresh volume starts clean; gemini recreates it at runtime/login.

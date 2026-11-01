@@ -16,8 +16,9 @@
   config. ADR 0060 has the rule for future bumps.
 - **The gemini skill keeps a Node the base already has.** It installed
   Node 22 over whatever was there, so on the node template it replaced
-  Node 24 with 22. A base with Node 20 or newer now keeps its own; gemini
-  still brings Node 22 where there is none, or an older one.
+  Node 24 with 22. A base with Node 20 or newer AND npm now keeps its own;
+  gemini still brings Node 22 where there is none, an older one, or one
+  without npm (Debian's own `nodejs` package).
 
 ## v1.13.0 — 2026-10-22
 
