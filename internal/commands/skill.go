@@ -645,7 +645,7 @@ func templateInitExample(id string) string {
 # [package]: TOML gives a bare key to the most recent table header, and byre
 # refuses a package.* key it does not define.
 
-base = "debian:bookworm-slim"
+base = "debian:trixie-slim"
 # egress_offered = []
 
 [package]

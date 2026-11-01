@@ -157,7 +157,7 @@ const (
 )
 
 // DefaultBase is used when no base is configured (and no template supplies one).
-const DefaultBase = "debian:bookworm"
+const DefaultBase = "debian:trixie"
 
 // LauncherPath is where the core block installs the launcher / ENTRYPOINT.
 // Exported because the security guard (build layer + status/develop warnings)

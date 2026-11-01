@@ -230,7 +230,7 @@ func TestInitScaffoldsAreLoadableWithTheirKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tc.Base != "debian:bookworm-slim" {
+	if tc.Base != "debian:trixie-slim" {
 		t.Errorf("the scaffold's base must reach the template, got %q", tc.Base)
 	}
 	cat, err := builtins.LoadCatalogRaw(home)

@@ -227,7 +227,7 @@ func diffLaunch(now, next exposureView) []launchDelta {
 
 	// Compared by EFFECTIVE value, which is the only thing a delta line can
 	// honestly claim: gen.Dockerfile substitutes gen.DefaultBase for an empty
-	// base, so `base = "debian:bookworm"` and no base at all emit the same
+	// base, so `base = "debian:trixie"` and no base at all emit the same
 	// FROM. Adding or deleting that explicit spelling changes the config and
 	// changes nothing about the image -- a `~ Base ... (rebuild required)`
 	// there is the standing-false-row failure this section's own rules

@@ -16,6 +16,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/backup"
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/runner"
@@ -508,7 +509,7 @@ func TestBackupReferencesComeFromTheResolvedSet(t *testing.T) {
 		Engine:       "docker",
 		Template:     "byre/go",
 		Agent:        "byre/claude",
-		Base:         "debian:trixie",
+		Base:         "debian:bookworm",
 		WorktreeBase: "~/wt",
 		Mounts: []config.Mount{
 			{Host: "/host/on", Target: "/t/on"},
@@ -562,7 +563,7 @@ func TestBackupReferencesComeFromTheResolvedSet(t *testing.T) {
 	if strings.Join(refs.Files, ",") != "secrets/.netrc" {
 		t.Errorf("files = %v, want the config's [files] source", refs.Files)
 	}
-	if refs.Engine != "docker" || refs.Base != "debian:trixie" {
+	if refs.Engine != "docker" || refs.Base != "debian:bookworm" {
 		t.Errorf("engine/base = %q/%q", refs.Engine, refs.Base)
 	}
 	if refs.WorktreeBase != "~/wt" {
@@ -578,7 +579,7 @@ func TestBackupReferencesBaseDefaultsToTheGeneratorsBase(t *testing.T) {
 	if err := b.run(); err != nil {
 		t.Fatal(err)
 	}
-	if got := readBack(t, out, volumePrefix(p.ID)).Index.References.Base; got != "debian:bookworm" {
+	if got := readBack(t, out, volumePrefix(p.ID)).Index.References.Base; got != gen.DefaultBase {
 		t.Fatalf("references.base = %q, want the generator's default", got)
 	}
 }
@@ -659,15 +660,15 @@ func TestBackupPrefersABuiltImageOnTheSourceEngine(t *testing.T) {
 func TestBackupPullsTheBaseAndSaysSo(t *testing.T) {
 	f := &fakeRunner{images: map[string]bool{}}
 	s, _, errb := testStreams("", false)
-	b, _, p := backupHarness(t, "", combine(merged(config.Config{Base: "debian:trixie"}), skills.Resolved{}), f, s, BackupOptions{})
+	b, _, p := backupHarness(t, "", combine(merged(config.Config{Base: "debian:bookworm"}), skills.Resolved{}), f, s, BackupOptions{})
 	f.vols = map[string]bool{volumeName(p.ID, ".claude"): true}
 	if err := b.run(); err != nil {
 		t.Fatal(err)
 	}
-	if len(f.pulls) != 1 || f.pulls[0] != "debian:trixie" {
+	if len(f.pulls) != 1 || f.pulls[0] != "debian:bookworm" {
 		t.Fatalf("pulls = %v, want the resolved base", f.pulls)
 	}
-	if !strings.Contains(errb.String(), "pulled debian:trixie") {
+	if !strings.Contains(errb.String(), "pulled debian:bookworm") {
 		t.Errorf("the summary must say a pull happened:\n%s", errb.String())
 	}
 }
@@ -681,7 +682,7 @@ func TestBackupRefusesAnImageItCannotProve(t *testing.T) {
 		{"unpullable base", func(f *fakeRunner) {
 			f.images = map[string]bool{}
 			f.pullErr = errors.New("manifest unknown")
-		}, "debian:bookworm"},
+		}, gen.DefaultBase},
 		{"image-exists query failure", func(f *fakeRunner) {
 			// A daemon that ANSWERED and refused: not an unreachability, so it
 			// keeps this wrapping rather than the start-it-or-ignore-it refusal.
@@ -1031,7 +1032,7 @@ func TestBackupRefusesWhenTheResolutionChangedUnderTheLock(t *testing.T) {
 			{Name: "oneoff", Role: "cache", Target: "/home/dev/.cache"},
 		}}, "volumes this backup carries"},
 		{"the engine", config.Config{Engine: "podman", Volumes: base.Volumes}, "configured engine"},
-		{"a reference", config.Config{Base: "debian:trixie", Volumes: base.Volumes}, "references"},
+		{"a reference", config.Config{Base: "debian:bookworm", Volumes: base.Volumes}, "references"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
