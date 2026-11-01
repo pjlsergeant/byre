@@ -1,5 +1,24 @@
 # Changes
 
+## Unreleased
+
+- **The default base is now Debian 13 (`debian:trixie`).** A project with
+  no `base` key built on `debian:bookworm`, which has left Debian's security
+  team for volunteer LTS. Such projects rebuild from cold once, on the next
+  `byre develop`; `byre status` shows the pending `~ Base` line beforehand
+  where the box's launch record is recent enough to hold its base. The
+  go, node and python templates move to `golang:1.27-trixie`,
+  `node:24-trixie` and `python:3.13-trixie` -- a new Go, Node and Python
+  as well as a new Debian, so project code can notice. To stay where you
+  were, set the base in `byre config` (Base image), or put
+  `base = "debian:bookworm"` (or the old template tag, e.g.
+  `node:22-bookworm`; `node:22-trixie` keeps just the language) in the
+  config. ADR 0060 has the rule for future bumps.
+- **The gemini skill keeps a Node the base already has.** It installed
+  Node 22 over whatever was there, so on the node template it replaced
+  Node 24 with 22. A base with Node 20 or newer now keeps its own; gemini
+  still brings Node 22 where there is none, or an older one.
+
 ## v1.13.0 — 2026-10-22
 
 - **A failed agent install can no longer be cached as a success.** The
