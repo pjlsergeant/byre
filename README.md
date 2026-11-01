@@ -104,7 +104,7 @@ Template:     byre/go      bundled v1.3.1
 Engine:       docker
 Project:      ~/my-project -> /workspace  (rw)
 Image:        byre-my-project-pjl-069d95-u501-g20  (sha256:1f0b7c9d4e2a…
-              (--full to show); base golang:1.26-bookworm)
+              (--full to show); base golang:1.27-trixie)
 Network:      open
 Ports:        none
 Host mounts:  none
