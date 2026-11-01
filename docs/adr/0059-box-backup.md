@@ -484,7 +484,7 @@ exist on the engine, and **builds nothing**. Nothing the backup carries waits
 for the first develop.
 
 - **It pours from the effective BASE image**, not a built image -- an unset
-  `base` being `gen.DefaultBase` (`debian:bookworm`), as the generator
+  `base` being whatever `gen.DefaultBase` names (ADR 0060), as the generator
   resolves it. The base is pulled if absent and PROVED by running the
   complete pour command in it, fed a valid empty archive, before any project
   state is written. This is new in kind and worth saying out loud: restore
