@@ -15,9 +15,10 @@ at each bump and recorded here, not derived by one rule. This bump:
 
 - **Go 1.27** is the current Go release; Go supports two lines, so the
   newest is the one with the longest runway.
-- **Node 24** is the LTS line supported to 2028-04-30. Node 26 became
-  Active LTS on 2026-10-28, five days before this decision, and was judged
-  too new for a starter template; the next bump revisits it.
+- **Node 24** is in Maintenance LTS since 2026-10-20, supported to
+  2028-04-30. Node 26 became Active LTS on 2026-10-28, five days before
+  this decision, and was judged too new for a starter template; the next
+  bump revisits it.
 - **Python 3.13** is the `python3` line trixie itself ships, so apt-installed
   Python tooling in the box and the template's interpreter agree on a
   version.
@@ -30,7 +31,13 @@ package, 3.13.5-1, packages.debian.org/trixie/python3.)
 What the codename pins is the Debian RELEASE FAMILY, not an image.
 `debian:trixie` and the template tags are mutable: Docker republishes them
 for point releases and security rebuilds, and that same-codename movement is
-accepted -- it is how the base picks up security fixes. What the codename
+accepted -- it is how the base picks up security fixes. Those fixes reach
+a machine only when the engine next PULLS the base: a first build on that
+machine, or an explicit `docker pull`/`podman pull` of the base tag. Which
+image a local tag means is the engine's to decide (ADR 0001): byre's build
+never passes `--pull`, and `byre rebuild` adds only `--no-cache`, which
+discards the layer cache without asking for a fresh base. Forcing a pull on
+rebuild is a separate decision this ADR does not take. What the codename
 spelling prevents is the one change a `stable`/`latest` tag would add: an
 unannounced move to a different distro family under a byte-identical
 Dockerfile.
