@@ -155,7 +155,8 @@ FROM <base>                 # from template config
 <skill apt (hoisted)>       # every skill's apt RUN, ahead of all blocks  │ cached
 <skill blocks>              # enabled skills: bundled, installed, local   │ across
 <project block>             # this project only                           │ projects
-<security guard>            # re-COPY chassis paths (launcher, gate, fw)  │
+<security guard>            # re-COPY chassis paths (launcher, headless,  │
+                            #   gate, fw)                                 │
 USER dev / ENTRYPOINT ...   # constant: drop to the baked user, then exec ┘
 ```
 
@@ -178,9 +179,13 @@ skill layers with a network dependency on mutable external state (`apt-get
 update`) where payload and raw-line churn can't invalidate them.
 
 The **security guard** re-COPYs byre's own copy of the security-critical
-files -- the launcher (the ENTRYPOINT's content), and, when a network-posture
-skill is enabled, its launch gate and netns enforcement script -- *after* the
-project block. Those files are installed early (core/skill blocks), so without
+files -- the launcher (the ENTRYPOINT's content), the headless-run chassis
+`byre-headless` (which the launcher execs as PID 1 of a headless run, and
+which produces that run's verdict), and, when a network-posture skill is
+enabled, its launch gate and netns enforcement script -- *after* the
+project block. The agent's own baked commands (`agent-cmd`,
+`agent-headless`) are deliberately not guarded: a `files` clobber there
+replaces the user's agent with the user's own config. Those files are installed early (core/skill blocks), so without
 this a project `files` entry targeting their paths would be a
 later COPY and win in the built image: a one-line clobber could empty the launch
 gate or stub the firewall while `byre status` still read deny-by-default. Same
@@ -258,6 +263,19 @@ project-scoped image and the named volumes (state + cache) -- agent auth,
 shell history, and caches survive; no long-lived container accretes
 cruft.
 
+`byre run` starts the other kind of session, a **headless run** (ADR
+0061): the same setup, lock, build, launch record and exit report as
+develop, but the box gets no `-t` and no stdin, its command is the
+`byre-headless` chassis instead of the agent's interactive command, and
+byre exits with its own verdict. Under the setup lock, immediately after
+the container is created, byre stages the result dir `.byre-run/` in the
+work tree -- emptied, then `.gitignore` and the task published
+exclusively, every touch anchored (ADR 0040) -- so a second run on the
+same worktree loses the container name before it can reach the dir. The
+box's stdout is the agent's answer (or, under `--data`, discarded for
+byre's own JSON outcome); everything else arrives on stderr. byre reads
+nothing back from the result dir.
+
 A running session is identified by **labels** (`byre.project` +
 `byre.workdir`), not an assumed name (ADR 0004); that's how `byre status`
 finds "is a session running for this directory?".
@@ -266,7 +284,8 @@ finds "is a session running for this directory?".
 ADR 0053). Under the setup lock, immediately before `create`, byre writes
 what it is about to tell the engine -- binds, ports, volumes, env KEYS
 (never values), network posture and resolved egress, the image tag AND
-digest, `run_args` verbatim, the skill identities -- to
+digest, `run_args` verbatim, the skill identities, and for a headless run
+its run id, task hash (never the text) and timeout -- to
 `~/.byre/projects/<id>/launches/<sha256>.toml`, named by the sha256 of its
 own bytes, and stamps that hash on the container. It records what byre TOLD
 THE ENGINE, deliberately not the config that produced it: the record is one
@@ -300,7 +319,8 @@ refuses on a hit, naming the container and its `rm -f` line, so a labelled
 helper left behind by a killed byre or an engine outage can never run beside
 them unseen.
 
-**`develop` is single-session per directory** (ADR 0004): if a session is
+**`develop` is single-session per directory** (ADR 0004), and so is
+`run`, against the same sessions: if a session is
 already running here, it reports that session (and how to re-attach to
 its terminal, stop it, or get a shell via `byre shell`) rather than
 spawning a parallel one -- two boxes
@@ -464,6 +484,18 @@ launcher that execs the *selected* agent skill's recorded command; the
 `agent` scalar picks which, and **implicitly enables** that skill. More
 than one agent skill can be enabled; `agent` decides the default command.
 
+An agent skill may also declare a **headless command** (`[agent]
+headless`, ADR 0061): a command string like `command`, baked to
+`/etc/byre/agent-headless`, that runs ONE task non-interactively for
+`byre run` and honours the chassis contract -- the task from
+`BYRE_RUN_TASK_FILE`, the answer written to the descriptor in
+`BYRE_RUN_RESULT_FILE`, an exit from a closed set (0, 10, 11, 13, 15),
+never a terminal read. It must not be blank or equal `command`. The
+bundled claude and codex skills declare one, each running the CLI through
+the same launch adapter as the interactive command so injection is
+unchanged. An agent without one has no headless mode; status's Agent row,
+the Skills screen and `skill inspect` say which.
+
 A skill declares its contributions in `skill.toml`. Minimal shape (an
 agent skill):
 
@@ -472,8 +504,9 @@ agent skill):
 [build]
 
 [agent]                                          # marks this as an agent skill
-command = "claude --dangerously-skip-permissions"   # what the launcher execs
-state   = ".claude"                              # name of its state volume
+command  = "claude --dangerously-skip-permissions"  # what the launcher execs
+headless = "byre-claude-headless"                # optional: its headless command (byre run)
+state    = ".claude"                             # name of its state volume
 
 [runtime]
 egress = ["api.anthropic.com"]                   # what the firewall opens for it (ADR 0012)
@@ -708,6 +741,18 @@ Build-time (the **core block**, identical everywhere, always cached):
   a failed fetch would run an empty script and Docker would cache a layer
   with no binary in it; the shebang check catches the download host
   answering 200 with an error page or an empty body.
+- Ship `byre-headless`, the headless-run chassis (ADR 0061), in every
+  image -- whether a session is a headless run is decided per launch by
+  its argv, and a conditional copy would fork the cache-shared core
+  block. As PID 1 of a headless run it verifies the staged task's sha256
+  against the host's (repo code runs earlier in the launcher and could
+  have rewritten it), claims its own files in `.byre-run/` exclusively and
+  holds them as descriptors, runs the agent's baked headless command in
+  its own process group with stdin `/dev/null`, records and relays the
+  command's streams to stderr (files only under `--quiet`), runs a timer
+  only when `--timeout` asked for one, maps the outcome to a closed exit
+  set (0, 10-16), and writes the answer to the box's real stdout once.
+  Re-asserted at the Dockerfile tail like the launcher.
 
 Runtime constants:
 
@@ -734,12 +779,19 @@ Runtime constants:
   helper applied, so announcement and enforcement share one source;
   plus the self-edit note when that grant is live), wait bounded and
   fail-closed for delivered credentials and export them (ADR 0057),
+  derive the headless signal from its OWN argv -- when the command is
+  `byre-headless` it exports `BYRE_HEADLESS=1`, saves the box's real
+  stdout on fd 9 for the chassis's one write of the answer, and sends its
+  own stdout and every hook's to stderr; otherwise it unsets
+  `BYRE_HEADLESS` whatever the environment carried (skill env and raw
+  `run_args` can set env, never the command argv) --
   run first-run hooks as the user (agent login flows live here; they
   inherit those exports, so a login hook stands down on a delivered
   key, and none prompts without a terminal or under `BYRE_HEADLESS`),
   source the launch env hooks, re-apply the credential exports
   so they win env collisions (ADR 0028), then exec the selected
-  agent's command in autonomous mode. The agent command
+  agent's command in autonomous mode (for a headless run, the
+  `byre-headless` chassis it was handed instead). The agent command
   itself INJECTS the baked agent context (the chassis facts, the base
   image, a one-line inventory of config-provisioned `apt`
   packages when any exist -- the agent shouldn't discover tools by
@@ -796,6 +848,15 @@ else -- `develop` and friends included -- only reads it and acts.
 byre develop      Set up if needed (generate, build-on-cache-miss) and run the
                   box in the FOREGROUND. The main entry point.
 
+byre run          Run ONE task headlessly (ADR 0061): set up as develop does,
+                  hand the task (--task <file>, --task -, or BYRE_TASK) to
+                  the agent's headless command, exit with byre's verdict.
+                  stdout is the agent's answer, or with --data one
+                  versioned JSON outcome; everything else is on stderr,
+                  ending with a summary line that is informational only --
+                  the agent shares stderr. Gate on the exit code or --data.
+                  The agent's files land in .byre-run/, emptied each run.
+
 byre shell        Open a shell (as dev, with the agent's env) in the running
                   session.
 
@@ -815,7 +876,7 @@ byre status       The legibility surface (PRINCIPLES.md #4): resolved config,
                   state.
 
                       Project id:   repo-abc123
-                      Agent:        byre/claude
+                      Agent:        byre/claude, headless: byre-claude-headless
                       Template:     byre/go             bundled v1.14.0
                       Engine:       docker
                       Project:      /repo -> /workspace  (rw)
