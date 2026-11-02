@@ -682,6 +682,34 @@ printf 'THE-ANSWER' >"$BYRE_RUN_RESULT_FILE"`
 	}
 }
 
+// A process that leaves the headless command's group (its own setsid) while
+// holding the stdout relay open survives the group KILL; the chassis's wait
+// for its relays is bounded, so it still finishes with the verdict.
+func TestHeadlessEscapedRelayHolderDoesNotHoldTheRun(t *testing.T) {
+	var escaped string
+	t.Cleanup(func() {
+		if pid, err := strconv.Atoi(escaped); err == nil {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+	})
+	r := runHeadless(t, headlessCase{
+		bound: 20 * time.Second,
+		stub: `setsid sleep 60 &
+p=$!
+echo $p >"$STUB_WS/escaped"
+# Exit only once it has left the group, or the group KILL wins the race.
+until [ "$(cut -d' ' -f6 /proc/$p/stat 2>/dev/null)" = "$p" ] &&
+  [ "$(cut -d'(' -f2 /proc/$p/stat | cut -d')' -f1)" = sleep ]; do sleep 0.01; done
+printf 'the answer' >"$BYRE_RUN_RESULT_FILE"`,
+	})
+	if b, err := os.ReadFile(filepath.Join(r.ws, "escaped")); err == nil {
+		escaped = strings.TrimSpace(string(b))
+	}
+	if r.code != 0 || r.fd9 != "the answer" {
+		t.Errorf("exit %d fd9 %q, want 0 and the answer\nstderr:\n%s", r.code, r.fd9, r.stderr)
+	}
+}
+
 // fd 9 carries the answer whatever the exit code -- a reported failure still
 // has a message worth reading -- and nothing when the answer is empty.
 func TestHeadlessAnswerOnEveryExit(t *testing.T) {

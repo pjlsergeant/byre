@@ -280,7 +280,10 @@ else
     rc=$?
     [ "$interrupted" = 1 ] || break
   done
-  trap - TERM INT USR1
+  # USR1 is ignored, not reset: a timer firing between here and its stop
+  # must not take USR1's default action, which kills the chassis.
+  trap - TERM INT
+  trap '' USR1
   stop_helper "$timer"
   stop_helper "$killer"
   # The run is over: whatever the headless command left in its group has no
@@ -288,12 +291,13 @@ else
   kill -KILL -- "-$child" 2>/dev/null
 
   # Let the tees drain to EOF, bounded: a process that left the group with a
-  # relay pipe still open must not hold PID 1 forever.
+  # relay pipe still open must not hold PID 1 forever. KILL, because the tees
+  # ignore TERM.
   for ((i = 0; i < 100; i++)); do
     kill -0 "$tee_out" 2>/dev/null || kill -0 "$tee_err" 2>/dev/null || break
     sleep 0.05
   done
-  kill "$tee_out" "$tee_err" 2>/dev/null
+  kill -KILL "$tee_out" "$tee_err" 2>/dev/null
   wait "$tee_out" "$tee_err" 2>/dev/null
 
   # status: key=value lines the headless command appended to fd 6. Only these
