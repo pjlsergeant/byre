@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # byre credential receiver — the in-box end of the credential delivery
 # stream.
 #

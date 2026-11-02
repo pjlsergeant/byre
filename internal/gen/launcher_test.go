@@ -1074,10 +1074,11 @@ func TestLauncherFirstrunHookIgnoresBashOnPath(t *testing.T) {
 	}
 }
 
-// Under headless a firstrun hook does not hold fd 9, the box's real stdout:
-// only the chassis writes the answer there, so a hook -- or whatever ran in
-// its place -- cannot forge one.
-func TestLauncherFirstrunHookCannotSeeAnswerFd(t *testing.T) {
+// Under headless a firstrun hook does not inherit fd 9, the box's real
+// stdout, so a hook does not write the answer channel by accident. This is
+// inheritance only: a same-uid process can still reach the descriptor
+// through /proc, which is why the answer is agent-trust content.
+func TestLauncherFirstrunHookDoesNotInheritAnswerFd(t *testing.T) {
 	dir, bin, chassis, launcher := headlessLauncherFixture(t)
 	probe := filepath.Join(dir, "fd9")
 	hook := `if [ -e /dev/fd/9 ]; then printf open >"` + probe + `"; else printf closed >"` + probe + `"; fi` + "\n"

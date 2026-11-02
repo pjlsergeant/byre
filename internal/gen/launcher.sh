@@ -433,7 +433,9 @@ if [ -d "$BYRE_firstrun_dir" ]; then
     # for the hook: repo code has run above and PATH starts with the
     # agent-writable ~/.local/bin, so a bare `bash` could be a planted binary
     # that runs in place of every hook -- and under headless, one holding the
-    # box's real stdout, free to write a forged answer there.
+    # box's real stdout. Closing fd 9 keeps the hook from inheriting it; a
+    # same-uid process can still reach it through /proc, so the answer
+    # stays agent-trust content.
     if [ -r "$BYRE_hook" ]; then
       if /bin/bash "$BYRE_hook" 9>&-; then
         :

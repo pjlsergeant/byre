@@ -480,6 +480,17 @@ func TestReceiverThenLauncherRoundtrip(t *testing.T) {
 	}
 }
 
+// The launcher and the receiver are exec'd by path in a box whose PATH
+// starts with the agent-writable ~/.local/bin: an `env bash` shebang would
+// let a planted bash run in place of either.
+func TestBoxScriptsNameTheirInterpreterAbsolutely(t *testing.T) {
+	for name, b := range map[string][]byte{"launcher.sh": LauncherScript(), "credential-receiver.sh": ReceiverScript()} {
+		if !strings.HasPrefix(string(b), "#!/bin/bash\n") {
+			t.Errorf("%s must name its interpreter absolutely, not through PATH", name)
+		}
+	}
+}
+
 // TestReceiverNameGrammarMatchesEnvKeys pins the receiver's bash restatement
 // byte-identical to the Go owner — the clock-pin pattern for a rule that
 // must exist in two languages. A delivered item now travels under its CONFIG

@@ -430,14 +430,18 @@ Each is on the security-model page too.
   starts; that code can rewrite `.byre-run/task.md`. The chassis verifies
   the task's hash before exec, so the result is a loud exit 16, never a
   silent swap -- but the code has run.
-- **Launch env hooks hold fd 9.** First-run hooks run under `/bin/bash` by
-  path with fd 9 closed, so neither a planted `bash` nor the hook itself
-  holds the box's real stdout. Launch env hooks (`env.d`) are SOURCED into
-  the launcher's own shell (ADR 0028), so fd 9 cannot be closed for them
-  without closing it for the launcher, and the chassis needs it. They are
-  skill code the user enabled (trusted machinery, P2), and the only thing
-  fd 9 lets them forge is the answer on stdout, which is agent-trust
-  content under the next entry anyway.
+- **fd 9 is reachable by any process in the box.** First-run hooks run
+  under `/bin/bash` by path with fd 9 closed, which removes the accidental
+  route (a hook inheriting the box's real stdout) and the planted-
+  interpreter route (a `bash` on the agent-writable PATH running in place
+  of every hook while holding it). It is not containment: any process
+  running as the box's user can open a descriptor another one holds
+  through `/proc` (`/proc/<pid>/fd/9` of the launcher, or of the chassis
+  as PID 1) and write the box's stdout. Launch env hooks (`env.d`) are
+  SOURCED into the launcher's own shell (ADR 0028) and hold fd 9 outright.
+  So the stdout answer is agent-trust content whoever wrote it (the next
+  entry); the exit code and the `--data` document are what a script gates
+  on, and neither passes through fd 9.
 - **Everything the box can write is agent-trust.** The contents of
   `.byre-run/` (`result.md`, `result.json`, the transcript, the copy of
   `outcome.json`), the answer on stdout, and everything on stderr --
@@ -482,4 +486,4 @@ TestRunForcesNonInteractive, TestRunOutcomeClassification,
 TestRunStdoutIsTheAnswer, TestRunDataDocument,
 TestLaunchRecordHeadlessScalarsContract,
 TestLauncherFirstrunHookIgnoresBashOnPath,
-TestLauncherFirstrunHookCannotSeeAnswerFd]
+TestLauncherFirstrunHookDoesNotInheritAnswerFd]

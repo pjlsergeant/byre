@@ -394,10 +394,13 @@ prints on the host after the box has exited; a script that gates on
 anything in `.byre-run/` or on stderr is gating on the agent's word. The
 answer belongs in that class too: an agent that writes a different answer
 than the one its headless command meant to deliver changes only what it
-could have written anyway. A skill's first-run hooks cannot reach the
-channel the answer travels on, but its launch env hooks run inside
-byre's launcher and can: they are skill code you enabled, and the answer
-was never more than the agent's word.
+could have written anyway. byre keeps the channel the answer travels on
+out of what a skill's first-run hooks inherit, and away from an
+interpreter the agent could plant, but that is hygiene, not a wall: any
+process in the box can reach that channel through `/proc`, and a skill's
+launch env hooks run inside byre's launcher and hold it outright. The
+answer was never more than the agent's word; the exit code and the
+`--data` document never travel on that channel.
 byre's own writes there are anchored and never follow a link or
 overwrite a file the agent planted (the same machinery as grab), with
 one residual shared with grab: a symlink an agent swaps in for a
