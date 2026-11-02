@@ -30,6 +30,7 @@ const (
 	ClaimMCPDelivery     = "MCP delivery"
 	ClaimContextDelivery = "context delivery"
 	ClaimLaunch          = "launch"
+	ClaimHeadless        = "headless run"
 )
 
 // reservedPrefix is byre's protocol vocabulary. Reserved, never a reserved
@@ -63,8 +64,10 @@ func ReservedEnvOf(skill string, env map[string]string) []ReservedEnvSet {
 // from this map is one byre has no knowledge of -- it wears byre's reserved
 // spelling and byre cannot say what it does -- which is what
 // ReservedEnvClaims and ReservedEnvNote below answer for, each in its own
-// register. The inventory is pinned against the scripts by gen's
-// TestChassisScriptKnobsRideReservedPrefix.
+// register. TestReservedEnvKnobsCoverChassisReads pins every BYRE_* name a
+// gen chassis script reads as a key here; gen's
+// TestChassisScriptKnobsRideReservedPrefix pins that the scripts' knobs
+// carry the prefix at all.
 var reservedEnvKnobs = map[string][]string{
 	"BYRE_EGRESS":              {ClaimNetwork},
 	"BYRE_EGRESS_DENY":         {ClaimNetwork},
@@ -102,6 +105,29 @@ var reservedEnvKnobs = map[string][]string{
 	"BYRE_GID":             {ClaimLaunch},
 	"BYRE_PROJECT":         {ClaimLaunch},
 	"BYRE_WORKTREE":        {ClaimLaunch},
+
+	// Read at build time by the installer helper every agent skill's install
+	// step rides (its retry count); a chassis knob all the same.
+	"BYRE_FETCH_RUN_RETRIES": {ClaimLaunch},
+
+	// The headless-run contract: the signal hooks read, and the variables
+	// byre run hands the chassis (and the chassis hands the headless
+	// command). The launcher re-derives BYRE_HEADLESS from argv and the host
+	// re-asserts its BYRE_RUN_* set after skill env, but raw run_args still
+	// win, so a skill setting one is aiming at a run's inputs: the
+	// headless-run claim stops asserting, and the launch claim with it, since
+	// the chassis is what the launcher execs.
+	"BYRE_HEADLESS":        {ClaimHeadless, ClaimLaunch},
+	"BYRE_RUN_TASK_FILE":   {ClaimHeadless, ClaimLaunch},
+	"BYRE_RUN_TASK_SHA256": {ClaimHeadless, ClaimLaunch},
+	"BYRE_RUN_RESULT_FILE": {ClaimHeadless, ClaimLaunch},
+	"BYRE_RUN_STATUS_FILE": {ClaimHeadless, ClaimLaunch},
+	"BYRE_RUN_MODEL":       {ClaimHeadless, ClaimLaunch},
+	"BYRE_RUN_DIR":         {ClaimHeadless, ClaimLaunch},
+	"BYRE_RUN_AGENT":       {ClaimHeadless, ClaimLaunch},
+	"BYRE_RUN_ID":          {ClaimHeadless, ClaimLaunch},
+	"BYRE_RUN_TIMEOUT":     {ClaimHeadless, ClaimLaunch},
+	"BYRE_RUN_QUIET":       {ClaimHeadless, ClaimLaunch},
 }
 
 // ReservedEnvClaims names the claims one reserved BYRE_ variable can skew.
