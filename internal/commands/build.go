@@ -47,7 +47,7 @@ func Build(s Streams, projectDir string, o BuildOptions) error {
 	cfgPath := filepath.Join(paths.Dir, config.ProjectConfigName)
 	configured, perr := hostopen.ExistsNoFollow(cfgPath)
 	if perr != nil {
-		return fmt.Errorf("cannot tell whether %s exists (%v) — fix the store's permissions, or run 'byre forget' to clear it", cfgPath, perr)
+		return fmt.Errorf("cannot tell whether %s exists (%v) -- fix the store's permissions, or run 'byre forget' to clear it", cfgPath, perr)
 	}
 	if !configured && (o.Template == "" || o.Agent == "") {
 		fmt.Fprintln(s.Err, `byre: this project is not configured here: pass --template <t> and --agent <a> (use "none" for no template), or configure it first with byre develop / byre preset apply`)
@@ -102,10 +102,10 @@ func buildImage(r engineRunner, s Streams, paths project.Paths, rv resolved) err
 		return err
 	}
 	if paths.IsWorktree {
-		fmt.Fprintf(s.Err, "byre: worktree — the shared project image builds from the main worktree (%s); `files` sources changed only in this worktree don't reach the image.\n", paths.Canonical)
+		fmt.Fprintf(s.Err, "byre: worktree -- the shared project image builds from the main worktree (%s); `files` sources changed only in this worktree don't reach the image.\n", paths.Canonical)
 	}
 	if rv.agentOverride != "" {
-		dataf(s.Err, "byre: agent for this build: %s (--agent override; nothing written — the next develop builds byre.config's agent again).\n", config.OrNone(rv.cfg.Agent))
+		dataf(s.Err, "byre: agent for this build: %s (--agent override; nothing written -- the next develop builds byre.config's agent again).\n", config.OrNone(rv.cfg.Agent))
 	}
 	image := imageTag(paths.ID, ident.UID, ident.GID)
 	if err := withSetupLockProject(s.Err, paths, func() error {

@@ -1217,7 +1217,7 @@ this project to finish. The running box keeps the image it started from.`,
 		Args: noArgsU,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("agent") && strings.TrimSpace(o.Agent) == "" {
-				return usageError(`--agent: blank value — name an agent skill, or "none" for an agentless build`)
+				return usageError(`--agent: blank value -- name an agent skill, or "none" for an agentless build`)
 			}
 			return a.build(s, dir, o)
 		},
