@@ -160,16 +160,18 @@ if [ -n "$timeout_spec" ]; then
   if [[ ${timeout_spec%[smhd]} =~ ^[0.]*$ ]]; then timeout_spec=""; fi
 fi
 
-# timeout_secs is the duration in whole seconds, rounded down: the floor the
-# USR1 handler holds $SECONDS to. Rounding down keeps the real timer's signal
-# always past it -- sleep(1) never wakes early -- at the cost of a sub-second
-# slack a forged signal could use on a timeout that ends within that second
-# anyway. A duration that floors to 0 would put the deadline at arming time
-# and let every USR1 through, so the smallest timeout is 1 s; the largest is
-# 3650 d, and the integer part's digits are counted before multiplying so
-# the 64-bit product cannot wrap to a deadline already past.
+# timeout_us is the exact duration in microseconds (digits past the sixth
+# are dropped, which only shortens it): the USR1 handler holds the
+# $EPOCHREALTIME clock (read as digits only: its radix character follows
+# the locale) to arming time plus this, so there is no slack -- a forged
+# signal before the deadline is ignored to the microsecond, and the real
+# timer's always passes because sleep(1) of the same duration never wakes
+# early. timeout_secs, the whole seconds rounded down, is only the
+# range check: the smallest timeout is 1 s, the largest 3650 d, and the
+# integer part's digits are counted before multiplying so neither 64-bit
+# product can wrap to a deadline already past.
 timeout_max_secs=315360000
-timeout_secs=0
+timeout_secs=0 timeout_us=0
 if [ -n "$timeout_spec" ]; then
   num=${timeout_spec%[smhd]}
   case $timeout_spec in
@@ -190,6 +192,7 @@ if [ -n "$timeout_spec" ]; then
     refuse "BYRE_RUN_TIMEOUT is under the smallest timeout, 1s: $(printf '%q' "$timeout_spec")"
   [ "$timeout_secs" -le "$timeout_max_secs" ] ||
     refuse "BYRE_RUN_TIMEOUT is over the largest timeout, 3650d: $(printf '%q' "$timeout_spec")"
+  timeout_us=$(((10#${int:-0}) * mult * 1000000 + (10#$frac) * mult))
 fi
 
 # --- 2. claim byre's own files, exclusively, once -----------------------------
@@ -223,7 +226,7 @@ set +C
 
 cmd=${1:-/etc/byre/agent-headless}
 timed_out=0
-child="" timer="" killer="" deadline=""
+child="" timer="" killer="" deadline_us=""
 
 # --- 4. supervise -------------------------------------------------------------
 
@@ -259,7 +262,7 @@ on_signal() {
 # either way: the trap cut the wait short, and the loop must wait again.
 on_timeout() {
   interrupted=1
-  if [ -z "$deadline" ] || [ "$SECONDS" -lt "$deadline" ]; then return; fi
+  if [ -z "$deadline_us" ] || [ "${EPOCHREALTIME//[!0-9]/}" -lt "$deadline_us" ]; then return; fi
   [ "$timed_out" = 0 ] || return
   timed_out=1
   kill -TERM -- "-$child" 2>/dev/null
@@ -326,7 +329,7 @@ else
   # timeout(1) is not used: a headless command that exits 124 or 137 on its
   # own must not read as a timeout, so the verdict comes from this flag.
   if [ -n "$timeout_spec" ]; then
-    deadline=$((SECONDS + timeout_secs))
+    deadline_us=$((${EPOCHREALTIME//[!0-9]/} + timeout_us))
     (
       trap 'kill $! 2>/dev/null; exit 0' TERM
       sleep "$timeout_spec" &

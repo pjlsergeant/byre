@@ -318,22 +318,30 @@ while :; do wait; done`,
 // send it: an early USR1 -- with no timer at all, or before the deadline --
 // leaves the headless command's own verdict standing, never a forged 12. The
 // real timer still times the run out, whatever the duration's spelling.
+//
+// The deadline is exact, not whole seconds: the "late" forger signals 1.2 s
+// into a 1.9 s timeout, past any whole-second floor of it, and must still be
+// ignored. It exits at once after signalling, so 0.7 s separate its verdict
+// from the real timer's.
 func TestHeadlessForgedUSR1IsNotATimeout(t *testing.T) {
 	t.Parallel()
 	// The stub's parent is the chassis: setsid(1) execs in place.
 	const forger = `kill -USR1 $PPID
-sleep 1
 printf 'own answer' >"$BYRE_RUN_RESULT_FILE"`
+	const lateForger = "sleep 1.2\n" + forger
 	for _, tc := range []struct {
-		name string
-		env  []string
+		name, stub string
+		env        []string
 	}{
-		{"no timer", nil},
-		{"before the deadline", []string{"BYRE_RUN_TIMEOUT=30s"}},
+		{"no timer", forger, nil},
+		{"before the deadline", forger, []string{"BYRE_RUN_TIMEOUT=30s"}},
+		{"before a whole-second deadline", forger, []string{"BYRE_RUN_TIMEOUT=5"}},
+		{"before a fractional deadline", forger, []string{"BYRE_RUN_TIMEOUT=1.9s"}},
+		{"late, inside the deadline's final second", lateForger, []string{"BYRE_RUN_TIMEOUT=1.9s"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			r := runHeadless(t, headlessCase{stub: forger, env: tc.env})
+			r := runHeadless(t, headlessCase{stub: tc.stub, env: tc.env})
 			if r.code != 0 || r.fd9 != "own answer" {
 				t.Fatalf("exit %d fd9 %q, want 0 and the stub's answer (a forged USR1 decided the verdict)\nstderr:\n%s", r.code, r.fd9, r.stderr)
 			}

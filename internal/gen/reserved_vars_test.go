@@ -19,6 +19,8 @@ import (
 var ambientVars = map[string]bool{
 	"HOME": true, "PATH": true, "TERM": true, "TZ": true,
 	"USER": true, "SHELL": true, "PWD": true,
+	// bash's own clock: an environment value of that name does not replace it.
+	"EPOCHREALTIME": true,
 }
 
 func TestChassisScriptKnobsRideReservedPrefix(t *testing.T) {
