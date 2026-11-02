@@ -11,6 +11,17 @@
 > prompting for a key already delivered, and re-applied AFTER the env.d
 > loop, so credential exports still win env collisions. env.d hooks now
 > see delivered values too; the purity contract is unchanged.
+>
+> **Amended 2026-11-03** (launcher env.d PATH): the launcher sources the
+> env.d hooks with PATH pinned to the system directories
+> (`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`) and
+> restores the inherited PATH afterwards. The inherited PATH starts with
+> the agent-writable `~/.local/bin`, which repository code could write
+> before env.d runs, and a hook's helper (`claude-shared-auth`'s `tr`)
+> decides what it exports. Consequences for hooks: helpers resolve on the
+> system PATH, and a hook cannot change the agent's PATH -- a PATH it sets
+> is discarded by the restore. No bundled hook sets PATH. Login shells
+> (the profile.d shim) source env.d on the shell's own PATH, unchanged.
 
 byre skills contribute launch-time environment via `env.d` hooks — `.sh`
 files sourced by the launcher after the firstrun hooks, before the
@@ -95,7 +106,8 @@ If your hook needs to *do* something at launch — a login, a check, a
 migration, a prompt, writing a file, anything with an effect beyond the
 environment — it goes in `firstrun.d`, not `env.d`. Shell builtins and
 helpers used to COMPUTE an export are fine; effects that outlive the
-`source` are not. A reviewer finding an impure effect in an `env.d` hook
+`source` are not. Helpers are system tools: the launcher sources env.d on
+the system PATH, and does not pass a hook's PATH change to the agent. A reviewer finding an impure effect in an `env.d` hook
 should move it, per this ADR.
 
 The purity tests (the per-hook behavioral arms and the inventory check)

@@ -695,8 +695,8 @@ rollover field gate (ADR 0036); Claude uses a user-minted `claude
 setup-token` pasted at a first-run prompt and exported to the agent
 process by a **launch env hook** (`/etc/byre/env.d/*.sh`, sourced by
 the launcher after firstrun hooks, before the credential re-apply and
-exec -- the chassis mechanism for skills that must put env into the
-agent process). A companion whose mechanism is ready declares
+exec, on the system PATH -- the chassis mechanism for skills that
+must put env into the agent process). A companion whose mechanism is ready declares
 `shared_auth_for = "<agent>"` in its skill.toml, and the first-run
 picker then asks, at every box's onboarding, whether to opt that box
 in -- yes puts the companion in the project's `byre.config` `skills`,

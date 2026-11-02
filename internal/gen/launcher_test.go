@@ -1074,6 +1074,66 @@ func TestLauncherFirstrunHookIgnoresBashOnPath(t *testing.T) {
 	}
 }
 
+// An env.d hook computes its exports on the system PATH, not the inherited
+// one, whose first entry is the agent-writable ~/.local/bin: a decoy `tr`
+// there does not run, the hook's `tr` is the system one, a PATH the hook sets
+// does not reach the agent, and the agent command still sees the inherited
+// PATH -- interactive and headless alike.
+func TestLauncherEnvdHookIgnoresHelpersOnPath(t *testing.T) {
+	dir, bin, chassis, launcher := headlessLauncherFixture(t)
+	decoyLog := filepath.Join(dir, "decoy-tr-ran")
+	hookSaw := filepath.Join(dir, "hook-saw")
+	agentPath := filepath.Join(dir, "agent-path")
+	files := map[string]string{
+		filepath.Join(bin, "tr"): "#!/bin/sh\n" +
+			`echo ran >>"` + decoyLog + `"` + "\n" +
+			"echo DECOY\n",
+		filepath.Join(dir, "env.d", "20-tr.sh"): `export BYRE_TEST_TR="$(printf ' a b ' | tr -d '[:space:]')"` + "\n" +
+			`command -v tr >"` + hookSaw + `"` + "\n" +
+			"export PATH=/hook-set-path\n",
+	}
+	for p, body := range files {
+		if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The chassis is replaced by the agent probe for the headless arm: it
+	// records the PATH and the hook's export the way the interactive arm does.
+	probe := "#!/bin/sh\n" + `printf '%s|%s' "$BYRE_TEST_TR" "$PATH" >"` + agentPath + `"` + "\n"
+	if err := os.WriteFile(chassis, []byte(probe), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	inherited := bin + string(os.PathListSeparator) + os.Getenv("PATH")
+	for _, args := range [][]string{{"/bin/sh", "-c", `printf '%s|%s' "$BYRE_TEST_TR" "$PATH" >"$0"`, agentPath}, {chassis}} {
+		for _, f := range []string{agentPath, hookSaw} {
+			if err := os.RemoveAll(f); err != nil {
+				t.Fatal(err)
+			}
+		}
+		code, _, stderr := runLauncherSplitScript(t, dir, bin, launcher, nil, args...)
+		if code != 0 {
+			t.Fatalf("%v: exit %d\n%s", args, code, stderr)
+		}
+		if _, err := os.Stat(decoyLog); err == nil {
+			t.Errorf("%v: the tr on the inherited PATH ran", args)
+		}
+		saw, err := os.ReadFile(hookSaw)
+		if err != nil {
+			t.Fatalf("%v: the env.d hook did not run: %v\n%s", args, err, stderr)
+		}
+		if got := strings.TrimSpace(string(saw)); strings.HasPrefix(got, bin) {
+			t.Errorf("%v: the env.d hook resolved tr to %q, inside the inherited PATH's first entry", args, got)
+		}
+		got, err := os.ReadFile(agentPath)
+		if err != nil {
+			t.Fatalf("%v: the agent command did not run: %v\n%s", args, err, stderr)
+		}
+		if want := "ab|" + inherited; string(got) != want {
+			t.Errorf("%v: the agent saw %q, want %q", args, got, want)
+		}
+	}
+}
+
 // Under headless a firstrun hook does not inherit fd 9, the box's real
 // stdout, so a hook does not write the answer channel by accident. This is
 // inheritance only: a same-uid process can still reach the descriptor

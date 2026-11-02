@@ -760,6 +760,16 @@ func TestLauncherStateIsAllByrePrefixed(t *testing.T) {
 	// credentials set` and the export loop refuses the delivery -- no credential
 	// can be carrying it when the loop assigns it.
 	allowed := map[string]bool{"SECONDS": true}
+	// The env.d loop's pin and restore of PATH are exempt as these two exact
+	// lines: the hooks run on the system directories, and the saved value
+	// comes back byte-exact before the credential re-apply, so a credential
+	// named PATH is unchanged and then re-exported over it
+	// (TestLauncherEnvdHookIgnoresHelpersOnPath pins the restore). Any other
+	// PATH binding is still a hole.
+	allowedLines := map[string]bool{
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin": true,
+		`PATH="$BYRE_saved_path"`: true,
+	}
 	// `IFS= read ...` and `IFS=' ' read ...` are command-PREFIX assignments:
 	// they bind IFS for that one command and nothing else, which is how the
 	// export loop keeps an INHERITED IFS (a credential may legally be named
@@ -770,7 +780,7 @@ func TestLauncherStateIsAllByrePrefixed(t *testing.T) {
 	assign := regexp.MustCompile(`^\s*(?:readonly\s+|export\s+|local\s+)?([A-Za-z_][A-Za-z0-9_]*)=`)
 	loop := regexp.MustCompile(`^\s*for\s+([A-Za-z_][A-Za-z0-9_]*)\s`)
 	for _, line := range strings.Split(src[body+1:], "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "#") || cmdPrefix.MatchString(line) {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") || cmdPrefix.MatchString(line) || allowedLines[strings.TrimSpace(line)] {
 			continue
 		}
 		for _, re := range []*regexp.Regexp{assign, loop} {
