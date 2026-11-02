@@ -107,7 +107,8 @@ What it deliberately does NOT do:
   --yes` (for CI) never stands in for it: `--yes` consents to the grants
   the review shows -- the review still prints, into the job log -- and
   when the preset or the config it would replace carries a credential
-  row, `--yes` refuses, on a terminal too. Apply it interactively, or
+  row, or the credential lines have anything else to show (an identity
+  arriving, leaving or replaced), `--yes` refuses, on a terminal too. Apply it interactively, or
   keep credentials out of the preset and hand them to the box with
   `env_from_host` from the runner's environment. What you live with on
   that path: nobody reads the review at apply time, so what you

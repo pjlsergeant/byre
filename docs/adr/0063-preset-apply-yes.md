@@ -73,7 +73,9 @@ diff. The lines do not gate. The human's confirm against them does, and
 `--yes` is not that human.
 
 So when the preset OR the stored config it would replace carries an
-`encrypted:` or `encrypted-file:` row -- or the credential review has any
+`encrypted:` or `encrypted-file:` row -- read from the raw `env_from_host`
+table, so a row an `[env]` literal shadows counts though the review's
+diff is silent about it -- or the credential review has any
 line to show, such as an identity arriving, leaving or being replaced, or a
 side it could not read -- `--yes` refuses, naming the rows. Either side:
 replacing a config that holds rows with one that drops or changes them is

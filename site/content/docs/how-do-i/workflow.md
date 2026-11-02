@@ -186,14 +186,19 @@ has the shape.
 
 `--yes` prints the whole review into the job log and applies without
 asking, installing the packages the preset's `[sources]` name. It
-refuses two things, before installing or writing anything:
+refuses three things, before fetching or writing anything:
 
+- a preset named by an https URL -- nobody would look at what it
+  serves. Commit the preset to the repo and apply the path;
 - an https `[sources]` row with no digest -- nobody would look at what
   it fetched;
-- an encrypted credential row (`byre credentials set`), in the preset or
-  in the config it would replace -- a swapped value is something only
-  your own confirm can catch, so `--yes` never stands in for it. That is
-  why the credential travels as a host passthrough here.
+- anything the review's credential lines would show: an encrypted
+  credential row (`byre credentials set`) in the preset or in the config
+  it would replace, a credentials identity arriving, leaving or being
+  replaced, or a side byre could not read. A swapped value is something
+  only your own confirm can catch, so `--yes` never stands in for it,
+  on a terminal either. That is why the credential travels as a host
+  passthrough here.
 
 **Or, for the minimal box, two flags.** On a checkout byre has never
 configured, `byre run --template <t> --agent <a> ...` (`none` for no

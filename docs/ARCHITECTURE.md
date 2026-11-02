@@ -391,8 +391,9 @@ shows the composed box's full grant review (with a diff against the
 current store config -- applying replaces the whole file), and writes
 the store `byre.config` on confirm, recording an `applied` marker
 (`--yes` is the unattended form: the review still prints, and an https
-preset URI, credential rows on either side or a digest-less https source
-refuse -- ADR 0063). Drift
+preset URI, a digest-less https source, or anything the credential
+review would show -- a credential row on either side, an identity
+change, an unreadable side -- refuse -- ADR 0063). Drift
 from the applied version is a passive develop/status note, never a
 question. `--self-edit` is the one announced exception: the
 session opens with a loud escalation warning and closes by reporting what
