@@ -1041,10 +1041,21 @@ prompts when nobody can answer:
   the headless verb that will is still to come -- so today the operative
   case is the second test.
 - **Hooks test `BYRE_HEADLESS` first, then `[ -t 0 ]`.** Either one holding
-  means no prompt: the hook exits 0 (a hook never fails a launch) with a
-  remedy on stderr naming the env key (`OPENAI_API_KEY`, `XAI_API_KEY`,
-  `ANTHROPIC_API_KEY`/`OPENCODE_API_KEY`) and `byre shell`. The headless test
-  comes first so the hooks' `BYRE_ASSUME_TTY` test seam cannot beat it.
+  means no prompt, and the hook exits 0 (a hook never fails a launch). The
+  headless test comes first so the hooks' `BYRE_ASSUME_TTY` test seam cannot
+  beat it. What the hook says on the way out differs:
+  - grok, grok-shared-auth and opencode print a remedy on stderr naming the
+    env key (`XAI_API_KEY`, `ANTHROPIC_API_KEY`/`OPENCODE_API_KEY`) and
+    `byre shell`, under either signal.
+  - codex-login prints that remedy (`OPENAI_API_KEY`, `byre shell`) when
+    there is no terminal, and exits silently under `BYRE_HEADLESS` -- it
+    stands down before probing the credential at all (next bullet), so it
+    has no finding to report.
+  - claude-shared-auth's token paste exits silently under either signal: a
+    missing shared token is not a failure, the box falls back to its own
+    per-project login, and the no-terminal exit has always been quiet. Its
+    stale-login check still prints its warning and the `mv` fix-later line;
+    only the move-it-aside offer stands down.
 - **codex-login stands down entirely under `BYRE_HEADLESS`**, before any
   credential probe. Its `codex login status` call is bounded at 30 s (the
   same bound as the codex-shared-auth reconciler call), because it runs
