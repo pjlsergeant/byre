@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **A box with no terminal no longer stalls ten minutes on a login.** With
+  the credential absent, the codex, grok and opencode login hooks (and
+  grok-shared-auth's shared-store login) ran an interactive login whenever
+  the box started, terminal or not, so a launch from a script or a pipe sat
+  out the 600 s bound and then came up unauthenticated anyway. Each now
+  skips the login when stdin is not a terminal, and prints what to do
+  instead: set the agent's API key (`env_from_host`, or
+  `byre credentials set`), or log in from `byre shell`. codex's own
+  `codex login status` probe is bounded at 30 s too. Hooks also honour a new
+  byre-owned `BYRE_HEADLESS=1` signal, for a headless verb still to come.
+- **Claude with an env credential skips its first-run wizard.** A box given
+  `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`
+  by env still stopped in Claude's setup wizard, login step included, on a
+  fresh project. The claude skill now marks onboarding complete on a fresh
+  config dir when one of those is set, as claude-shared-auth already did
+  for its shared token. Neither ever writes through a symlink at
+  `.claude.json` any more.
 - **The default base is now Debian 13 (`debian:trixie`).** A project with
   no `base` key built on `debian:bookworm`, which has left Debian's security
   team for volunteer LTS. Such projects rebuild from cold once, on the next

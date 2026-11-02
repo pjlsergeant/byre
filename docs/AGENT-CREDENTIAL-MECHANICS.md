@@ -179,7 +179,11 @@ first-run gate is its ONBOARDING state, not its auth state: with a fresh
 included -- without consulting the env token. Seeding
 `{"hasCompletedOnboarding": true}` into a fresh config dir makes the token
 take effect directly (trade: no first-run theme picker; `/config` re-opens
-it). The shared-auth skill does this seed on fresh volumes only.
+it). byre seeds it on fresh volumes only, from two hooks: claude-shared-auth
+for the shared token, and the claude skill's own `claude-onboarding` hook
+when `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`
+arrives by env. Neither writes through a symlink at `.claude.json` (see
+"Login hooks with nobody to answer" below).
 
 ### 5. Vendor guidance on sharing
 
@@ -1019,6 +1023,53 @@ section; rotation is SAFE and the default store is plaintext)
    -- whose `clearCachedCredentialFile()` rm's the symlinked login -- never
    opens. Per-project trust needs `GEMINI_CLI_TRUSTED_FOLDERS_PATH` pointed at
    the per-project volume.
+
+## Login hooks with nobody to answer
+
+byre's login hooks (`/etc/byre/firstrun.d/`, run before the agent) offer an
+interactive login when the credential is absent: codex and grok a device
+login, opencode its provider picker, grok-shared-auth a device login into the
+shared store, claude-shared-auth a token paste and a stale-login offer. Each
+of those blocks on a person, bounded at 600 s for the logins. So none of them
+prompts when nobody can answer:
+
+- **The headless signal is `BYRE_HEADLESS=1`.** It is byre's own variable,
+  meant for a launch that runs one task non-interactively. The launcher is
+  to export it from its OWN argv, not from the environment: a skill's
+  `[runtime].env` can set any `BYRE_*` name and raw `run_args` can override
+  any `-e`, but neither reaches the command argv. Nothing exports it yet --
+  the headless verb that will is still to come -- so today the operative
+  case is the second test.
+- **Hooks test `BYRE_HEADLESS` first, then `[ -t 0 ]`.** Either one holding
+  means no prompt: the hook exits 0 (a hook never fails a launch) with a
+  remedy on stderr naming the env key (`OPENAI_API_KEY`, `XAI_API_KEY`,
+  `ANTHROPIC_API_KEY`/`OPENCODE_API_KEY`) and `byre shell`. The headless test
+  comes first so the hooks' `BYRE_ASSUME_TTY` test seam cannot beat it.
+- **codex-login stands down entirely under `BYRE_HEADLESS`**, before any
+  credential probe. Its `codex login status` call is bounded at 30 s (the
+  same bound as the codex-shared-auth reconciler call), because it runs
+  before anything else bounds the hook. Its no-terminal guard sits after the
+  shared-link detach, so both the not-logged-in and the stale-credential
+  routes reach it, and it restores the shared-auth link before exiting.
+- **No persistent codex key file.** codex has no env-key inference: with
+  `OPENAI_API_KEY` set and an empty `CODEX_HOME`, `codex login status` says
+  "Not logged in", and `codex exec --help` says auth "still uses
+  `CODEX_HOME`". The only way a key reaches codex is a login written into
+  some `CODEX_HOME`. byre's hook never writes one into the box's real
+  `CODEX_HOME`: with codex-shared-auth enabled, its firstrun hook sorts
+  before codex-login and runs `reconcile.sh startup` on every launch, which
+  publishes a valid local regular `auth.json` when the shared one is
+  missing or invalid, and when both are valid prefers the local one by mtime
+  if it carries no `last_refresh` -- which an API-key file never does.
+  `auth_valid` accepts the `OPENAI_API_KEY` form, and no per-file scope
+  marker exists. So a project-supplied key persisted there becomes
+  machine-wide one launch later: billing lands on that key, every other
+  project's box gains a credential nobody granted it, and a shared ChatGPT
+  login is displaced, all without a word.
+- **The claude onboarding seed refuses a symlink.** `[ ! -e ]` is true for a
+  dangling symlink and a plain `>` writes through it, so both seeds also test
+  `[ ! -L ]` and write under `set -C` (noclobber: an `O_EXCL` open, which
+  refuses a symlink raced in after the test).
 
 ## Source list
 

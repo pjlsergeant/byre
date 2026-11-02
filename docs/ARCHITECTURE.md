@@ -736,7 +736,8 @@ Runtime constants:
   fail-closed for delivered credentials and export them (ADR 0057),
   run first-run hooks as the user (agent login flows live here; they
   inherit those exports, so a login hook stands down on a delivered
-  key), source the launch env hooks, re-apply the credential exports
+  key, and none prompts without a terminal or under `BYRE_HEADLESS`),
+  source the launch env hooks, re-apply the credential exports
   so they win env collisions (ADR 0028), then exec the selected
   agent's command in autonomous mode. The agent command
   itself INJECTS the baked agent context (the chassis facts, the base
