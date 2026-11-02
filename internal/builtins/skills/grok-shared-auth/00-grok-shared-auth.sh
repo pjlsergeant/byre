@@ -13,6 +13,11 @@
 # with no copying and no translation. The provider command is unset for that
 # one call so the login can't recurse into the broker. The base override is a
 # test seam (the launcher's gate-file precedent).
+# A headless launch stands down before any credential work: the run's
+# headless command owns its own bounded preflight, nobody is there to answer
+# a device login, and a headless run must never promote a box's login into
+# the machine-wide store (P5).
+[ -n "${BYRE_HEADLESS:-}" ] && exit 0
 BASE="${BYRE_IDENTITY_BASE:-/home/dev/.byre-identity}/grok"
 STORE="$BASE/auth.json"
 EPCACHE="$BASE/token_endpoint"
@@ -93,12 +98,12 @@ fi
 # The lock is deliberately NOT held here: an interactive login can take
 # minutes, and a held broker lock would stall every other box's refresh.
 [ -n "$XAI_API_KEY" ] && exit 0
-# Never prompt when nobody can answer: a headless launch (BYRE_HEADLESS, which
-# wins over everything) or no terminal on stdin. The login would otherwise sit
-# out its whole bound and the box would launch unauthenticated anyway.
-# BYRE_ASSUME_TTY is a test seam (the claude-shared-auth hook's precedent).
-if [ -n "${BYRE_HEADLESS:-}" ] || { [ ! -t 0 ] && [ -z "${BYRE_ASSUME_TTY:-}" ]; }; then
-  echo "byre: the shared Grok credential is not seeded and this launch cannot prompt for the device login (headless, or no terminal) -- set XAI_API_KEY (env_from_host, or byre credentials set), or run 'grok login --device-auth' from byre shell and relaunch to adopt it" >&2
+# Never prompt when nobody can answer: no terminal on stdin (a headless
+# launch stood down at the top). The login would otherwise sit out its whole
+# bound and the box would launch unauthenticated anyway. BYRE_ASSUME_TTY is a
+# test seam (the claude-shared-auth hook's precedent).
+if [ ! -t 0 ] && [ -z "${BYRE_ASSUME_TTY:-}" ]; then
+  echo "byre: the shared Grok credential is not seeded and this launch cannot prompt for the device login (no terminal) -- set XAI_API_KEY (env_from_host, or byre credentials set), or run 'grok login --device-auth' from byre shell and relaunch to adopt it" >&2
   exit 0
 fi
 trap 'echo; echo "byre: grok login skipped. To seed shared auth later, relaunch, or run '\''grok login --device-auth'\'' in any box and relaunch."; exit 0' INT

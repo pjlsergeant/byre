@@ -420,8 +420,8 @@ program itself, and the skills' launch env hooks run with only the
 system directories on PATH, so a helper planted there never runs inside
 those. The exceptions run on the agent's PATH, and code planted there
 gains only what the agent already has. The interactive login steps
-(codex, grok, opencode and grok-shared-auth's first-run step) stand down
-in a headless run. grok-shared-auth's broker, which grok runs whenever
+(codex, grok, opencode, and claude-shared-auth's and grok-shared-auth's
+first-run steps) stand down in a headless run before they run anything. grok-shared-auth's broker, which grok runs whenever
 it needs a credential, does not: it runs in headless runs too, on grok's
 PATH, and refreshes the grok login every project on the machine shares,
 which the agent can already read and write in the box. And the agent
