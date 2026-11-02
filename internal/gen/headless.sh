@@ -160,6 +160,27 @@ if [ -n "$timeout_spec" ]; then
   if [[ ${timeout_spec%[smhd]} =~ ^[0.]*$ ]]; then timeout_spec=""; fi
 fi
 
+# timeout_secs is the duration in whole seconds, rounded down: the floor the
+# USR1 handler holds $SECONDS to. Rounding down keeps the real timer's signal
+# always past it -- sleep(1) never wakes early -- at the cost of a sub-second
+# slack a forged signal could use on a timeout that ends within that second
+# anyway.
+timeout_secs=0
+if [ -n "$timeout_spec" ]; then
+  num=${timeout_spec%[smhd]}
+  case $timeout_spec in
+  *m) mult=60 ;;
+  *h) mult=3600 ;;
+  *d) mult=86400 ;;
+  *) mult=1 ;;
+  esac
+  int=${num%%.*} frac=""
+  case $num in *.*) frac=${num#*.} ;; esac
+  frac=${frac:0:6}
+  while [ "${#frac}" -lt 6 ]; do frac+=0; done
+  timeout_secs=$(((10#${int:-0}) * mult + (10#$frac) * mult / 1000000))
+fi
+
 # --- 2. claim byre's own files, exclusively, once -----------------------------
 
 # bash's noclobber is O_EXCL only for a name that does not exist: a
@@ -191,7 +212,7 @@ set +C
 
 cmd=${1:-/etc/byre/agent-headless}
 timed_out=0
-child="" timer="" killer=""
+child="" timer="" killer="" deadline=""
 
 # --- 4. supervise -------------------------------------------------------------
 
@@ -220,9 +241,15 @@ on_signal() {
 }
 
 # on_timeout runs when the chassis's own timer fires: TERM to the group, KILL
-# 15 s later if anything in it is still alive.
+# 15 s later if anything in it is still alive. USR1 is the timer's signal, but
+# any process with the box's uid -- the agent included -- can send it too, so
+# the handler acts only once the deadline has really passed; an early USR1 is
+# ignored and cannot forge the chassis-owned exit 12. interrupted is set
+# either way: the trap cut the wait short, and the loop must wait again.
 on_timeout() {
   interrupted=1
+  if [ -z "$deadline" ] || [ "$SECONDS" -lt "$deadline" ]; then return; fi
+  [ "$timed_out" = 0 ] || return
   timed_out=1
   kill -TERM -- "-$child" 2>/dev/null
   (
@@ -257,7 +284,14 @@ else
 
   trap 'on_signal TERM' TERM
   trap 'on_signal INT' INT
-  trap 'on_timeout' USR1
+  # USR1 is handled only when a timer exists to send it; without one it is
+  # ignored, so a stray USR1 neither forges a timeout nor takes its default
+  # action, which kills the chassis.
+  if [ -n "$timeout_spec" ]; then
+    trap 'on_timeout' USR1
+  else
+    trap '' USR1
+  fi
 
   # Its own session, so its own process group: the group id is its pid, which
   # is what the signals above are sent to. setsid(1) does not fork here,
@@ -266,10 +300,11 @@ else
   # starts a background child with any it does not trap ignored, an ignored
   # signal stays ignored across exec, and a forwarded one would then reach
   # nothing. Explicit here rather than left to the traps above, so the order
-  # of these lines cannot decide it.
+  # of these lines cannot decide it. USR1 is restored for the same reason:
+  # the chassis may ignore it, and the agent must not inherit that.
   setsid_bin=$(command -v setsid)
   (
-    trap - INT QUIT
+    trap - INT QUIT USR1
     PATH=$byre_saved_path
     exec "$setsid_bin" -- "$cmd"
   ) </dev/null >&7 2>&8 3>&- 4>&- 7>&- 8>&- 9>&- &
@@ -280,6 +315,7 @@ else
   # timeout(1) is not used: a headless command that exits 124 or 137 on its
   # own must not read as a timeout, so the verdict comes from this flag.
   if [ -n "$timeout_spec" ]; then
+    deadline=$((SECONDS + timeout_secs))
     (
       trap 'kill $! 2>/dev/null; exit 0' TERM
       sleep "$timeout_spec" &

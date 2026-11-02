@@ -314,6 +314,45 @@ while :; do wait; done`,
 	}
 }
 
+// USR1 is the timer's signal, but the agent shares the chassis's uid and can
+// send it: an early USR1 -- with no timer at all, or before the deadline --
+// leaves the headless command's own verdict standing, never a forged 12. The
+// real timer still times the run out, whatever the duration's spelling.
+func TestHeadlessForgedUSR1IsNotATimeout(t *testing.T) {
+	t.Parallel()
+	// The stub's parent is the chassis: setsid(1) execs in place.
+	const forger = `kill -USR1 $PPID
+sleep 1
+printf 'own answer' >"$BYRE_RUN_RESULT_FILE"`
+	for _, tc := range []struct {
+		name string
+		env  []string
+	}{
+		{"no timer", nil},
+		{"before the deadline", []string{"BYRE_RUN_TIMEOUT=30s"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := runHeadless(t, headlessCase{stub: forger, env: tc.env})
+			if r.code != 0 || r.fd9 != "own answer" {
+				t.Fatalf("exit %d fd9 %q, want 0 and the stub's answer (a forged USR1 decided the verdict)\nstderr:\n%s", r.code, r.fd9, r.stderr)
+			}
+		})
+	}
+	for _, spec := range []string{"1", "0.5", "0.02m"} {
+		t.Run("real timer "+spec, func(t *testing.T) {
+			t.Parallel()
+			r := runHeadless(t, headlessCase{
+				env:  []string{"BYRE_RUN_TIMEOUT=" + spec},
+				stub: `sleep 60`,
+			})
+			if r.code != 12 {
+				t.Fatalf("exit %d, want 12\nstderr:\n%s", r.code, r.stderr)
+			}
+		})
+	}
+}
+
 // liveInGroup lists the processes in group pgid that are not zombies. A
 // zombie is dead: outside a container the killed grandchild is reparented to
 // a reaper the test does not control, which may not have collected it yet.
