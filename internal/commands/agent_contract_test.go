@@ -173,22 +173,38 @@ command = ["echo", "hi"]
 // exited instead of starting its 600 s device login.
 const codexNoTerminalRemedy = "no terminal for the device login"
 
-// TestAgentContractCodexLaunchesFromAPipeWithoutCredential: a codex box with
-// no credential, launched through the real entrypoint (launcher + firstrun
+// grokNoTerminalRemedy and opencodeNoTerminalRemedy are the same for the grok
+// and opencode login hooks: the guard took over from the 600 s device login
+// (grok) or login picker (opencode).
+const (
+	grokNoTerminalRemedy     = "cannot prompt for the device login"
+	opencodeNoTerminalRemedy = "cannot prompt for the login picker"
+)
+
+// pipeLaunch describes one agent's no-credential launch from a pipe.
+type pipeLaunch struct {
+	agent    string   // the config's agent value and the binary probed for --version
+	credEnv  []string // env names that would authenticate the agent; none may reach the box
+	remedy   string   // stable fragment of the login hook's no-terminal remedy
+	hookDesc string   // what the hook would stall in, for the failure message
+}
+
+// assertLaunchesFromAPipeWithoutCredential: a box for pl.agent with no
+// credential, launched through the real entrypoint (launcher + firstrun
 // loop) with stdin a pipe, gets past its login hook within 30 s instead of
-// stalling in the device login. The launch argv is the one develop builds for
-// a non-terminal stdin (runParams with tty=false: `-i`, no `-t`). The pipe's
+// stalling in the login. The launch argv is the one develop builds for a
+// non-terminal stdin (runParams with tty=false: `-i`, no `-t`). The pipe's
 // write end stays open, as under `producer | byre develop`, so the agent
-// cannot race past on EOF. What codex itself does with no terminal is its
-// own business and is not asserted; the container is removed once the
+// cannot race past on EOF. What the agent itself does with no terminal is
+// its own business and is not asserted; the container is removed once the
 // remedy has been seen. The project is a fresh temp one under an isolated
-// BYRE_HOME, so the .codex state volume starts empty, no host env is passed
+// BYRE_HOME, so the agent's state volume starts empty, no host env is passed
 // through, and no machine-scoped login volume is mounted.
-func TestAgentContractCodexLaunchesFromAPipeWithoutCredential(t *testing.T) {
+func assertLaunchesFromAPipeWithoutCredential(t *testing.T, pl pipeLaunch) {
+	t.Helper()
 	r := requireAgentRunner(t)
-	image, rv, ident, p := buildAgentBox(t, r, `agent = "codex"
-`)
-	t.Logf("codex version: %s", strings.TrimSpace(agentProbe(t, r, image, nil, "codex", "--version")))
+	image, rv, ident, p := buildAgentBox(t, r, fmt.Sprintf("agent = %q\n", pl.agent))
+	t.Logf("%s version: %s", pl.agent, strings.TrimSpace(agentProbe(t, r, image, nil, pl.agent, "--version")))
 
 	params, err := runParams(p, rv, image, false, false, ident, nil)
 	if err != nil {
@@ -201,7 +217,7 @@ func TestAgentContractCodexLaunchesFromAPipeWithoutCredential(t *testing.T) {
 			_ = r.VolumeRemove(v.Name)
 		}
 	})
-	for _, k := range []string{"OPENAI_API_KEY", "CODEX_API_KEY"} {
+	for _, k := range pl.credEnv {
 		if _, ok := params.Env[k]; ok {
 			t.Fatalf("the box would receive %s -- the launch is not credential-free", k)
 		}
@@ -241,7 +257,7 @@ func TestAgentContractCodexLaunchesFromAPipeWithoutCredential(t *testing.T) {
 	sc := bufio.NewScanner(stderr)
 	for sc.Scan() {
 		errLog.WriteString(sc.Text() + "\n")
-		if strings.Contains(sc.Text(), codexNoTerminalRemedy) {
+		if strings.Contains(sc.Text(), pl.remedy) {
 			seen = time.Since(start)
 			break
 		}
@@ -252,13 +268,48 @@ func TestAgentContractCodexLaunchesFromAPipeWithoutCredential(t *testing.T) {
 	total := time.Since(start)
 
 	if seen == 0 {
-		t.Fatalf("the codex login hook never printed its no-terminal remedy (%q) within %s -- it stalled in the device login or took another route\nstderr:\n%s\nstdout:\n%s",
-			codexNoTerminalRemedy, total.Round(time.Second), errLog.String(), stdout.String())
+		t.Fatalf("the %s login hook never printed its no-terminal remedy (%q) within %s -- it stalled in the %s or took another route\nstderr:\n%s\nstdout:\n%s",
+			pl.agent, pl.remedy, total.Round(time.Second), pl.hookDesc, errLog.String(), stdout.String())
 	}
 	t.Logf("past the login hook after %s", seen.Round(100*time.Millisecond))
 	if seen >= 30*time.Second {
-		t.Fatalf("the codex login hook took %s to stand down with no terminal, want under 30s\nstderr:\n%s", seen.Round(time.Second), errLog.String())
+		t.Fatalf("the %s login hook took %s to stand down with no terminal, want under 30s\nstderr:\n%s", pl.agent, seen.Round(time.Second), errLog.String())
 	}
+}
+
+// TestAgentContractCodexLaunchesFromAPipeWithoutCredential: the codex box's
+// login hook stands down from a pipe (assertLaunchesFromAPipeWithoutCredential).
+func TestAgentContractCodexLaunchesFromAPipeWithoutCredential(t *testing.T) {
+	assertLaunchesFromAPipeWithoutCredential(t, pipeLaunch{
+		agent:    "codex",
+		credEnv:  []string{"OPENAI_API_KEY", "CODEX_API_KEY"},
+		remedy:   codexNoTerminalRemedy,
+		hookDesc: "device login",
+	})
+}
+
+// TestAgentContractGrokLaunchesFromAPipeWithoutCredential: the grok box's
+// login hook stands down from a pipe. GROK_AUTH_PROVIDER_COMMAND counts as a
+// credential: with it set the hook defers to the shared-auth broker and
+// never reaches the guard under test.
+func TestAgentContractGrokLaunchesFromAPipeWithoutCredential(t *testing.T) {
+	assertLaunchesFromAPipeWithoutCredential(t, pipeLaunch{
+		agent:    "grok",
+		credEnv:  []string{"XAI_API_KEY", "GROK_AUTH_PROVIDER_COMMAND"},
+		remedy:   grokNoTerminalRemedy,
+		hookDesc: "device login",
+	})
+}
+
+// TestAgentContractOpencodeLaunchesFromAPipeWithoutCredential: the opencode
+// box's login hook stands down from a pipe.
+func TestAgentContractOpencodeLaunchesFromAPipeWithoutCredential(t *testing.T) {
+	assertLaunchesFromAPipeWithoutCredential(t, pipeLaunch{
+		agent:    "opencode",
+		credEnv:  []string{"ANTHROPIC_API_KEY", "OPENCODE_API_KEY"},
+		remedy:   opencodeNoTerminalRemedy,
+		hookDesc: "login picker",
+	})
 }
 
 // TestAgentContractGemini: the assumptions the gemini + gemini-shared-auth
