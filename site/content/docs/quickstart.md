@@ -41,7 +41,7 @@ Ask the box what it can touch, any time:
 $ byre status
 Project id:   my-project-pjl-069d95
 Agent:        byre/claude
-Template:     byre/go      bundled v1.3.1
+Template:     byre/go      bundled v1.14.0
 Engine:       docker
 Project:      ~/my-project -> /workspace  (rw)
 Image:        byre-my-project-pjl-069d95-u501-g20  (sha256:1f0b7c9d4e2a…
@@ -49,7 +49,7 @@ Image:        byre-my-project-pjl-069d95-u501-g20  (sha256:1f0b7c9d4e2a…
 Network:      open
 Ports:        none
 Host mounts:  none
-Skills:       byre/claude  bundled v1.3.1
+Skills:       byre/claude  bundled v1.14.0
 State vols:   .claude
 Cache vols:   none
 Box env:      10 keys the box received  (values never recorded; --full to show)
