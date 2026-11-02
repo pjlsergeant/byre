@@ -521,21 +521,35 @@ const unattendedCredentialsRule = "preset apply --yes refuses credential rows"
 // TTY or off one. A row that did not change still refuses: the rule is about
 // who vouches for the value, and the CI route delivers credentials with
 // env_from_host from the runner's environment instead.
+//
+// The rows are read from each side's raw env_from_host table, not from the
+// review's view of it: the view lets an [env] literal own a shadowed key, so
+// a ciphertext under a literal on both sides compares equal there and draws
+// no review line, yet the file still stores it.
 func unattendedCredentialRefusal(store, content []byte) error {
 	var found []string
 	for _, side := range []struct {
 		name string
 		raw  []byte
 	}{{"the preset", content}, {"your current byre.config", store}} {
-		v, err := readCredentialView(side.raw)
+		if len(side.raw) == 0 {
+			continue
+		}
+		cfg, err := config.Parse(side.raw)
 		if err != nil {
 			// The review-lines pass below names the unreadable side.
 			continue
 		}
-		for _, k := range slices.Sorted(maps.Keys(v.sources)) {
-			if config.IsCredentialSource(v.sources[k]) {
-				found = append(found, fmt.Sprintf("%s sets %s (%s)", side.name, k, config.RenderSource(v.sources[k])))
+		for _, k := range slices.Sorted(maps.Keys(cfg.EnvFromHost)) {
+			src := cfg.EnvFromHost[k]
+			if !config.IsCredentialSource(src) {
+				continue
 			}
+			line := fmt.Sprintf("%s sets %s (%s)", side.name, k, config.RenderSource(src))
+			if _, shadowed := cfg.Env[k]; shadowed {
+				line = fmt.Sprintf("%s sets %s (%s, under an [env] literal)", side.name, k, config.RenderSource(src))
+			}
+			found = append(found, line)
 		}
 	}
 	if len(found) == 0 {

@@ -187,6 +187,26 @@ func TestPresetApplyYesRefusesCredentialRows(t *testing.T) {
 	}
 }
 
+// A ciphertext shadowed by an [env] literal on BOTH sides, with identical
+// [credentials] blocks, draws no credential review line -- the literal owns
+// the key on each side -- but the file still stores the row, so --yes still
+// refuses naming it.
+func TestPresetApplyYesRefusesARowShadowedOnBothSides(t *testing.T) {
+	doc := "agent = \"none\"\n[env]\nSTRIPE_KEY = \"literal\"\n[env_from_host]\nSTRIPE_KEY = \"" + credRow("Zm9vYmFy") + "\"\n" + credBlock(credIdentityA, credRecipientA)
+	if lines := credentialReviewLines(presetSubject, []byte(doc), []byte(doc)); len(lines) != 0 {
+		t.Fatalf("precondition: the review must have nothing to say about this pair, got %v", lines)
+	}
+	p, proj := onboardPaths(t)
+	shipPreset(t, proj, PresetName, doc)
+	mustWriteFile(t, filepath.Join(p.Dir, "byre.config"), []byte(doc), 0o644)
+	s, _, _ := testStreams("", false)
+	err := PresetApply(s, proj, "", true)
+	if err == nil || !strings.Contains(err.Error(), unattendedCredentialsRule) || !strings.Contains(err.Error(), "the preset sets STRIPE_KEY") || !strings.Contains(err.Error(), "your current byre.config sets STRIPE_KEY") {
+		t.Fatalf("a shadowed credential row must refuse --yes naming the row on each side, got %v", err)
+	}
+	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, doc)
+}
+
 // A [credentials] identity arriving with no rows is still a credential review
 // line only a human can answer, so --yes refuses it too.
 func TestPresetApplyYesRefusesAnIdentityArriving(t *testing.T) {
