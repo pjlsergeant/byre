@@ -1,7 +1,7 @@
 ---
 title: Packaging reference
 weight: 55
-description: provenance, manifests, digest pinning, and the MCP / Claude Skills wiring contract
+description: provenance, manifests, digest pinning, the MCP / Claude Skills wiring contract, and the headless command
 params:
   reference: true
 ---
@@ -96,3 +96,30 @@ size, no symlinks. The merged set bakes into the image in Claude's
 native discovery layout, so skills load bare as `/name`; an in-box
 skill of the same name shadows byre's delivery -- box state wins. Same
 closure-smart remove.
+
+## Headless command
+
+An agent skill may declare `[agent] headless = "<command>"` beside
+`command`: what `byre run` executes for one non-interactive task. It is a
+shell command string like `command`, baked into the image as
+`/etc/byre/agent-headless`; it must not be blank or equal `command`, and
+an agent without it has no headless mode (`byre run` refuses it by
+name). `byre status`, the config editor's Skills screen and
+`byre skill inspect` show each agent's headless command, or `no headless
+command`.
+
+The contract it honours: the task is the file `BYRE_RUN_TASK_FILE` names
+(stdin is `/dev/null`, and no terminal is read); the answer goes to the
+descriptor `BYRE_RUN_RESULT_FILE`; `key=value` lines go to
+`BYRE_RUN_STATUS_FILE` (`backend_exit=<n>` before an exit 11,
+`agent_version=<text>`); `BYRE_RUN_MODEL` is an optional model override
+and `BYRE_RUN_DIR` the result dir. The exit is exactly one of `0`
+(success, with an answer), `10` (the agent reported failure), `11` (the
+agent process failed), `13` (no usable credential, remedy on stderr), or
+`15` (the agent's binary is absent) -- anything else, or `0` with no
+answer, is read as the command failing (`14`). Every credential probe is
+bounded. Setting any `BYRE_RUN_*` name in a skill's `[runtime].env`
+makes status stop vouching for the headless command. Authoring notes:
+[docs/SKILLS.md](https://github.com/pjlsergeant/byre/blob/main/docs/SKILLS.md);
+the decision:
+[ADR 0061](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0061-headless-runs.md).

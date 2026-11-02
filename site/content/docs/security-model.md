@@ -366,10 +366,53 @@ restore, develop, `reset`, `forget`, `rehome` and the config editor's volume
 Clear each refuse while one is there, printing its `rm -f` line, so it is
 never silent, but removing it is yours.
 
+**A headless run's output is the agent's, all of it -- except the exit
+code and `--data`.** `byre run`
+([ADR 0061](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0061-headless-runs.md))
+writes into your work tree: it empties `.byre-run/` at the start of every
+run and stages the task there, and the agent and byre's in-box chassis
+then write the answer, a transcript, a stderr log and a `result.json`
+beside it; afterwards byre adds a copy of its outcome. Every one of those
+files is in a directory the agent can write for the whole run, and byre
+reads none of them back. So is everything on stdout and stderr: the
+answer is the agent's text (escaped on a terminal, raw into a file), and
+stderr carries the agent's own output alongside byre's -- including
+byre's last line, which the agent could print first. The verdict a
+script can trust is the exit code and the `--data` document, which byre
+prints on the host after the box has exited; a script that gates on
+anything in `.byre-run/` or on stderr is gating on the agent's word.
+byre's own writes there are anchored and never follow a link or
+overwrite a file the agent planted (the same machinery as grab), with
+one residual shared with grab: a symlink an agent swaps in for a
+directory ABOVE the work tree is followed. Five more facts, each a
+limitation rather than a bug: **repo code runs before the chassis** -- a
+worktree checkout still pending runs your repository's git hooks and
+filters in the box before the headless machinery starts, and that code
+can rewrite the staged task; the chassis checks the task's hash and
+refuses a changed one (exit 16), but the code has already run; **the
+chassis's own file claims rely on nothing else running yet** -- it
+checks each name is free and then creates it, two steps that are only
+safe because the agent has not started and the repo code has finished,
+and the claude onboarding seeds rely on the same sequencing; **raw
+`run_args` make the verdict unverified** -- byre does not parse them, so
+the box may have been handed any mount or a different first process, and
+the `--data` document says `unverified: raw run_args` on every outcome
+rather than claiming otherwise; **exit numbers are shared** -- a box that
+exits 1, 2, 3 or 70 reaches your script as that number, the same as byre's
+own codes, and only `--data` tells them apart; and **there is no time
+limit unless you set one** -- an agent that hangs holds the run until
+`--timeout` (if given) or you stop it.
+
 **Agents hold usable credentials by construction.** Whatever auth story
 you choose, the agent can read its own credential -- it needs it to
 work. byre's job is that the credential's scope is what you chose, its
-location is legible, and nothing you did not choose rides along.
+location is legible, and nothing you did not choose rides along. One
+consequence for codex: its headless mode never saves a key from the
+environment into the project's codex state, because with codex-shared-auth
+enabled a saved key would be shared to every project on the machine at
+the next launch. It logs the key into a codex home that exists for one
+run, and a key in the environment wins over a login the box already has
+for that run.
 
 ## Reporting
 

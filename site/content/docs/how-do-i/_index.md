@@ -39,6 +39,7 @@ it daily, building your toolkit, or getting out of trouble.
 - [Paste or drag-and-drop images and files into my agent?](/docs/how-do-i/workflow/#paste-or-drag-and-drop-images-and-files-into-my-agent)
 - [Use byre on a remote machine over SSH?](/docs/how-do-i/workflow/#use-byre-on-a-remote-machine-over-ssh)
 - [Get tab completion for byre commands?](/docs/how-do-i/workflow/#get-tab-completion-for-byre-commands)
+- [Run one task headlessly (CI)?](/docs/how-do-i/workflow/#run-one-task-headlessly-ci)
 
 ### [Skills & templates](/docs/how-do-i/toolkit/)
 

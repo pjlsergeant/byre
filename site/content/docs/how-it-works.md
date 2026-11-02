@@ -39,9 +39,12 @@ same four steps, and every step's output is inspectable.
 4. **Run.** `docker run --rm -it`, in the foreground -- see the exact
    command with `byre dockerrun`. The container is throwaway; what
    persists is the image and the [named volumes](/docs/volumes-and-state/).
-   Sessions are identified by labels, not guessed names, and `develop`
-   is single-session per directory ([worktrees](/docs/worktrees/) are
-   the parallel story).
+   Sessions are identified by labels, not guessed names, and a directory
+   has one session at a time ([worktrees](/docs/worktrees/) are the
+   parallel story). `byre run` starts the other kind of session: the
+   same box, no terminal, one task handed to the agent's headless mode,
+   and byre's verdict as the exit code
+   ([how](/docs/how-do-i/workflow/#run-one-task-headlessly-ci)).
 
 ## The dev identity
 
