@@ -92,8 +92,8 @@ are the command's OWN: it unsets the `BYRE_RUN_RESULT_FILE` /
 `BYRE_RUN_STATUS_FILE` variables before starting anything, and no child
 it starts -- the agent, a credential or version probe, or a helper such
 as `jq` or `tee` -- ever inherits either descriptor: the scripts close fds
-5 and 6 for every command they exec, and bash's own command-substitution
-subshells close them as their first act, so no exec'd child ever holds
+5 and 6 for every command they exec, and every subshell and command
+substitution they open closes them as its first act, so no exec'd child ever holds
 them. A child that outlived
 the script while holding one could rewrite the answer or the status lines
 after the script exited and before the chassis reads them. The command
@@ -424,8 +424,7 @@ whose refresh chain has died -- would shadow a key the job supplied. So
 grok's headless command, like codex's, isolates a present key: with
 `XAI_API_KEY` set it runs grok with a `GROK_HOME` made for that one
 invocation (a temp dir, removed on exit), where no stored login exists to
-win. Without a key it uses the stored login after its bounded presence
-check, and the documented `--timeout` is the remedy for a refresh chain
+win. Without a key it uses the stored login after its presence check, and the documented `--timeout` is the remedy for a refresh chain
 that has died.
 
 ## Version bumps

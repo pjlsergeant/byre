@@ -1214,9 +1214,11 @@ section's §4), so
 a login in the state volume -- a dead one included -- would shadow a key
 the run was given. With `XAI_API_KEY` set, `byre-grok-headless` runs grok
 with `GROK_HOME` pointing at a temp dir made for that invocation and
-removed on exit, where no stored login exists. Without a key it runs on the stored login, under the
-same bounded presence check, and `--timeout` stays the remedy for a dead
-refresh chain.
+removed on exit, where no stored login exists: it holds only a `bundled`
+link to `/home/dev/.grok/bundled` (the grok-bundled hook's link, so the
+run sees the bundled skills) and no file from the real home. Without a
+key it runs on the stored login, under the same presence check, and
+`--timeout` stays the remedy for a dead refresh chain.
 
 The run is one `--prompt-file` turn with `--output-format json`
 (probed against the grok CLI): grok prints ONE document when it finishes, the

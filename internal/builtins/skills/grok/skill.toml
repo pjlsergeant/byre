@@ -33,6 +33,9 @@
 # chain can't renew, is the same command. Alternatively a static XAI_API_KEY
 # (from console.x.ai — separate API billing) skips file auth; the vendor doc
 # says a stored session login takes precedence over the key, so don't mix.
+# byre run with XAI_API_KEY runs grok under a per-run GROK_HOME, so a stored
+# login cannot shadow the key; interactive sessions still follow grok's rule
+# that a stored login wins.
 
 description = "The Grok CLI agent (Grok Build); login persists per project."
 
