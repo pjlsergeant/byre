@@ -413,7 +413,14 @@ can rewrite the staged task; the chassis checks the task's hash and
 refuses a changed one (exit 16), but the code has already run -- what it
 cannot do is stand in for the chassis, which byre launches by its
 absolute, build-guarded path and which runs its own helper tools from the
-system directories only, never from the agent-writable `~/.local/bin`; **the
+system directories only, never from the agent-writable `~/.local/bin`.
+The agents' launch wrappers and codex-shared-auth's credential
+reconciler do the same, handing the agent's own PATH only to the agent
+program itself, so a helper planted there never runs inside byre's
+launch or credential machinery. The exception is the interactive login
+steps (codex, grok, opencode and grok-shared-auth), which still run on
+the agent's PATH: they stand down in a headless run, and code planted
+there gains only what the agent already has; **the
 chassis's own file claims rely on nothing else running yet** -- it
 checks each name is free and then creates it, two steps that are only
 safe because the agent has not started and the repo code has finished,
@@ -436,7 +443,12 @@ environment into the project's codex state, because with codex-shared-auth
 enabled a saved key would be shared to every project on the machine at
 the next launch. It logs the key into a codex home that exists for one
 run, and a key in the environment wins over a login the box already has
-for that run.
+for that run. grok is handled the same way for the opposite reason: grok
+itself prefers a stored login over a key in the environment, so a
+headless run given `XAI_API_KEY` runs grok in a config home made for
+that one run, where no stored login can shadow the key. Without a key it
+uses the stored login, and if that login's refresh has died grok hangs
+rather than failing -- `byre run --timeout` bounds it.
 
 ## Reporting
 

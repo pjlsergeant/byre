@@ -91,14 +91,24 @@ writes its own temp file and copies it to the descriptor. The descriptors
 are the command's OWN: it unsets the `BYRE_RUN_RESULT_FILE` /
 `BYRE_RUN_STATUS_FILE` variables before starting anything, and no child
 it starts -- the agent, a credential or version probe, or a helper such
-as `jq` or `tee` -- ever inherits either descriptor. A child that outlived
+as `jq` or `tee` -- ever inherits either descriptor: the scripts close fds
+5 and 6 for every command they exec, and bash's own command-substitution
+subshells close them as their first act, so no exec'd child ever holds
+them. A child that outlived
 the script while holding one could rewrite the answer or the status lines
 after the script exited and before the chassis reads them. The command
 also keeps its own helpers on the image's system PATH
 (`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`) and
 invokes the agent by its launch adapter's absolute path with the
 inherited agent PATH restored for that invocation alone, for the reason
-the next section gives for the chassis. This is a convention of the contract, not a
+the next section gives for the chassis. The launch adapters it invokes
+(`byre-claude-launch`, `byre-codex-mcp-launch`, `byre-grok-launch`) and
+the codex-shared-auth reconciler follow the same rule: their own helpers
+(`cat`, `jq`, `head`, `wc`, `iconv`, `cp`, `flock`, `mktemp`) run on the
+system PATH, and only the final exec of the agent CLI gets the inherited
+agent PATH. A helper planted in `~/.local/bin` by repo code therefore
+never runs inside byre's launch or credential machinery; the interactive
+login hooks are the remaining exception (Accepted residuals). This is a convention of the contract, not a
 containment: the answer and the status lines are agent-trust either way
 (below), so an agent that writes a different answer through its own
 script changes only what it could have written anyway.
@@ -376,8 +386,10 @@ The documented case for the flag is an agent that hangs rather than fails.
 grok is the known one: with a dead login refresh chain it hangs at use
 time, inside the agent, where no login hook can see it. (The bundled grok
 skill's headless command, `byre-grok-headless`, is where the flag is
-owed: its preflight can only check that a credential is present, not
-that its refresh chain still works.)
+owed: without a key it runs on the stored login, and its preflight can
+only check that a credential is present, not that its refresh chain
+still works. With `XAI_API_KEY` set the stored login is out of the
+picture -- next section.)
 
 ## No persistent codex key
 
@@ -402,6 +414,18 @@ bounded, and exits 13 if there is none. codex's own login hook stands down
 entirely under `BYRE_HEADLESS`, leaving the bounded preflight to the
 headless command. It matters on machines that persist -- a laptop, a
 self-hosted runner -- and never on a hosted runner the job discards.
+
+## A present grok key runs in its own GROK_HOME
+
+grok's rule is the reverse of what a caller expects: a stored session
+wins over `XAI_API_KEY`, so a login in the state volume -- including one
+whose refresh chain has died -- would shadow a key the job supplied. So
+grok's headless command, like codex's, isolates a present key: with
+`XAI_API_KEY` set it runs grok with a `GROK_HOME` made for that one
+invocation (a temp dir, removed on exit), where no stored login exists to
+win. Without a key it uses the stored login after its bounded presence
+check, and the documented `--timeout` is the remedy for a refresh chain
+that has died.
 
 ## Version bumps
 
@@ -457,6 +481,13 @@ Each is on the security-model page too.
   document. That is also why the descriptor convention above is a
   convention: an agent that writes a different answer or status line
   through its own script changes only what it could have written anyway.
+- **The interactive login hooks run on the agent PATH.** The
+  codex-login, grok-login, opencode-login and grok-shared-auth hooks
+  still run the agent CLIs and their own helpers through the inherited
+  PATH, so a helper planted in `~/.local/bin` runs there. They are
+  interactive-login code that stands down under a headless launch, and a
+  plant there gains only what the agent, which can already write that
+  directory, already has.
 - **Exit codes are not unique to their owners.** A box that exits 1, 2, 3
   or 70 reaches the host as that number; `--data` tells them apart.
 

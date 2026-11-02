@@ -1101,6 +1101,20 @@ seconds rather than at the agent's first request. The remedies name
 `env_from_host` in the project config, `byre credentials set`, and the
 agent's shared-auth companion.
 
+**Helpers come from the system PATH.** The image's PATH puts
+`~/.local/bin` first, and repo code can write there before any of this
+runs (a pending worktree checkout's hooks and filters). The headless
+commands, the launch adapters they invoke (`byre-claude-launch`,
+`byre-codex-mcp-launch`, `byre-grok-launch`) and the codex-shared-auth
+reconciler therefore run their own helpers (`cat`, `jq`, `head`, `wc`,
+`iconv`, `cp`, `flock`, `mktemp`, `timeout`) on the system PATH and hand
+the inherited agent PATH only to the final exec of the agent CLI, so a
+planted helper never runs inside byre's launch or credential machinery.
+The interactive login hooks (codex-login, grok-login, opencode-login,
+grok-shared-auth) still run the agent CLIs and their helpers on the agent
+PATH: they stand down under a headless launch, and a plant there gains
+only what the agent already has.
+
 ### codex: a key in the env is logged into a CODEX_HOME made for the run
 
 **What happens.** With `OPENAI_API_KEY` set (or, failing that,
@@ -1189,6 +1203,16 @@ hook's own shape sniff. Anything else is a 13. A stored login whose
 refresh chain has died passes this check and then HANGS inside grok at
 use time (above): the check cannot see it, which is why the docs point
 grok runs at `byre run --timeout`.
+
+**A present key runs in a GROK_HOME made for the invocation.** grok's
+own rule is that a stored session wins over `XAI_API_KEY` (the grok
+section's §4), so
+a login in the state volume -- a dead one included -- would shadow a key
+the run was given. With `XAI_API_KEY` set, `byre-grok-headless` runs grok
+with `GROK_HOME` pointing at a temp dir made for that invocation and
+removed on exit, where no stored login exists. Without a key it runs on the stored login, under the
+same bounded presence check, and `--timeout` stays the remedy for a dead
+refresh chain.
 
 The run is one `--prompt-file` turn with `--output-format json`
 (probed against the grok CLI): grok prints ONE document when it finishes, the
