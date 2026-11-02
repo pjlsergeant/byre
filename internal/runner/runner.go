@@ -272,17 +272,29 @@ func truncate(s string, max int) string {
 	return s[:max] + "..."
 }
 
-// Build builds the image tagged tag from the given context directory and
-// Dockerfile. fresh builds everything from upstream, which takes two engine
-// flags: --no-cache re-runs every instruction, and --pull re-resolves the
+// FreshBuildFlags are the engine flags a fresh Build adds, in argv order:
+// --no-cache re-runs every instruction, and the pull flag re-resolves the
 // base tag, which the engine would otherwise take from its local store even
-// with the cache off. Both docker and podman accept both flags bare. buildArgs
-// are "KEY=VALUE" pairs passed as --build-arg (byre uses these to bake the host
-// UID/GID into the image); pass nil for none.
+// with the cache off.
+//
+// The pull flag is spelled --pull=true for both engines. Docker's --pull is
+// a bool, so =true is the same as the bare flag. Podman's --pull takes a
+// policy, and the bare flag means --pull=missing on podman 5.4-5.5 (the
+// podman Debian trixie ships): an existing local base is never re-resolved,
+// and the build succeeds without saying so. Podman reads the explicit value
+// "true" as pull-always on every version; "always" would say the same to
+// podman but is not a legal docker bool, so "true" is the one spelling both
+// engines read as "pull".
+func FreshBuildFlags() []string { return []string{"--no-cache", "--pull=true"} }
+
+// Build builds the image tagged tag from the given context directory and
+// Dockerfile. fresh builds everything from upstream (FreshBuildFlags).
+// buildArgs are "KEY=VALUE" pairs passed as --build-arg (byre uses these to
+// bake the host UID/GID into the image); pass nil for none.
 func (r *Runner) Build(tag, dockerfile, contextDir string, fresh bool, buildArgs []string) error {
 	args := []string{"build", "-t", tag, "-f", dockerfile}
 	if fresh {
-		args = append(args, "--no-cache", "--pull")
+		args = append(args, FreshBuildFlags()...)
 	}
 	for _, a := range buildArgs {
 		args = append(args, "--build-arg", a)

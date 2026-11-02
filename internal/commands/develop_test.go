@@ -685,8 +685,8 @@ func TestDevelopRefusesUnsupportedRootless(t *testing.T) {
 	}
 }
 
-// A rebuild is a fresh build (--no-cache --pull in the runner): the base tag
-// is re-resolved, not just the layers re-run. An ordinary develop build is
+// A rebuild is a fresh build (--no-cache --pull=true in the runner): the base
+// tag is re-resolved, not just the layers re-run. An ordinary develop build is
 // neither -- TestDevelopBuildsSeedsThenRuns pins its plain tag.
 func TestRebuildBuildsFresh(t *testing.T) {
 	p, _ := testPaths(t)
@@ -699,8 +699,8 @@ func TestRebuildBuildsFresh(t *testing.T) {
 	if len(f.builds) != 1 || f.builds[0] != image+" fresh" {
 		t.Fatalf("expected one fresh build of %s, got %v", image, f.builds)
 	}
-	if !strings.Contains(out.String(), "--no-cache --pull") {
-		t.Errorf("rebuild's progress note must name both engine flags, got %q", out.String())
+	if !strings.Contains(out.String(), "--no-cache --pull=true...") {
+		t.Errorf("rebuild's progress note must name the engine flags as the engine receives them, got %q", out.String())
 	}
 }
 

@@ -24,7 +24,7 @@
 - **`byre rebuild` now pulls the base image too.** It rebuilt with the
   cache off but on the base already in Docker's local store, so it re-ran
   every install step without fetching a republished tag. It now passes
-  `--pull` as well as `--no-cache`, so a republished base -- a security
+  `--pull=true` as well as `--no-cache`, so a republished base -- a security
   rebuild of `debian:trixie`, a new `node:26` point release -- actually
   reaches the box. An ordinary `byre develop` still builds on the local
   copy.

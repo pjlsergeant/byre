@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/pjlsergeant/byre/internal/hostexec"
 	"github.com/pjlsergeant/byre/internal/project"
@@ -10,8 +11,8 @@ import (
 )
 
 // Rebuild implements `byre rebuild`: regenerate the build context and rebuild
-// the image fresh -- the cache disabled and the base pulled (--no-cache
-// --pull) -- to pick up a republished base and new upstream tool/package
+// the image fresh -- the cache disabled and the base pulled
+// (runner.FreshBuildFlags) -- to pick up a republished base and new upstream tool/package
 // versions. Volumes are untouched; the next `byre develop` runs the fresh
 // image.
 func Rebuild(s Streams, projectDir string) error {
@@ -68,7 +69,7 @@ func rebuild(w io.Writer, r imageRunner, eng runner.Engine, paths project.Paths,
 		if err := refuseEngineChangedUnderLock(fresh.cfg.Config, eng, "rebuild"); err != nil {
 			return err
 		}
-		fmt.Fprintf(w, "byre: rebuilding %s with --no-cache --pull...\n", image)
+		fmt.Fprintf(w, "byre: rebuilding %s with %s...\n", image, strings.Join(runner.FreshBuildFlags(), " "))
 		return buildImageWarn(w, r, paths, fresh.cfg, fresh.skills, image, true, ident)
 	})
 }
