@@ -30,6 +30,12 @@ set -u
 # tee, the file helpers -- runs through run_child, which closes both
 # descriptors for it. So nothing grok or a probe leaves running can rewrite
 # the answer or append status lines after the script's own writes.
+#
+# A subshell or command substitution is a forked copy of this shell: it holds
+# both descriptors for as long as the program it starts runs, as that
+# program's parent. So each one closes both before anything else runs, and
+# the script's own data reaches a program as a here-string, never through a
+# pipeline element that is such a copy.
 result_file=$BYRE_RUN_RESULT_FILE status_file=$BYRE_RUN_STATUS_FILE
 unset BYRE_RUN_RESULT_FILE BYRE_RUN_STATUS_FILE
 run_child() { "$@" 5>&- 6>&-; }
@@ -121,7 +127,7 @@ if [ -n "${XAI_API_KEY:-}" ]; then
   # A box that cannot make a temp dir is broken in a way no exit in the
   # contract names, so this exits 1 and the chassis's verdict -- the headless
   # command failed -- is the true one.
-  home=$(run_child mktemp -d "${TMPDIR:-/tmp}/byre-grok-home.XXXXXXXX") || {
+  home=$(exec 5>&- 6>&-; run_child mktemp -d "${TMPDIR:-/tmp}/byre-grok-home.XXXXXXXX") || {
     say "cannot create a temporary GROK_HOME for the run"
     exit 1
   }
@@ -129,7 +135,7 @@ if [ -n "${XAI_API_KEY:-}" ]; then
   export GROK_HOME="$home"
 fi
 
-version=$(run_child timeout -k 5 10 env PATH="$agent_path" "$grok" --version </dev/null 2>/dev/null | run_child head -n 1)
+version=$(exec 5>&- 6>&-; run_child timeout -k 5 10 env PATH="$agent_path" "$grok" --version </dev/null 2>/dev/null | run_child head -n 1)
 if [ -n "$version" ]; then
   printf 'agent_version=%s\n' "$version" >>"$status_file"
 fi
@@ -141,7 +147,7 @@ fi
 # there. A box that cannot make a temp file is broken in a way no exit in the
 # contract names, so this exits 1 and the chassis's verdict -- the headless
 # command failed -- is the true one.
-log=$(run_child mktemp "${TMPDIR:-/tmp}/byre-grok-headless.XXXXXXXX") || {
+log=$(exec 5>&- 6>&-; run_child mktemp "${TMPDIR:-/tmp}/byre-grok-headless.XXXXXXXX") || {
   say "cannot create a temp file for grok's output"
   exit 1
 }
@@ -153,8 +159,12 @@ args=(--prompt-file "$BYRE_RUN_TASK_FILE" --always-approve --output-format json)
 if [ -n "${BYRE_RUN_MODEL:-}" ]; then
   args+=(-m "$BYRE_RUN_MODEL")
 fi
-run_child env PATH="$agent_path" "$launch" "${args[@]}" </dev/null | run_child tee -- "$log"
-rc=${PIPESTATUS[0]}
+(
+  exec 5>&- 6>&-
+  run_child env PATH="$agent_path" "$launch" "${args[@]}" </dev/null | run_child tee -- "$log"
+  exit "${PIPESTATUS[0]}"
+)
+rc=$?
 
 # --- the verdict --------------------------------------------------------------
 
@@ -164,16 +174,15 @@ rc=${PIPESTATUS[0]}
 # whatever the status, and its message is written as the answer, because the
 # chassis prints it either way. jq writes the answer to its stdout, which the
 # script opens on the result file; jq itself never holds fd 5.
-doc=$(run_child jq -c 'select(type == "object")' <"$log" 2>/dev/null | run_child tail -n 1)
-if [ -n "$doc" ] && printf '%s' "$doc" | run_child jq -e '.type == "error"' >/dev/null 2>&1; then
-  printf '%s' "$doc" |
-    run_child jq -j '.message // "" | if type == "string" then . else tojson end' >"$result_file" 2>/dev/null
+doc=$(exec 5>&- 6>&-; run_child jq -c 'select(type == "object")' <"$log" 2>/dev/null | run_child tail -n 1)
+if [ -n "$doc" ] && run_child jq -e '.type == "error"' <<<"$doc" >/dev/null 2>&1; then
+  run_child jq -j '.message // "" | if type == "string" then . else tojson end' <<<"$doc" >"$result_file" 2>/dev/null
   exit 10
 fi
 answered=""
-if [ -n "$doc" ] && printf '%s' "$doc" | run_child jq -e '.text | type == "string"' >/dev/null 2>&1; then
+if [ -n "$doc" ] && run_child jq -e '.text | type == "string"' <<<"$doc" >/dev/null 2>&1; then
   answered=1
-  printf '%s' "$doc" | run_child jq -j '.text' >"$result_file" 2>/dev/null
+  run_child jq -j '.text' <<<"$doc" >"$result_file" 2>/dev/null
 fi
 # A nonzero status without a reported failure, or any status without an
 # answer document, is grok failing as a process.

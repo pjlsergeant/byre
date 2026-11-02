@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -161,6 +162,9 @@ func newHeadlessBox(t *testing.T) *headlessBox {
 		"BYRE_RUN_STATUS_FILE": "/dev/fd/6",
 		"STUB_RECORD":          b.record,
 		"STUB_TOOLS":           tools,
+		"STUB_TOP":             strconv.Itoa(os.Getpid()),
+		"STUB_RESULT":          b.result,
+		"STUB_STATUS":          b.status,
 	}
 	return b
 }
@@ -318,11 +322,31 @@ func (b *headlessBox) file(p string) string {
 
 // stubHeldCheck opens every stub and tool wrapper: it records, under the
 // program's name, any of the headless command's held descriptors (5, 6) or
-// the variables naming them that reached it. Builtins only, so the check
-// starts nothing that could itself be checked.
+// the variables naming them that reached it -- and, where /proc shows them,
+// any ancestor below the headless command itself that holds the result or
+// status file open under any descriptor number. The second half catches a
+// forked copy of the script's shell (a subshell, a command substitution, a
+// pipeline element) that kept them while the program it started runs. The
+// walk stops at the headless command (its parent is the test, STUB_TOP),
+// which holds both legitimately. Builtins only, so the check starts nothing
+// that could itself be checked.
 const stubHeldCheck = `for n in 5 6; do [ ! -e /dev/fd/$n ] || echo "${0##*/}: fd $n" >>"$STUB_RECORD/held"; done
 [ -z "${BYRE_RUN_RESULT_FILE+x}" ] || echo "${0##*/}: BYRE_RUN_RESULT_FILE" >>"$STUB_RECORD/held"
 [ -z "${BYRE_RUN_STATUS_FILE+x}" ] || echo "${0##*/}: BYRE_RUN_STATUS_FILE" >>"$STUB_RECORD/held"
+held_p=$PPID
+while [ -n "${STUB_TOP:-}" ] && [ "$held_p" -gt 1 ] && [ "$held_p" != "$STUB_TOP" ] && [ -r "/proc/$held_p/status" ]; do
+  held_pp=""
+  while read -r held_k held_v; do [ "$held_k" != PPid: ] || held_pp=$held_v; done <"/proc/$held_p/status"
+  [ -n "$held_pp" ] || break
+  if [ "$held_pp" != "$STUB_TOP" ]; then
+    for held_f in /proc/$held_p/fd/*; do
+      if [ "$held_f" -ef "$STUB_RESULT" ] || [ "$held_f" -ef "$STUB_STATUS" ]; then
+        echo "${0##*/}: ancestor $held_p holds the result or status file (fd ${held_f##*/})" >>"$STUB_RECORD/held"
+      fi
+    done
+  fi
+  held_p=$held_pp
+done
 `
 
 // stubAgentStart opens every stub agent: the held check, then the PATH it was

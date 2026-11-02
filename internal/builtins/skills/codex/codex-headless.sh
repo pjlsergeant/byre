@@ -26,6 +26,12 @@ set -u
 # jq, tee, the file helpers -- runs through run_child, which closes both
 # descriptors for it. So nothing codex or a probe leaves running can rewrite
 # the answer or append status lines after the script's own writes.
+#
+# A subshell or command substitution is a forked copy of this shell: it holds
+# both descriptors for as long as the program it starts runs, as that
+# program's parent. So each one closes both before anything else runs, and
+# the script's own data reaches a program as a here-string, never through a
+# pipeline element that is such a copy.
 result_file=$BYRE_RUN_RESULT_FILE status_file=$BYRE_RUN_STATUS_FILE
 unset BYRE_RUN_RESULT_FILE BYRE_RUN_STATUS_FILE
 run_child() { "$@" 5>&- 6>&-; }
@@ -47,7 +53,7 @@ launch=/usr/local/bin/byre-codex-mcp-launch
 say() { printf 'byre-codex-headless: %s\n' "$*" >&2; }
 
 missing=""
-if ! (PATH=$agent_path && command -v codex) >/dev/null 2>&1; then
+if ! (exec 5>&- 6>&-; PATH=$agent_path && command -v codex) >/dev/null 2>&1; then
   missing=codex
 elif [ ! -x "$launch" ]; then
   missing=$launch
@@ -111,7 +117,7 @@ if [ -n "$key" ]; then
   # A box that cannot make a temp dir is broken in a way no exit in the
   # contract names, so this exits 1 and the chassis's verdict -- the headless
   # command failed -- is the true one.
-  home=$(run_child mktemp -d "${TMPDIR:-/tmp}/byre-codex-home.XXXXXXXX") || {
+  home=$(exec 5>&- 6>&-; run_child mktemp -d "${TMPDIR:-/tmp}/byre-codex-home.XXXXXXXX") || {
     say "cannot create a temporary CODEX_HOME for the run"
     exit 1
   }
@@ -119,7 +125,10 @@ if [ -n "$key" ]; then
     run_child cp -- "$real_home/config.toml" "$home/config.toml" 2>/dev/null ||
       say "could not copy config.toml from $real_home; the run uses codex's defaults"
   fi
-  printf '%s' "$key" | CODEX_HOME=$home run_child timeout -k 5 30 env PATH="$agent_path" codex login "$login_flag" >&2
+  (
+    exec 5>&- 6>&-
+    printf '%s' "$key" | CODEX_HOME=$home run_child timeout -k 5 30 env PATH="$agent_path" codex login "$login_flag" >&2
+  )
   rc=$?
   if [ "$rc" = 124 ] || [ "$rc" = 137 ]; then
     no_credential "\`codex login $login_flag\` did not finish within 30 s"
@@ -138,7 +147,7 @@ else
   export CODEX_HOME="$real_home"
 fi
 
-version=$(run_child timeout -k 5 10 env PATH="$agent_path" codex --version </dev/null 2>/dev/null | run_child head -n 1)
+version=$(exec 5>&- 6>&-; run_child timeout -k 5 10 env PATH="$agent_path" codex --version </dev/null 2>/dev/null | run_child head -n 1)
 if [ -n "$version" ]; then
   printf 'agent_version=%s\n' "$version" >>"$status_file"
 fi
@@ -149,8 +158,8 @@ fi
 # whole and then copied to the result descriptor once. The log is a private
 # copy of the stream for the failure check: the chassis's transcript lives in
 # the agent-writable result dir, and this script reads nothing from there.
-out=$(run_child mktemp "${TMPDIR:-/tmp}/byre-codex-answer.XXXXXXXX") &&
-  log=$(run_child mktemp "${TMPDIR:-/tmp}/byre-codex-headless.XXXXXXXX") || {
+out=$(exec 5>&- 6>&-; run_child mktemp "${TMPDIR:-/tmp}/byre-codex-answer.XXXXXXXX") &&
+  log=$(exec 5>&- 6>&-; run_child mktemp "${TMPDIR:-/tmp}/byre-codex-headless.XXXXXXXX") || {
   say "cannot create a temp file for the run"
   exit 1
 }
@@ -163,8 +172,12 @@ if [ -n "${BYRE_RUN_MODEL:-}" ]; then
   args+=(-m "$BYRE_RUN_MODEL")
 fi
 args+=(-)
-run_child env PATH="$agent_path" "$launch" "${args[@]}" <"$BYRE_RUN_TASK_FILE" | run_child tee -- "$log"
-rc=${PIPESTATUS[0]}
+(
+  exec 5>&- 6>&-
+  run_child env PATH="$agent_path" "$launch" "${args[@]}" <"$BYRE_RUN_TASK_FILE" | run_child tee -- "$log"
+  exit "${PIPESTATUS[0]}"
+)
+rc=$?
 
 # --- the verdict --------------------------------------------------------------
 

@@ -25,6 +25,12 @@ set -u
 # the file helpers -- runs through run_child, which closes both descriptors
 # for it. So nothing claude or a probe leaves running can rewrite the answer
 # or append status lines after the script's own writes.
+#
+# A subshell or command substitution is a forked copy of this shell: it holds
+# both descriptors for as long as the program it starts runs, as that
+# program's parent. So each one closes both before anything else runs, and
+# the script's own data reaches a program as a here-string, never through a
+# pipeline element that is such a copy.
 result_file=$BYRE_RUN_RESULT_FILE status_file=$BYRE_RUN_STATUS_FILE
 unset BYRE_RUN_RESULT_FILE BYRE_RUN_STATUS_FILE
 run_child() { "$@" 5>&- 6>&-; }
@@ -46,7 +52,7 @@ launch=/usr/local/bin/byre-claude-launch
 say() { printf 'byre-claude-headless: %s\n' "$*" >&2; }
 
 missing=""
-if ! (PATH=$agent_path && command -v claude) >/dev/null 2>&1; then
+if ! (exec 5>&- 6>&-; PATH=$agent_path && command -v claude) >/dev/null 2>&1; then
   missing=claude
 elif [ ! -x "$launch" ]; then
   missing=$launch
@@ -82,12 +88,12 @@ if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || [ -n "${ANTHROPIC_API_KEY:-}" ] ||
 elif [ -f "$creds" ] && [ ! -L "$creds" ] && run_child grep -q '"claudeAiOauth"' "$creds" 2>/dev/null; then
   :
 else
-  auth=$(run_child timeout -k 5 30 env PATH="$agent_path" claude auth status </dev/null 2>/dev/null)
+  auth=$(exec 5>&- 6>&-; run_child timeout -k 5 30 env PATH="$agent_path" claude auth status </dev/null 2>/dev/null)
   rc=$?
   if [ "$rc" = 124 ] || [ "$rc" = 137 ]; then
     no_credential "\`claude auth status\` did not answer within 30 s"
   fi
-  if [ "$rc" != 0 ] || ! printf '%s' "$auth" | run_child jq -e '.loggedIn == true' >/dev/null 2>&1; then
+  if [ "$rc" != 0 ] || ! run_child jq -e '.loggedIn == true' <<<"$auth" >/dev/null 2>&1; then
     no_credential "\`claude auth status\` reports no login"
   fi
 fi
@@ -101,7 +107,7 @@ fi
 # and `ln -n` claims the final one with link(2), which fails on any node raced
 # in and never follows a symlink. A lost claim leaves nothing behind.
 if [ -n "$env_cred" ] && [ ! -e "$cfg/.claude.json" ] && [ ! -L "$cfg/.claude.json" ]; then
-  if run_child mkdir -p -- "$cfg" 2>/dev/null && seed=$(run_child mktemp -- "$cfg/.claude.json.byre-XXXXXX" 2>/dev/null); then
+  if run_child mkdir -p -- "$cfg" 2>/dev/null && seed=$(exec 5>&- 6>&-; run_child mktemp -- "$cfg/.claude.json.byre-XXXXXX" 2>/dev/null); then
     if printf '{"hasCompletedOnboarding": true}\n' >"$seed" 2>/dev/null; then
       run_child ln -n -- "$seed" "$cfg/.claude.json" 2>/dev/null || true
     fi
@@ -109,7 +115,7 @@ if [ -n "$env_cred" ] && [ ! -e "$cfg/.claude.json" ] && [ ! -L "$cfg/.claude.js
   fi
 fi
 
-version=$(run_child timeout -k 5 10 env PATH="$agent_path" claude --version </dev/null 2>/dev/null | run_child head -n 1)
+version=$(exec 5>&- 6>&-; run_child timeout -k 5 10 env PATH="$agent_path" claude --version </dev/null 2>/dev/null | run_child head -n 1)
 if [ -n "$version" ]; then
   printf 'agent_version=%s\n' "$version" >>"$status_file"
 fi
@@ -121,7 +127,7 @@ fi
 # there. A box that cannot make a temp file is broken in a way no exit in the
 # contract names, so this exits 1 and the chassis's verdict -- the headless
 # command failed -- is the true one.
-log=$(run_child mktemp "${TMPDIR:-/tmp}/byre-claude-headless.XXXXXXXX") || {
+log=$(exec 5>&- 6>&-; run_child mktemp "${TMPDIR:-/tmp}/byre-claude-headless.XXXXXXXX") || {
   say "cannot create a temp file for the event stream"
   exit 1
 }
@@ -136,8 +142,12 @@ args=(-p --dangerously-skip-permissions --mcp-config /etc/byre/mcp.json
 if [ -n "${BYRE_RUN_MODEL:-}" ]; then
   args+=(--model "$BYRE_RUN_MODEL")
 fi
-run_child env PATH="$agent_path" "$launch" "${args[@]}" <"$BYRE_RUN_TASK_FILE" | run_child tee -- "$log"
-rc=${PIPESTATUS[0]}
+(
+  exec 5>&- 6>&-
+  run_child env PATH="$agent_path" "$launch" "${args[@]}" <"$BYRE_RUN_TASK_FILE" | run_child tee -- "$log"
+  exit "${PIPESTATUS[0]}"
+)
+rc=$?
 
 # --- the verdict --------------------------------------------------------------
 
@@ -148,11 +158,10 @@ rc=${PIPESTATUS[0]}
 # is still written as the answer, because the chassis prints it either way.
 # jq writes the answer to its stdout, which the script opens on the result
 # file; jq itself never holds fd 5.
-result=$(run_child jq -cR 'fromjson? | select(type == "object" and .type == "result")' <"$log" 2>/dev/null | run_child tail -n 1)
+result=$(exec 5>&- 6>&-; run_child jq -cR 'fromjson? | select(type == "object" and .type == "result")' <"$log" 2>/dev/null | run_child tail -n 1)
 if [ -n "$result" ]; then
-  printf '%s' "$result" |
-    run_child jq -j '.result // "" | if type == "string" then . else tojson end' >"$result_file" 2>/dev/null
-  if printf '%s' "$result" | run_child jq -e '.is_error == true' >/dev/null 2>&1; then
+  run_child jq -j '.result // "" | if type == "string" then . else tojson end' <<<"$result" >"$result_file" 2>/dev/null
+  if run_child jq -e '.is_error == true' <<<"$result" >/dev/null 2>&1; then
     exit 10
   fi
 fi
