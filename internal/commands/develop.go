@@ -880,9 +880,6 @@ func warnCompatLegacy(w io.Writer, projectDir string) {
 	}
 }
 
-// announceWorktree notes, on stderr, that this directory is a linked worktree
-// inheriting the main repo's identity — so shared config/volumes/image and any
-// onboarding prompts are legible rather than surprising. No-op for a plain project.
 // developNotices prints the session's opening notes. The worktree
 // announcement goes first, so any onboarding prompts are understood as
 // configuring the whole project (all its worktrees). A repo-shipped preset
@@ -901,6 +898,9 @@ func developNotices(w io.Writer, projectDir string, paths project.Paths, h *head
 	}
 }
 
+// announceWorktree notes, on stderr, that this directory is a linked worktree
+// inheriting the main repo's identity — so shared config/volumes/image and any
+// onboarding prompts are legible rather than surprising. No-op for a plain project.
 func announceWorktree(w io.Writer, paths project.Paths) {
 	if paths.IsWorktree {
 		fmt.Fprintf(w, "byre: worktree of %s — inheriting its config, volumes, and image.\n", paths.Canonical)
