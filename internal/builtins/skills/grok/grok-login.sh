@@ -51,6 +51,14 @@ fi
 # (headless grok HANGS on a device prompt then; field-observed 2026-07-10),
 # where the fix is the same command: `grok login --device-auth`.
 [ -s "$cred" ] && grep -q '"key"' "$cred" 2>/dev/null && exit 0
+# Never prompt when nobody can answer: a headless launch (BYRE_HEADLESS, which
+# wins over everything) or no terminal on stdin. The login would otherwise sit
+# out its whole bound and the box would launch unauthenticated anyway.
+# BYRE_ASSUME_TTY is a test seam (the claude-shared-auth hook's precedent).
+if [ -n "${BYRE_HEADLESS:-}" ] || { [ ! -t 0 ] && [ -z "${BYRE_ASSUME_TTY:-}" ]; }; then
+  echo "byre: grok is not logged in and this launch cannot prompt for the device login (headless, or no terminal) -- set XAI_API_KEY (env_from_host, or byre credentials set), or log in from byre shell with 'grok login --device-auth'" >&2
+  exit 0
+fi
 
 # Clean skip on Ctrl-C: handle SIGINT and exit 0 so we don't propagate a
 # signal-death toward the launcher — the box proceeds to the agent regardless.

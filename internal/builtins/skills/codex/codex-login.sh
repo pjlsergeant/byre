@@ -40,6 +40,11 @@ if [ ! -r "$BYRE_SA_LIB" ]; then
   exit 0
 fi
 . "$BYRE_SA_LIB"
+# A headless launch has nobody to authorize a device login, and the probes
+# below (`codex login status`, the live probe) cost launch time for a run
+# this hook cannot authenticate anyway. So stand down before touching the
+# credential at all.
+[ -n "${BYRE_HEADLESS:-}" ] && exit 0
 
 cleanup_snapshot() {
   [ -z "${snapshot:-}" ] || rm -f -- "$snapshot"
@@ -284,7 +289,12 @@ if [ -e "$cred" ] && [ ! -L "$cred" ] && [ ! -f "$cred" ]; then
   exit 0
 fi
 needs_login=""
-if codex login status >/dev/null 2>&1; then
+# Bounded like the reconciler calls: a status probe that hangs (planted state,
+# a wedged CLI) must not hold the launch. A timeout reads as not logged in,
+# which a terminal-less launch turns into the remedy below.
+STO=""
+command -v timeout >/dev/null 2>&1 && STO="timeout 30"
+if $STO codex login status >/dev/null 2>&1; then
   diag_event login_status_authenticated
   if ! needs_live_probe; then
     diag_event live_probe_not_due
@@ -377,6 +387,20 @@ diag_path before_device_login
 if ! detach_shared_link; then
   diag_event shared_link_detach_failed
   echo "byre: Codex login is required, but the shared credential could not be detached safely; launching without changing it." >&2
+  exit 0
+fi
+
+# No terminal: nobody can authorize a device code, and the login would sit
+# out its whole bound. Both routes here (not logged in, and a stale credential
+# whose shared link was already detached) arrive with the link removed, so
+# put it back before leaving. No key login happens here: a key persisted into
+# this CODEX_HOME would be published machine-wide by codex-shared-auth's
+# reconciler on the next launch. BYRE_ASSUME_TTY is a test seam (the
+# claude-shared-auth hook's precedent).
+if [ ! -t 0 ] && [ -z "${BYRE_ASSUME_TTY:-}" ]; then
+  restore_shared_link || echo "byre: the shared Codex credential link could not be restored; it will retry next launch." >&2
+  echo "byre: codex is not logged in and there is no terminal for the device login -- set OPENAI_API_KEY for a headless run (env_from_host, or byre credentials set), or log in from byre shell" >&2
+  diag_event device_login_skipped_no_terminal
   exit 0
 fi
 

@@ -1,6 +1,7 @@
 package builtins
 
 import (
+	"context"
 	"encoding/base64"
 	"os"
 	"os/exec"
@@ -90,15 +91,19 @@ func runCodexSharedAuthHook(t *testing.T, identityBase, codexHome string) {
 	}
 }
 
-// codexLoginHookEnv is the environment every login-hook invocation uses.
+// codexLoginHookEnv is the environment every login-hook invocation uses. It
+// stands in for an attended terminal (attendedTerminalEnv), since most
+// callers drive the device-login path; extra comes last and wins, so a
+// caller pinning the no-terminal guard passes noTerminalEnv there.
 // Reap grace is shortened so live_probe's TERM/KILL escalation does not spend
 // two wall-clock seconds per call; production still defaults to 1. Every
 // caller runs the hook under bash, so the env is where that need is declared.
 func codexLoginHookEnv(t *testing.T, cat *packages.Catalog, extra ...string) []string {
 	t.Helper()
 	testtools.NeedTool(t, "bash")
-	return append(append(os.Environ(), extra...),
-		"BYRE_CODEX_REAP_GRACE=0.05", sharedAuthLibSeam(t, cat, "codex"))
+	env := append(os.Environ(), attendedTerminalEnv...)
+	env = append(env, "BYRE_CODEX_REAP_GRACE=0.05", sharedAuthLibSeam(t, cat, "codex"))
+	return append(env, extra...)
 }
 
 // codexReconcileEnv is the environment a direct reconcile.sh or firstrun-hook
@@ -1653,5 +1658,170 @@ func TestCodexSharedAuthPrevRenameDoesNotFollowDirLink(t *testing.T) {
 	}
 	if got, err := os.ReadFile(filepath.Join(identity, "auth.json")); err != nil || string(got) != newLocal {
 		t.Fatalf("the newer local login must still publish: %v %q", err, got)
+	}
+}
+
+// writeCodexSharedLinkHook materializes a test copy of codex-login.sh whose
+// hardcoded identity dir is identity (the trust root is deliberately not
+// configurable; see TestCodexLoginHookDetachesSharedLinkBeforeDeviceLogin).
+func writeCodexSharedLinkHook(t *testing.T, cat *packages.Catalog, identity string) string {
+	t.Helper()
+	src, err := os.ReadFile(filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	testHook := filepath.Join(physTempDir(t), "codex-login.sh")
+	testSrc := strings.ReplaceAll(string(src), `/home/dev/.byre-identity/codex`, identity)
+	if err := os.WriteFile(testHook, []byte(testSrc), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return testHook
+}
+
+// runCodexLoginHook runs the hook bounded, so a guard that fails to stop an
+// unbounded call reports as a timeout instead of hanging the suite.
+func runCodexLoginHook(t *testing.T, hook string, env []string) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "bash", hook)
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("hook did not finish within 10s: %s", out)
+	}
+	if err != nil {
+		t.Fatalf("hook failed: %v (%s)", err, out)
+	}
+	return string(out)
+}
+
+// A headless launch has nobody to authorize a device login, so the hook stands
+// down before its first credential probe: no codex invocation at all, not
+// even `login status`, whatever the terminal seam says.
+func TestCodexLoginHookStandsDownWhenHeadless(t *testing.T) {
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
+	bin, home := t.TempDir(), physTempDir(t)
+	log := argvLogStub(t, bin, "codex")
+	runCodexLoginHook(t, hook, codexLoginHookEnv(t, cat, "PATH="+bin+":/usr/bin:/bin",
+		"CODEX_HOME="+home, "BYRE_HEADLESS=1", "BYRE_ASSUME_TTY=1"))
+	if calls := stubCalls(t, log); calls != "" {
+		t.Fatalf("headless launch must not invoke codex at all: %q", calls)
+	}
+}
+
+// `codex login status` runs before anything else can bound the hook, so it
+// carries its own 30 s bound: a status probe that hangs is cut off, reads as
+// not logged in, and the no-terminal guard then exits 0 with the remedy --
+// never the device login. A timeout shim records the bound the hook asked for
+// and enforces a short one, so the test does not wait out 30 s.
+func TestCodexLoginHookBoundsLoginStatus(t *testing.T) {
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
+	bin, home := t.TempDir(), physTempDir(t)
+	bounds := filepath.Join(bin, "timeout.argv")
+	shim := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + strconv.Quote(bounds) + "\n" +
+		"[ \"$1\" = --foreground ] && shift\nshift\n" +
+		"\"$@\" & p=$!\n( sleep 1; kill -TERM $p ) >/dev/null 2>&1 &\n" +
+		"wait $p\n"
+	if err := os.WriteFile(filepath.Join(bin, "timeout"), []byte(shim), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logins := filepath.Join(bin, "device-login")
+	stub := "#!/bin/sh\n" +
+		"if [ \"$1 $2\" = 'login status' ]; then exec sleep 30; fi\n" +
+		"if [ \"$1 $2\" = 'login --device-auth' ]; then touch " + strconv.Quote(logins) + "; fi\n" +
+		"exit 0\n"
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out := runCodexLoginHook(t, hook, append(codexLoginHookEnv(t, cat, "PATH="+bin+":/usr/bin:/bin",
+		"CODEX_HOME="+home), noTerminalEnv...))
+	if b, _ := os.ReadFile(bounds); !strings.Contains(string(b), "30 codex login status") {
+		t.Fatalf("login status must run under the 30 s bound; timeout saw %q", b)
+	}
+	if _, err := os.Stat(logins); !os.IsNotExist(err) {
+		t.Fatal("no terminal: the device login must not run")
+	}
+	for _, frag := range []string{"OPENAI_API_KEY", "byre shell"} {
+		if !strings.Contains(out, frag) {
+			t.Fatalf("remedy must name %q: %s", frag, out)
+		}
+	}
+}
+
+// With no terminal the hook skips the device login, and it must leave the
+// shared-auth link as it found it. Both routes reach the guard with the link
+// already detached -- not logged in (a dangling link: the first-login state)
+// and a stale credential (the live probe's requires-auth answer detaches
+// first) -- so the guard restores it on both. The diagnostic events pin that
+// the link really was detached and put back, not simply never touched.
+func TestCodexLoginHookNoTerminalRestoresSharedLink(t *testing.T) {
+	needCodexFlock(t)
+	_, cat := testCat(t)
+	stale := `{"auth_mode":"chatgpt","tokens":{"access_token":"opaque","refresh_token":"dead"},"last_refresh":"2020-01-01T00:00:00Z"}`
+	for _, tc := range []struct {
+		name   string
+		shared string // the shared credential's content; "" = absent
+		status string // the stub's `login status` exit
+	}{
+		{"not logged in", "", "1"},
+		{"stale credential", stale, "0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base, home, bin := physTempDir(t), physTempDir(t), physTempDir(t)
+			writeCodexSetsidShim(t, bin)
+			identity := filepath.Join(base, "codex")
+			if err := os.MkdirAll(identity, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			shared := filepath.Join(identity, "auth.json")
+			if tc.shared != "" {
+				if err := os.WriteFile(shared, []byte(tc.shared), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cred := filepath.Join(home, "auth.json")
+			if err := os.Symlink(shared, cred); err != nil {
+				t.Fatal(err)
+			}
+			hook := writeCodexSharedLinkHook(t, cat, identity)
+			logins := filepath.Join(bin, "device-login")
+			stub := "#!/bin/sh\n" +
+				"if [ \"$1 $2\" = 'login status' ]; then exit " + tc.status + "; fi\n" +
+				"if [ \"$1\" = app-server ]; then printf '%s\\n' '{\"id\":1,\"result\":{\"account\":null,\"requiresOpenaiAuth\":true}}'; exit 0; fi\n" +
+				"if [ \"$1 $2\" = 'login --device-auth' ]; then touch " + strconv.Quote(logins) + "; fi\n" +
+				"exit 1\n"
+			if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(stub), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			out := runCodexLoginHook(t, hook, append(codexLoginHookEnv(t, cat, "PATH="+bin+":/usr/bin:/bin",
+				"CODEX_HOME="+home, "BYRE_IDENTITY_BASE="+base, "BYRE_CODEX_AUTH_RECONCILE=/nonexistent",
+				"CODEX_AUTH_DIAGNOSTIC_BYRE=1"), noTerminalEnv...))
+			if _, err := os.Stat(logins); !os.IsNotExist(err) {
+				t.Fatal("no terminal: the device login must not run")
+			}
+			if got, err := os.Readlink(cred); err != nil || got != shared {
+				t.Fatalf("shared link must be restored: %q (%v)\n%s", got, err, out)
+			}
+			if tc.shared != "" {
+				isRegularWith(t, shared, tc.shared)
+			} else if _, err := os.Lstat(shared); !os.IsNotExist(err) {
+				t.Fatalf("the shared credential must stay absent: %v", err)
+			}
+			log, err := os.ReadFile(filepath.Join(identity, "byre-auth-diagnostic.log"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, ev := range []string{"shared_link_detached_before_login", "shared_link_restored_after_login_skip", "device_login_skipped_no_terminal"} {
+				if !strings.Contains(string(log), "event="+ev) {
+					t.Fatalf("diagnostic log lacks %s:\n%s", ev, log)
+				}
+			}
+			if !strings.Contains(out, "OPENAI_API_KEY") {
+				t.Fatalf("remedy must name OPENAI_API_KEY: %s", out)
+			}
+		})
 	}
 }

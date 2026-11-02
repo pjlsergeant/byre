@@ -60,7 +60,9 @@ remediate_stale_login() {
     echo "      (This file also holds MCP server logins — moving it aside signs those out too;" >&2
     echo "      re-auth them in-session via /mcp.)" >&2
   fi
-  if [ -t 0 ] || [ -n "${BYRE_ASSUME_TTY:-}" ]; then
+  # A headless launch never offers, whatever stdin is: nobody is there to
+  # answer, and the bounded read would still cost its whole minute.
+  if [ -z "${BYRE_HEADLESS:-}" ] && { [ -t 0 ] || [ -n "${BYRE_ASSUME_TTY:-}" ]; }; then
     printf "byre: move it aside now (to .credentials.json.bak) so the shared token wins? [Y/n] " >&2
     IFS= read -r -t 60 ans || ans="n"
     case "$ans" in
@@ -82,6 +84,8 @@ if [ -s "$TOKEN_FILE" ]; then
   remediate_stale_login
   exit 0
 fi
+# No paste prompt without someone to paste: a headless launch, or no terminal.
+[ -n "${BYRE_HEADLESS:-}" ] && exit 0
 [ -t 0 ] || exit 0
 
 echo ""

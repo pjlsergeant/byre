@@ -106,12 +106,12 @@ func TestOpencodeLoginHookBehavior(t *testing.T) {
 	}
 	run := func(dataHome, apiKey string) {
 		t.Helper()
-		runHook(t, "sh", hook, lib,
-			"PATH="+bin+":/usr/bin:/bin",
-			"XDG_DATA_HOME="+dataHome,
-			"ANTHROPIC_API_KEY="+apiKey,
+		runHook(t, "sh", hook, append([]string{lib,
+			"PATH=" + bin + ":/usr/bin:/bin",
+			"XDG_DATA_HOME=" + dataHome,
+			"ANTHROPIC_API_KEY=" + apiKey,
 			"OPENCODE_API_KEY=",
-		)
+		}, attendedTerminalEnv...)...)
 	}
 	loginAttempted := func() bool {
 		_, err := os.Stat(stamp)

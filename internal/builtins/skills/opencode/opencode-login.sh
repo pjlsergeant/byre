@@ -111,6 +111,14 @@ if [ -s "$cred" ] && grep -q -- '"type"' "$cred" 2>/dev/null \
   && [ "$(tail -c 1 "$cred" 2>/dev/null)" = "}" ]; then
   exit 0
 fi
+# Never prompt when nobody can answer: a headless launch (BYRE_HEADLESS, which
+# wins over everything) or no terminal on stdin. The login would otherwise sit
+# out its whole bound and the box would launch unauthenticated anyway.
+# BYRE_ASSUME_TTY is a test seam (the claude-shared-auth hook's precedent).
+if [ -n "${BYRE_HEADLESS:-}" ] || { [ ! -t 0 ] && [ -z "${BYRE_ASSUME_TTY:-}" ]; }; then
+  echo "byre: opencode is not logged in and this launch cannot prompt for the login picker (headless, or no terminal) -- set ANTHROPIC_API_KEY or OPENCODE_API_KEY (env_from_host, or byre credentials set), or log in from byre shell with 'opencode auth login'" >&2
+  exit 0
+fi
 
 # Clean skip on Ctrl-C: handle SIGINT and exit 0 so we don't propagate a
 # signal-death toward the launcher — the box proceeds to the agent regardless.

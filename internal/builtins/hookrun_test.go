@@ -39,6 +39,16 @@ func sharedAuthLibSeam(t *testing.T, cat *packages.Catalog, skill string) string
 	return "BYRE_SHARED_AUTH_LIB=" + filepath.Join(skillDir(t, cat, skill), "byre-shared-auth-lib.sh")
 }
 
+// The login hooks never prompt under BYRE_HEADLESS or without a terminal on
+// stdin (exec gives a child /dev/null). A test that drives a login path
+// stands in for an attended terminal through the hooks' BYRE_ASSUME_TTY
+// seam; one that pins the guard clears it. Both clear BYRE_HEADLESS, so a
+// suite run inside a headless box exercises the same paths.
+var (
+	attendedTerminalEnv = []string{"BYRE_ASSUME_TTY=1", "BYRE_HEADLESS="}
+	noTerminalEnv       = []string{"BYRE_ASSUME_TTY=", "BYRE_HEADLESS="}
+)
+
 // runHook runs one hook script under shell with env added to the process
 // environment, and returns its combined output. Bounded: a hook that opens a
 // FIFO blocks forever, and the containment cases that plant one must fail as

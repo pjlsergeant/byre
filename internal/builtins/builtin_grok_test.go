@@ -578,7 +578,7 @@ func TestGrokLoginHookHealsRetiredSymlink(t *testing.T) {
 	run := func(home string) {
 		t.Helper()
 		cmd := exec.Command("sh", hook)
-		cmd.Env = append(os.Environ(),
+		cmd.Env = append(append(os.Environ(), attendedTerminalEnv...),
 			"PATH="+bin+":/usr/bin:/bin",
 			"GROK_HOME="+home,
 			"XAI_API_KEY=",                // must not short-circuit
