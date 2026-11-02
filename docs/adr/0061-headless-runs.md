@@ -88,11 +88,17 @@ The chassis runs the headless command with:
 The two files are DESCRIPTORS, not paths. The chassis creates them
 exclusively, once, and holds them open; a command that needs a real path
 writes its own temp file and copies it to the descriptor. The descriptors
-are the command's OWN: it never passes fds 5 and 6, or the
-`BYRE_RUN_RESULT_FILE` / `BYRE_RUN_STATUS_FILE` variables, to the agent
-binary. A grandchild that outlived the script while holding them could
-rewrite the answer or the status lines after the script exited and before
-the chassis reads them. This is a convention of the contract, not a
+are the command's OWN: it unsets the `BYRE_RUN_RESULT_FILE` /
+`BYRE_RUN_STATUS_FILE` variables before starting anything, and no child
+it starts -- the agent, a credential or version probe, or a helper such
+as `jq` or `tee` -- ever inherits either descriptor. A child that outlived
+the script while holding one could rewrite the answer or the status lines
+after the script exited and before the chassis reads them. The command
+also keeps its own helpers on the image's system PATH
+(`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`) and
+invokes the agent by its launch adapter's absolute path with the
+inherited agent PATH restored for that invocation alone, for the reason
+the next section gives for the chassis. This is a convention of the contract, not a
 containment: the answer and the status lines are agent-trust either way
 (below), so an agent that writes a different answer through its own
 script changes only what it could have written anyway.

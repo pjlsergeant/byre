@@ -15,7 +15,8 @@
 #
 # The headless command holds fds 5 and 6 (BYRE_RUN_RESULT_FILE and
 # BYRE_RUN_STATUS_FILE) for its own writes and must not pass them, or the
-# variables naming them, to the agent it runs.
+# variables naming them, to any child it starts -- the agent, a probe, or
+# a helper.
 #
 # The optional positional is the test seam: production passes no argument and
 # the command is the baked /etc/byre/agent-headless. There is deliberately no
