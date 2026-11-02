@@ -102,8 +102,9 @@ also keeps its own helpers on the image's system PATH
 invokes the agent by its launch adapter's absolute path with the
 inherited agent PATH restored for that invocation alone, for the reason
 the next section gives for the chassis. The launch adapters it invokes
-(`byre-claude-launch`, `byre-codex-mcp-launch`, `byre-grok-launch`) and
-the codex-shared-auth reconciler follow the same rule: their own helpers
+(`byre-claude-launch`, `byre-codex-mcp-launch`, `byre-grok-launch`), the
+interactive-only `byre-opencode-mcp-launch`, and the codex-shared-auth
+reconciler follow the same rule: their own helpers
 (`cat`, `jq`, `head`, `wc`, `iconv`, `cp`, `flock`, `mktemp`) run on the
 system PATH, and only the final exec of the agent CLI gets the inherited
 agent PATH. A helper planted in `~/.local/bin` by repo code therefore

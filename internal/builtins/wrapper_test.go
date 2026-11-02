@@ -44,6 +44,16 @@ func stageGrokAdapter(t *testing.T, dir string) string {
 		"=/usr/local/bin/grok\n", "="+filepath.Join(dir, "grok")+"\n")
 }
 
+// stageOpencodeAdapter is stageCodexAdapter for opencode, with the opencode
+// in dir standing in for the root-owned /usr/local/bin/opencode the adapter
+// names.
+func stageOpencodeAdapter(t *testing.T, dir string) string {
+	t.Helper()
+	return stagePinned(t, filepath.Join("skills", "opencode", "opencode-mcp-launch.sh"),
+		filepath.Join(dir, "opencode-mcp-launch.sh"), os.Getenv("PATH"),
+		"=/usr/local/bin/opencode\n", "="+filepath.Join(dir, "opencode")+"\n")
+}
+
 // The codex MCP adapter is a shell wrapper deriving `-c` overrides from the
 // canonical mcp.json. This drives the REAL script against the REAL
 // renderer's output (the two halves of the contract), with a stub codex
@@ -148,7 +158,7 @@ func TestOpencodeMCPLaunchWrapperBuildsConfig(t *testing.T) {
 	if err := os.WriteFile(mcpPath, mcpJSON, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	script := filepath.Join("skills", "opencode", "opencode-mcp-launch.sh")
+	script := stageOpencodeAdapter(t, dir)
 	cmd := exec.Command("bash", script, "--auto")
 	cmd.Env = append(os.Environ(),
 		"BYRE_MCP_CONFIG="+mcpPath,
@@ -218,7 +228,7 @@ func TestOpencodeMCPLaunchWrapperMergesExisting(t *testing.T) {
 	}), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("bash", filepath.Join("skills", "opencode", "opencode-mcp-launch.sh"), "--auto")
+	cmd := exec.Command("bash", stageOpencodeAdapter(t, dir), "--auto")
 	cmd.Env = append(os.Environ(),
 		"BYRE_MCP_CONFIG="+mcpPath,
 		"BYRE_AGENT_CONTEXT="+ctxPath,
@@ -297,7 +307,7 @@ func TestOpencodeMCPLaunchWrapperEmptySet(t *testing.T) {
 	if err := os.WriteFile(mcpPath, config.MCPConfigJSON(nil), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("bash", filepath.Join("skills", "opencode", "opencode-mcp-launch.sh"), "--auto")
+	cmd := exec.Command("bash", stageOpencodeAdapter(t, dir), "--auto")
 	cmd.Env = append(os.Environ(), "BYRE_MCP_CONFIG="+mcpPath, "BYRE_AGENT_CONTEXT="+ctxPath, "BYRE_SESSION_CONTEXT=", "PATH="+dir+":"+os.Getenv("PATH"), "OPENCODE_CONFIG_CONTENT=")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("wrapper failed on the empty set: %v\n%s", err, out)
@@ -421,7 +431,7 @@ func TestOpencodeLaunchWrapperCoercesStringInstructions(t *testing.T) {
 	if err := os.WriteFile(mcpPath, config.MCPConfigJSON(nil), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("bash", filepath.Join("skills", "opencode", "opencode-mcp-launch.sh"), "--auto")
+	cmd := exec.Command("bash", stageOpencodeAdapter(t, dir), "--auto")
 	cmd.Env = append(os.Environ(),
 		"BYRE_MCP_CONFIG="+mcpPath, "BYRE_AGENT_CONTEXT="+ctxPath, "BYRE_SESSION_CONTEXT=",
 		"PATH="+dir+":"+os.Getenv("PATH"),
@@ -738,10 +748,10 @@ func TestClaudeLaunchWrapperMergesContextIntoOneFlag(t *testing.T) {
 // Each launch adapter serves the interactive session and every headless run,
 // and the inherited PATH it is started with leads with the agent-writable
 // ~/.local/bin, which repository code can write before the adapter runs.
-// Decoys of the adapter's helpers -- and of grok, which the grok adapter names
-// by its root-owned link -- planted first on that PATH never run: the jq that
-// writes codex's MCP commands and the cat/head/wc/iconv chain that builds the
-// context come from the pinned PATH. The agent CLI still gets the inherited
+// Decoys of the adapter's helpers -- and of grok and opencode, which their
+// adapters name by root-owned link -- planted first on that PATH never run:
+// the jq that writes codex's and opencode's MCP commands and the
+// cat/head/wc/iconv chain that builds the context come from the pinned PATH. The agent CLI still gets the inherited
 // PATH whole, because everything it starts needs it.
 func TestLaunchAdaptersIgnoreTheInheritedPath(t *testing.T) {
 	testtools.NeedTool(t, "bash", "jq", "env")
@@ -751,18 +761,20 @@ func TestLaunchAdaptersIgnoreTheInheritedPath(t *testing.T) {
 		{"claude", "claude-launch.sh"},
 		{"codex", "codex-mcp-launch.sh"},
 		{"grok", "grok-launch.sh"},
+		{"opencode", "opencode-mcp-launch.sh"},
 	} {
 		t.Run(c.agent, func(t *testing.T) {
 			dir, plant := t.TempDir(), t.TempDir()
 			decoyLog := filepath.Join(dir, "decoy.log")
-			for _, name := range []string{"cat", "jq", "head", "wc", "iconv", "mktemp", "mv", "rm", "env", "grok"} {
+			for _, name := range []string{"cat", "jq", "head", "wc", "iconv", "mktemp", "mv", "rm", "env", "grok", "opencode"} {
 				decoy := "#!/bin/sh\necho \"${0##*/}\" >>'" + decoyLog + "'\nexit 99\n"
 				if err := os.WriteFile(filepath.Join(plant, name), []byte(decoy), 0o755); err != nil {
 					t.Fatal(err)
 				}
 			}
 			stub := "#!/bin/sh\nprintf '%s' \"$PATH\" >'" + filepath.Join(dir, "path") + "'\n" +
-				"for a in \"$@\"; do printf '%s\\0' \"$a\"; done >'" + filepath.Join(dir, "argv") + "'\n"
+				"for a in \"$@\"; do printf '%s\\0' \"$a\"; done >'" + filepath.Join(dir, "argv") + "'\n" +
+				"printf '%s' \"${OPENCODE_CONFIG_CONTENT-}\" >'" + filepath.Join(dir, "config") + "'\n"
 			if err := os.WriteFile(filepath.Join(dir, c.agent), []byte(stub), 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -777,8 +789,8 @@ func TestLaunchAdaptersIgnoreTheInheritedPath(t *testing.T) {
 				t.Fatal(err)
 			}
 			var rewrites []string
-			if c.agent == "grok" {
-				rewrites = []string{"=/usr/local/bin/grok\n", "=" + filepath.Join(dir, "grok") + "\n"}
+			if c.agent == "grok" || c.agent == "opencode" {
+				rewrites = []string{"=/usr/local/bin/" + c.agent + "\n", "=" + filepath.Join(dir, c.agent) + "\n"}
 			}
 			script := stagePinned(t, filepath.Join("skills", c.agent, c.script),
 				filepath.Join(t.TempDir(), c.script), os.Getenv("PATH"), rewrites...)
@@ -801,6 +813,11 @@ func TestLaunchAdaptersIgnoreTheInheritedPath(t *testing.T) {
 			}
 			if c.agent == "codex" && !strings.Contains(string(argv), "mcp_servers.github.command=\"gh-mcp\"\x00") {
 				t.Fatalf("the MCP flags did not come from the real jq: %q", argv)
+			}
+			if c.agent == "opencode" {
+				if cfg, _ := os.ReadFile(filepath.Join(dir, "config")); !strings.Contains(string(cfg), `"command":["gh-mcp","stdio"]`) {
+					t.Fatalf("the MCP config did not come from the real jq: %q", cfg)
+				}
 			}
 		})
 	}

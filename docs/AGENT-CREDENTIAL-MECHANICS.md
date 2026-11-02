@@ -1104,12 +1104,16 @@ agent's shared-auth companion.
 **Helpers come from the system PATH.** The image's PATH puts
 `~/.local/bin` first, and repo code can write there before any of this
 runs (a pending worktree checkout's hooks and filters). The headless
-commands, the launch adapters they invoke (`byre-claude-launch`,
-`byre-codex-mcp-launch`, `byre-grok-launch`) and the codex-shared-auth
+commands, the launch adapters (`byre-claude-launch`,
+`byre-codex-mcp-launch`, `byre-grok-launch`, which the headless commands
+invoke, and `byre-opencode-mcp-launch`) and the codex-shared-auth
 reconciler therefore run their own helpers (`cat`, `jq`, `head`, `wc`,
 `iconv`, `cp`, `flock`, `mktemp`, `timeout`) on the system PATH and hand
 the inherited agent PATH only to the final exec of the agent CLI, so a
 planted helper never runs inside byre's launch or credential machinery.
+grok and opencode, whose binaries live outside `~/.local/bin`, are named
+by the root-owned `/usr/local/bin` link each skill installs, so a
+planted copy never runs in their place.
 The interactive login hooks (codex-login, grok-login, opencode-login,
 grok-shared-auth) still run the agent CLIs and their helpers on the agent
 PATH: they stand down under a headless launch, and a plant there gains
