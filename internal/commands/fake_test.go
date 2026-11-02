@@ -137,6 +137,8 @@ type fakeRunner struct {
 	imageDigestErr error             // ImageDigest failure (the record's honest-empty path)
 	rmImages       []string
 	builds         []string // tag, with " fresh" appended for a fresh build
+	buildErr       error    // Build failure (the engine refused the build)
+	buildHook      func()   // called inside Build: "while the image builds"
 
 	ops []string
 }
@@ -536,7 +538,10 @@ func (f *fakeRunner) Build(tag, dockerfile, contextDir string, fresh bool, build
 	}
 	f.builds = append(f.builds, b)
 	f.ops = append(f.ops, "build "+tag)
-	return nil
+	if f.buildHook != nil {
+		f.buildHook()
+	}
+	return f.buildErr
 }
 
 // RunHelper records the spec and what the script read from stdin, then
