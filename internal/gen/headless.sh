@@ -426,5 +426,17 @@ fi
 # failure still has a message worth reading, and an empty fd prints nothing.
 cat /dev/fd/5 >&9 2>/dev/null
 
+# Under --quiet the headless command's stderr reached only stderr.log, but a
+# refusal and its remedy (a missing credential, an absent backend) live
+# there, and --quiet never hides those. So a failed quiet run prints the
+# log's tail, bounded by bytes before lines (one line could otherwise be the
+# whole file), from the held descriptor. Not on 0, and not on 10: the
+# agent's reported failure carries its message as the answer, printed above.
+if [ -n "${BYRE_RUN_QUIET:-}" ] && [ "$code" != 0 ] && [ "$code" != 10 ]; then
+  tail -c 8192 /dev/fd/4 2>/dev/null | tail -n 40 | while IFS= read -r line || [ -n "$line" ]; do
+    say "stderr| $line"
+  done
+fi
+
 say "run ${BYRE_RUN_ID:-?}: $status, exit $code ($message)"
 exit "$code"

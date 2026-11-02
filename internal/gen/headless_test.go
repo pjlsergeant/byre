@@ -727,6 +727,40 @@ printf 'THE-ANSWER' >"$BYRE_RUN_RESULT_FILE"`
 	}
 }
 
+// --quiet never hides a refusal: a failed quiet run prints the tail of the
+// headless command's stderr, where its remedy lives. A successful quiet run
+// prints none of it, and a loud run shows the remedy once -- the live relay
+// -- not again at the end.
+func TestHeadlessQuietFailureShowsTheStderrTail(t *testing.T) {
+	const remedy = "REMEDY-give-the-box-a-credential"
+	for _, tc := range []struct {
+		name  string
+		quiet bool
+		exit  string
+		code  int
+		times int
+	}{
+		{"quiet failure", true, "exit 13", 13, 1},
+		{"quiet success", true, `printf answer >"$BYRE_RUN_RESULT_FILE"`, 0, 0},
+		{"quiet reported failure", true, `printf why >"$BYRE_RUN_RESULT_FILE"; exit 10`, 10, 0},
+		{"loud failure", false, "exit 13", 13, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var env []string
+			if tc.quiet {
+				env = []string{"BYRE_RUN_QUIET=1"}
+			}
+			r := runHeadless(t, headlessCase{env: env, stub: "echo " + remedy + " >&2\n" + tc.exit})
+			if r.code != tc.code {
+				t.Fatalf("exit %d, want %d\nstderr:\n%s", r.code, tc.code, r.stderr)
+			}
+			if n := strings.Count(r.stderr, remedy); n != tc.times {
+				t.Errorf("the remedy appears %d times on the box's stderr, want %d\nstderr:\n%s", n, tc.times, r.stderr)
+			}
+		})
+	}
+}
+
 // A process that leaves the headless command's group (its own setsid) while
 // holding the stdout relay open survives the group KILL; the chassis's wait
 // for its relays is bounded, so it still finishes with the verdict.

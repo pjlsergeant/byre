@@ -753,9 +753,10 @@ Build-time (the **core block**, identical everywhere, always cached):
   have rewritten it), claims its own files in `.byre-run/` exclusively and
   holds them as descriptors, runs the agent's baked headless command in
   its own process group with stdin `/dev/null`, records and relays the
-  command's streams to stderr (files only under `--quiet`), runs a timer
-  only when `--timeout` asked for one, maps the outcome to a closed exit
-  set (0, 10-16), and writes the answer to the box's real stdout once.
+  command's streams to stderr (files only under `--quiet`, where a failed
+  run still prints the tail of its stderr), runs a timer only when
+  `--timeout` asked for one, maps the outcome to a closed exit set (0,
+  10-16), and writes the answer to the box's real stdout once.
   Re-asserted at the Dockerfile tail like the launcher.
 
 Runtime constants:
