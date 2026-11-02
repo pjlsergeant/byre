@@ -64,6 +64,15 @@ func TestRequiresSelfRefused(t *testing.T) {
 	}
 }
 
+// A [package] manifest states its own id, so the bytes boundary that install
+// and catalog ingest share refuses the self-requirement too.
+func TestRequiresSelfRefusedAtTheBytesBoundary(t *testing.T) {
+	raw := []byte("requires = [\"pete/tool\"]\n\n[package]\nid = \"pete/tool\"\nversion = \"1.0.0\"\nkind = \"skill\"\n")
+	if err := ValidatePrimaryBytes(raw); err == nil || !strings.Contains(err.Error(), "requires itself") {
+		t.Fatalf("a self-requirement must refuse at the bytes boundary naming the rule, got %v", err)
+	}
+}
+
 // requires entries are skill names: the id grammar holds and a duplicate is
 // a typo. An unknown name is NOT a manifest error -- only the catalog knows.
 func TestRequiresGrammar(t *testing.T) {

@@ -83,6 +83,32 @@ func TestInstallFreshNonTTY(t *testing.T) {
 	}
 }
 
+// A published skill that requires itself refuses at install, naming the
+// rule, before anything lands: the manifest-local value rules run at the
+// bytes boundary (ADR 0029), not first at the load that would fail forever.
+func TestInstallRefusesSelfRequirement(t *testing.T) {
+	home := installHome(t)
+	dir := t.TempDir()
+	manifest := filepath.Join(dir, "skill.toml")
+	mustWriteFile(t, manifest, []byte(`requires = ["pete/tool"]
+
+[package]
+id = "pete/tool"
+version = "1.0.0"
+kind = "skill"
+package_api = 1
+requires_byre = ">=0.1.0"
+description = "requires itself"
+`), 0o644)
+	err := PackageInstall(discardStreams(), packages.KindSkill, manifest, "", true)
+	if err == nil || !strings.Contains(err.Error(), "requires itself") || !strings.Contains(err.Error(), "pete/tool") {
+		t.Fatalf("a self-requiring package must refuse naming the rule, got %v", err)
+	}
+	if idx, _ := packages.ReadIndex(home); len(idx) != 0 {
+		t.Fatalf("a refused install must land nothing, index has %v", idx)
+	}
+}
+
 func TestInstallDigestMismatchRefuses(t *testing.T) {
 	installHome(t)
 	uri, _ := publishSkill(t, "pete/tool", "1.0.0", "")

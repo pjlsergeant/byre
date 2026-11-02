@@ -825,7 +825,28 @@ func ParsePrimaryBytes(raw []byte) (File, error) {
 	if err := validateValues(f); err != nil {
 		return File{}, err
 	}
+	// The self-requirement rule needs the package's own id, which only a
+	// manifest with a [package] table states in its bytes; a package-less
+	// local skill takes its id from its directory and meets the rule at load.
+	if m, ok, merr := packages.ParseManifestCore(raw); merr == nil && ok && m.ID != "" {
+		if err := refuseSelfRequirement(m.ID, f.Requires); err != nil {
+			return File{}, err
+		}
+	}
 	return f, nil
+}
+
+// refuseSelfRequirement is the "a skill may not require itself" rule. A
+// self-requirement is always met and so says nothing; it is a typo for some
+// other name. Exact ids only: an alias spelling of itself is caught at
+// Resolve, which has the catalog to expand it.
+func refuseSelfRequirement(id string, requires []string) error {
+	for _, r := range requires {
+		if r == id {
+			return fmt.Errorf("skill %q: requires itself", id)
+		}
+	}
+	return nil
 }
 
 // decodeSkillFile strict-decodes skill.toml body bytes: byre owns the
@@ -1151,14 +1172,10 @@ func loadEntry(ent *packages.Entry) (Skill, error) {
 	if verr := validateValues(f); verr != nil {
 		return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, verr)
 	}
-	// A skill requiring itself is always met and so says nothing; it is a
-	// typo for some other name. Judged here, where the skill's own id is
-	// known; an alias spelling of itself is caught at Resolve, which has the
-	// catalog to expand it.
-	for _, r := range f.Requires {
-		if r == ent.ID {
-			return Skill{}, fmt.Errorf("skill %q: requires itself", ent.ID)
-		}
+	// Repeated here because a package-less local skill's id is its
+	// directory name, known only once it is a catalog entry.
+	if err := refuseSelfRequirement(ent.ID, f.Requires); err != nil {
+		return Skill{}, err
 	}
 
 	dir, err := ent.HostDir()
