@@ -332,10 +332,14 @@ A3. **claude onboarding seed, both copies.** New firstrun hook
 when neither `$CLAUDE_CONFIG_DIR/.claude.json` nor a symlink at that
 name exists (`[ ! -e ] && [ ! -L ]`) and any of `CLAUDE_CODE_OAUTH_TOKEN`,
 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` is non-empty, seed the
-marker under `set -C` (noclobber = O_EXCL; refuses a dangling symlink
-[PROBED by round-3 grok on this shell]). Never prompts, exit 0. The
-SAME `-L` + `set -C` fix lands in `claude-shared-auth/firstrun.sh:19-25`
-(`seed_onboarding`). The claude headless script (3.6) re-checks after
+marker by publishing it: the bytes go to a `mktemp`'d dotfile in the
+config dir, and `ln -n` claims `.claude.json` with link(2), which fails
+EEXIST on any existing node and never follows a symlink; the temp name
+is removed either way. Not `set -C`: bash's noclobber is O_EXCL only
+for a name that does not exist, and opens a pre-existing FIFO/device or
+a symlink to one WITHOUT O_EXCL, blocking the launch. Never prompts,
+exit 0. The SAME `-L` check and publish land in
+`claude-shared-auth/firstrun.sh` (`seed_onboarding`). The claude headless script (3.6) re-checks after
 env.d as a belt.
 
 ### 2.4 Tests / acceptance
@@ -350,13 +354,15 @@ env.d as a belt.
   grok/opencode/grok-shared-auth hooks exit 0 without running their
   login when stdin is not a TTY, and when `BYRE_HEADLESS=1` with a TTY
   (`BYRE_ASSUME_TTY` where the hook has the seam, a pty helper
-  otherwise); both claude seeds refuse a dangling symlink at
-  `.claude.json`, leave an existing file alone, seed on the env
+  otherwise); both claude seeds leave a dangling symlink, an existing
+  file, or any other node at `.claude.json` alone, seed on the env
   credential / token file respectively.
 - Agent-contract tier (`BYRE_AGENT_TESTS=1`, no credentials needed)
-  [CODE: internal/commands/agent_contract_test.go:3-16]: a real codex
-  box with no credential launched from a PIPE reaches its agent in
-  < 30 s. (The pty case needs the Phase B launcher export.)
+  [CODE: internal/commands/agent_contract_test.go:3-16]: a real codex,
+  grok and opencode box with no credential, launched from a PIPE: the
+  hook's no-terminal remedy line appears on stderr within 30 s (the
+  test stops at the remedy and removes the container; it does not wait
+  for the agent). (The pty case needs the Phase B launcher export.)
 - Docs: `docs/AGENT-CREDENTIAL-MECHANICS.md` gains the headless signal
   and the "no persistent key file" rule (the full write-up is 3.8's
   R6 item); CHANGES entries. No ADR (bug-class fixes under ADR
@@ -525,12 +531,15 @@ the optional positional is the test seam):
    bytes the host hashed, and a mismatch is a loud 16, never a silent
    swap. The chassis creates NOTHING -- the host made and emptied the
    dir (3.5).
-2. Open byre's own files EXCLUSIVELY, once, and hold the descriptors
-   under `set -C` (noclobber = `O_CREAT|O_EXCL`, failing on any
-   pre-existing node, a dangling symlink included -- the deliver
-   transport's precedent [CODE: internal/deliver/transport.go:21]):
-   fd 3 `transcript.jsonl`, fd 4 `stderr.log`, fd 5 `result.md`, fd 6
-   `status`, and `result.json` (written once as `started`). EEXIST ->
+2. Open byre's own files EXCLUSIVELY, once, and hold the descriptors.
+   Each open is `set -C` preceded by a `[ -e ] || [ -L ]` pre-check that
+   refuses any existing node with 16: bash's noclobber is O_EXCL only for
+   a name that does not exist, and opens a pre-existing FIFO/device or a
+   symlink to one WITHOUT O_EXCL. The window between check and open is
+   accepted because nothing untrusted runs concurrently with the
+   chassis. Files: fd 3 `transcript.jsonl`, fd 4 `stderr.log`, fd 5
+   `result.md`, fd 6 `status`, and `result.json` (written once as
+   `started`). EEXIST ->
    exit 16 naming the node. **After this step the chassis never opens a
    pathname inside the dir again**: every later write goes to a held
    fd, every later read is a bounded read of a held fd (`head -c 4096
