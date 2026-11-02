@@ -381,18 +381,13 @@ func TestClaudeOnboardingHookSeedsOnEnvCredential(t *testing.T) {
 	credVars := []string{"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"}
 	run := func(t *testing.T, cfg string, env ...string) {
 		t.Helper()
-		// A clean env: the suite may itself run in a credentialed box.
+		// Every credential the hook reads is set empty ahead of the case's
+		// own values: runHook appends to the process environment and the
+		// last value wins, so a credential the suite's own box exports would
+		// otherwise reach the hook.
 		var base []string
-		for _, e := range os.Environ() {
-			keep := true
-			for _, v := range credVars {
-				if strings.HasPrefix(e, v+"=") {
-					keep = false
-				}
-			}
-			if keep {
-				base = append(base, e)
-			}
+		for _, v := range credVars {
+			base = append(base, v+"=")
 		}
 		if out := runHook(t, "bash", hook, append(append(base, "CLAUDE_CONFIG_DIR="+cfg), env...)...); out != "" {
 			t.Fatalf("hook must stay silent: %q", out)
@@ -409,7 +404,7 @@ func TestClaudeOnboardingHookSeedsOnEnvCredential(t *testing.T) {
 	}
 	t.Run("no env credential seeds nothing", func(t *testing.T) {
 		cfg := t.TempDir()
-		run(t, cfg, "ANTHROPIC_API_KEY=")
+		run(t, cfg)
 		if _, err := os.Lstat(marker(cfg)); !os.IsNotExist(err) {
 			t.Fatalf("seeded without a credential: %v", err)
 		}
