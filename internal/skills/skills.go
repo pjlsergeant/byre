@@ -54,6 +54,11 @@ func parseEgress(entry string) (host string, port int, err error) {
 // AgentContrib is the agent-skill launch contribution.
 type AgentContrib struct {
 	Command string `toml:"command"` // what the launcher execs (e.g. "claude --dangerously-skip-permissions")
+	// Headless is the agent's headless-run command: a shell command string
+	// like Command, baked to /etc/byre/agent-headless and exec'd by the
+	// byre-headless chassis for `byre run`. Absent means the agent has no
+	// headless mode.
+	Headless string `toml:"headless"`
 	// State names the skill's state volume. Load-bearing, not informational:
 	// Resolve requires the skill to contribute it (credentials must persist),
 	// and seed_prefs seeds into it.
@@ -561,6 +566,15 @@ func (r Resolved) AgentCommand() string {
 	return r.Agent.Command
 }
 
+// AgentHeadless is the selected agent's headless-run command ("" if no agent,
+// or the agent declares none).
+func (r Resolved) AgentHeadless() string {
+	if r.Agent == nil {
+		return ""
+	}
+	return r.Agent.Headless
+}
+
 // AgentState is the selected agent's state volume name ("" if none).
 func (r Resolved) AgentState() string {
 	if r.Agent == nil {
@@ -1008,6 +1022,18 @@ func validateValues(f File) error {
 		case "", "inject":
 		default:
 			return fmt.Errorf("[agent] context %q invalid (want \"inject\", or omit it: no adapter)", f.Agent.Context)
+		}
+		// A headless command is exec'd by the chassis as a whole run: a
+		// blank one can never work, and one equal to the interactive command
+		// would start a session that waits on a terminal nobody holds.
+		if f.Agent.Headless != "" {
+			h := strings.TrimSpace(f.Agent.Headless)
+			if h == "" {
+				return fmt.Errorf("[agent] headless must not be blank (omit it: the agent has no headless mode)")
+			}
+			if h == strings.TrimSpace(f.Agent.Command) {
+				return fmt.Errorf("[agent] headless %q must not equal [agent] command (headless runs a task to completion; command is the interactive session)", f.Agent.Headless)
+			}
 		}
 		// A declared state volume the skill does not contribute means
 		// credentials silently fail to persist. The rule reads the skill's OWN
