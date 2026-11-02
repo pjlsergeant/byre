@@ -289,9 +289,11 @@ Needs a real engine; the split only shows against a live container.
 2. Host-side: `docker inspect -f '{{index .Config.Labels "byre.launch"}}'
    byre-<id>` prints a 64-hex address, and
    `~/.byre/projects/<id>/launches/<that>.toml` exists.
-   `shasum -a 256` of the file equals the label. It carries `record = 1`,
+   `shasum -a 256` of the file equals the label. It carries `record = 2`,
    an `[image]` with a real `digest`, `[[binds]]` including `/secrets`,
-   and `env_keys` with KEYS only — no values anywhere in the file.
+   and `env_keys` with KEYS only — no values anywhere in the file. A
+   develop record has no `headless`, `run_id`, `task_sha256` or
+   `run_timeout` (those four are a `byre run` box's).
 3. BEFORE changing anything, `byre status` from another window.
    Expect: `Host mounts` lists `/secrets` and there is NO `Next launch`
    section at all. (The tilde matters: the record holds the EXPANDED

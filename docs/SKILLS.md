@@ -190,6 +190,51 @@ claude-skill add <dir>` declares a host directory straight from config.
 A skill that ships ONLY Claude Skills is a fine package -- enabling it
 stays the grant, like any other.
 
+An agent skill can make its agent usable from `byre run` -- one task,
+non-interactively, from a script or CI -- by declaring a **headless
+command** beside its interactive one:
+
+```toml
+[agent]
+command  = "my-agent-launch --yolo"
+headless = "my-agent-headless"     # a script you ship via [build].files
+```
+
+byre bakes it to `/etc/byre/agent-headless`, and its core chassis,
+`byre-headless`, runs it as the whole of a headless run. Leave the field
+out and `byre run` refuses your agent by name; it must not be blank and
+must not equal `command`. The command honours a small contract
+([ADR 0061](adr/0061-headless-runs.md) is the record):
+
+- Read the task from the file `BYRE_RUN_TASK_FILE` names. Stdin is
+  `/dev/null`; never read a terminal, and give your agent the task file or
+  `/dev/null` on stdin -- an agent handed an open pipe waits on it forever.
+- Write the agent's final answer to `BYRE_RUN_RESULT_FILE` (a descriptor,
+  `/dev/fd/5`: if your agent wants a path, give it a temp file and copy
+  that in afterwards). byre prints it on `byre run`'s stdout.
+- Exit with exactly one of: `0` (success -- an empty answer turns it into
+  14), `10` (the agent reported failure), `11` (the agent process failed:
+  append `backend_exit=<its status>` to `BYRE_RUN_STATUS_FILE` first), `13`
+  (no usable credential -- print the remedy on stderr), `15` (your agent's
+  binary is not in the box). Anything else, a signal included, is read as
+  your command failing (14); never pass the agent's raw status up.
+- Bound every credential probe (`timeout 30 ...`); a probe that times out
+  is a 13. Your stdout is the agent's live event stream and your stderr its
+  diagnostics: byre records both in `.byre-run/` and relays them to
+  stderr. `BYRE_RUN_MODEL`, when non-empty, is the model the caller asked
+  for; `BYRE_RUN_DIR` is the result dir, for files worth keeping;
+  `agent_version=<text>` in the status file is shown in `result.json`.
+- Run your agent through the same launch adapter your interactive command
+  uses, so the injection your `mcp`/`claude_skills`/`context` vouches
+  promise holds in a headless run too.
+
+Your login hook should not prompt under `BYRE_HEADLESS=1` (byre sets it
+from the launch's argv for every headless run) or without a terminal: a
+headless run has nobody to answer. Don't set any `BYRE_RUN_*` name in your
+`[runtime].env` -- status then stops vouching for the headless command.
+byre's own `claude-headless.sh` and `codex-headless.sh` are worked
+examples.
+
 To publish, declare identity in `[package]` -- a qualified id
 (`owner/name`), a `version`, and a `requires_byre` constraint -- then:
 

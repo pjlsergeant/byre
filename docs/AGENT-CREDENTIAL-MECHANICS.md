@@ -182,7 +182,8 @@ take effect directly (trade: no first-run theme picker; `/config` re-opens
 it). byre seeds it on fresh volumes only, from two hooks: claude-shared-auth
 for the shared token, and the claude skill's own `claude-onboarding` hook
 when `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`
-arrives by env. Neither writes through a symlink at `.claude.json` (see
+arrives by env; claude's headless command repeats the env-credential seed
+for a headless run. None writes through a symlink at `.claude.json` (see
 "Login hooks with nobody to answer" below).
 
 ### 5. Vendor guidance on sharing
@@ -1034,12 +1035,13 @@ of those blocks on a person, bounded at 600 s for the logins. So none of them
 prompts when nobody can answer:
 
 - **The headless signal is `BYRE_HEADLESS=1`.** It is byre's own variable,
-  meant for a launch that runs one task non-interactively. The launcher is
-  to export it from its OWN argv, not from the environment: a skill's
+  set for a headless run (`byre run`, ADR 0061). The launcher exports it
+  from its OWN argv -- when the container command is `byre-headless` --
+  and unsets it otherwise, whatever the environment carried: a skill's
   `[runtime].env` can set any `BYRE_*` name and raw `run_args` can override
-  any `-e`, but neither reaches the command argv. Nothing exports it yet --
-  the headless verb that will is still to come -- so today the operative
-  case is the second test.
+  any `-e`, but neither reaches the command argv. A headless run also never
+  has a terminal (`byre run` launches without `-t` and with stdin
+  `/dev/null`), so both tests below hold there.
 - **Hooks test `BYRE_HEADLESS` first, then `[ -t 0 ]`.** Either one holding
   means no prompt, and the hook exits 0 (a hook never fails a launch). The
   headless test comes first so the hooks' `BYRE_ASSUME_TTY` test seam cannot
@@ -1085,6 +1087,95 @@ prompts when nobody can answer:
   symlink; the temp is removed either way. `set -C` would not do: noclobber
   refuses only an existing regular file, so it opens a symlink to a FIFO and
   the hook blocks.
+
+## Headless runs: the credential is the headless command's job
+
+In a headless run (`byre run`, ADR 0061) the login hooks stand down or
+print a remedy, as above, and nobody is there to log in. Each agent's
+headless command therefore runs its own credential preflight, every probe
+bounded, and exits 13 with a remedy on stderr when there is no usable
+credential -- before the agent starts, so a credential-less run fails in
+seconds rather than at the agent's first request. The remedies name
+`env_from_host` in the project config, `byre credentials set`, and the
+agent's shared-auth companion.
+
+### codex: a key in the env is logged into a CODEX_HOME made for the run
+
+**What happens.** With `OPENAI_API_KEY` set (or, failing that,
+`CODEX_ACCESS_TOKEN`), `byre-codex-headless` makes a fresh `CODEX_HOME` in
+the box's temp dir for this one run, copies in the user's `config.toml`
+from the real `CODEX_HOME` (a regular file only, never `auth.json`), runs
+`codex login --with-api-key` (or `--with-access-token`) there with the key
+on stdin, bounded at 30 s, runs `codex exec` under that home, and removes
+it when the run ends. The real `CODEX_HOME` -- the project's state
+volume -- is never written. With no key in the env it checks the real
+`CODEX_HOME`'s login (`codex login status`, bounded at 30 s) and runs
+there if one is present; otherwise it exits 13.
+
+**Why not log the key into the state volume.** codex has no env-key
+inference (above): a key only reaches codex as a login written into SOME
+`CODEX_HOME`, so the question is which one. Not the state volume, because
+of codex-shared-auth. Its reconciler runs at every launch and publishes
+any valid credential it finds in a project's `CODEX_HOME` to the shared
+store, and when both are valid it prefers one with no `last_refresh` --
+which an API-key login never has. A key left in the state volume would
+therefore become the machine's shared codex credential one launch later:
+other projects' work billed to this key, every other project's box handed
+a credential nobody granted it, and a shared ChatGPT login displaced --
+with no prompt anywhere. A login that exists only for the length of one
+run, in a directory the reconciler never looks at, cannot leak that way.
+
+**When it matters.** On a machine that persists between runs AND has
+codex-shared-auth enabled: a developer laptop, a self-hosted CI runner. A
+hosted runner that is discarded after the job never launches again, so
+nothing there is ever reconciled -- but the headless command behaves the
+same everywhere, so nobody has to know which kind of machine they are on.
+
+**A present key wins.** When `OPENAI_API_KEY` or `CODEX_ACCESS_TOKEN` is
+set, the run uses it even if the real `CODEX_HOME` holds a working login
+(a human's device login on a persistent runner, or the shared one). The
+key is the explicit choice for this run; the stored login is untouched and
+is what the next interactive session uses.
+
+Two side effects of the per-run home, both noted in the script: codex
+warns on stderr that it skips its helper-binary PATH aliases in a temp
+dir (the run does not need them), and a key codex rejects can appear
+MASKED (first and last few characters) in the event stream's error
+messages, which the result dir's transcript records. The full key exists
+only inside the run's own home, which is gone when the run ends.
+
+### claude: presence of an env credential is the whole check
+
+`byre-claude-headless`'s preflight, in order:
+
+- `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`
+  non-empty passes. Presence is all that can be checked cheaply: claude
+  does not validate an env token before a turn, and `claude auth status`
+  reports ANY non-empty token as logged in, so probing it adds nothing. A
+  bad token is not caught here: it surfaces when the agent runs, as a
+  failed run rather than a 13.
+- Otherwise a regular, non-symlink `.credentials.json` in the config dir
+  holding a `"claudeAiOauth"` entry passes -- that key is what claude
+  writes for an inference login. The file also holds MCP server logins
+  (`mcpOAuth`), which do not authenticate inference, so the file's mere
+  existence is not enough.
+- Otherwise `claude auth status`, bounded at 30 s, must report
+  `loggedIn: true` (read with `jq`, which the claude skill installs for
+  this). A timeout is a 13, never a stalled run.
+
+With an env credential and a fresh config dir, the headless command also
+seeds the onboarding marker itself -- the same publish as the
+`claude-onboarding` hook, with the same `-L` check and `ln -n` claim -- so a
+headless run cannot reach the first-run wizard even where that hook did
+not run.
+
+The answer comes from claude's last `result` event in its `stream-json`
+output (which requires `--verbose` under `-p`): `.result` is the answer,
+and `.is_error == true` is a reported failure (exit 10). The event's
+`subtype` is no signal -- a failed turn still says `success` -- and claude
+exits 1 when it reports a failure, so the event is judged before the exit
+status. A nonzero status with no reported failure, or no result event at
+all, is the process failing (exit 11, with its status recorded).
 
 ## Source list
 
