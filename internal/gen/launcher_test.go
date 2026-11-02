@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pjlsergeant/byre/internal/testtools"
 )
@@ -556,9 +557,13 @@ func TestLauncherWorktreeNoGitIsLoudAndResumable(t *testing.T) {
 			_ = os.Symlink(p, filepath.Join(toolbin, tool))
 		}
 	}
+	// The launcher runs its helpers on its own system PATH, not the one it
+	// inherits, so the box without git is staged by pointing that pin at the
+	// git-less tool dir.
 	dir := t.TempDir()
 	script := filepath.Join(dir, "launcher.sh")
-	if err := os.WriteFile(script, LauncherScript(), 0o755); err != nil {
+	body := strings.ReplaceAll(string(LauncherScript()), launcherSystemPath, toolbin)
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	c := exec.Command("bash", script, "true")
@@ -1168,5 +1173,155 @@ func TestLauncherFirstrunHookDoesNotInheritAnswerFd(t *testing.T) {
 	// The chassis still holds it: the answer reaches the box's stdout.
 	if stdout != "THE-ANSWER" {
 		t.Errorf("the box's stdout = %q, want THE-ANSWER", stdout)
+	}
+}
+
+// launcherSystemPath is the PATH launcher.sh runs its own helpers on.
+const launcherSystemPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+// The launcher saves the inherited PATH as the agent PATH and pins its own
+// before anything else runs. The NoGit case stages a git-less box by
+// rewriting this literal, so the literal is pinned here.
+func TestLauncherPinsItsOwnPath(t *testing.T) {
+	want := "\nreadonly BYRE_system_path=" + launcherSystemPath + "\nBYRE_agent_path=\"$PATH\"\nPATH=\"$BYRE_system_path\"\n"
+	if !strings.Contains(string(LauncherScript()), want) {
+		t.Fatalf("launcher.sh no longer saves the agent PATH and pins its own (want %q)", want)
+	}
+}
+
+// The launcher's own helpers resolve on the system PATH from its first line,
+// never on the inherited one, whose first entry is the agent-writable
+// ~/.local/bin that repository code (the worktree checkout's hooks and
+// filters) can write: a decoy of each helper there never runs across a launch
+// that drives them -- the gate's `tr`, the credential wait's `sleep`, the
+// worktree populate's `git`/`sed`/`head`/`rm`, the egress list's `sed`, the
+// self-edit probe's `grep` -- interactive and headless alike. The firstrun
+// hook and the agent command still see exactly the inherited PATH.
+func TestLauncherHelpersIgnoreInheritedPath(t *testing.T) {
+	testtools.NeedTool(t, "git")
+	dir, bin, chassis, launcher := headlessLauncherFixture(t)
+	decoyLog := filepath.Join(dir, "decoys-ran")
+	for _, tool := range []string{"tr", "sleep", "git", "sed", "head", "rm", "ls", "grep", "cat", "env"} {
+		realTool, err := exec.LookPath(tool)
+		if err != nil {
+			t.Skipf("no %s on PATH", tool)
+		}
+		body := "#!/bin/sh\n" + `echo ` + tool + ` >>"` + decoyLog + `"` + "\n" + `exec "` + realTool + `" "$@"` + "\n"
+		if err := os.WriteFile(filepath.Join(bin, tool), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hookPath := filepath.Join(dir, "hook-path")
+	agentPath := filepath.Join(dir, "agent-path")
+	if err := os.WriteFile(filepath.Join(dir, "firstrun.d", "20-path"),
+		[]byte(`printf '%s' "$PATH" >"`+hookPath+`"`+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	probe := "#!/bin/sh\n" + `printf '%s' "$PATH" >"` + agentPath + `"` + "\n"
+	if err := os.WriteFile(chassis, []byte(probe), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gate := gateWithListener(t, dir)
+	inherited := bin + string(os.PathListSeparator) + os.Getenv("PATH")
+	realGit := func(a ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", a...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", a, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	for i, args := range [][]string{{"/bin/sh", "-c", `printf '%s' "$PATH" >"$0"`, agentPath}, {chassis}} {
+		// A pending worktree checkout, so the populate runs git, sed, head
+		// and rm.
+		root := filepath.Join(dir, fmt.Sprintf("wt%d", i))
+		repo := filepath.Join(root, "repo")
+		wt := filepath.Join(root, "wt")
+		realGit("init", "-q", repo)
+		realGit("-C", repo, "-c", "user.email=a@b.c", "-c", "user.name=x", "commit", "-q", "--allow-empty", "-m", "init")
+		realGit("-C", repo, "worktree", "add", "-q", "--no-checkout", "-b", "feat", wt)
+		marker := filepath.Join(realGit("-C", wt, "rev-parse", "--absolute-git-dir"), "byre-needs-checkout")
+		if err := os.WriteFile(marker, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		// A delivery whose .done lands after the launcher starts waiting,
+		// so the wait loop's sleep runs.
+		creds := filepath.Join(root, "creds")
+		deliverTree(t, creds, "SOME_KEY env\n", map[string][]byte{"SOME_KEY": []byte("v")})
+		done := filepath.Join(creds, ".done")
+		if err := os.Remove(done); err != nil {
+			t.Fatal(err)
+		}
+		landed := make(chan struct{})
+		go func() {
+			defer close(landed)
+			time.Sleep(600 * time.Millisecond)
+			_ = os.WriteFile(done, nil, 0o600)
+		}()
+		for _, f := range []string{agentPath, hookPath, decoyLog} {
+			if err := os.RemoveAll(f); err != nil {
+				t.Fatal(err)
+			}
+		}
+		code, _, stderr := runLauncherSplitScript(t, dir, bin, launcher, []string{
+			"BYRE_LAUNCH_GATE_FILE=" + gate,
+			"BYRE_EGRESS=api.example.com:443 github.com:22",
+			"BYRE_WORKSPACE_DIR=" + wt,
+			"BYRE_CRED_EXPECT=1",
+			"BYRE_CRED_DIR=" + creds,
+			"BYRE_CRED_WAIT=10",
+		}, args...)
+		<-landed
+		if code != 0 {
+			t.Fatalf("%v: exit %d\n%s", args, code, stderr)
+		}
+		if !strings.Contains(stderr, "populated the worktree checkout") {
+			t.Fatalf("%v: the worktree populate did not run:\n%s", args, stderr)
+		}
+		if _, err := os.Stat(marker); err == nil {
+			t.Fatalf("%v: the populate left its marker, so rm never ran", args)
+		}
+		if ran, err := os.ReadFile(decoyLog); err == nil {
+			t.Errorf("%v: helpers on the inherited PATH ran: %q", args, ran)
+		}
+		for _, f := range []struct{ name, path string }{{"the firstrun hook", hookPath}, {"the agent command", agentPath}} {
+			got, err := os.ReadFile(f.path)
+			if err != nil {
+				t.Fatalf("%v: %s did not run: %v\n%s", args, f.name, err, stderr)
+			}
+			if string(got) != inherited {
+				t.Errorf("%v: %s saw PATH %q, want the inherited %q", args, f.name, got, inherited)
+			}
+		}
+	}
+}
+
+// A credential named PATH is the agent's: the launcher keeps its own helpers
+// on the system PATH, and the firstrun hook and the agent command see the
+// delivered value byte-exact. The delivered directory holds nothing but bash,
+// so the `bash -c` agent command still resolves.
+func TestLauncherPathCredentialReachesTheAgent(t *testing.T) {
+	realBash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash on PATH")
+	}
+	delivered := t.TempDir()
+	if err := os.Symlink(realBash, filepath.Join(delivered, "bash")); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	deliverTree(t, dir, "PATH env\n", map[string][]byte{"PATH": []byte(delivered)})
+	marker := filepath.Join(t.TempDir(), "hook-path")
+	code, out := runLauncherCreds(t, dir, true, "5", `printf 'agent:%s' "$PATH"`,
+		firstrunDirWith(t, `printf '%s' "$PATH" >"`+marker+`"`+"\n"))
+	if code != 0 || out != "agent:"+delivered {
+		t.Fatalf("exit %d, agent saw %q, want exit 0 and the delivered PATH %q", code, out, delivered)
+	}
+	got, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatalf("the firstrun hook never ran: %v (%s)", err, out)
+	}
+	if string(got) != delivered {
+		t.Fatalf("the firstrun hook saw PATH %q, want the delivered %q", got, delivered)
 	}
 }

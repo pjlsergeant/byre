@@ -19,6 +19,19 @@ set -euo pipefail
 # knob — the chassis paths are constants, not configuration.
 export HOME=/home/dev
 
+# The launcher runs its own helpers (tr, sleep, git, sed, head, ls, grep, rm,
+# cat) on the image's system directories from here to the exec. The inherited
+# PATH starts with the agent-writable ~/.local/bin, and repository code -- the
+# worktree checkout below runs the repo's hooks and filters -- can write there
+# before the launcher composes the session context or waits for credentials.
+# The inherited PATH is saved as the agent PATH and handed back only to what
+# runs as the agent: the firstrun hooks (they run the agent CLIs for device
+# login) and the final exec. Readonly so a sourced env.d hook cannot re-point
+# the helpers' PATH for the hooks after it (ADR 0028).
+readonly BYRE_system_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+BYRE_agent_path="$PATH"
+PATH="$BYRE_system_path"
+
 # Launch gate — a network-posture skill (e.g. firewall) bakes a gate file whose
 # content is a loopback port. When present, byre applies the skill's network
 # setup from OUTSIDE the box (a netns-init helper container) after start, and
@@ -289,6 +302,11 @@ byre_credentials_apply() {
     "declare -x $2="*) ;;
     *) cred_export_fail "$1" ;;
     esac
+    # A delivered PATH is for the agent, not for the launcher's helpers.
+    if [ "$2" = PATH ]; then
+      BYRE_agent_path="$3"
+      PATH="$BYRE_system_path"
+    fi
   }
   # Byre's manifest ends every line, the last one included. A final byte that
   # is not a newline means the delivery was CUT SHORT -- and `read` would end
@@ -297,18 +315,18 @@ byre_credentials_apply() {
   # reached by silence instead of by a bad line. Refused whole, here, so the
   # loop only ever sees terminated records.
   #
-  # Read with a BUILTIN, never `tail`: PATH is a name a credential may carry
-  # (byre discloses that rather than reserving it, P1), and the SECOND pass
-  # runs with every delivered value already exported -- so an external command
-  # here is one a delivered value can make unfindable. `tail` was exactly
-  # that: with PATH re-pointed its substitution came back empty, this check
-  # passed vacuously, and a manifest shortened between the two passes exported
-  # a partial set. The only external command left in this function is the wait
+  # Read with a BUILTIN, never `tail`: the SECOND pass runs with every
+  # delivered value already exported, and an external command here is one a
+  # delivered value (an IFS, a PATH) could disturb. With `tail`, a PATH that
+  # left it unfindable made its substitution come back empty, this check
+  # pass vacuously, and a manifest shortened between the two passes export a
+  # partial set. The only external command left in this function is the wait
   # loop's `sleep`, which the second pass never reaches (.done exists by then)
-  # and the first pass runs before any credential is exported. PAST this
-  # function, the final exec resolves on PATH: a credential that re-points it
-  # breaks the user's own box, which is theirs to do (P1), and byre says so
-  # rather than reserving the name.
+  # and the first pass runs before any credential is exported. A credential
+  # named PATH becomes the AGENT PATH (byre_cred_export re-pins the
+  # launcher's own): the firstrun hooks and the final exec resolve on it, and
+  # a value that re-points it breaks the user's own box, which is theirs to
+  # do (P1) -- byre says so rather than reserving the name.
   BYRE_cred_nl='
 '
   BYRE_cred_manifest=""
@@ -404,9 +422,10 @@ byre_credentials_apply
 # on fd 9 and everything from here on -- this launcher, every hook, the
 # chassis -- writes stdout to stderr instead.
 # The key is the chassis's ABSOLUTE path (gen.HeadlessPath), compared as a
-# string, and the explicit-argv arm below execs it as given: PATH starts with
-# the agent-writable ~/.local/bin and repository code (a worktree checkout's
-# hooks) has run above, so a bare name could resolve to a planted binary.
+# string, and the explicit-argv arm below execs it as given: the agent PATH
+# the exec restores starts with the agent-writable ~/.local/bin and repository
+# code (a worktree checkout's hooks) has run above, so a bare name could
+# resolve to a planted binary.
 if [ "${1:-}" = /usr/local/bin/byre-headless ]; then export BYRE_HEADLESS=1; exec 9>&1 >&2; else unset BYRE_HEADLESS; fi
 
 # First-run hooks — agent skills drop scripts here. They run as the dev user
@@ -430,14 +449,15 @@ if [ -d "$BYRE_firstrun_dir" ]; then
     # BYRE_hook_status=$?` kills the launcher on the failing hook, the exact
     # inversion of best-effort.
     # The interpreter is /bin/bash, never a PATH lookup, and fd 9 is closed
-    # for the hook: repo code has run above and PATH starts with the
-    # agent-writable ~/.local/bin, so a bare `bash` could be a planted binary
-    # that runs in place of every hook -- and under headless, one holding the
-    # box's real stdout. Closing fd 9 keeps the hook from inheriting it; a
-    # same-uid process can still reach it through /proc, so the answer
-    # stays agent-trust content.
+    # for the hook: repo code has run above and the agent PATH starts with
+    # the agent-writable ~/.local/bin, so a bare `bash` could be a planted
+    # binary that runs in place of every hook -- and under headless, one
+    # holding the box's real stdout. Closing fd 9 keeps the hook from
+    # inheriting it; a same-uid process can still reach it through /proc, so
+    # the answer stays agent-trust content. The hook runs on the agent PATH
+    # because it runs the agent CLIs, so its own helpers resolve there too.
     if [ -r "$BYRE_hook" ]; then
-      if /bin/bash "$BYRE_hook" 9>&-; then
+      if PATH="$BYRE_agent_path" /bin/bash "$BYRE_hook" 9>&-; then
         :
       else
         BYRE_hook_status=$?
@@ -459,30 +479,28 @@ fi
 # guaranteed only to the former. First user: claude-shared-auth exports
 # CLAUDE_CODE_OAUTH_TOKEN from its identity volume (ADR 0017). The dir
 # override is a test seam, per the gate precedent.
-# PATH is pinned to the system directories before EACH hook is sourced and
-# the saved PATH restored after the loop: a hook computes its exports with
-# system tools (claude-shared-auth's `tr` decides the token the agent runs
-# with), and the inherited PATH starts with the agent-writable ~/.local/bin,
-# which repository code (a worktree checkout's hooks) could write before
-# this point. The pin is per hook because the hooks share this shell: a
-# PATH one hook exports would otherwise become the helper PATH of every hook
-# after it. Firstrun hooks above keep the agent PATH: they run the agent
-# CLIs. The restore also means an env.d hook cannot change the agent's PATH
-# -- a PATH it sets is discarded here (ADR 0028).
+# The hooks are sourced on the launcher's system PATH, re-pinned before EACH
+# hook and once more after the loop: a hook computes its exports with system
+# tools (claude-shared-auth's `tr` decides the token the agent runs with),
+# and the agent PATH starts with the agent-writable ~/.local/bin, which
+# repository code (a worktree checkout's hooks) could write before this
+# point. The pin is per hook because the hooks share this shell: a PATH one
+# hook exports would otherwise become the helper PATH of every hook after it.
+# Firstrun hooks above keep the agent PATH: they run the agent CLIs. The
+# agent's PATH is the saved one, so an env.d hook cannot change it -- a PATH
+# it sets is discarded here (ADR 0028).
 BYRE_envd_dir="${BYRE_ENVD_DIR:-/etc/byre/env.d}"
 if [ -d "$BYRE_envd_dir" ]; then
-  BYRE_saved_path="$PATH"
   for BYRE_envhook in "$BYRE_envd_dir"/*.sh; do
     if [ -r "$BYRE_envhook" ]; then
-      PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      PATH="$BYRE_system_path"
       set +eu
       # shellcheck disable=SC1090
       . "$BYRE_envhook"
       set -eu
     fi
   done
-  PATH="$BYRE_saved_path"
-  unset BYRE_saved_path
+  PATH="$BYRE_system_path"
 fi
 
 # Credential re-apply — the second call (the block above firstrun holds the
@@ -499,6 +517,11 @@ byre_credentials_apply
 # Agent command: explicit run args > recorded agent command > login shell.
 # /etc/byre/agent-cmd is an *executable script* an agent skill installs;
 # executing it (rather than word-splitting its text) preserves quoting/spaces.
+# The agent PATH comes back as the last assignment before the exec, so the
+# command -- a bare argv name, `bash -l`, the skill command agent-cmd execs,
+# the chassis's own saved PATH -- resolves on exactly the inherited PATH (or a
+# delivered PATH credential). A plain assignment, not `exec env PATH=...`:
+# env would read a NAME=value first argument as another assignment.
 if [ "$#" -gt 0 ]; then
   BYRE_cmd=("$@")
 elif [ -x /etc/byre/agent-cmd ]; then
@@ -507,4 +530,5 @@ else
   BYRE_cmd=(bash -l)
 fi
 
+PATH="$BYRE_agent_path"
 exec "${BYRE_cmd[@]}"

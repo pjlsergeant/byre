@@ -760,15 +760,17 @@ func TestLauncherStateIsAllByrePrefixed(t *testing.T) {
 	// credentials set` and the export loop refuses the delivery -- no credential
 	// can be carrying it when the loop assigns it.
 	allowed := map[string]bool{"SECONDS": true}
-	// The env.d loop's pin and restore of PATH are exempt as these two exact
-	// lines: the hooks run on the system directories, and the saved value
-	// comes back byte-exact before the credential re-apply, so a credential
-	// named PATH is unchanged and then re-exported over it
-	// (TestLauncherEnvdHookIgnoresHelpersOnPath pins the restore). Any other
+	// PATH is exempt as these two exact lines. The launcher's own helpers run
+	// on the system directories (byre_cred_export re-pins after a delivered
+	// PATH, the env.d loop before each hook and after the last), and the
+	// final exec restores the agent PATH, which holds a delivered PATH
+	// byte-exact -- so a credential named PATH still reaches the agent
+	// (TestLauncherPathCredentialReachesTheAgent), and a PATH an env.d hook
+	// sets does not (TestLauncherEnvdHookIgnoresHelpersOnPath). Any other
 	// PATH binding is still a hole.
 	allowedLines := map[string]bool{
-		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin": true,
-		`PATH="$BYRE_saved_path"`: true,
+		`PATH="$BYRE_system_path"`: true,
+		`PATH="$BYRE_agent_path"`:  true,
 	}
 	// `IFS= read ...` and `IFS=' ' read ...` are command-PREFIX assignments:
 	// they bind IFS for that one command and nothing else, which is how the
