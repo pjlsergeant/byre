@@ -459,20 +459,22 @@ fi
 # guaranteed only to the former. First user: claude-shared-auth exports
 # CLAUDE_CODE_OAUTH_TOKEN from its identity volume (ADR 0017). The dir
 # override is a test seam, per the gate precedent.
-# PATH is pinned to the system directories while the hooks are sourced and
-# the saved PATH restored after: a hook computes its exports with system
-# tools (claude-shared-auth's `tr` decides the token the agent runs with),
-# and the inherited PATH starts with the agent-writable ~/.local/bin, which
-# repository code (a worktree checkout's hooks) could write before this
-# point. Firstrun hooks above keep the agent PATH: they run the agent CLIs.
-# The restore also means an env.d hook cannot change the agent's PATH -- a
-# PATH it sets is discarded here (ADR 0028).
+# PATH is pinned to the system directories before EACH hook is sourced and
+# the saved PATH restored after the loop: a hook computes its exports with
+# system tools (claude-shared-auth's `tr` decides the token the agent runs
+# with), and the inherited PATH starts with the agent-writable ~/.local/bin,
+# which repository code (a worktree checkout's hooks) could write before
+# this point. The pin is per hook because the hooks share this shell: a
+# PATH one hook exports would otherwise become the helper PATH of every hook
+# after it. Firstrun hooks above keep the agent PATH: they run the agent
+# CLIs. The restore also means an env.d hook cannot change the agent's PATH
+# -- a PATH it sets is discarded here (ADR 0028).
 BYRE_envd_dir="${BYRE_ENVD_DIR:-/etc/byre/env.d}"
 if [ -d "$BYRE_envd_dir" ]; then
   BYRE_saved_path="$PATH"
-  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
   for BYRE_envhook in "$BYRE_envd_dir"/*.sh; do
     if [ -r "$BYRE_envhook" ]; then
+      PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       set +eu
       # shellcheck disable=SC1090
       . "$BYRE_envhook"

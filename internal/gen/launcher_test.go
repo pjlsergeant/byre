@@ -1078,16 +1078,25 @@ func TestLauncherFirstrunHookIgnoresBashOnPath(t *testing.T) {
 // one, whose first entry is the agent-writable ~/.local/bin: a decoy `tr`
 // there does not run, the hook's `tr` is the system one, a PATH the hook sets
 // does not reach the agent, and the agent command still sees the inherited
-// PATH -- interactive and headless alike.
+// PATH -- interactive and headless alike. The pin holds per hook: an earlier
+// hook that exports a PATH leading with a decoy directory does not hand that
+// directory's `tr` to the hook sourced after it.
 func TestLauncherEnvdHookIgnoresHelpersOnPath(t *testing.T) {
 	dir, bin, chassis, launcher := headlessLauncherFixture(t)
 	decoyLog := filepath.Join(dir, "decoy-tr-ran")
 	hookSaw := filepath.Join(dir, "hook-saw")
 	agentPath := filepath.Join(dir, "agent-path")
+	hookPath := filepath.Join(dir, "hook-path")
+	if err := os.MkdirAll(hookPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	decoyTr := "#!/bin/sh\n" +
+		`echo ran >>"` + decoyLog + `"` + "\n" +
+		"echo DECOY\n"
 	files := map[string]string{
-		filepath.Join(bin, "tr"): "#!/bin/sh\n" +
-			`echo ran >>"` + decoyLog + `"` + "\n" +
-			"echo DECOY\n",
+		filepath.Join(bin, "tr"):                  decoyTr,
+		filepath.Join(hookPath, "tr"):             decoyTr,
+		filepath.Join(dir, "env.d", "15-path.sh"): "export PATH=" + hookPath + string(os.PathListSeparator) + "$PATH\n",
 		filepath.Join(dir, "env.d", "20-tr.sh"): `export BYRE_TEST_TR="$(printf ' a b ' | tr -d '[:space:]')"` + "\n" +
 			`command -v tr >"` + hookSaw + `"` + "\n" +
 			"export PATH=/hook-set-path\n",
@@ -1121,8 +1130,8 @@ func TestLauncherEnvdHookIgnoresHelpersOnPath(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%v: the env.d hook did not run: %v\n%s", args, err, stderr)
 		}
-		if got := strings.TrimSpace(string(saw)); strings.HasPrefix(got, bin) {
-			t.Errorf("%v: the env.d hook resolved tr to %q, inside the inherited PATH's first entry", args, got)
+		if got := strings.TrimSpace(string(saw)); strings.HasPrefix(got, bin) || strings.HasPrefix(got, hookPath) {
+			t.Errorf("%v: the env.d hook resolved tr to %q, inside the inherited PATH's first entry or an earlier hook's PATH", args, got)
 		}
 		got, err := os.ReadFile(agentPath)
 		if err != nil {
