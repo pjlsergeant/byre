@@ -63,6 +63,10 @@ type SkillRuntime struct {
 	// where the skill is enabled, since the effect lands on projects that do
 	// not exist yet.
 	SharedAuthFor string
+	// AgentHeadless is the skill's [agent] headless command ("" = none, or
+	// not an agent skill). The skills screen appends it to the skill's agent
+	// row, read-only: it is manifest text, not a key this editor writes.
+	AgentHeadless string
 	// Provenance is the package provenance (bundled/local/installed/...) for
 	// dim-row labels; empty when unknown.
 	Provenance string

@@ -10,6 +10,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/packages"
+	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // skillEntry is one row of the skills multi-select.
@@ -291,6 +292,7 @@ func (m model) viewSkills() string {
 		b.WriteString(dimStyle.Render("  (no skills discovered)") + "\n")
 	}
 	prevAgent := false
+	headlessHedged := skills.ReservedEnvTouches(m.reservedEnvNow(), skills.ClaimHeadless)
 	for i, e := range entries {
 		if i == 0 || e.agent != prevAgent {
 			header := "Skills"
@@ -332,6 +334,15 @@ func (m model) viewSkills() string {
 			line += dimStyle.Render("  (inherited)")
 		case e.removedHere:
 			line += dimStyle.Render("  (removes an inherited skill)")
+		}
+		// An agent's headless mode is a fact about the skill, not one of the
+		// row's states: it rides beside whichever state the switch above
+		// chose, never in the disabled slot, so the row stays toggleable.
+		// Only an agent skill whose manifest loaded can say it has none (a
+		// nested companion is not an agent).
+		if rt, ok := m.inh.Skills[e.name]; ok && e.agent && !e.child {
+			h := skills.HeadlessSuffix(rt.AgentHeadless, headlessHedged && rt.AgentHeadless != "")
+			line += dimStyle.Render("  · " + packages.EscapeTerminal(h))
 		}
 		if d := m.skillDescs[e.name]; d != "" {
 			// A description is manifest text -- local and installed skills

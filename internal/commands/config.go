@@ -516,6 +516,9 @@ func editorInherited(home string, cat *packages.Catalog, templates, skillOpts []
 				SharedAuthFor: sk.File.SharedAuthFor,
 				Provenance:    "",
 			}
+			if sk.File.Agent != nil {
+				rt.AgentHeadless = sk.File.Agent.Headless
+			}
 			if cat != nil {
 				if ent, ok := cat.Lookup(n); ok {
 					rt.Provenance = string(ent.Provenance)

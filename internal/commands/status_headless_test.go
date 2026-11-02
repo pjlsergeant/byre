@@ -72,6 +72,27 @@ func TestStatusHeadlessDropsWhenTheLaunchedAgentDiffers(t *testing.T) {
 	}
 }
 
+// skill inspect lists the headless command under the agent command, and an
+// agent declaring none prints no headless line.
+func TestSkillInspectShowsAgentHeadless(t *testing.T) {
+	var f skills.File
+	f.Agent = &skills.AgentContrib{Command: "agenty --go", Headless: "agenty-run --json"}
+	var b strings.Builder
+	printSkillContributions(&b, f)
+	out := b.String()
+	cmd, head := strings.Index(out, "agent command: agenty --go\n"), strings.Index(out, "agent headless: agenty-run --json\n")
+	if cmd < 0 || head < cmd {
+		t.Errorf("headless line must follow the agent command:\n%s", out)
+	}
+
+	f.Agent.Headless = ""
+	b.Reset()
+	printSkillContributions(&b, f)
+	if strings.Contains(b.String(), "headless") {
+		t.Errorf("no headless command, no headless line:\n%s", b.String())
+	}
+}
+
 func TestStatusDataCarriesAgentHeadless(t *testing.T) {
 	got := decodeStatusData(t, statusInfo{Agent: "claude", AgentHeadless: "claude-headless", AgentHeadlessKnown: true})
 	if got["agent_headless"] != "claude-headless" {
