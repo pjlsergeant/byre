@@ -35,6 +35,8 @@ RUN chmod +x /etc/byre/credential-receiver
 COPY byre-profile-env.sh /etc/profile.d/byre-env.sh
 COPY byre-fetch-run /usr/local/bin/byre-fetch-run
 RUN chmod +x /usr/local/bin/byre-fetch-run
+COPY byre-headless /usr/local/bin/byre-headless
+RUN chmod +x /usr/local/bin/byre-headless
 
 # --- skill apt (hoisted; see ADR 0042) ---
 

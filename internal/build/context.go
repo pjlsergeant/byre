@@ -275,6 +275,9 @@ func AssembleWarn(paths project.Paths, cfg config.Merged, res skills.Resolved, w
 	if err := ctxRoot.WriteFile(gen.FetchRunName, gen.FetchRunScript(), 0o755); err != nil {
 		return "", err
 	}
+	if err := ctxRoot.WriteFile(gen.HeadlessName, gen.HeadlessScript(), 0o755); err != nil {
+		return "", err
+	}
 	if err := ctxRoot.WriteFile(gen.ProfileEnvName, gen.ProfileEnvScript(), 0o644); err != nil {
 		return "", err
 	}

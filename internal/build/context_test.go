@@ -66,7 +66,7 @@ func TestAssembleWritesDockerfileAndLauncher(t *testing.T) {
 	}
 
 	// Every executable the core block COPYs must land in the context.
-	for _, name := range []string{gen.LauncherName, gen.FetchRunName} {
+	for _, name := range []string{gen.LauncherName, gen.FetchRunName, gen.HeadlessName} {
 		info, err := os.Stat(paths.ContextDir + "/" + name)
 		if err != nil {
 			t.Fatalf("%s not written: %v", name, err)

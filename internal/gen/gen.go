@@ -56,6 +56,22 @@ var fetchRunScript []byte
 // build-context assembler writes these to <context>/byre-fetch-run.
 func FetchRunScript() []byte { return fetchRunScript }
 
+// HeadlessName is the build-context filename of the headless-run chassis the
+// core block COPYs to HeadlessPath. `byre run` passes this name as the
+// container command, so the launcher's explicit-argv arm execs it.
+const HeadlessName = "byre-headless"
+
+// HeadlessPath is where the core block installs the headless-run chassis (on
+// PATH, so the bare name the launcher is handed resolves).
+const HeadlessPath = "/usr/local/bin/" + HeadlessName
+
+//go:embed headless.sh
+var headlessScript []byte
+
+// HeadlessScript returns the constant headless-chassis script bytes. The
+// build-context assembler writes these to <context>/byre-headless.
+func HeadlessScript() []byte { return headlessScript }
+
 // ProfileEnvName is the build-context filename of the /etc/profile.d shim that
 // sources env.d for login shells (so `byre shell` sessions get the same
 // env.d-provided environment the launcher gives the agent).
@@ -266,7 +282,12 @@ const coreBlock = "ARG BYRE_UID=1000\n" +
 	// The installer helper precedes the skill blocks that call it; a build
 	// step only, so it is not re-asserted by the security guard.
 	"COPY " + FetchRunName + " " + FetchRunPath + "\n" +
-	"RUN chmod +x " + FetchRunPath + "\n"
+	"RUN chmod +x " + FetchRunPath + "\n" +
+	// The headless-run chassis rides every image, like the receiver: whether
+	// a session is a headless run is decided per launch by its argv, and a
+	// conditional COPY would fork the cache-shared core block.
+	"COPY " + HeadlessName + " " + HeadlessPath + "\n" +
+	"RUN chmod +x " + HeadlessPath + "\n"
 
 // Dockerfile renders the generated Dockerfile in byre's canonical order:
 // FROM, the template block, the constant core block, the hoisted skill apt
