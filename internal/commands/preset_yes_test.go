@@ -108,6 +108,30 @@ skills = ["pete/linter"]
 	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
 }
 
+// Every --yes refusal happens before byre's own store maintenance: a
+// refused apply against a fresh BYRE_HOME leaves no AGENTS.md and no bundled
+// mirror, so "before anything is written" holds as ADR 0063 states it.
+func TestPresetApplyYesRefusesBeforeStoreMaintenance(t *testing.T) {
+	for name, preset := range map[string]string{
+		"credential row":        "agent = \"none\"\n[env_from_host]\nSTRIPE_KEY = \"" + credRow("Zm9vYmFy") + "\"\n",
+		"undigested https hint": "agent = \"none\"\nskills = [\"pete/linter\"]\n\n[sources]\n\"pete/linter\" = { uri = \"https://example.invalid/linter/skill.toml\" }\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			p, proj := onboardPaths(t)
+			shipPreset(t, proj, PresetName, preset)
+			s, _, _ := testStreams("", false)
+			if err := PresetApply(s, proj, "", true); err == nil {
+				t.Fatal("the apply must refuse")
+			}
+			for _, f := range []string{"AGENTS.md", "bundled"} {
+				if _, err := os.Stat(filepath.Join(p.Home, f)); !os.IsNotExist(err) {
+					t.Errorf("a refused --yes apply must not write %s into BYRE_HOME (err=%v)", f, err)
+				}
+			}
+		})
+	}
+}
+
 // An https preset URI refuses under --yes before any fetch: unattended,
 // nobody inspects what it serves, and nothing committed pins it. The URL is
 // unroutable, so a fetch attempt would surface as a different error.

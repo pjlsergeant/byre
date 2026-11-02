@@ -91,9 +91,6 @@ func PresetApply(s Streams, projectDir, arg string, yes bool) error {
 	if err := paths.ValidateExisting(); err != nil {
 		return err
 	}
-	if err := builtins.EnsureStoreOut(paths.Home, s.Err); err != nil {
-		return err
-	}
 
 	content, source, err := readPreset(projectDir, arg)
 	if err != nil {
@@ -150,6 +147,14 @@ func PresetApply(s Streams, projectDir, arg string, yes bool) error {
 		if err := undigestedHintRefusal(missing); err != nil {
 			return err
 		}
+	}
+	// Store maintenance (store dirs, the byre-owned AGENTS.md, the bundled
+	// mirror) waits until no --yes refusal can fire, so a refused apply has
+	// written nothing at all. Nothing above needs it: the catalog reads
+	// bundled packages from the binary and tolerates absent store dirs, and
+	// the preset and the stored config are plain reads.
+	if err := builtins.EnsureStoreOut(paths.Home, s.Err); err != nil {
+		return err
 	}
 
 	// Step 3: the chauffeur. Not the banned transitive install (which is
