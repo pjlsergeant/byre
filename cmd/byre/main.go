@@ -329,7 +329,7 @@ start of every run: archive it before running again.`,
 	c.Flags().StringVarP(&o.Agent, "agent", "a", "", `agent for THIS run: on a configured project, a one-off override (nothing written); on a NEW project, with --template, seeds its config`)
 	c.Flags().StringVar(&o.Template, "template", "", `template for a NEW project's config (first run only; "none" to skip) -- a new project needs both --template and --agent`)
 	c.Flags().StringVar(&o.Model, "model", "", "model for the agent's headless command (default: the agent's own)")
-	c.Flags().StringVar(&o.Timeout, "timeout", "", "stop the agent after this long and exit 12 (coreutils syntax: 600, 30m, 1.5h); no timeout unless given")
+	c.Flags().StringVar(&o.Timeout, "timeout", "", "stop the agent after this long and exit 12 (coreutils syntax: 600, 30m, 1.5h; 1s to 3650d); no timeout unless given")
 	c.Flags().StringVar(&creds, "credentials", "", `how this launch gets credential passphrases: ask (default; fails without a terminal when rows need one), skip (launch deliberately without them), stdin (one passphrase per line)`)
 	return c
 }

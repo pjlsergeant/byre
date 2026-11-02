@@ -162,7 +162,7 @@ func runExitCodeSection() string {
 		"| Code | Owner | Meaning |\n|---|---|---|\n"+
 		"| `0` | script | Success: the agent left an answer, and it is on stdout. |\n"+
 		"| `1` | byre | byre failed (banner) -- before launch, or after the box was created (credential delivery, a box status past `127`); or byre refused (its report, no banner): the project is not configured here, no agent, the agent has no headless command, `.byre-run` is not a directory, the task is unreadable or over 1 MiB. |\n"+
-		"| `2` | byre | Usage: no task source, `--task -` with `--credentials stdin`, `--timeout 0`, a malformed `--timeout`, a bad `--credentials`. |\n"+
+		"| `2` | byre | Usage: no task source, `--task -` with `--credentials stdin`, `--timeout 0`, a malformed `--timeout` or one under 1s or over 3650d, a bad `--credentials`. |\n"+
 		"| `%d` | byre | A session is already live -- before the box was created, or the attach failed with the box still running. |\n"+
 		"| `10` | script | The agent reported failure. |\n"+
 		"| `11` | script | The agent process failed; its raw status is `backend_exit_code` in `.byre-run/result.json`. |\n"+

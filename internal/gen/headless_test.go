@@ -339,7 +339,7 @@ printf 'own answer' >"$BYRE_RUN_RESULT_FILE"`
 			}
 		})
 	}
-	for _, spec := range []string{"1", "0.5", "0.02m"} {
+	for _, spec := range []string{"1", "1.5", "0.02m"} {
 		t.Run("real timer "+spec, func(t *testing.T) {
 			t.Parallel()
 			r := runHeadless(t, headlessCase{
@@ -514,6 +514,10 @@ func TestHeadlessRefusesInvalidInputs(t *testing.T) {
 		{"relative dir", []string{"BYRE_RUN_DIR=run"}, nil, "BYRE_RUN_DIR"},
 		{"malformed digest", []string{"BYRE_RUN_TASK_SHA256=abc"}, nil, "BYRE_RUN_TASK_SHA256"},
 		{"malformed timeout", []string{"BYRE_RUN_TIMEOUT=soon"}, nil, "BYRE_RUN_TIMEOUT"},
+		{"sub-second timeout", []string{"BYRE_RUN_TIMEOUT=0.5"}, nil, "smallest timeout, 1s"},
+		{"sub-second timeout with a suffix", []string{"BYRE_RUN_TIMEOUT=0.000001s"}, nil, "smallest timeout, 1s"},
+		{"timeout whose product overflows", []string{"BYRE_RUN_TIMEOUT=999999999999999999d"}, nil, "largest timeout, 3650d"},
+		{"timeout over the cap", []string{"BYRE_RUN_TIMEOUT=3651d"}, nil, "largest timeout, 3650d"},
 	}
 	for _, name := range []string{"transcript.jsonl", "stderr.log", "result.md", "status", "result.json"} {
 		cases = append(cases,

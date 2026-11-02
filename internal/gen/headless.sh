@@ -164,7 +164,11 @@ fi
 # USR1 handler holds $SECONDS to. Rounding down keeps the real timer's signal
 # always past it -- sleep(1) never wakes early -- at the cost of a sub-second
 # slack a forged signal could use on a timeout that ends within that second
-# anyway.
+# anyway. A duration that floors to 0 would put the deadline at arming time
+# and let every USR1 through, so the smallest timeout is 1 s; the largest is
+# 3650 d, and the integer part's digits are counted before multiplying so
+# the 64-bit product cannot wrap to a deadline already past.
+timeout_max_secs=315360000
 timeout_secs=0
 if [ -n "$timeout_spec" ]; then
   num=${timeout_spec%[smhd]}
@@ -176,9 +180,16 @@ if [ -n "$timeout_spec" ]; then
   esac
   int=${num%%.*} frac=""
   case $num in *.*) frac=${num#*.} ;; esac
+  while [[ $int == 0* ]]; do int=${int#0}; done
+  [ "${#int}" -le 9 ] ||
+    refuse "BYRE_RUN_TIMEOUT is over the largest timeout, 3650d: $(printf '%q' "$timeout_spec")"
   frac=${frac:0:6}
   while [ "${#frac}" -lt 6 ]; do frac+=0; done
   timeout_secs=$(((10#${int:-0}) * mult + (10#$frac) * mult / 1000000))
+  [ "$timeout_secs" -ge 1 ] ||
+    refuse "BYRE_RUN_TIMEOUT is under the smallest timeout, 1s: $(printf '%q' "$timeout_spec")"
+  [ "$timeout_secs" -le "$timeout_max_secs" ] ||
+    refuse "BYRE_RUN_TIMEOUT is over the largest timeout, 3650d: $(printf '%q' "$timeout_spec")"
 fi
 
 # --- 2. claim byre's own files, exclusively, once -----------------------------

@@ -990,14 +990,17 @@ func TestRunCrashWritesSummary(t *testing.T) {
 	}
 }
 
-// --timeout's grammar: coreutils durations, zero refused with the remedy.
+// --timeout's grammar: coreutils durations, zero refused with the remedy,
+// and the 1s..3650d range the chassis's whole-second deadline holds.
 func TestCheckRunTimeout(t *testing.T) {
-	for _, v := range []string{"600", "30m", "1.5h", "2d", "10s"} {
+	for _, v := range []string{"600", "30m", "1.5h", "2d", "10s", "1", "1s", "2s", "0.02m", "3650d", "315360000", "0000000000001s"} {
 		if err := CheckRunTimeout(v); err != nil {
 			t.Errorf("%q: %v", v, err)
 		}
 	}
-	for v, want := range map[string]string{"0": "omit the flag", "0.0m": "omit the flag", "10x": "not a duration", "": "not a duration", "-5": "not a duration", "1.": "not a duration"} {
+	for v, want := range map[string]string{"0": "omit the flag", "0.0m": "omit the flag", "10x": "not a duration", "": "not a duration", "-5": "not a duration", "1.": "not a duration",
+		"0.5": "the smallest --timeout is 1s", "0.9s": "the smallest --timeout is 1s", "0.000001s": "the smallest --timeout is 1s", "0.0000001d": "the smallest --timeout is 1s",
+		"3651d": "the largest --timeout is 3650d", "315360001": "the largest --timeout is 3650d", "3650.00002d": "the largest --timeout is 3650d", "999999999999999999d": "the largest --timeout is 3650d", "1000000000": "the largest --timeout is 3650d"} {
 		if err := CheckRunTimeout(v); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: want %q, got %v", v, want, err)
 		}

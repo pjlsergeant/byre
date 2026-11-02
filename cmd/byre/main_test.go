@@ -382,6 +382,8 @@ func TestRunUsageErrors(t *testing.T) {
 		{[]string{"run", "--task", "t.md", "--timeout", "0"}, "omit the flag"},
 		{[]string{"run", "--task", "t.md", "--timeout", "0s"}, "omit the flag"},
 		{[]string{"run", "--task", "t.md", "--timeout", "10x"}, "--timeout \"10x\": not a duration"},
+		{[]string{"run", "--task", "t.md", "--timeout", "0.5"}, "the smallest --timeout is 1s"},
+		{[]string{"run", "--task", "t.md", "--timeout", "999999999999999999d"}, "the largest --timeout is 3650d"},
 		{[]string{"run", "--task", "t.md", "--timeout="}, "not a duration"},
 		{[]string{"run", "--task", "t.md", "--credentials", "bogus"}, "want ask|skip|stdin"},
 		{[]string{"run", "--task", "t.md", "-a", " "}, "--agent: blank value"},

@@ -93,9 +93,15 @@ type RunOptions struct {
 var runTimeoutRE = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?[smhd]?$`)
 var runTimeoutZeroRE = regexp.MustCompile(`^0+(\.0+)?[smhd]?$`)
 
+// runTimeoutMaxSecs is the largest --timeout, 3650 days. The chassis holds
+// the same cap, so its 64-bit seconds product never wraps.
+const runTimeoutMaxSecs = 3650 * 86400
+
 // CheckRunTimeout validates --timeout. A zero duration is no timeout at all,
 // and a run has none unless asked, so 0 is refused with the remedy rather
-// than read as "no timer".
+// than read as "no timer". The chassis counts the timeout in whole seconds,
+// rounded down, so a duration under 1s would arm a deadline that has
+// already passed; it is refused, as is one over 3650d.
 func CheckRunTimeout(v string) error {
 	if !runTimeoutRE.MatchString(v) {
 		return fmt.Errorf("--timeout %q: not a duration -- use a number with an optional s/m/h/d suffix, e.g. 600, 30m, 1.5h", packages.EscapeTerminal(v))
@@ -103,7 +109,45 @@ func CheckRunTimeout(v string) error {
 	if runTimeoutZeroRE.MatchString(v) {
 		return fmt.Errorf("--timeout %s: a zero timeout is no timeout -- omit the flag (a run has no timeout unless you give one)", v)
 	}
+	secs, ok := runTimeoutSecs(v)
+	if !ok || secs > runTimeoutMaxSecs {
+		return fmt.Errorf("--timeout %s: the largest --timeout is 3650d", v)
+	}
+	if secs < 1 {
+		return fmt.Errorf("--timeout %s: the smallest --timeout is 1s", v)
+	}
 	return nil
+}
+
+// runTimeoutSecs is a grammar-valid duration in whole seconds, rounded down
+// the way the chassis rounds it; ok is false when the integer part has more
+// than 9 digits, which is over the cap whatever the suffix.
+func runTimeoutSecs(v string) (secs int64, ok bool) {
+	mult := int64(1)
+	switch v[len(v)-1] {
+	case 's':
+		v = v[:len(v)-1]
+	case 'm':
+		mult, v = 60, v[:len(v)-1]
+	case 'h':
+		mult, v = 3600, v[:len(v)-1]
+	case 'd':
+		mult, v = 86400, v[:len(v)-1]
+	}
+	intPart, frac, _ := strings.Cut(v, ".")
+	intPart = strings.TrimLeft(intPart, "0")
+	if len(intPart) > 9 {
+		return 0, false
+	}
+	frac = (frac + "000000")[:6]
+	var i, f int64
+	for _, c := range intPart {
+		i = i*10 + int64(c-'0')
+	}
+	for _, c := range frac {
+		f = f*10 + int64(c-'0')
+	}
+	return i*mult + f*mult/1000000, true
 }
 
 // runLaunch starts the session; production is developCommandWith, tests

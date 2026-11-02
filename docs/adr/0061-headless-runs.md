@@ -264,8 +264,8 @@ raw `run_args` the box may have been handed any mount or a different PID 1
 the claim rather than refusing the launch is P1's never-refuse-the-raw-tier
 and P4's degrade-never-assert.
 
-Usage errors (no task source, `--task -` with `--credentials stdin`, a zero
-or malformed `--timeout`, a bad `--credentials`) are the command line's and
+Usage errors (no task source, `--task -` with `--credentials stdin`, a zero,
+malformed, or out-of-range `--timeout`, a bad `--credentials`) are the command line's and
 exit 2 before anything runs; they print no document and no summary line.
 
 **The exit-code table carries a caveat.** byre's own codes are 1, 2, 3 and
@@ -384,7 +384,11 @@ config.
 A run has no time limit unless `--timeout` is given, and there is no
 default, ever. How long a task may take is the caller's call; a default
 would kill legitimate long runs that nothing in the config asked to bound.
-`--timeout 0` is a usage error that says to omit the flag. When set, the
+`--timeout 0` is a usage error that says to omit the flag, and so is a
+duration under 1s or over 3650d: the chassis counts whole seconds, so a
+sub-second value would arm a deadline already past, and the cap keeps its
+seconds product inside 64 bits. The chassis refuses the same range in a
+`BYRE_RUN_TIMEOUT` a raw `run_args` sets (exit 16). When set, the
 timer is the chassis's own, so exit 12 means byre's timer fired -- never
 an agent that exited 124 or 137 on its own, which `timeout(1)` would make
 indistinguishable. The timer starts with the chassis; stalls before it are
