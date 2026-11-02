@@ -380,7 +380,10 @@ stderr carries the agent's own output alongside byre's -- including
 byre's last line, which the agent could print first. The verdict a
 script can trust is the exit code and the `--data` document, which byre
 prints on the host after the box has exited; a script that gates on
-anything in `.byre-run/` or on stderr is gating on the agent's word.
+anything in `.byre-run/` or on stderr is gating on the agent's word. The
+answer belongs in that class too: an agent that writes a different answer
+than the one its headless command meant to deliver changes only what it
+could have written anyway.
 byre's own writes there are anchored and never follow a link or
 overwrite a file the agent planted (the same machinery as grab), with
 one residual shared with grab: a symlink an agent swaps in for a
@@ -389,7 +392,10 @@ limitation rather than a bug: **repo code runs before the chassis** -- a
 worktree checkout still pending runs your repository's git hooks and
 filters in the box before the headless machinery starts, and that code
 can rewrite the staged task; the chassis checks the task's hash and
-refuses a changed one (exit 16), but the code has already run; **the
+refuses a changed one (exit 16), but the code has already run -- what it
+cannot do is stand in for the chassis, which byre launches by its
+absolute, build-guarded path and which runs its own helper tools from the
+system directories only, never from the agent-writable `~/.local/bin`; **the
 chassis's own file claims rely on nothing else running yet** -- it
 checks each name is free and then creates it, two steps that are only
 safe because the agent has not started and the repo code has finished,

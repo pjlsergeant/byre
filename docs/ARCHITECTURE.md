@@ -780,7 +780,8 @@ Runtime constants:
   plus the self-edit note when that grant is live), wait bounded and
   fail-closed for delivered credentials and export them (ADR 0057),
   derive the headless signal from its OWN argv -- when the command is
-  `byre-headless` it exports `BYRE_HEADLESS=1`, saves the box's real
+  exactly `/usr/local/bin/byre-headless` (the guarded absolute path,
+  never a bare name an agent-writable PATH entry could answer) it exports `BYRE_HEADLESS=1`, saves the box's real
   stdout on fd 9 for the chassis's one write of the answer, and sends its
   own stdout and every hook's to stderr; otherwise it unsets
   `BYRE_HEADLESS` whatever the environment carried (skill env and raw

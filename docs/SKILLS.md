@@ -211,15 +211,22 @@ must not equal `command`. The command honours a small contract
   `/dev/null` on stdin -- an agent handed an open pipe waits on it forever.
 - Write the agent's final answer to `BYRE_RUN_RESULT_FILE` (a descriptor,
   `/dev/fd/5`: if your agent wants a path, give it a temp file and copy
-  that in afterwards). byre prints it on `byre run`'s stdout.
+  that in afterwards). byre prints it on `byre run`'s stdout. Keep fds 5
+  and 6 and the `BYRE_RUN_RESULT_FILE` / `BYRE_RUN_STATUS_FILE` variables
+  to your script's own writes -- never hand them to the agent binary (unset
+  the two variables and close the two descriptors, `5>&- 6>&-`, for the
+  agent's process). A grandchild that outlives your script while
+  holding them could rewrite the answer or the status lines before byre
+  reads them.
 - Exit with exactly one of: `0` (success -- an empty answer turns it into
   14), `10` (the agent reported failure), `11` (the agent process failed:
   append `backend_exit=<its status>` to `BYRE_RUN_STATUS_FILE` first), `13`
   (no usable credential -- print the remedy on stderr), `15` (your agent's
   binary is not in the box). Anything else, a signal included, is read as
   your command failing (14); never pass the agent's raw status up.
-- Bound every credential probe (`timeout 30 ...`); a probe that times out
-  is a 13. Your stdout is the agent's live event stream and your stderr its
+- Bound every credential probe with `timeout -k <grace> <limit>`, so a
+  probe that ignores TERM is still killed; a probe that times out is a 13.
+  Your stdout is the agent's live event stream and your stderr its
   diagnostics: byre records both in `.byre-run/` and relays them to
   stderr. `BYRE_RUN_MODEL`, when non-empty, is the model the caller asked
   for; `BYRE_RUN_DIR` is the result dir, for files worth keeping;

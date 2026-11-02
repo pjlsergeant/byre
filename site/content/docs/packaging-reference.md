@@ -113,12 +113,13 @@ The contract it honours: the task is the file `BYRE_RUN_TASK_FILE` names
 descriptor `BYRE_RUN_RESULT_FILE`; `key=value` lines go to
 `BYRE_RUN_STATUS_FILE` (`backend_exit=<n>` before an exit 11,
 `agent_version=<text>`); `BYRE_RUN_MODEL` is an optional model override
-and `BYRE_RUN_DIR` the result dir. The exit is exactly one of `0`
+and `BYRE_RUN_DIR` the result dir. The two descriptors and their variables
+are the command's own: it never passes them to the agent binary. The exit is exactly one of `0`
 (success, with an answer), `10` (the agent reported failure), `11` (the
 agent process failed), `13` (no usable credential, remedy on stderr), or
 `15` (the agent's binary is absent) -- anything else, or `0` with no
 answer, is read as the command failing (`14`). Every credential probe is
-bounded. Setting any `BYRE_RUN_*` name in a skill's `[runtime].env`
+bounded with `timeout -k`, so one that ignores TERM is still killed. Setting any `BYRE_RUN_*` name in a skill's `[runtime].env`
 makes status stop vouching for the headless command. Authoring notes:
 [docs/SKILLS.md](https://github.com/pjlsergeant/byre/blob/main/docs/SKILLS.md);
 the decision:

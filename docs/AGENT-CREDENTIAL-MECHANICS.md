@@ -1036,7 +1036,8 @@ prompts when nobody can answer:
 
 - **The headless signal is `BYRE_HEADLESS=1`.** It is byre's own variable,
   set for a headless run (`byre run`, ADR 0061). The launcher exports it
-  from its OWN argv -- when the container command is `byre-headless` --
+  from its OWN argv -- when the container command is exactly
+  `/usr/local/bin/byre-headless` --
   and unsets it otherwise, whatever the environment carried: a skill's
   `[runtime].env` can set any `BYRE_*` name and raw `run_args` can override
   any `-e`, but neither reaches the command argv. A headless run also never
@@ -1093,7 +1094,8 @@ prompts when nobody can answer:
 In a headless run (`byre run`, ADR 0061) the login hooks stand down or
 print a remedy, as above, and nobody is there to log in. Each agent's
 headless command therefore runs its own credential preflight, every probe
-bounded, and exits 13 with a remedy on stderr when there is no usable
+bounded with `timeout -k` (so a probe that ignores TERM is still killed;
+the codex login hook's probe is bounded the same way), and exits 13 with a remedy on stderr when there is no usable
 credential -- before the agent starts, so a credential-less run fails in
 seconds rather than at the agent's first request. The remedies name
 `env_from_host` in the project config, `byre credentials set`, and the

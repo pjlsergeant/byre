@@ -87,7 +87,15 @@ The chassis runs the headless command with:
 
 The two files are DESCRIPTORS, not paths. The chassis creates them
 exclusively, once, and holds them open; a command that needs a real path
-writes its own temp file and copies it to the descriptor.
+writes its own temp file and copies it to the descriptor. The descriptors
+are the command's OWN: it never passes fds 5 and 6, or the
+`BYRE_RUN_RESULT_FILE` / `BYRE_RUN_STATUS_FILE` variables, to the agent
+binary. A grandchild that outlived the script while holding them could
+rewrite the answer or the status lines after the script exited and before
+the chassis reads them. This is a convention of the contract, not a
+containment: the answer and the status lines are agent-trust either way
+(below), so an agent that writes a different answer through its own
+script changes only what it could have written anyway.
 
 The command's stdout is the agent's live event stream and its stderr the
 agent's diagnostics. The chassis records each to the result dir
@@ -110,6 +118,9 @@ verdict from the agent's.
 The command must not read a terminal, must give the agent `/dev/null` or
 the task file on stdin (an agent handed an open pipe waits on it forever),
 and must bound every credential probe; a probe that times out is a 13.
+The bound is `timeout -k`, so a probe that ignores TERM is still cut off
+-- the bundled headless commands and the codex login hook bound every
+credential and version probe that way.
 
 The chassis owns its descriptors, `result.json`, the timeout when one was
 asked for, the exit map, signal forwarding and the stream routing. The
@@ -127,12 +138,13 @@ brought in `BYRE_FETCH_RUN_RETRIES`.
 
 ## The mode is keyed on argv; `BYRE_HEADLESS`
 
-`byre run` passes `byre-headless` as the container command, and the
+`byre run` passes the chassis's ABSOLUTE path,
+`/usr/local/bin/byre-headless`, as the container command, and the
 launcher's existing explicit-argv arm execs it. Before the first-run hooks,
-the launcher exports `BYRE_HEADLESS=1` when its first argument is
-`byre-headless`, and UNSETS it otherwise, whatever the environment
-carried. Under headless it also saves the box's real stdout on fd 9 and
-sends its own stdout, and every hook's, to stderr.
+the launcher exports `BYRE_HEADLESS=1` when its first argument is exactly
+that string, and UNSETS it otherwise, whatever the environment carried.
+Under headless it also saves the box's real stdout on fd 9 and sends its
+own stdout, and every hook's, to stderr.
 
 Why argv: a skill's `[runtime].env` can set any `BYRE_*` name (ADR 0050)
 and raw `run_args` can override any `-e` (ADR 0006), but neither reaches
@@ -143,6 +155,19 @@ Login hooks test `BYRE_HEADLESS` before `[ -t 0 ]`, so a headless launch
 never prompts. A raw `run_args = ["-e", "BYRE_RUN_TASK_FILE="]` can still
 blank a contract variable; its effect is a chassis that cannot find its
 task and exits 16, because the MODE does not depend on the env.
+
+Why the absolute path, not the bare name: the image's PATH puts the dev
+user's `~/.local/bin` ahead of the system directories (agent CLIs install
+there), and that directory is agent-writable -- and so writable by repo
+code, which runs in the launcher before the chassis (a pending worktree
+checkout's hooks and filters). A bare `byre-headless` would resolve
+through PATH to whatever such code planted there under that name. The
+absolute path names the copy the Dockerfile tail guards (below), so a
+planted same-named binary is never what runs. The chassis applies the same
+reasoning to itself: it runs with PATH pinned to the system directories
+for every helper it calls (`sha256sum`, `tee`, `setsid` and the rest), and
+restores the inherited PATH only for the headless command, whose agent
+binaries legitimately live under `~/.local/bin`.
 
 The chassis has no env seam for which command it runs: it execs
 `/etc/byre/agent-headless` unless handed a positional argument, which
@@ -303,9 +328,10 @@ fork the cache-shared core block). As PID 1 of a headless run it:
    a FIFO or symlink the agent plants in place of an unlinked name cannot
    block or redirect PID 1.
 3. Runs the headless command in its own process group with stdin
-   `/dev/null`, relaying its streams as above. When `BYRE_RUN_TIMEOUT` is
-   set, the chassis's own timer sends TERM to the group on expiry and KILL
-   15 s later. TERM and INT to the chassis are forwarded to the group.
+   `/dev/null` and its inherited PATH (the chassis's own helpers run on a
+   PATH pinned to the system directories), relaying its streams as above.
+   When `BYRE_RUN_TIMEOUT` is set, the chassis's own timer sends TERM to
+   the group on expiry and KILL 15 s later. TERM and INT to the chassis are forwarded to the group.
 4. Maps the result (timeout -> 12 first, then the closed set), publishes
    the final `result.json` best-effort by temp and rename (rename replaces
    a planted symlink rather than following it; a planted directory is
@@ -407,7 +433,9 @@ Each is on the security-model page too.
   `outcome.json`), the answer on stdout, and everything on stderr --
   the summary line included -- can be shaped by the agent. byre reads
   none of it back; a script gates on the exit code or the `--data`
-  document.
+  document. That is also why the descriptor convention above is a
+  convention: an agent that writes a different answer or status line
+  through its own script changes only what it could have written anyway.
 - **Exit codes are not unique to their owners.** A box that exits 1, 2, 3
   or 70 reaches the host as that number; `--data` tells them apart.
 
@@ -419,6 +447,8 @@ Each is on the security-model page too.
   the raw number without letting it impersonate a verdict.
 - **An env var as the headless trigger.** Reachable by skill env and raw
   `run_args`; argv is not.
+- **The chassis's bare name as the container command.** PATH would resolve
+  it, and the first PATH entry is agent-writable before the chassis runs.
 - **An in-tree outcome file as the gate.** The result dir is the agent's;
   a file there is a claim the agent can squat or forge. The authoritative
   outcome is printed by the host, on stdout, after the box exits.
