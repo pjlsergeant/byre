@@ -80,7 +80,7 @@ type helperRunner interface {
 
 // imageRunner is the image surface: build and image lifecycle.
 type imageRunner interface {
-	Build(tag, dockerfile, contextDir string, noCache bool, buildArgs []string) error
+	Build(tag, dockerfile, contextDir string, fresh bool, buildArgs []string) error
 	ImageExists(tag string) (bool, error)
 	// ImageDigest is the engine's id for what a tag resolves to right now --
 	// the launch record's pin on what the box was BUILT from, which the tag

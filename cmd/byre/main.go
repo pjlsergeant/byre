@@ -1129,10 +1129,12 @@ caches — not the image). Prompts first; refuses while a session is running.`,
 func rebuildCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	return &cobra.Command{
 		Use:   "rebuild",
-		Short: "Rebuild the image with the cache disabled.",
+		Short: "Rebuild the image from fresh upstream: base pulled, cache off.",
 		Long: `Regenerate the build context and rebuild this project's image with
---no-cache, picking up new upstream tool/package versions. Volumes are
-untouched; the next 'byre develop' runs the fresh image.`,
+--no-cache --pull: the base image is pulled again, so a republished tag
+arrives, and every step re-runs, picking up new upstream tool/package
+versions. Volumes are untouched; the next 'byre develop' runs the fresh
+image.`,
 		Args: noArgsU,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.rebuild(s, dir)

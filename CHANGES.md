@@ -21,6 +21,13 @@
   Node 26 with 22. A base with Node 20 or newer AND npm now keeps its own;
   gemini still brings Node 22 where there is none, an older one, or one
   without npm (Debian's own `nodejs` package).
+- **`byre rebuild` now pulls the base image too.** It rebuilt with the
+  cache off but on the base already in Docker's local store, so it re-ran
+  every install step without fetching a republished tag. It now passes
+  `--pull` as well as `--no-cache`, so a republished base -- a security
+  rebuild of `debian:trixie`, a new `node:26` point release -- actually
+  reaches the box. An ordinary `byre develop` still builds on the local
+  copy.
 
 ## v1.13.0 — 2026-10-22
 

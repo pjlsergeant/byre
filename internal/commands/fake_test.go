@@ -131,7 +131,7 @@ type fakeRunner struct {
 	imageDigests   map[string]string // tag -> ImageDigest answer (default: a stable fake)
 	imageDigestErr error             // ImageDigest failure (the record's honest-empty path)
 	rmImages       []string
-	builds         []string // tag, with " nocache" appended when noCache
+	builds         []string // tag, with " fresh" appended for a fresh build
 
 	ops []string
 }
@@ -503,10 +503,10 @@ func (f *fakeRunner) ImageRemove(tag string) error {
 	return nil
 }
 
-func (f *fakeRunner) Build(tag, dockerfile, contextDir string, noCache bool, buildArgs []string) error {
+func (f *fakeRunner) Build(tag, dockerfile, contextDir string, fresh bool, buildArgs []string) error {
 	b := tag
-	if noCache {
-		b += " nocache"
+	if fresh {
+		b += " fresh"
 	}
 	f.builds = append(f.builds, b)
 	f.ops = append(f.ops, "build "+tag)

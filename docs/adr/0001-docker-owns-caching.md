@@ -11,9 +11,11 @@ Docker's layer cache shares work across projects.
 Consequences:
 
 - An unchanged config re-uses the cached image even if upstream moved
-  (`node:22` republished). Deliberate: `byre rebuild` (`--no-cache`) is
-  the freshness valve. byre promises Dockerfile determinism, not
-  upstream-artifact reproducibility.
+  (`node:22` republished). Deliberate: `byre rebuild` (`--no-cache
+  --pull`) is the freshness valve. It takes both flags because
+  `--no-cache` re-runs every instruction while `--pull` re-resolves the
+  base tag, which Docker would otherwise take from its local store. byre
+  promises Dockerfile determinism, not upstream-artifact reproducibility.
 - `project_id` is a naming device only, never a cache key.
 - byre never parses inside raw blocks, so it cannot dedupe across them --
   the one caching discipline asked of users is to keep expensive shared

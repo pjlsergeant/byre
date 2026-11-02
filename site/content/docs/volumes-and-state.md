@@ -29,7 +29,7 @@ Four verbs touch built state, from lightest to heaviest:
 | Verb | Volumes | Image | Host-side config | Use it when |
 |---|---|---|---|---|
 | `byre develop` | untouched | rebuilt only on config change (cached) | untouched | every day |
-| `byre rebuild` | untouched | rebuilt with `--no-cache` | untouched | pull fresh upstream tool versions |
+| `byre rebuild` | untouched | rebuilt with `--no-cache --pull` | untouched | pull a fresh base image and upstream tool versions |
 | `byre reset` | **project volumes wiped** (named first; confirm) | untouched | untouched | agent state is wedged; start the box's contents over |
 | `byre forget` | **project volumes wiped** | **removed** | **`~/.byre/projects/<id>/` removed** | remove all trace of byre for this directory |
 

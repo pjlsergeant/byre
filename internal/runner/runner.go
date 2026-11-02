@@ -273,13 +273,16 @@ func truncate(s string, max int) string {
 }
 
 // Build builds the image tagged tag from the given context directory and
-// Dockerfile. With noCache, the build cache is disabled (--no-cache). buildArgs
+// Dockerfile. fresh builds everything from upstream, which takes two engine
+// flags: --no-cache re-runs every instruction, and --pull re-resolves the
+// base tag, which the engine would otherwise take from its local store even
+// with the cache off. Both docker and podman accept both flags bare. buildArgs
 // are "KEY=VALUE" pairs passed as --build-arg (byre uses these to bake the host
 // UID/GID into the image); pass nil for none.
-func (r *Runner) Build(tag, dockerfile, contextDir string, noCache bool, buildArgs []string) error {
+func (r *Runner) Build(tag, dockerfile, contextDir string, fresh bool, buildArgs []string) error {
 	args := []string{"build", "-t", tag, "-f", dockerfile}
-	if noCache {
-		args = append(args, "--no-cache")
+	if fresh {
+		args = append(args, "--no-cache", "--pull")
 	}
 	for _, a := range buildArgs {
 		args = append(args, "--build-arg", a)

@@ -10,9 +10,10 @@ import (
 )
 
 // Rebuild implements `byre rebuild`: regenerate the build context and rebuild
-// the image with the cache disabled (--no-cache), to pick up new upstream
-// tool/package versions. Volumes are untouched; the next `byre develop` runs the
-// fresh image.
+// the image fresh -- the cache disabled and the base pulled (--no-cache
+// --pull) -- to pick up a republished base and new upstream tool/package
+// versions. Volumes are untouched; the next `byre develop` runs the fresh
+// image.
 func Rebuild(s Streams, projectDir string) error {
 	if err := requireNonRootHost(s.Err); err != nil {
 		return err
@@ -67,7 +68,7 @@ func rebuild(w io.Writer, r imageRunner, eng runner.Engine, paths project.Paths,
 		if err := refuseEngineChangedUnderLock(fresh.cfg.Config, eng, "rebuild"); err != nil {
 			return err
 		}
-		fmt.Fprintf(w, "byre: rebuilding %s with --no-cache...\n", image)
+		fmt.Fprintf(w, "byre: rebuilding %s with --no-cache --pull...\n", image)
 		return buildImageWarn(w, r, paths, fresh.cfg, fresh.skills, image, true, ident)
 	})
 }

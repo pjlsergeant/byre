@@ -761,11 +761,11 @@ func refuseMissingMountHosts(r sessionRunner, w io.Writer, mounts []config.Mount
 // UID/GID via --build-arg so /home/dev and the volume mount points are born
 // owned by the runtime user (no runtime chown) — the host user's ids on the
 // rootful path, the generic keep-id ids under rootless Podman (ADR 0032).
-func buildImageWarn(warn io.Writer, r imageRunner, paths project.Paths, cfg config.Merged, res skills.Resolved, image string, noCache bool, ident runner.Identity) error {
+func buildImageWarn(warn io.Writer, r imageRunner, paths project.Paths, cfg config.Merged, res skills.Resolved, image string, fresh bool, ident runner.Identity) error {
 	if _, err := build.AssembleWarn(paths, cfg, res, warn); err != nil {
 		return err
 	}
-	return r.Build(image, paths.Dockerfile, paths.ContextDir, noCache, uidBuildArgs(ident))
+	return r.Build(image, paths.Dockerfile, paths.ContextDir, fresh, uidBuildArgs(ident))
 }
 
 // requireNonRootHost refuses to build/run as uid or gid 0. byre bakes the

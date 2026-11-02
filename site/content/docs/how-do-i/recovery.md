@@ -14,10 +14,10 @@ the image.
 history included -- it names them first and asks), image and config
 stay. `forget` is the full walk-away: volumes, image, and byre's
 host-side config for the directory -- your project tree is never
-touched. `rebuild` rebuilds the image with the cache off and touches no
-volumes. Machine-wide volumes (shared agent logins) survive all three
-deliberately. The [comparison table](/docs/volumes-and-state/#which-hammer)
-has the details.
+touched. `rebuild` rebuilds the image with the cache off and the base
+pulled again, and touches no volumes. Machine-wide volumes (shared
+agent logins) survive all three deliberately. The
+[comparison table](/docs/volumes-and-state/#which-hammer) has the details.
 
 **"podman isn't reachable"?** `reset`, `forget`, `rehome` and `backup` check
 every installed engine, because your project's volumes can live in one the
@@ -83,8 +83,9 @@ format: don't repack it, or restore will refuse it.
 
 tldr: `byre rebuild`.
 
-Rebuilds the image with the build cache disabled, so every install step
-re-fetches the current upstream -- the deliberate-staleness valve.
+Pulls the base image again and rebuilds with the build cache disabled,
+so a republished base arrives and every install step re-fetches the
+current upstream -- the deliberate-staleness valve.
 Volumes are untouched; your agent stays logged in.
 
 ## Stop using byre?

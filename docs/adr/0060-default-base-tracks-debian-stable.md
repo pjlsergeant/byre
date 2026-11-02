@@ -33,12 +33,11 @@ What the codename pins is the Debian RELEASE FAMILY, not an image.
 `debian:trixie` and the template tags are mutable: Docker republishes them
 for point releases and security rebuilds, and that same-codename movement is
 accepted -- it is how the base picks up security fixes. Those fixes reach
-a machine only when the engine next PULLS the base: a first build on that
-machine, or an explicit `docker pull`/`podman pull` of the base tag. Which
-image a local tag means is the engine's to decide (ADR 0001): byre's build
-never passes `--pull`, and `byre rebuild` adds only `--no-cache`, which
-discards the layer cache without asking for a fresh base. Forcing a pull on
-rebuild is a separate decision this ADR does not take. What the codename
+a box when the engine next pulls the base: `byre rebuild` passes
+`--no-cache --pull` (ADR 0001), so a rebuild re-resolves the tag and builds
+on the republished image; a first build on a machine pulls it too. An
+ordinary `byre develop` passes neither flag and keeps building on the copy
+already in the engine's local store. What the codename
 spelling prevents is the one change a `stable`/`latest` tag would add: an
 unannounced move to a different distro family under a byte-identical
 Dockerfile.
@@ -100,7 +99,7 @@ agent-contract test passed on trixie.
   ADR 0053 accepted that limit; this is the first bump that exercises it.
 - **Same-codename tag movement is not shown.** The record holds the base as
   a string, and the digest it holds is the BUILT image's, so a point release
-  or security rebuild of `debian:trixie` picked up at the next build is not
+  or security rebuild of `debian:trixie` picked up by `byre rebuild` is not
   a `~ Base` line. That movement is the accepted half of the codename rule.
 - **Restore pours into trixie.** ADR 0059 pours a backup's volumes from the
   effective base, so a backup of an unset-base project restored on this

@@ -295,7 +295,7 @@ func TestDevelopBuildsSeedsThenRuns(t *testing.T) {
 	}
 	image := imageTag(p.ID, os.Getuid(), os.Getgid())
 	if len(f.builds) != 1 || f.builds[0] != image {
-		t.Fatalf("expected one cached build of %s, got %v", image, f.builds)
+		t.Fatalf("expected one cached (not fresh) build of %s, got %v", image, f.builds)
 	}
 	if len(f.seeded) != 1 || f.seeded[0] != volumeName(p.ID, ".claude") {
 		t.Fatalf("expected the state volume seeded, got %v", f.seeded)
@@ -685,7 +685,10 @@ func TestDevelopRefusesUnsupportedRootless(t *testing.T) {
 	}
 }
 
-func TestRebuildBuildsNoCache(t *testing.T) {
+// A rebuild is a fresh build (--no-cache --pull in the runner): the base tag
+// is re-resolved, not just the layers re-run. An ordinary develop build is
+// neither -- TestDevelopBuildsSeedsThenRuns pins its plain tag.
+func TestRebuildBuildsFresh(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{}
 	var out bytes.Buffer
@@ -693,8 +696,11 @@ func TestRebuildBuildsNoCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	image := imageTag(p.ID, os.Getuid(), os.Getgid())
-	if len(f.builds) != 1 || f.builds[0] != image+" nocache" {
-		t.Fatalf("expected one --no-cache build of %s, got %v", image, f.builds)
+	if len(f.builds) != 1 || f.builds[0] != image+" fresh" {
+		t.Fatalf("expected one fresh build of %s, got %v", image, f.builds)
+	}
+	if !strings.Contains(out.String(), "--no-cache --pull") {
+		t.Errorf("rebuild's progress note must name both engine flags, got %q", out.String())
 	}
 }
 

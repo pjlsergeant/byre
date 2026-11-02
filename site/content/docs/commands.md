@@ -93,7 +93,7 @@ every command and flag.
 | Command | What it does |
 |---|---|
 | `byre reset` | Wipe this project's named volumes. |
-| `byre rebuild` | Rebuild the image with the cache disabled. |
+| `byre rebuild` | Rebuild the image from fresh upstream: base pulled, cache off. |
 | `byre rehome [<old-id>]` | Re-point this directory's identity after a move. |
 | `byre forget` | Remove all byre host-side state for this directory. |
 | `byre backup [DIR]` | Write one file holding this project's config and its state volumes. |
