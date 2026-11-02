@@ -514,6 +514,7 @@ func editorInherited(home string, cat *packages.Catalog, templates, skillOpts []
 				Containment:   sk.File.Runtime.Containment,
 				CompanionFor:  sk.File.CompanionAgent(),
 				SharedAuthFor: sk.File.SharedAuthFor,
+				Requires:      sk.File.Requires,
 				Provenance:    "",
 			}
 			if sk.File.Agent != nil {

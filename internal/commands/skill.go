@@ -243,6 +243,12 @@ func printSkillContributions(w io.Writer, f skills.File) {
 	if f.SharedAuthFor != "" {
 		dataf(w, "  shared_auth_for: %s\n", f.SharedAuthFor)
 	}
+	// A dependency, not a grant: enabling this skill enables nothing else
+	// (ADR 0062). It is shown so the reader learns, before enabling, that
+	// develop will refuse until the named skills are enabled too.
+	for _, r := range f.Requires {
+		dataf(w, "  requires: %s\n", r)
+	}
 	// Build summary: counts + names, not inline dumps.
 	var buildParts []string
 	if n := len(f.Build.Apt); n > 0 {

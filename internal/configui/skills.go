@@ -26,6 +26,11 @@ type skillEntry struct {
 	// conflict/protected-name). disabled rows are not toggleable.
 	provLabel string
 	disabled  string // non-empty => disabled-with-reason
+	// unmet lists the row's requires entries (ADR 0062) that no ON row
+	// satisfies -- an annotation, never a disabled reason: the row stays
+	// toggleable, so a user who turned the requirement off can still turn
+	// this skill off too.
+	unmet []string
 }
 
 // on reports the entry's EFFECTIVE state — what the resolved cascade enables —
@@ -168,7 +173,37 @@ func (m model) skillEntries() []skillEntry {
 		}
 	}
 	nonAgent, agent = m.nestCompanions(nonAgent, agent)
-	return append(nonAgent, agent...)
+	return m.markUnmetRequires(append(nonAgent, agent...))
+}
+
+// markUnmetRequires annotates each ON row whose requires names a skill no ON
+// row is. The rows are rebuilt on every update and every view, so toggling
+// the requirement on clears the annotation at once. Names compare by
+// canonical id, the way Resolve compares them.
+func (m model) markUnmetRequires(entries []skillEntry) []skillEntry {
+	canon := func(n string) string {
+		if m.inh.Catalog != nil {
+			return m.inh.Catalog.ExpandAlias(n)
+		}
+		return n
+	}
+	on := map[string]bool{}
+	for _, e := range entries {
+		if e.on() {
+			on[canon(e.name)] = true
+		}
+	}
+	for i, e := range entries {
+		if !e.on() {
+			continue
+		}
+		for _, r := range m.inh.Skills[e.name].Requires {
+			if !on[canon(r)] {
+				entries[i].unmet = append(entries[i].unmet, r)
+			}
+		}
+	}
+	return entries
 }
 
 // nestCompanions moves each companion skill (one paired to an agent via
@@ -334,6 +369,12 @@ func (m model) viewSkills() string {
 			line += dimStyle.Render("  (inherited)")
 		case e.removedHere:
 			line += dimStyle.Render("  (removes an inherited skill)")
+		}
+		// An unmet requirement rides beside the state, never in the disabled
+		// slot: that slot blocks the toggle, and this row must stay
+		// switchable off. The names are manifest text.
+		for _, r := range e.unmet {
+			line += dimStyle.Render("  (requires " + packages.EscapeTerminal(r) + " -- not enabled)")
 		}
 		// An agent's headless mode is a fact about the skill, not one of the
 		// row's states: it rides beside whichever state the switch above

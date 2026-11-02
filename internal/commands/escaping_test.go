@@ -291,6 +291,7 @@ func skillContributions(payload string) string {
 	// but the renderer prints whichever it is handed -- and this arm is about
 	// the renderer, so both rows are exercised in one pass.
 	f.SharedAuthFor = "acme/agent" + payload
+	f.Requires = []string{"needed" + payload}
 	f.Volumes = []config.Volume{{
 		Name: "creds" + payload, Role: "state" + payload,
 		Scope: "machine" + payload, Target: "/home/dev/.acme" + payload,
@@ -337,7 +338,7 @@ func TestSkillInspectEscapesManifestValues(t *testing.T) {
 
 	assertNoESC(t, "printSkillContributions", out)
 	assertKept(t, "printSkillContributions", out, "files: 2", "payload", "notes", "SYS_PTRACE",
-		"Bearer", "deny-by-default", "sock_groups", "egress_offered", "shared_auth_for", "acme-mcp", "agent headless: run --task")
+		"Bearer", "deny-by-default", "sock_groups", "egress_offered", "shared_auth_for", "acme-mcp", "agent headless: run --task", "requires: needed")
 
 	// Framing: one physical line per contribution, whatever a manifest value
 	// contains. The clean render carries the same fields with a payload that
