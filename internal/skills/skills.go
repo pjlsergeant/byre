@@ -143,7 +143,16 @@ type File struct {
 	// pairing (ADR 0034); mutually exclusive with it — declaring both is a
 	// parse error.
 	SharedAuthFor string `toml:"shared_auth_for"`
-	Build         struct {
+	// Requires names skills this one does not work without (ADR 0062): zai
+	// drives the codex binary, so it requires codex. Each name must be in
+	// the ENABLED set when the cascade resolves, or Resolve refuses naming
+	// the missing skill and the remedy. byre never enables a required skill
+	// itself: enabling one is the user's act at the scope they answer for
+	// (P5). Names expand through the catalog like every other skill name;
+	// an unknown one is not a validate error, because whether it exists is
+	// a fact about the catalog and the config, not this manifest.
+	Requires []string `toml:"requires"`
+	Build    struct {
 		Apt        []string          `toml:"apt"`
 		Dockerfile []string          `toml:"dockerfile"` // raw build lines
 		Files      map[string]string `toml:"files"`      // skill-relative src -> absolute image dest
@@ -244,7 +253,7 @@ func (f File) CompanionAgent() string {
 func IsStub(f File) bool {
 	rt := f.Runtime
 	return f.Agent == nil &&
-		f.CompanionFor == "" && f.SharedAuthFor == "" &&
+		f.CompanionFor == "" && f.SharedAuthFor == "" && len(f.Requires) == 0 &&
 		len(f.Build.Apt) == 0 &&
 		len(f.Build.Dockerfile) == 0 && len(f.Build.Files) == 0 &&
 		len(rt.Env) == 0 && len(rt.EnvDocs) == 0 && len(rt.RunArgs) == 0 && len(rt.Caps) == 0 &&
@@ -1021,6 +1030,22 @@ func validateValues(f File) error {
 		}
 	}
 
+	// requires names skills, so each entry is held to the skill-name grammar
+	// a config's skills list is (an alias or an owner/name id, never a `!`
+	// removal marker or the "none" sentinel), and a name listed twice is a
+	// typo. Whether a name EXISTS, and whether it is the skill itself, need a
+	// catalog and the skill's id: loadEntry and Resolve judge those.
+	seenReq := map[string]bool{}
+	for _, r := range f.Requires {
+		if err := packages.ValidateID(r, true); err != nil {
+			return fmt.Errorf("requires: %w", err)
+		}
+		if seenReq[r] {
+			return fmt.Errorf("requires: %q is listed twice", r)
+		}
+		seenReq[r] = true
+	}
+
 	// [agent] adapters are closed sets — a typo'd value would silently degrade
 	// every box's MCP/context/skills delivery to "no adapter". Judged for any
 	// skill carrying an [agent] table, not only the selected agent: a manifest
@@ -1125,6 +1150,15 @@ func loadEntry(ent *packages.Entry) (Skill, error) {
 	// `byre skill validate` and develop both meet these rules.
 	if verr := validateValues(f); verr != nil {
 		return Skill{}, fmt.Errorf("skill %q: %w", ent.ID, verr)
+	}
+	// A skill requiring itself is always met and so says nothing; it is a
+	// typo for some other name. Judged here, where the skill's own id is
+	// known; an alias spelling of itself is caught at Resolve, which has the
+	// catalog to expand it.
+	for _, r := range f.Requires {
+		if r == ent.ID {
+			return Skill{}, fmt.Errorf("skill %q: requires itself", ent.ID)
+		}
 	}
 
 	dir, err := ent.HostDir()
@@ -1315,6 +1349,24 @@ func Resolve(cfg config.Config, cat *packages.Catalog) (Resolved, error) {
 
 	if !agentFound {
 		return Resolved{}, fmt.Errorf("agent %q: not among enabled skills", cfg.Agent)
+	}
+	// A requirement is met only by a skill the cascade ENABLED -- the
+	// `skills` list or the agent. It is never enabled here (ADR 0062, P5):
+	// the remedy names the key the user writes, at whatever scope they mean.
+	enabled := map[string]bool{}
+	for _, sk := range res.Skills {
+		enabled[sk.Name] = true
+	}
+	for _, sk := range res.Skills {
+		for _, r := range sk.File.Requires {
+			canon := cat.ExpandAlias(r)
+			if canon == sk.Name {
+				return Resolved{}, fmt.Errorf("skill %q: requires itself (as %q)", sk.Name, r)
+			}
+			if !enabled[canon] {
+				return Resolved{}, fmt.Errorf("skill %q requires %q, which is not enabled -- add it to skills = [...]", sk.Name, r)
+			}
+		}
 	}
 	return res, nil
 }
