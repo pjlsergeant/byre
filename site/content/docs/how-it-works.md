@@ -34,7 +34,7 @@ same four steps, and every step's output is inspectable.
 3. **Build.** Plain `docker build`. byre owns no caching layer of its
    own: an unchanged config is a full cache hit; a change rebuilds
    only from the changed instruction onward. `byre rebuild` (`--no-cache
-   --pull`) is the deliberate valve for pulling a republished base image and
+   --pull=true`) is the deliberate valve for pulling a republished base image and
    fresh upstream versions.
 4. **Run.** `docker run --rm -it`, in the foreground -- see the exact
    command with `byre dockerrun`. The container is throwaway; what

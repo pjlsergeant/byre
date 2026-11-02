@@ -34,7 +34,7 @@ What the codename pins is the Debian RELEASE FAMILY, not an image.
 for point releases and security rebuilds, and that same-codename movement is
 accepted -- it is how the base picks up security fixes. Those fixes reach
 a box when the engine next pulls the base: `byre rebuild` passes
-`--no-cache --pull` (ADR 0001), so a rebuild re-resolves the tag and builds
+`--no-cache --pull=true` (ADR 0001), so a rebuild re-resolves the tag and builds
 on the republished image; a first build on a machine pulls it too. An
 ordinary `byre develop` passes neither flag and keeps building on the copy
 already in the engine's local store. What the codename

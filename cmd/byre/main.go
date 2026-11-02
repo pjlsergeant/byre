@@ -1131,7 +1131,7 @@ func rebuildCmd(a app, dir string, s commands.Streams) *cobra.Command {
 		Use:   "rebuild",
 		Short: "Rebuild the image from fresh upstream: base pulled, cache off.",
 		Long: `Regenerate the build context and rebuild this project's image with
---no-cache --pull: the base image is pulled again, so a republished tag
+--no-cache --pull=true: the base image is pulled again, so a republished tag
 arrives, and every step re-runs, picking up new upstream tool/package
 versions. Volumes are untouched; the next 'byre develop' runs the fresh
 image.`,

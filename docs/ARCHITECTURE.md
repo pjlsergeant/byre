@@ -138,9 +138,9 @@ At every launch:
 On an unchanged config every instruction is a Docker cache hit, so the
 build is a near-no-op and launch is effectively instant. A change
 rebuilds only the layers from the changed instruction onward. Freshness
-is deliberate staleness: `byre rebuild` (`--no-cache --pull`) is the
-valve for pulling a republished base and fresh upstream packages; byre
-guarantees Dockerfile determinism, not upstream-artifact reproducibility
+is deliberate staleness: `byre rebuild` (`--no-cache --pull=true`) is
+the valve for pulling a republished base and fresh upstream packages;
+byre guarantees Dockerfile determinism, not upstream-artifact reproducibility
 (ADR 0001).
 
 **Instruction ordering is load-bearing** -- not for byre's own caching
@@ -804,9 +804,9 @@ byre worktree     Create a git worktree and start a session in it -- a parallel
 byre reset        Wipe ALL of this project's named volumes (not the image).
                   Warns and names what dies. Refuses while a session is live.
 
-byre rebuild      Rebuild the image from fresh upstream (--no-cache --pull):
-                  the base pulled again, every step re-run -- the
-                  deliberate-staleness valve (ADR 0001).
+byre rebuild      Rebuild the image from fresh upstream (--no-cache
+                  --pull=true): the base pulled again, every step re-run --
+                  the deliberate-staleness valve (ADR 0001).
 
 byre status       The legibility surface (PRINCIPLES.md #4): resolved config,
                   every grant and who granted it, network posture + egress,

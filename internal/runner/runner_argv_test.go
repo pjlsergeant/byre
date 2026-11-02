@@ -48,8 +48,8 @@ func TestBuildArgv(t *testing.T) {
 // A fresh build is --no-cache AND --pull=true: without the pull the engine
 // builds on whatever the base tag means in its local store, so a republished
 // base never arrives. The explicit =true is the contract on both engines --
-// podman reads a bare --pull as --pull=missing, which never re-resolves a
-// base it already has.
+// podman 5.4-5.5 (the podman Debian trixie ships) reads a bare --pull as
+// --pull=missing, which never re-resolves a base it already has.
 func TestBuildArgvFreshAndBuildArgs(t *testing.T) {
 	for _, e := range []Engine{Podman, Docker} {
 		r, gotArgs := argvRunner(e)
