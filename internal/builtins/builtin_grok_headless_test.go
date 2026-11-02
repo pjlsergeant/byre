@@ -10,12 +10,15 @@ import (
 )
 
 // stubGrok answers `--version` per STUB_VERSION (ok / hang -- ignoring TERM,
-// so only a KILL ends it) and records everything else as the run.
+// so only a KILL ends it) and records everything else as the run, including the
+// GROK_HOME it was given and what that held.
 const stubGrok = stubAgentStart + `case "$1" in
 --version)
   [ "${STUB_VERSION:-ok}" = hang ] && { trap '' TERM; exec sleep 60; }
   echo "grok 9.9.9"; exit 0 ;;
 esac
+printf '%s' "$GROK_HOME" >"$STUB_RECORD/home"
+ls -A "$GROK_HOME" >"$STUB_RECORD/home-ls"
 ` + stubRunArm
 
 const (
@@ -255,4 +258,54 @@ func TestGrokHeadlessBackendAbsentIs15(t *testing.T) {
 			t.Fatalf("%s absent: exit %d, want 15: %s", gone, code, stderr)
 		}
 	}
+}
+
+// A stored login in GROK_HOME shadows XAI_API_KEY, so a run given the key
+// runs with a GROK_HOME of its own: not the real one, holding no auth.json --
+// only the bundled-skills link -- and gone when the run ends, with the real
+// login untouched. Without the key the stored login is what runs, from the
+// real home.
+func TestGrokHeadlessKeyRunsWithItsOwnHome(t *testing.T) {
+	const login = `{"https://auth.x.ai":{"key":"stored"}}`
+	setup := func(t *testing.T) (*headlessBox, string, string) {
+		t.Helper()
+		b, script := newGrokBox(t)
+		real := b.env["GROK_HOME"]
+		if err := os.WriteFile(filepath.Join(real, "auth.json"), []byte(login), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		b.stream(grokOK)
+		return b, script, real
+	}
+
+	t.Run("with the key", func(t *testing.T) {
+		b, script, real := setup(t)
+		b.env["XAI_API_KEY"] = "xai-test"
+		if code, _, stderr := b.run(script); code != 0 {
+			t.Fatalf("exit %d, want 0: %s", code, stderr)
+		}
+		home, _ := b.recorded("home")
+		if home == "" || home == real {
+			t.Fatalf("grok ran with GROK_HOME %q, want a home of the run's own (real %q)", home, real)
+		}
+		if ls, _ := b.recorded("home-ls"); ls != "bundled\n" {
+			t.Fatalf("the run's GROK_HOME held %q, want only the bundled-skills link", ls)
+		}
+		if _, err := os.Lstat(home); !os.IsNotExist(err) {
+			t.Fatalf("the run's GROK_HOME %s outlived the run: %v", home, err)
+		}
+		isRegularWith(t, filepath.Join(real, "auth.json"), login)
+	})
+	t.Run("without the key", func(t *testing.T) {
+		b, script, real := setup(t)
+		if code, _, stderr := b.run(script); code != 0 {
+			t.Fatalf("exit %d, want 0: %s", code, stderr)
+		}
+		if home, _ := b.recorded("home"); home != real {
+			t.Fatalf("grok ran with GROK_HOME %q, want the real %q", home, real)
+		}
+		if ls, _ := b.recorded("home-ls"); ls != "auth.json\n" {
+			t.Fatalf("the real GROK_HOME held %q at the run, want the stored login", ls)
+		}
+	})
 }

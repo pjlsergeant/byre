@@ -72,6 +72,15 @@ no_credential() {
   exit 13
 }
 
+home="" log=""
+cleanup() {
+  if [ -n "$home" ]; then run_child rm -rf -- "$home"; fi
+  if [ -n "$log" ]; then run_child rm -f -- "$log"; fi
+}
+trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+
 # --- credential preflight -----------------------------------------------------
 
 # grok has no login-status probe, so the preflight is presence: a key in the
@@ -90,6 +99,36 @@ else
   no_credential
 fi
 
+# --- the key's own GROK_HOME --------------------------------------------------
+
+# grok's rule is that a stored session login in $GROK_HOME/auth.json takes
+# precedence over XAI_API_KEY, so on a box that ever completed `grok login` the
+# key given to the run would not be what runs -- and a login whose refresh
+# chain has died would pass the preflight above and then wait on a device
+# prompt. So a key in the environment runs with a GROK_HOME made for this one
+# run and removed when it ends, where no stored login can shadow it; the real
+# one is not touched. Nothing is copied in: grok's config.toml can carry
+# credentials ([custom_endpoints] api_key), which is why the skill seeds no
+# prefs from it either. The one entry made is the link the grok-bundled hook
+# keeps in the real home, to the bundled skills grok extracts into the image,
+# so a run with the key sees the skills an interactive session does.
+#
+# The grok-shared-auth broker (GROK_AUTH_PROVIDER_COMMAND) keeps its store in
+# the machine identity volume and never reads GROK_HOME, so without a key it
+# runs against the real home as an interactive session does, and with one the
+# temporary home changes nothing for it.
+if [ -n "${XAI_API_KEY:-}" ]; then
+  # A box that cannot make a temp dir is broken in a way no exit in the
+  # contract names, so this exits 1 and the chassis's verdict -- the headless
+  # command failed -- is the true one.
+  home=$(run_child mktemp -d "${TMPDIR:-/tmp}/byre-grok-home.XXXXXXXX") || {
+    say "cannot create a temporary GROK_HOME for the run"
+    exit 1
+  }
+  run_child ln -s /home/dev/.grok/bundled "$home/bundled" 2>/dev/null
+  export GROK_HOME="$home"
+fi
+
 version=$(run_child timeout -k 5 10 env PATH="$agent_path" "$grok" --version </dev/null 2>/dev/null | run_child head -n 1)
 if [ -n "$version" ]; then
   printf 'agent_version=%s\n' "$version" >>"$status_file"
@@ -106,9 +145,6 @@ log=$(run_child mktemp "${TMPDIR:-/tmp}/byre-grok-headless.XXXXXXXX") || {
   say "cannot create a temp file for grok's output"
   exit 1
 }
-trap 'run_child rm -f -- "$log"' EXIT
-trap 'exit 143' TERM
-trap 'exit 130' INT
 
 # --output-format json prints ONE document when grok finishes, so the stream
 # the chassis relays is silent until the end; --prompt-file makes the run
