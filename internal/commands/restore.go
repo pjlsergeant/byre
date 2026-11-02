@@ -527,7 +527,7 @@ func (rr *restoreRun) offerInstall(m missingRef) {
 		return
 	}
 	dataf(rr.s.Err, "\nbyre: this backup references %s %q, not installed here. Its hint:\n", m.Kind, m.Name)
-	if err := installForKind(rr.s, m.Kind, m.Hint.URI, m.Hint.Digest); err != nil {
+	if err := installForKind(rr.s, m.Kind, m.Hint.URI, m.Hint.Digest, false); err != nil {
 		dataf(rr.s.Err, "byre: %q not installed (%v).\n", m.Name, err)
 	}
 }

@@ -252,7 +252,7 @@ func TestNoWriteFlowsDoNotEnrollProject(t *testing.T) {
 		{"preset apply declined", func(t *testing.T, proj string) {
 			shipPreset(t, proj, PresetName, "agent = \"none\"\n")
 			s, _, _ := testStreams("n\n", true)
-			if err := PresetApply(s, proj, ""); err != nil {
+			if err := PresetApply(s, proj, "", false); err != nil {
 				t.Fatal(err)
 			}
 		}},

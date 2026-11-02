@@ -1074,15 +1074,18 @@ func presetCmd(dir string, s commands.Streams) *cobra.Command {
 		}
 		return ""
 	}
-	preset.AddCommand(
-		&cobra.Command{
-			Use:   "apply [<uri>|<path>]",
-			Short: "Chauffeur missing installs, review the composed box, write byre.config.",
-			Args:  maxArgsU(1, "preset apply [<uri>|<path>]"),
-			RunE: func(cmd *cobra.Command, args []string) error {
-				return commands.PresetApply(s, dir, optArg(args))
-			},
+	var applyYes bool
+	apply := &cobra.Command{
+		Use:   "apply [<uri>|<path>]",
+		Short: "Chauffeur missing installs, review the composed box, write byre.config.",
+		Args:  maxArgsU(1, "preset apply [<uri>|<path>]"),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return commands.PresetApply(s, dir, optArg(args), applyYes)
 		},
+	}
+	apply.Flags().BoolVar(&applyYes, "yes", false, "apply unattended: the review still prints, the confirm and the chauffeured installs' confirms are skipped (required in a pipe; refuses credential rows and digest-less https sources)")
+	preset.AddCommand(
+		apply,
 		&cobra.Command{
 			Use:   "inspect [<uri>|<path>]",
 			Short: "The apply review without the write (read-only).",

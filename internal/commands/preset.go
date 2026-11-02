@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/pjlsergeant/byre/internal/builtins"
@@ -51,17 +53,27 @@ type missingRef struct {
 	Hint *config.SourceHint
 }
 
-// PresetApply implements `byre preset apply [<uri>|<path>]`: fetch and
-// validate the preset, chauffeur installs for missing packages (each its own
-// consent; declining any is allowed), recompute, review, confirm, write.
 // errReviewDiffRead is the shared spelling for both preset paths that need
 // the stored config to build a review diff.
 const errReviewDiffRead = "cannot read this project's byre.config for the review diff: %w"
 
-func PresetApply(s Streams, projectDir, arg string) error {
-	// Non-TTY apply refuses -- the review is the point.
-	if !s.TTY {
-		return fmt.Errorf("preset apply is interactive (the review is the point) -- run it on a TTY")
+// PresetApply implements `byre preset apply [--yes] [<uri>|<path>]`: fetch and
+// validate the preset, chauffeur installs for missing packages (each its own
+// consent; declining any is allowed), recompute, review, confirm, write.
+//
+// yes is the unattended form (ADR 0063): the invocation is the consent to the
+// rendered grants, so it runs without a TTY, skips the confirm, and passes
+// --yes to the chauffeured installs. The review still prints in full -- into
+// the CI log when there is no terminal. Two things it can never consent to
+// refuse before anything is fetched or written: an https [sources] hint with
+// no digest (nobody looks at the fetched bytes), and credential rows on
+// either side of the replacement (ADR 0057: only a human's confirm against the
+// credential lines vouches for a ciphertext).
+func PresetApply(s Streams, projectDir, arg string, yes bool) error {
+	// Without --yes a pipe refuses: the review is the point, and nobody is
+	// there to read it and answer.
+	if !s.TTY && !yes {
+		return fmt.Errorf("preset apply is interactive (the review is the point) -- run it on a TTY, or pass --yes to apply unattended (the review still prints; credential rows and digest-less https sources refuse)")
 	}
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
@@ -108,6 +120,33 @@ func PresetApply(s Streams, projectDir, arg string) error {
 		return err
 	}
 
+	// The diff the user reviews is against THIS store config; capture ONE
+	// snapshot that feeds the --yes credential check, the renderer and the
+	// locked compare, so the landing step can prove the review -- and the
+	// check -- is still true (the config editor, --self-edit, or another byre
+	// may write it meanwhile). Unreadable-but-present is an abort, not "no
+	// config": replacing a file we could not show the user is exactly the
+	// unseen overwrite this flow forbids.
+	storePath := filepath.Join(paths.Dir, config.ProjectConfigName)
+	// paths.Dir is the store dir the --self-edit mount exposes: fd-judged,
+	// no-follow, bounded (the hostopen rule) -- same trust class as loadFile.
+	reviewedStore, reviewedStoreErr := hostopen.ReadFileBounded(storePath, false, config.MaxConfigBytes)
+	if reviewedStoreErr != nil && !os.IsNotExist(reviewedStoreErr) {
+		return fmt.Errorf(errReviewDiffRead, reviewedStoreErr)
+	}
+	hasStore := reviewedStoreErr == nil
+
+	// The --yes refusals run before the chauffeur, so a refused apply has
+	// installed nothing as well as written nothing.
+	if yes {
+		if err := unattendedCredentialRefusal(reviewedStore, content); err != nil {
+			return err
+		}
+		if err := undigestedHintRefusal(missing); err != nil {
+			return err
+		}
+	}
+
 	// Step 3: the chauffeur. Not the banned transitive install (which is
 	// SILENT fetching); this is byre walking the user through N explicit
 	// consents they solicited by invoking apply. Installs come BEFORE the
@@ -120,7 +159,7 @@ func PresetApply(s Streams, projectDir, arg string) error {
 			continue
 		}
 		dataf(s.Err, "\nbyre: the preset references %s %q, not installed. Its hint:\n", m.Kind, m.Name)
-		if err := installForKind(s, m.Kind, m.Hint.URI, m.Hint.Digest); err != nil {
+		if err := installForKind(s, m.Kind, m.Hint.URI, m.Hint.Digest, yes); err != nil {
 			// Declining (or a failed fetch) still completes the apply
 			// honestly: the reference stays in the written config, marked in
 			// the review, and the box fails loudly at develop with the
@@ -134,26 +173,14 @@ func PresetApply(s Streams, projectDir, arg string) error {
 	if err != nil {
 		return err
 	}
-	// The diff the user reviews is against THIS store config; capture ONE
-	// snapshot that feeds both the renderer and the locked compare, so the
-	// landing step can prove the review is still true (the config editor,
-	// --self-edit, or another byre may write it meanwhile). Unreadable-but-
-	// present is an abort, not "no config": replacing a file we could not
-	// show the user is exactly the unseen overwrite this flow forbids.
-	storePath := filepath.Join(paths.Dir, config.ProjectConfigName)
-	// paths.Dir is the store dir the --self-edit mount exposes: fd-judged,
-	// no-follow, bounded (the hostopen rule) -- same trust class as loadFile.
-	reviewedStore, reviewedStoreErr := hostopen.ReadFileBounded(storePath, false, config.MaxConfigBytes)
-	if reviewedStoreErr != nil && !os.IsNotExist(reviewedStoreErr) {
-		return fmt.Errorf(errReviewDiffRead, reviewedStoreErr)
-	}
-	hasStore := reviewedStoreErr == nil
 	renderPresetReview(s, paths, preset, content, still, "Apply", presetSubject, reviewedStore, hasStore, nil)
 
 	// Step 6: confirm; write the reviewed bytes as the project's byre.config
 	// and record the applied marker. Same discipline as every store write:
 	// under the setup lock, re-read, and only land the bytes just reviewed.
-	if !confirmed(s.Err, s.In, "Apply this preset? byre.config will be replaced. [y/N] ") {
+	if yes {
+		fmt.Fprintln(s.Err, "byre: --yes: applying the preset reviewed above without a prompt.")
+	} else if !confirmed(s.Err, s.In, "Apply this preset? byre.config will be replaced. [y/N] ") {
 		fmt.Fprintln(s.Err, "byre: not applied; nothing written.")
 		return nil
 	}
@@ -466,12 +493,87 @@ func hintByID(cat *packages.Catalog, sources map[string]config.SourceHint, canon
 }
 
 // installForKind runs the normal, kind-specific install flow (apply step 3):
-// manifest fetched, its own grant summary, its own confirm, digest verified.
-func installForKind(s Streams, kind packages.Kind, uri, digest string) error {
+// manifest fetched, its own grant summary, its own confirm (or apply's --yes),
+// digest verified.
+func installForKind(s Streams, kind packages.Kind, uri, digest string, yes bool) error {
 	if kind == packages.KindTemplate {
-		return PackageInstall(s, packages.KindTemplate, uri, digest, false)
+		return PackageInstall(s, packages.KindTemplate, uri, digest, yes)
 	}
-	return PackageInstall(s, packages.KindSkill, uri, digest, false)
+	return PackageInstall(s, packages.KindSkill, uri, digest, yes)
+}
+
+// unattendedCredentialsRule is the stable head of the `apply --yes` credential
+// refusal, which docs and tests key on.
+const unattendedCredentialsRule = "preset apply --yes refuses credential rows"
+
+// unattendedCredentialRefusal is ADR 0063's credential rule for `apply
+// --yes`: when the preset OR the store config it replaces carries encrypted
+// credential rows -- or the credential review has anything else to say: a
+// [credentials] identity arriving, leaving or replaced, or a side it could
+// not read -- the unattended apply refuses. Those review lines exist because a
+// swapped ciphertext is invisible in the diff, and they do not gate: the
+// human's confirm against them does (ADR 0057). --yes is not that human, on a
+// TTY or off one. A row that did not change still refuses: the rule is about
+// who vouches for the value, and the CI route delivers credentials with
+// env_from_host from the runner's environment instead.
+func unattendedCredentialRefusal(store, content []byte) error {
+	var found []string
+	for _, side := range []struct {
+		name string
+		raw  []byte
+	}{{"the preset", content}, {"your current byre.config", store}} {
+		v, err := readCredentialView(side.raw)
+		if err != nil {
+			// The review-lines pass below names the unreadable side.
+			continue
+		}
+		for _, k := range slices.Sorted(maps.Keys(v.sources)) {
+			if config.IsCredentialSource(v.sources[k]) {
+				found = append(found, fmt.Sprintf("%s sets %s (%s)", side.name, k, config.RenderSource(v.sources[k])))
+			}
+		}
+	}
+	if len(found) == 0 {
+		for _, l := range credentialReviewLines(presetSubject, store, content) {
+			found = append(found, l.Text)
+		}
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s: %s -- an encrypted value can be swapped without the review showing it, and only your confirm can vouch for it (ADR 0057). Apply on a TTY without --yes, or keep credentials out of the preset and deliver them with env_from_host from the runner's environment (KEY = \"env:KEY\")",
+		unattendedCredentialsRule, strings.Join(found, "; "))
+}
+
+// undigestedSourceRule is the stable head of the `apply --yes` source
+// refusal, which docs and tests key on.
+const undigestedSourceRule = "preset apply --yes needs a digest on every https source it installs from"
+
+// undigestedHintRefusal is ADR 0063's source rule for `apply --yes`: every
+// https [sources] hint the chauffeur would install from must carry a digest.
+// On a TTY a human reads each install's grant summary before confirming;
+// under --yes nobody looks at the fetched bytes, so the digest the committed
+// preset pins is what vouches for them. A path source names local bytes --
+// in CI, typically a file in the same checkout whose committed preset is the
+// consent, so it was reviewable in the same commit -- and passes.
+func undigestedHintRefusal(missing []missingRef) error {
+	var rows []string
+	kind := packages.KindSkill
+	for _, m := range missing {
+		if m.Hint == nil || strings.TrimSpace(m.Hint.Digest) != "" {
+			continue
+		}
+		if k, err := packages.ParseSourceURI(m.Hint.URI); err != nil || k != "https" {
+			continue
+		}
+		rows = append(rows, fmt.Sprintf("[sources] %q (%s)", m.Name, m.Hint.URI))
+		kind = m.Kind
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s: %s carries none -- unattended, nobody inspects the fetched bytes. Pin it with digest = \"sha256:...\" on the row (`byre %s inspect <uri>` prints it), or apply on a TTY without --yes",
+		undigestedSourceRule, strings.Join(rows, ", "), kind)
 }
 
 // renderPresetReview is apply step 5: the grant summary of every key and every

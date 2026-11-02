@@ -33,7 +33,7 @@ func TestPresetApplyWritesConfigAndMarker(t *testing.T) {
 
 	// One yes: the apply confirm (no missing packages, no chauffeur stops).
 	s, _, out := testStreams("y\n", true)
-	if err := PresetApply(s, proj, ""); err != nil {
+	if err := PresetApply(s, proj, "", false); err != nil {
 		t.Fatal(err)
 	}
 	// The review must surface the dangerous run_args.
@@ -62,7 +62,7 @@ func TestPresetApplyRefusesNonTTY(t *testing.T) {
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"none\"\n")
 	s := discardStreams()
-	if err := PresetApply(s, proj, ""); err == nil || !strings.Contains(err.Error(), "TTY") {
+	if err := PresetApply(s, proj, "", false); err == nil || !strings.Contains(err.Error(), "TTY") {
 		t.Fatalf("non-TTY apply must refuse (the review is the point), got %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(p.Dir, "applied")); !os.IsNotExist(err) {
@@ -74,7 +74,7 @@ func TestPresetApplyDeclineWritesNothing(t *testing.T) {
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"codex\"\n")
 	s, _, _ := testStreams("n\n", true)
-	if err := PresetApply(s, proj, ""); err != nil {
+	if err := PresetApply(s, proj, "", false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(p.Dir, "byre.config")); !os.IsNotExist(err) {
@@ -112,7 +112,7 @@ func TestPresetApplyAbortsOnChangeUnderReview(t *testing.T) {
 		mustWriteFile(t, path, []byte("agent = \"codex\"\nrun_args = [\"--privileged\"]\n"), 0o644)
 	}}
 	s := Streams{Out: io.Discard, Err: io.Discard, In: in, TTY: true}
-	err := PresetApply(s, proj, "")
+	err := PresetApply(s, proj, "", false)
 	if err == nil || !strings.Contains(err.Error(), "changed while you were reviewing") {
 		t.Fatalf("changed preset must abort, got %v", err)
 	}
@@ -137,7 +137,7 @@ func TestPresetDriftStates(t *testing.T) {
 	}
 	// Apply it -> state 2, silent.
 	s, _, _ := testStreams("y\n", true)
-	if err := PresetApply(s, proj, ""); err != nil {
+	if err := PresetApply(s, proj, "", false); err != nil {
 		t.Fatal(err)
 	}
 	if state, _ := presetState(proj, p); state != "applied" {
@@ -179,7 +179,7 @@ func TestPresetRetiredNameRefused(t *testing.T) {
 		}
 	}
 	s, _, _ := testStreams("y\n", true)
-	err := PresetApply(s, proj, "")
+	err := PresetApply(s, proj, "", false)
 	if err == nil {
 		t.Fatal("apply must refuse the retired name")
 	}
@@ -235,7 +235,7 @@ func TestPresetApplyRejectsInvalidLayer(t *testing.T) {
 	_, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"none\"\nnot_a_key = true\n")
 	s, _, _ := testStreams("y\n", true)
-	if err := PresetApply(s, proj, ""); err == nil || !strings.Contains(err.Error(), "unknown key") {
+	if err := PresetApply(s, proj, "", false); err == nil || !strings.Contains(err.Error(), "unknown key") {
 		t.Fatalf("invalid preset must refuse before any prompt, got %v", err)
 	}
 }
@@ -254,7 +254,7 @@ skills = ["pete/linter"]
 `)
 	// Two answers: the chauffeured install's confirm, then the apply confirm.
 	s, _, out := testStreams("y\ny\n", true)
-	if err := PresetApply(s, proj, ""); err != nil {
+	if err := PresetApply(s, proj, "", false); err != nil {
 		t.Fatal(err)
 	}
 	text := out.String()
@@ -291,7 +291,7 @@ skills = ["pete/linter"]
 `)
 	// Decline the install, accept the apply.
 	s, _, out := testStreams("n\ny\n", true)
-	if err := PresetApply(s, proj, ""); err != nil {
+	if err := PresetApply(s, proj, "", false); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "grants unknown") {
@@ -360,7 +360,7 @@ func TestPresetBuiltinTemplateOnFreshHome(t *testing.T) {
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "template = \"go\"\nagent = \"none\"\n")
 	s, out, _ := testStreams("y\n", true)
-	if err := PresetApply(s, proj, ""); err != nil {
+	if err := PresetApply(s, proj, "", false); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(out.String(), "not installed") {
@@ -386,7 +386,7 @@ func TestPresetApplyExplicitPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, _, _ := testStreams("y\n", true)
-	if err := PresetApply(s, proj, elsewhere); err != nil {
+	if err := PresetApply(s, proj, elsewhere, false); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(filepath.Join(p.Dir, "byre.config"))
@@ -405,7 +405,7 @@ func TestPresetReviewBodyKeepsNewlines(t *testing.T) {
 	_, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"none\"\napt = [\"jq\"]\n")
 	s, _, errBuf := testStreams("n\n", true)
-	if err := PresetApply(s, proj, ""); err != nil {
+	if err := PresetApply(s, proj, "", false); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(errBuf.String(), "agent = \"none\"\napt = [\"jq\"]") {
@@ -442,7 +442,7 @@ func TestPresetApplyAbortsOnStoreConfigChange(t *testing.T) {
 		mustWriteFile(t, storePath, []byte("agent = \"grok\"\n"), 0o644)
 	}}
 	s := Streams{Out: io.Discard, Err: io.Discard, In: in, TTY: true}
-	err := PresetApply(s, proj, "")
+	err := PresetApply(s, proj, "", false)
 	if err == nil || !strings.Contains(err.Error(), "byre.config changed while you were reviewing") {
 		t.Fatalf("concurrent store-config change must abort, got %v", err)
 	}
@@ -489,7 +489,7 @@ func TestPresetApplyAbortsOnUnreadableStoreConfig(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(storePath, 0o644) })
 	s, _, _ := testStreams("y\n", true)
-	err := PresetApply(s, proj, "")
+	err := PresetApply(s, proj, "", false)
 	if err == nil || !strings.Contains(err.Error(), "cannot read") {
 		t.Fatalf("unreadable existing config must abort, got %v", err)
 	}
@@ -518,7 +518,7 @@ func TestPresetReviewEscapesGrantLines(t *testing.T) {
 	// unicode escape that DECODES to ESC.
 	shipPreset(t, proj, PresetName, "agent = \"none\"\nrun_args = [\"--cap\\u001B[32madd=FAKE\"]\n")
 	s, _, errBuf := testStreams("n\n", true)
-	if err := PresetApply(s, proj, ""); err != nil {
+	if err := PresetApply(s, proj, "", false); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(errBuf.String(), "\x1b[32m") {
@@ -592,7 +592,7 @@ func TestPresetApplyFailsOnMissingLayer(t *testing.T) {
 	shipPreset(t, proj, PresetName, "extends = \"torn\"\n")
 
 	s, _, _ := testStreams("y\n", true)
-	err := PresetApply(s, proj, "")
+	err := PresetApply(s, proj, "", false)
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("apply with a missing layer must fail on the layer-not-found rule, got: %v", err)
 	}
@@ -616,7 +616,7 @@ func TestPresetApplyRefusesAForgetThatWonTheSetupLock(t *testing.T) {
 				t.Fatal(err)
 			}
 		},
-		func() error { return PresetApply(s, proj, "") })
+		func() error { return PresetApply(s, proj, "", false) })
 	if err == nil || !strings.Contains(err.Error(), "cleared while waiting") {
 		t.Fatalf("forget winner error = %v", err)
 	}
@@ -633,7 +633,7 @@ func TestPresetApplyResolvesLayerChainInReview(t *testing.T) {
 	shipPreset(t, proj, PresetName, "extends = \"torn\"\n")
 
 	s, _, out := testStreams("y\n", true)
-	if err := PresetApply(s, proj, ""); err != nil {
+	if err := PresetApply(s, proj, "", false); err != nil {
 		t.Fatal(err)
 	}
 	text := out.String()
@@ -693,7 +693,7 @@ func TestPresetApplyDerivedPathRefusesSymlink(t *testing.T) {
 	}
 
 	s, _, _ := testStreams("y\n", true)
-	err := PresetApply(s, proj, "")
+	err := PresetApply(s, proj, "", false)
 	if err == nil {
 		t.Fatal("a cwd-derived symlinked preset must be refused")
 	}
@@ -703,7 +703,7 @@ func TestPresetApplyDerivedPathRefusesSymlink(t *testing.T) {
 
 	// Named explicitly, the same file is followed: the user chose it.
 	s2, _, _ := testStreams("y\n", true)
-	if err := PresetApply(s2, proj, filepath.Join(proj, PresetName)); err != nil {
+	if err := PresetApply(s2, proj, filepath.Join(proj, PresetName), false); err != nil {
 		t.Errorf("an explicitly named path must still follow the symlink: %v", err)
 	}
 }

@@ -523,3 +523,20 @@ func TestRunCommandErrorPassesThrough(t *testing.T) {
 		t.Fatalf("expected the command error back, got %v", err)
 	}
 }
+
+// The --yes flag reaches PresetApply: off a TTY without it the interactive
+// refusal fires; with it that refusal is past and the next rule (no preset in
+// an empty checkout) is what stops the run.
+func TestPresetApplyYesFlagReachesTheCommand(t *testing.T) {
+	t.Setenv("BYRE_HOME", t.TempDir())
+	proj := t.TempDir()
+	s, _ := testStreams()
+	err := run(realApp, []string{"preset", "apply"}, proj, s)
+	if err == nil || !strings.Contains(err.Error(), "the review is the point") {
+		t.Fatalf("without --yes a pipe must refuse as interactive, got %v", err)
+	}
+	err = run(realApp, []string{"preset", "apply", "--yes"}, proj, s)
+	if err == nil || strings.Contains(err.Error(), "the review is the point") || !strings.Contains(err.Error(), "no byre.preset here") {
+		t.Fatalf("--yes must get past the TTY rule to preset discovery, got %v", err)
+	}
+}
