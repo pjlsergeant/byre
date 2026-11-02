@@ -10,7 +10,7 @@ chassis script, `byre-headless`, and exits with byre's own verdict. Without
 `--data`, stdout carries one versioned JSON document, byre's outcome. The
 agent's files land in a result dir, `.byre-run/`, in the work tree.
 
-The bundled claude and codex skills declare headless commands; an agent
+The bundled claude, codex and grok skills declare headless commands; an agent
 without one is refused by name before anything builds.
 
 Principles: P2 (core learns a CONTRACT -- task bytes in, an answer out, a
@@ -369,8 +369,9 @@ headless-aware login hooks).
 The documented case for the flag is an agent that hangs rather than fails.
 grok is the known one: with a dead login refresh chain it hangs at use
 time, inside the agent, where no login hook can see it. (The bundled grok
-skill declares no headless command yet; a run of any grok headless
-command, bundled later or a user's own, is where the flag is owed.)
+skill's headless command, `byre-grok-headless`, is where the flag is
+owed: its preflight can only check that a credential is present, not
+that its refresh chain still works.)
 
 ## No persistent codex key
 
