@@ -103,6 +103,17 @@ What it deliberately does NOT do:
   its own credentials identity, and says the file's authorship is not
   proven. Credentials you never ship through a preset or a backup have
   no exposure here.
+  Because that gate is your confirm, the unattended `byre preset apply
+  --yes` (for CI) never stands in for it: `--yes` consents to the grants
+  the review shows -- the review still prints, into the job log -- and
+  when the preset or the config it would replace carries a credential
+  row, `--yes` refuses, on a terminal too. Apply it interactively, or
+  keep credentials out of the preset and hand them to the box with
+  `env_from_host` from the runner's environment. What you live with on
+  that path: nobody reads the review at apply time, so what you
+  consented to is the preset as committed, and a commit nobody reviewed
+  applies unread
+  ([ADR 0063](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0063-preset-apply-yes.md)).
 - Transient plaintext in process memory — byre's during launch, the
   agent's afterwards — can reach swap, core dumps, or a hibernation
   image.
