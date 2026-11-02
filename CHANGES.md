@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+- **`byre run`: one task, headless, with byre's verdict as the exit
+  code.** `byre run --task task.md` sets up the box as `byre develop`
+  does, hands the task to the agent's headless mode with no terminal and
+  no stdin, and exits when the agent does -- from CI or any script. The
+  task can also come from `--task -` (stdin, read until the writer
+  closes) or `BYRE_TASK` in byre's own environment, up to 1 MiB. stdout is
+  the agent's answer and nothing else (escaped on a terminal, byte for
+  byte into a file); with `--data` it is instead one JSON document, byre's
+  outcome (`RunDataVersion` 1). Everything else -- the agent's live
+  output, the build, byre's notes -- goes to stderr, ending with a summary
+  line that is for humans only: the agent shares stderr and could print
+  the same line, so gate a script on the exit code or `--data`. Exit
+  codes 10-16 are the headless machinery's closed set (13: no usable
+  credential; 12: `--timeout` expired -- there is no time limit unless you
+  set one); the commands page has the table. The agent's files land in
+  `.byre-run/` in the work tree, which byre empties at the start of every
+  run and never reads back. `--quiet` keeps the agent's live output in
+  that dir only. A never-configured checkout needs `--template` and
+  `--agent`; the CI recipe is in the cookbook ("Run one task headlessly
+  (CI)?"). ADR 0061.
+- **Agent skills can declare a headless command.** `[agent] headless =
+  "<command>"` in a skill.toml is what `byre run` executes; an agent
+  without one is refused by name. The bundled claude and codex skills
+  declare one. `byre status`'s Agent row, the config editor's Skills
+  screen and `byre skill inspect` show each agent's headless command (or
+  `no headless command`). `docs/SKILLS.md` has the contract for authors.
+- **codex never saves an env key in a headless run.** Given
+  `OPENAI_API_KEY` or `CODEX_ACCESS_TOKEN`, codex's headless command logs
+  the key into a codex home made for that one run and deletes it after,
+  never into the project's codex state: with codex-shared-auth enabled, a
+  saved key would be shared to every project on the machine at the next
+  launch. A key in the environment wins over a codex login the box
+  already has, for that run. It matters on a laptop or self-hosted runner,
+  never on a discarded hosted runner; docs/AGENT-CREDENTIAL-MECHANICS.md
+  explains.
+- **The claude skill installs `jq`.** Its headless command reads
+  claude's result event with it.
+- **`status --data` carries `agent_headless`** (StatusDataVersion 4 → 5):
+  the agent's headless command, `""` when it declares none or status
+  cannot say.
+- **Launch records are version 2.** A `byre run` box's record carries
+  `headless`, `run_id`, `task_sha256` (the hash, never the task) and
+  `run_timeout`; a develop record differs from version 1 only in its
+  `record` number. An older byre reads any version-2 record as one from
+  a newer byre, so its `byre status` on a box this byre launched shows
+  the box running and describes the config rather than the box.
 - **A box with no terminal no longer stalls ten minutes on a login.** With
   the credential absent, the codex, grok and opencode login hooks (and
   grok-shared-auth's shared-store login) ran an interactive login whenever
@@ -10,8 +56,8 @@
   skips the login when stdin is not a terminal, and prints what to do
   instead: set the agent's API key (`env_from_host`, or
   `byre credentials set`), or log in from `byre shell`. codex's own
-  `codex login status` probe is bounded at 30 s too. Hooks also honour a new
-  byre-owned `BYRE_HEADLESS=1` signal, for a headless verb still to come.
+  `codex login status` probe is bounded at 30 s too. Hooks also honour
+  byre's own `BYRE_HEADLESS=1` signal, which `byre run` sets.
 - **Claude with an env credential skips its first-run wizard.** A box given
   `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`
   by env still stopped in Claude's setup wizard, login step included, on a
