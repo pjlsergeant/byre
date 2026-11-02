@@ -311,8 +311,10 @@ func (st *runState) run(projectDir string, launch runLaunch) error {
 	}
 	h.Stage = func(sp project.Paths, lrv resolved) error {
 		// The under-lock read is the box that was created: its agent must be
-		// the one the run was told about, and its writable roots must not
-		// have made the task's route one the pre-lock read did not judge.
+		// the one the run was told about, its writable roots must not have
+		// made the task's route one the pre-lock read did not judge, and the
+		// task file must still hold the bytes that were hashed -- a file
+		// that changed while byre waited is a run the caller did not mean.
 		if lrv.cfg.Agent != st.agent {
 			return st.refuse("the agent changed to %s while byre waited for the setup lock (this run resolved %s); nothing ran -- re-run", config.OrNone(lrv.cfg.Agent), config.OrNone(st.agent))
 		}
@@ -324,14 +326,12 @@ func (st *runState) run(projectDir string, launch runLaunch) error {
 			if perr != nil {
 				return st.refuse("--task: %v", perr)
 			}
-			if lplan != plan {
-				again, rerr := readTask(taskPath, lplan)
-				if rerr != nil {
-					return st.refuse("--task: %v", rerr)
-				}
-				if !bytes.Equal(again, task) {
-					return st.refuse("--task %s: the file changed while byre waited for the setup lock; nothing ran -- re-run", taskPath)
-				}
+			again, rerr := readTask(taskPath, lplan)
+			if rerr != nil {
+				return st.refuse("--task: %v", rerr)
+			}
+			if !bytes.Equal(again, task) {
+				return st.refuse("--task %s: the file changed while byre waited for the setup lock; nothing ran -- re-run", taskPath)
 			}
 		}
 		if serr := stageRunDir(sp.WorkDir, task); serr != nil {

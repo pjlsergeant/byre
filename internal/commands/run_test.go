@@ -406,6 +406,32 @@ func TestRunStagesAfterCreate(t *testing.T) {
 	})
 }
 
+// A task file that changes while byre waits for the setup lock refuses the
+// run, whether or not the route changed: the bytes hashed before the lock
+// are the only ones a run may stage.
+func TestRunRefusesTaskChangedUnderLock(t *testing.T) {
+	p, proj := runProject(t, configuredAgenty)
+	task := filepath.Join(proj, "task.md")
+	mustWriteFile(t, task, []byte("the task I meant"), 0o644)
+	f := &fakeRunner{}
+	f.boxCreateHook = func() { mustWriteFile(t, task, []byte("a different task"), 0o644) }
+	o := RunOptions{TaskFlag: task, Data: true}
+	s, out, stderr := runStreams("", false, false)
+	err := runWith(s, proj, o, fakeLaunch(t, f, p, proj, o))
+	if runExitCode(err) != 1 || !strings.Contains(stderr.String(), "the file changed while byre waited for the setup lock") {
+		t.Fatalf("want the changed-task refusal at 1, got %v\n%s", err, stderr)
+	}
+	if d := decodeRunData(t, out.Bytes()); d.Outcome != outcomeRefused {
+		t.Errorf("outcome %q, want refused", d.Outcome)
+	}
+	if len(f.starts) != 0 {
+		t.Errorf("the box must not start: %v", f.starts)
+	}
+	if _, serr := os.Lstat(filepath.Join(proj, runDirName, "task.md")); !errors.Is(serr, os.ErrNotExist) {
+		t.Errorf("nothing may be staged: %v", serr)
+	}
+}
+
 // An unconfigured project needs both axis flags: run cannot ask, and the
 // non-TTY onboarding remedy (run on a TTY) is not one run's caller can take.
 func TestRunRefusesUnconfiguredWithoutFlags(t *testing.T) {

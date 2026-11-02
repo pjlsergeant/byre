@@ -103,6 +103,9 @@ type fakeRunner struct {
 	// channel, so a create that is not watched hangs the test that pins it.
 	volCreateStall chan struct{}
 	createHook     func(name string)
+	// boxCreateHook runs as a container Create starts: the moment a launch
+	// holds the setup lock and has not yet staged anything.
+	boxCreateHook func()
 	// volCreateDone, when set, receives each volume name once VolumeCreate has
 	// finished with it. A test that RELEASES a stalled create has to wait for
 	// that create to land before it reads the fake back, and the receive is
@@ -322,6 +325,12 @@ func (f *fakeRunner) ContainerRemove(container string) error {
 }
 
 func (f *fakeRunner) Create(args []string) (string, error) {
+	f.mu.Lock()
+	hook := f.boxCreateHook
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.creates = append(f.creates, args)
