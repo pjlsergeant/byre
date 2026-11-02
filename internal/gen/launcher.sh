@@ -399,7 +399,11 @@ byre_credentials_apply
 # product (the agent's answer, written once by byre-headless), so it is saved
 # on fd 9 and everything from here on -- this launcher, every hook, the
 # chassis -- writes stdout to stderr instead.
-if [ "${1:-}" = byre-headless ]; then export BYRE_HEADLESS=1; exec 9>&1 >&2; else unset BYRE_HEADLESS; fi
+# The key is the chassis's ABSOLUTE path (gen.HeadlessPath), compared as a
+# string, and the explicit-argv arm below execs it as given: PATH starts with
+# the agent-writable ~/.local/bin and repository code (a worktree checkout's
+# hooks) has run above, so a bare name could resolve to a planted binary.
+if [ "${1:-}" = /usr/local/bin/byre-headless ]; then export BYRE_HEADLESS=1; exec 9>&1 >&2; else unset BYRE_HEADLESS; fi
 
 # First-run hooks — agent skills drop scripts here. They run as the dev user
 # (the launcher is unprivileged), so a hook does its own user-level setup directly

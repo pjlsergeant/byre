@@ -57,12 +57,16 @@ var fetchRunScript []byte
 func FetchRunScript() []byte { return fetchRunScript }
 
 // HeadlessName is the build-context filename of the headless-run chassis the
-// core block COPYs to HeadlessPath. `byre run` passes this name as the
-// container command, so the launcher's explicit-argv arm execs it.
+// core block COPYs to HeadlessPath.
 const HeadlessName = "byre-headless"
 
-// HeadlessPath is where the core block installs the headless-run chassis (on
-// PATH, so the bare name the launcher is handed resolves).
+// HeadlessPath is where the core block installs the headless-run chassis.
+// `byre run` passes this ABSOLUTE path as the container command, and the
+// launcher keys headless mode on exactly this string and execs it as given:
+// the image's PATH puts the agent-writable ~/.local/bin first, and repository
+// code runs in the launcher before the exec, so a bare name could resolve to
+// a planted binary instead of the tail-protected chassis. launcher.sh carries
+// the literal; TestLauncherKeysHeadlessOnHeadlessPath pins the two together.
 const HeadlessPath = "/usr/local/bin/" + HeadlessName
 
 //go:embed headless.sh

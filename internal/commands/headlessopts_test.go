@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/lock"
 	"github.com/pjlsergeant/byre/internal/project"
@@ -118,7 +119,7 @@ func TestHeadlessAttachUsesOwnedIO(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{attachOut: "the answer\n"}
 	var out bytes.Buffer
-	h := &headlessOptions{Command: []string{"byre-headless"}, AttachStdout: &out}
+	h := &headlessOptions{Command: []string{gen.HeadlessPath}, AttachStdout: &out}
 	if err := developWith(f, discardStreams(), p, combine(merged(config.Config{}), skills.Resolved{}), false, CredentialAsk, h); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +135,7 @@ func TestHeadlessAttachUsesOwnedIO(t *testing.T) {
 	}
 	argv := f.creates[0]
 	// The image, then the command: nothing may follow it.
-	if argv[len(argv)-1] != "byre-headless" || !strings.HasPrefix(argv[len(argv)-2], "byre-") {
+	if argv[len(argv)-1] != gen.HeadlessPath || !strings.HasPrefix(argv[len(argv)-2], "byre-") {
 		t.Errorf("the command must be last on the argv, right after the image: %q", argv)
 	}
 	if !slices.Contains(argv, "-i") || slices.Contains(argv, "-t") {
@@ -153,7 +154,7 @@ func TestDevelopWithoutHeadlessUsesStartAttach(t *testing.T) {
 	if len(f.startIOs) != 0 || len(f.starts) != 1 {
 		t.Errorf("want StartAttach only: starts %v, startIOs %d", f.starts, len(f.startIOs))
 	}
-	if slices.Contains(f.creates[0], "byre-headless") {
+	if slices.Contains(f.creates[0], gen.HeadlessPath) {
 		t.Errorf("no command without headless options: %q", f.creates[0])
 	}
 }

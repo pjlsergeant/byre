@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # byre-headless [script] -- the headless-run chassis. The launcher execs it as
 # the container command for `byre run` (PID 1 after that exec). It validates
 # the result dir the host staged, holds byre's own files there as open
@@ -26,6 +26,16 @@
 # exception is the final result.json publish, best-effort and
 # non-authoritative.
 set -u
+
+# The chassis's own helpers (sha256sum, tee, setsid, date, mktemp, ...) run
+# from the image's system directories only: the inherited PATH starts with the
+# agent-writable ~/.local/bin, and repository code has run in the launcher
+# before this point, so a lookup through it could run a planted binary inside
+# the verdict's own machinery. The inherited PATH is restored for the headless
+# command alone -- the agent's own binaries legitimately live there.
+byre_saved_path=${PATH-}
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 # Nothing here, nor the headless command, ever reads the box's stdin.
 exec </dev/null
@@ -252,9 +262,11 @@ else
   # signal stays ignored across exec, and a forwarded one would then reach
   # nothing. Explicit here rather than left to the traps above, so the order
   # of these lines cannot decide it.
+  setsid_bin=$(command -v setsid)
   (
     trap - INT QUIT
-    exec setsid -- "$cmd"
+    PATH=$byre_saved_path
+    exec "$setsid_bin" -- "$cmd"
   ) </dev/null >&7 2>&8 3>&- 4>&- 7>&- 8>&- 9>&- &
   child=$!
   exec 7>&- 8>&-

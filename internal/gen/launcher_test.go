@@ -860,8 +860,14 @@ func TestLauncherGateWaitsAboveCredentialWait(t *testing.T) {
 // headless tests are about which bytes land on which stream.
 func runLauncherSplit(t *testing.T, dir, bin string, env []string, args ...string) (int, string, string) {
 	t.Helper()
+	return runLauncherSplitScript(t, dir, bin, LauncherScript(), env, args...)
+}
+
+// runLauncherSplitScript is runLauncherSplit with the launcher text given.
+func runLauncherSplitScript(t *testing.T, dir, bin string, body []byte, env []string, args ...string) (int, string, string) {
+	t.Helper()
 	script := filepath.Join(dir, "launcher.sh")
-	if err := os.WriteFile(script, LauncherScript(), 0o755); err != nil {
+	if err := os.WriteFile(script, body, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	c := exec.Command("bash", append([]string{script}, args...)...)
@@ -886,56 +892,105 @@ func runLauncherSplit(t *testing.T, dir, bin string, env []string, args ...strin
 }
 
 // headlessLauncherFixture stages a firstrun hook and an env.d hook that each
-// print to stdout, and a stub byre-headless on PATH that records its argv
-// and BYRE_HEADLESS, prints to its stdout, and writes the answer to fd 9.
-func headlessLauncherFixture(t *testing.T) (dir, bin string) {
+// print to stdout; a stub chassis at an absolute path OFF PATH that records
+// its argv and BYRE_HEADLESS, prints to its stdout, and writes the answer to
+// fd 9; and a decoy byre-headless on PATH that records that it ran. The
+// launcher it returns keys on the stub's absolute path in place of
+// HeadlessPath (the real one cannot be installed by a test), which is the
+// literal TestLauncherKeysHeadlessOnHeadlessPath pins.
+func headlessLauncherFixture(t *testing.T) (dir, bin, chassis string, launcher []byte) {
 	t.Helper()
 	dir = t.TempDir()
 	bin = filepath.Join(dir, "bin")
 	firstrun := filepath.Join(dir, "firstrun.d")
 	envd := filepath.Join(dir, "env.d")
-	for _, d := range []string{bin, firstrun, envd} {
+	chassisDir := filepath.Join(dir, "chassis")
+	for _, d := range []string{bin, firstrun, envd, chassisDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
+	chassis = filepath.Join(chassisDir, "byre-headless")
 	files := map[string]string{
 		filepath.Join(firstrun, "10-loud"): "echo FIRSTRUN-STDOUT\n",
 		filepath.Join(envd, "10-loud.sh"):  "echo ENVD-STDOUT\n",
-		filepath.Join(bin, "byre-headless"): "#!/bin/sh\n" +
+		chassis: "#!/bin/sh\n" +
 			`printf '%s|%s' "${BYRE_HEADLESS-unset}" "$*" >"` + filepath.Join(dir, "seen") + `"` + "\n" +
 			"echo CHASSIS-STDOUT\n" +
 			"printf THE-ANSWER >&9\n",
+		filepath.Join(bin, HeadlessName): "#!/bin/sh\n" +
+			`printf '%s|%s' "${BYRE_HEADLESS-unset}" "$*" >"` + filepath.Join(dir, "seen-decoy") + `"` + "\n",
 	}
 	for p, body := range files {
 		if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	return dir, bin
+	src := string(LauncherScript())
+	if !strings.Contains(src, HeadlessPath) {
+		t.Fatalf("launcher.sh does not carry %s", HeadlessPath)
+	}
+	return dir, bin, chassis, []byte(strings.ReplaceAll(src, HeadlessPath, chassis))
+}
+
+// TestLauncherKeysHeadlessOnHeadlessPath pins the launcher's headless key to
+// gen.HeadlessPath, the absolute path `byre run` passes as the command.
+func TestLauncherKeysHeadlessOnHeadlessPath(t *testing.T) {
+	want := `if [ "${1:-}" = ` + HeadlessPath + ` ]; then`
+	if !strings.Contains(string(LauncherScript()), want) {
+		t.Errorf("launcher.sh does not key headless mode on %s (want %q)", HeadlessPath, want)
+	}
 }
 
 // BYRE_HEADLESS is keyed on the launcher's argv: exported as 1 when the
-// command is byre-headless -- whatever the environment said -- and the
-// explicit-argv arm still execs it.
+// command is the chassis's absolute path -- whatever the environment said --
+// and the explicit-argv arm execs that path as given, never a PATH lookup
+// (the decoy earlier on PATH never runs).
 func TestLauncherHeadlessExportsSignalFromArgv(t *testing.T) {
 	for _, inherited := range []string{"", "BYRE_HEADLESS=0"} {
-		dir, bin := headlessLauncherFixture(t)
+		dir, bin, chassis, launcher := headlessLauncherFixture(t)
 		var env []string
 		if inherited != "" {
 			env = append(env, inherited)
 		}
-		code, _, stderr := runLauncherSplit(t, dir, bin, env, "byre-headless", "--probe")
+		code, _, stderr := runLauncherSplitScript(t, dir, bin, launcher, env, chassis, "--probe")
 		if code != 0 {
 			t.Fatalf("exit %d\n%s", code, stderr)
 		}
 		seen, err := os.ReadFile(filepath.Join(dir, "seen"))
 		if err != nil {
-			t.Fatalf("the explicit-argv arm did not exec byre-headless: %v\n%s", err, stderr)
+			t.Fatalf("the explicit-argv arm did not exec the chassis: %v\n%s", err, stderr)
 		}
 		if string(seen) != "1|--probe" {
-			t.Errorf("byre-headless saw BYRE_HEADLESS|argv = %q, want 1|--probe (env %q)", seen, inherited)
+			t.Errorf("the chassis saw BYRE_HEADLESS|argv = %q, want 1|--probe (env %q)", seen, inherited)
 		}
+		if _, err := os.Stat(filepath.Join(dir, "seen-decoy")); err == nil {
+			t.Errorf("the byre-headless on PATH ran")
+		}
+	}
+}
+
+// The BARE name is not the headless key: it gets no BYRE_HEADLESS and no
+// stdout swap, so whatever PATH resolves it to is an ordinary command, never
+// a run byre would read a verdict from.
+func TestLauncherBareHeadlessNameIsNotHeadless(t *testing.T) {
+	dir, bin, _, launcher := headlessLauncherFixture(t)
+	code, stdout, stderr := runLauncherSplitScript(t, dir, bin, launcher, []string{"BYRE_HEADLESS=1"}, HeadlessName)
+	if code != 0 {
+		t.Fatalf("exit %d\n%s", code, stderr)
+	}
+	seen, err := os.ReadFile(filepath.Join(dir, "seen-decoy"))
+	if err != nil {
+		t.Fatalf("the explicit-argv arm did not run the bare command: %v\n%s", err, stderr)
+	}
+	if string(seen) != "unset|" {
+		t.Errorf("the bare name saw BYRE_HEADLESS|argv = %q, want unset|", seen)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "seen")); err == nil {
+		t.Errorf("the bare name ran the chassis")
+	}
+	if !strings.Contains(stdout, "FIRSTRUN-STDOUT") {
+		t.Errorf("the bare name moved hook output off stdout: %q", stdout)
 	}
 }
 
@@ -943,7 +998,7 @@ func TestLauncherHeadlessExportsSignalFromArgv(t *testing.T) {
 // a skill's [runtime].env or raw run_args can set the variable, and neither
 // may make an interactive session look headless to its hooks.
 func TestLauncherNonHeadlessUnsetsSignal(t *testing.T) {
-	dir, bin := headlessLauncherFixture(t)
+	dir, bin, _, _ := headlessLauncherFixture(t)
 	code, stdout, stderr := runLauncherSplit(t, dir, bin, []string{"BYRE_HEADLESS=1"},
 		"bash", "-c", `printf '%s' "${BYRE_HEADLESS-unset}"; if { : >&9; } 2>/dev/null; then printf " fd9-open"; fi`)
 	if code != 0 {
@@ -963,8 +1018,8 @@ func TestLauncherNonHeadlessUnsetsSignal(t *testing.T) {
 // on stderr, and fd 9 is the original stdout -- the only bytes on it are what
 // the chassis wrote there.
 func TestLauncherHeadlessMovesStdoutToStderr(t *testing.T) {
-	dir, bin := headlessLauncherFixture(t)
-	code, stdout, stderr := runLauncherSplit(t, dir, bin, nil, "byre-headless")
+	dir, bin, chassis, launcher := headlessLauncherFixture(t)
+	code, stdout, stderr := runLauncherSplitScript(t, dir, bin, launcher, nil, chassis)
 	if code != 0 {
 		t.Fatalf("exit %d\n%s", code, stderr)
 	}

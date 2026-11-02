@@ -29,6 +29,9 @@ type headlessCase struct {
 	prepare func(t *testing.T, ws, runDir string) // after staging, before the run
 	during  func(t *testing.T, cmd *exec.Cmd)     // after start, before wait
 	stdin   *os.File
+	// pathFirst, when set, is a dir under the case's workspace put FIRST on
+	// the chassis's inherited PATH.
+	pathFirst string
 }
 
 type headlessResult struct {
@@ -106,6 +109,9 @@ func runHeadless(t *testing.T, c headlessCase) headlessResult {
 		"BYRE_RUN_ID=0123abcd",
 		"BYRE_RUN_AGENT=stubagent",
 		"STUB_WS=" + ws,
+	}
+	if c.pathFirst != "" {
+		env = append(env, "PATH="+filepath.Join(ws, c.pathFirst)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	}
 	cmd.Env = headlessEnv(append(env, c.env...)...)
 	var stdout, stderr bytes.Buffer
@@ -720,5 +726,53 @@ func TestHeadlessAnswerOnEveryExit(t *testing.T) {
 	r = runHeadless(t, headlessCase{stub: `exit 13`})
 	if r.code != 13 || r.fd9 != "" {
 		t.Errorf("exit %d fd9 %q, want 13 and nothing on fd 9", r.code, r.fd9)
+	}
+}
+
+// The chassis's own helpers never resolve through the inherited PATH, whose
+// first entry is agent-writable in the box: a planted sha256sum, tee, setsid
+// (and the rest) earlier on PATH never runs, and the verdict is still right.
+// The headless command alone gets the inherited PATH back, so the agent's own
+// binaries there still resolve.
+func TestHeadlessHelpersIgnoreThePlantedPath(t *testing.T) {
+	if !bytes.HasPrefix(HeadlessScript(), []byte("#!/bin/bash\n")) {
+		t.Errorf("headless.sh must name its interpreter absolutely, not through PATH")
+	}
+	planted := []string{"sha256sum", "head", "tee", "setsid", "mktemp", "date", "cat", "sleep", "mv", "chmod", "rm", "kill", "env"}
+	r := runHeadless(t, headlessCase{
+		stub:      `printf '%s' "$PATH" >"$STUB_WS/cmd-path"; agent-tool`,
+		pathFirst: "planted",
+		prepare: func(t *testing.T, ws, runDir string) {
+			plantDir := filepath.Join(ws, "planted")
+			if err := os.Mkdir(plantDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range planted {
+				body := "#!/bin/sh\necho " + name + " >>\"$STUB_WS/planted-ran\"\nexit 99\n"
+				if err := os.WriteFile(filepath.Join(plantDir, name), []byte(body), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			agentTool := "#!/bin/sh\nprintf 'the answer' >\"$BYRE_RUN_RESULT_FILE\"\n"
+			if err := os.WriteFile(filepath.Join(plantDir, "agent-tool"), []byte(agentTool), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		},
+	})
+	if r.code != 0 || r.fd9 != "the answer" {
+		t.Fatalf("exit %d, fd 9 %q; want 0 and the answer\nstderr:\n%s", r.code, r.fd9, r.stderr)
+	}
+	if m := r.resultJSON(t); m["status"] != "success" {
+		t.Errorf("result.json status = %v, want success", m["status"])
+	}
+	if ran, err := os.ReadFile(filepath.Join(r.ws, "planted-ran")); err == nil {
+		t.Errorf("the chassis ran planted helpers from PATH: %q", ran)
+	}
+	seen, err := os.ReadFile(filepath.Join(r.ws, "cmd-path"))
+	if err != nil {
+		t.Fatalf("the headless command did not record its PATH: %v", err)
+	}
+	if want := filepath.Join(r.ws, "planted") + string(os.PathListSeparator); !strings.HasPrefix(string(seen), want) {
+		t.Errorf("the headless command's PATH = %q, want the inherited one (starting %q)", seen, want)
 	}
 }

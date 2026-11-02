@@ -296,7 +296,7 @@ func (st *runState) run(projectDir string, launch runLaunch) error {
 	}
 
 	h := &headlessOptions{
-		Command:      []string{gen.HeadlessName},
+		Command:      []string{gen.HeadlessPath},
 		Env:          env,
 		AttachStdout: boxOut,
 		StreamStdout: s.Err,

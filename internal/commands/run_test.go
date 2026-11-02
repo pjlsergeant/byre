@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
@@ -487,7 +488,7 @@ func TestRunForcesNonInteractive(t *testing.T) {
 			if slices.Contains(argv, "-t") || !slices.Contains(argv, "-i") {
 				t.Errorf("want -i and no -t: %q", argv)
 			}
-			if argv[len(argv)-1] != "byre-headless" {
+			if argv[len(argv)-1] != gen.HeadlessPath {
 				t.Errorf("the chassis must be the command: %q", argv)
 			}
 			if len(f.startIOs) != 1 || f.startIOs[0].stdin != nil {
