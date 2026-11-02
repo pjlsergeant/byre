@@ -90,6 +90,18 @@ func TestClaudeSharedAuthHookSeedsOnboarding(t *testing.T) {
 		t.Fatalf("existing .claude.json clobbered: %q", b)
 	}
 
+	// A dangling symlink at .claude.json passes `! -e`; the seed must not
+	// write through it.
+	cfgLink := t.TempDir()
+	victim := filepath.Join(t.TempDir(), "victim.json")
+	if err := os.Symlink(victim, filepath.Join(cfgLink, ".claude.json")); err != nil {
+		t.Fatal(err)
+	}
+	run(base, cfgLink)
+	if _, err := os.Lstat(victim); !os.IsNotExist(err) {
+		t.Fatalf("seed wrote through a dangling symlink: %v", err)
+	}
+
 	// No token -> nothing seeded (per-project login must proceed untouched).
 	base2, cfg2 := t.TempDir(), filepath.Join(t.TempDir(), "claude")
 	run(base2, cfg2)
@@ -336,6 +348,89 @@ func TestClaudeSharedAuthFirstrunNeverPromptsWhenHeadless(t *testing.T) {
 		}
 		if out, _ := paste(t, ""); !strings.Contains(out, "setup-token") {
 			t.Fatalf("control: a real terminal must still get the paste prompt: %s", out)
+		}
+	})
+}
+
+// The claude skill's onboarding hook seeds the same onboarding-complete
+// marker as claude-shared-auth, for a credential that arrives by env
+// (env_from_host, byre credentials): without it a fresh config dir stops
+// interactive Claude in its first-run wizard, login step included, even
+// though the credential would authenticate. It ships into the firstrun dir,
+// never prompts, and never touches an existing .claude.json or writes
+// through a symlink at that name.
+func TestClaudeOnboardingHookSeedsOnEnvCredential(t *testing.T) {
+	_, cat := testCat(t)
+	res, err := skills.Resolve(config.Config{Agent: "claude"}, cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shipped bool
+	for _, b := range res.BuildBlocks() {
+		for _, sf := range b.Files {
+			if b.Name == "byre/claude" && sf.Dest == "/etc/byre/firstrun.d/claude-onboarding" {
+				shipped = true
+			}
+		}
+	}
+	if !shipped {
+		t.Fatal("claude must ship its onboarding hook into the firstrun dir")
+	}
+
+	hook := filepath.Join(skillDir(t, cat, "claude"), "claude-firstrun.sh")
+	credVars := []string{"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"}
+	run := func(t *testing.T, cfg string, env ...string) {
+		t.Helper()
+		// A clean env: the suite may itself run in a credentialed box.
+		var base []string
+		for _, e := range os.Environ() {
+			keep := true
+			for _, v := range credVars {
+				if strings.HasPrefix(e, v+"=") {
+					keep = false
+				}
+			}
+			if keep {
+				base = append(base, e)
+			}
+		}
+		if out := runHook(t, "bash", hook, append(append(base, "CLAUDE_CONFIG_DIR="+cfg), env...)...); out != "" {
+			t.Fatalf("hook must stay silent: %q", out)
+		}
+	}
+	marker := func(cfg string) string { return filepath.Join(cfg, ".claude.json") }
+
+	for _, v := range credVars {
+		t.Run("seeds on "+v, func(t *testing.T) {
+			cfg := filepath.Join(t.TempDir(), "claude")
+			run(t, cfg, v+"=x")
+			isRegularWith(t, marker(cfg), "{\"hasCompletedOnboarding\": true}\n")
+		})
+	}
+	t.Run("no env credential seeds nothing", func(t *testing.T) {
+		cfg := t.TempDir()
+		run(t, cfg, "ANTHROPIC_API_KEY=")
+		if _, err := os.Lstat(marker(cfg)); !os.IsNotExist(err) {
+			t.Fatalf("seeded without a credential: %v", err)
+		}
+	})
+	t.Run("existing file left alone", func(t *testing.T) {
+		cfg := t.TempDir()
+		if err := os.WriteFile(marker(cfg), []byte(`{"mine":true}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		run(t, cfg, "ANTHROPIC_API_KEY=x")
+		isRegularWith(t, marker(cfg), `{"mine":true}`)
+	})
+	t.Run("dangling symlink refused", func(t *testing.T) {
+		cfg := t.TempDir()
+		victim := filepath.Join(t.TempDir(), "victim.json")
+		if err := os.Symlink(victim, marker(cfg)); err != nil {
+			t.Fatal(err)
+		}
+		run(t, cfg, "ANTHROPIC_API_KEY=x")
+		if _, err := os.Lstat(victim); !os.IsNotExist(err) {
+			t.Fatalf("seed wrote through a dangling symlink: %v", err)
 		}
 	})
 }

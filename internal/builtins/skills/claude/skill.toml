@@ -21,7 +21,10 @@ description = "The Claude Code agent; login persists per project."
 
 [build]
 apt = ["curl", "ca-certificates"]
-files = { "claude-launch.sh" = "/usr/local/bin/byre-claude-launch" }
+# claude-firstrun.sh seeds the onboarding marker on a fresh config dir when a
+# credential arrives by env, so such a launch never stops in the first-run
+# wizard.
+files = { "claude-launch.sh" = "/usr/local/bin/byre-claude-launch", "claude-firstrun.sh" = "/etc/byre/firstrun.d/claude-onboarding" }
 dockerfile = [
   # The launch wrapper must be executable: bundled extraction writes 0644
   # (the grok/codex/opencode wrappers carry the same line).

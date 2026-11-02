@@ -14,13 +14,16 @@ TOKEN_FILE="$IDENTITY_DIR/token"
 # the wizard runs (login step included) without ever consulting the token
 # (host-verified 2026-07-07). Seeding the onboarding-complete marker makes
 # Claude use the token directly. FRESH volumes only — never touch an existing
-# .claude.json (Claude owns it; it rewrites via temp+rename). Trade recorded:
-# skipping the wizard skips the theme picker; /config re-opens it in-session.
+# .claude.json (Claude owns it; it rewrites via temp+rename), and never write
+# through a symlink at that name: `-e` is false for a dangling one, so `-L` is
+# tested too, and the write runs under noclobber, which opens O_EXCL and
+# refuses a link raced in after the test. Trade recorded: skipping the wizard
+# skips the theme picker; /config re-opens it in-session.
 seed_onboarding() {
   cfg="${CLAUDE_CONFIG_DIR:-/home/dev/.claude}"
-  if [ -s "$TOKEN_FILE" ] && [ ! -e "$cfg/.claude.json" ]; then
+  if [ -s "$TOKEN_FILE" ] && [ ! -e "$cfg/.claude.json" ] && [ ! -L "$cfg/.claude.json" ]; then
     mkdir -p "$cfg" 2>/dev/null || return 0
-    printf '{"hasCompletedOnboarding": true}\n' >"$cfg/.claude.json" 2>/dev/null || true
+    (set -C; printf '{"hasCompletedOnboarding": true}\n' >"$cfg/.claude.json") 2>/dev/null || true
   fi
 }
 
