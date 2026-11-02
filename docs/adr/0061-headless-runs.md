@@ -396,8 +396,11 @@ to the centisecond and rounded down, so a wall-clock step during the run
 cannot disable the timer, the real timer's signal always passes the
 deadline, and a forged `USR1` is ignored until under 20 ms remain (the
 duration and the arming time are each floored to the centisecond; the
-duration's fraction is kept to nine digits, so the floor is exact for
-every suffix). The
+duration's fraction is kept to nine digits and digits past that are
+dropped, under 1e-10 d for the day suffix, which can move a value sitting
+within that much of a boundary by one centisecond, or refuse one that
+much over the 1 s minimum -- accepted, since no timeout is meant to that
+precision). The
 chassis refuses the same range in a
 `BYRE_RUN_TIMEOUT` a raw `run_args` sets (exit 16). When set, the
 timer is the chassis's own, so exit 12 means byre's timer fired -- never

@@ -121,7 +121,9 @@ func CheckRunTimeout(v string) error {
 
 // runTimeoutSecs is a grammar-valid duration in whole seconds, rounded down
 // the way the chassis rounds it: nine fractional digits, multiplied by the
-// unit before dividing (a tenth digit is under 1e-10 d, below a centisecond).
+// unit before dividing; digits past the ninth are dropped (under 1e-10 d for
+// the day suffix), an accepted step at a boundary that no timeout is meant
+// to.
 // ok is false when the integer part has more than 9 digits, which is over the
 // cap whatever the suffix.
 func runTimeoutSecs(v string) (secs int64, ok bool) {

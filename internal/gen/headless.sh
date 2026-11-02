@@ -178,9 +178,11 @@ fi
 # 20 ms remain (the duration and the arming time are each floored to the
 # centisecond); and the real timer's always passes, because sleep(1) of the
 # exact duration never wakes early and the deadline is rounded down.
-# The fraction keeps nine digits, multiplied by the unit before dividing, so
-# timeout_cs is exact for every suffix; a tenth digit is under 1e-10 d
-# (8.64 us), below a centisecond, and is dropped.
+# The fraction keeps nine digits, multiplied by the unit before dividing;
+# digits past the ninth are dropped (under 1e-10 d, 8.64 us, for the day
+# suffix), which can move a value sitting within that much of a
+# centisecond or of the 1 s minimum by one step. Accepted: no timeout is
+# meant to that precision.
 # timeout_secs, the whole seconds rounded down, is only the range check:
 # the smallest timeout is 1 s, the largest 3650 d (31,536,000,000 cs, well
 # inside 64 bits), and the integer part's digits are counted before
