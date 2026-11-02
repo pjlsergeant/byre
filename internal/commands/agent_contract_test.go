@@ -28,6 +28,9 @@ package commands
 // the drift detector.
 
 import (
+	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -162,6 +165,99 @@ command = ["echo", "hi"]
 	out := agentProbe(t, r, image, nil, "byre-codex-mcp-launch", "mcp", "list")
 	if !strings.Contains(out, "byre-probe") {
 		t.Fatalf("codex no longer honors the wrapper's -c mcp_servers overrides — the ADR 0033 inject vouch broke:\n%s", out)
+	}
+}
+
+// codexNoTerminalRemedy is a stable fragment of the codex-login hook's
+// no-terminal remedy: seeing it on stderr means the hook took the guard and
+// exited instead of starting its 600 s device login.
+const codexNoTerminalRemedy = "no terminal for the device login"
+
+// TestAgentContractCodexLaunchesFromAPipeWithoutCredential: a codex box with
+// no credential, launched through the real entrypoint (launcher + firstrun
+// loop) with stdin a pipe, gets past its login hook within 30 s instead of
+// stalling in the device login. The launch argv is the one develop builds for
+// a non-terminal stdin (runParams with tty=false: `-i`, no `-t`). The pipe's
+// write end stays open, as under `producer | byre develop`, so the agent
+// cannot race past on EOF. What codex itself does with no terminal is its
+// own business and is not asserted; the container is removed once the
+// remedy has been seen. The project is a fresh temp one under an isolated
+// BYRE_HOME, so the .codex state volume starts empty, no host env is passed
+// through, and no machine-scoped login volume is mounted.
+func TestAgentContractCodexLaunchesFromAPipeWithoutCredential(t *testing.T) {
+	r := requireAgentRunner(t)
+	image, rv, ident, p := buildAgentBox(t, r, `agent = "codex"
+`)
+	t.Logf("codex version: %s", strings.TrimSpace(agentProbe(t, r, image, nil, "codex", "--version")))
+
+	params, err := runParams(p, rv, image, false, false, ident, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := string(r.Engine())
+	t.Cleanup(func() {
+		_ = exec.Command(engine, "rm", "-f", params.Name).Run()
+		for _, v := range params.Volumes {
+			_ = r.VolumeRemove(v.Name)
+		}
+	})
+	for _, k := range []string{"OPENAI_API_KEY", "CODEX_API_KEY"} {
+		if _, ok := params.Env[k]; ok {
+			t.Fatalf("the box would receive %s -- the launch is not credential-free", k)
+		}
+	}
+	for _, v := range params.Volumes {
+		if strings.Contains(v.Target, ".byre-identity") {
+			t.Fatalf("a machine-scoped login volume is mounted (%s at %s) -- a shared login could reach the box", v.Name, v.Target)
+		}
+		if exec.Command(engine, "volume", "inspect", v.Name).Run() == nil {
+			t.Fatalf("volume %s already exists -- the box would not start credential-free", v.Name)
+		}
+	}
+
+	stdinR, stdinW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdinW.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, engine, runner.RunArgs(params)...)
+	cmd.Stdin = stdinR
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	stdinR.Close()
+
+	var seen time.Duration
+	var errLog strings.Builder
+	sc := bufio.NewScanner(stderr)
+	for sc.Scan() {
+		errLog.WriteString(sc.Text() + "\n")
+		if strings.Contains(sc.Text(), codexNoTerminalRemedy) {
+			seen = time.Since(start)
+			break
+		}
+	}
+	_ = exec.Command(engine, "rm", "-f", params.Name).Run()
+	cancel()
+	_ = cmd.Wait()
+	total := time.Since(start)
+
+	if seen == 0 {
+		t.Fatalf("the codex login hook never printed its no-terminal remedy (%q) within %s -- it stalled in the device login or took another route\nstderr:\n%s\nstdout:\n%s",
+			codexNoTerminalRemedy, total.Round(time.Second), errLog.String(), stdout.String())
+	}
+	t.Logf("past the login hook after %s", seen.Round(100*time.Millisecond))
+	if seen >= 30*time.Second {
+		t.Fatalf("the codex login hook took %s to stand down with no terminal, want under 30s\nstderr:\n%s", seen.Round(time.Second), errLog.String())
 	}
 }
 
