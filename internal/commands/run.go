@@ -272,9 +272,12 @@ func (st *runState) run(projectDir string, launch runLaunch) error {
 		"BYRE_RUN_MODEL":       o.Model,
 		"BYRE_RUN_AGENT":       st.agent,
 		"BYRE_RUN_ID":          st.runID,
-	}
-	if o.Timeout != "" {
-		env["BYRE_RUN_TIMEOUT"] = o.Timeout
+		// Always present, empty when the flag is absent: develop re-asserts
+		// only the keys this map holds, and the chassis treats empty as
+		// unset, so a skill's [runtime].env cannot time out or silence a
+		// run that never asked for either.
+		"BYRE_RUN_TIMEOUT": o.Timeout,
+		"BYRE_RUN_QUIET":   "",
 	}
 	if o.Quiet {
 		env["BYRE_RUN_QUIET"] = "1"

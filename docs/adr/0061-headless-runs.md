@@ -131,7 +131,9 @@ reserved-env inventory under two claims, `headless run` and `launch` (a
 skill setting one is aiming at a run's inputs, and the chassis is what the
 launcher execs). The host re-asserts its `BYRE_RUN_*` set after every
 skill's runtime env, the `BYRE_EGRESS` precedent, so no skill's
-`[runtime].env` can skew what a run is told. Raw `run_args` still follow
+`[runtime].env` can skew what a run is told; a knob the run was not asked
+for (`BYRE_RUN_TIMEOUT`, `BYRE_RUN_QUIET`) is re-asserted empty, which the
+chassis reads as unset. Raw `run_args` still follow
 on the argv and win (ADR 0006 is not reopened). A test pins that every
 `BYRE_*` name any chassis script reads is in the inventory, which also
 brought in `BYRE_FETCH_RUN_RETRIES`.

@@ -509,20 +509,27 @@ func TestRunForcesNonInteractive(t *testing.T) {
 			if id, ok := argvEnv(argv, "BYRE_RUN_ID"); !ok || len(id) != 16 {
 				t.Errorf("BYRE_RUN_ID = %q", id)
 			}
-			if got, ok := argvEnv(argv, "BYRE_RUN_TIMEOUT"); ok != (tc.o.Timeout != "") || got != tc.o.Timeout {
-				t.Errorf("BYRE_RUN_TIMEOUT = %q (present %v), want it only with --timeout", got, ok)
+			// Both keys are always on the argv, empty without their flag
+			// (the chassis reads empty as unset).
+			if got, ok := argvEnv(argv, "BYRE_RUN_TIMEOUT"); !ok || got != tc.o.Timeout {
+				t.Errorf("BYRE_RUN_TIMEOUT = %q (present %v), want %q", got, ok, tc.o.Timeout)
 			}
-			if got, ok := argvEnv(argv, "BYRE_RUN_QUIET"); ok != tc.o.Quiet || (ok && got != "1") {
-				t.Errorf("BYRE_RUN_QUIET = %q (present %v), want it only with --quiet", got, ok)
+			wantQuiet := ""
+			if tc.o.Quiet {
+				wantQuiet = "1"
+			}
+			if got, ok := argvEnv(argv, "BYRE_RUN_QUIET"); !ok || got != wantQuiet {
+				t.Errorf("BYRE_RUN_QUIET = %q (present %v), want %q", got, ok, wantQuiet)
 			}
 		})
 	}
 }
 
-// A skill's [runtime].env cannot set a BYRE_RUN_* key over the run's own.
+// A skill's [runtime].env cannot set a BYRE_RUN_* key over the run's own --
+// including the knobs the run was not asked for, which stay empty.
 func TestRunEnvBeatsSkillEnv(t *testing.T) {
 	p, proj := runProject(t, configuredAgenty)
-	writeLocalSkill(t, p.Home, "agenty", headlessAgentManifest+"\n[runtime.env]\nBYRE_RUN_MODEL = \"skill-chosen\"\n")
+	writeLocalSkill(t, p.Home, "agenty", headlessAgentManifest+"\n[runtime.env]\nBYRE_RUN_MODEL = \"skill-chosen\"\nBYRE_RUN_TIMEOUT = \"1s\"\nBYRE_RUN_QUIET = \"0\"\n")
 	t.Setenv("BYRE_TASK", "do it")
 	f := &fakeRunner{}
 	o := RunOptions{Model: "mine"}
@@ -532,6 +539,11 @@ func TestRunEnvBeatsSkillEnv(t *testing.T) {
 	}
 	if got, _ := argvEnv(f.creates[0], "BYRE_RUN_MODEL"); got != "mine" {
 		t.Errorf("BYRE_RUN_MODEL = %q, want the run's own value", got)
+	}
+	for _, k := range []string{"BYRE_RUN_TIMEOUT", "BYRE_RUN_QUIET"} {
+		if got, ok := argvEnv(f.creates[0], k); !ok || got != "" {
+			t.Errorf("%s = %q (present %v), want it empty without its flag", k, got, ok)
+		}
 	}
 }
 
