@@ -58,9 +58,14 @@ type fakeRunner struct {
 	starts              []string // StartAttach: container names
 	runErr              error    // StartAttach result
 	runHook             func()   // called inside StartAttach: "while the session is live"
-	execs               []string // "id uid:gid workdir cmd..."
-	netnsErr            error
-	netnsInits          []string // NetnsInit: "container entrypoint"
+	// StartAttachIO: each call's container, stdin and stdout, in order; the
+	// call also lands in starts/ops ("start"), so sequencing tests read the
+	// same either way. attachOut is what the box "prints" to that stdout.
+	startIOs   []startIOCall
+	attachOut  string
+	execs      []string // "id uid:gid workdir cmd..."
+	netnsErr   error
+	netnsInits []string // NetnsInit: "container entrypoint"
 	// WorktreeAdd: recorded argv-shaped summary + the identity it ran with.
 	worktreeAdds   []string // "image name common(host->target) main target branch"
 	worktreeIdents []runner.Identity
@@ -330,6 +335,27 @@ func (f *fakeRunner) StartAttach(container string) error {
 	defer f.mu.Unlock()
 	f.starts = append(f.starts, container)
 	f.ops = append(f.ops, "start")
+	if f.runHook != nil {
+		f.runHook()
+	}
+	return f.runErr
+}
+
+type startIOCall struct {
+	container string
+	stdin     io.Reader
+	stdout    io.Writer
+}
+
+func (f *fakeRunner) StartAttachIO(container string, stdin io.Reader, stdout io.Writer) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.starts = append(f.starts, container)
+	f.startIOs = append(f.startIOs, startIOCall{container: container, stdin: stdin, stdout: stdout})
+	f.ops = append(f.ops, "start")
+	if f.attachOut != "" && stdout != nil {
+		_, _ = io.WriteString(stdout, f.attachOut)
+	}
 	if f.runHook != nil {
 		f.runHook()
 	}

@@ -103,7 +103,9 @@ func Detect(setting string, look LookPath) (Engine, string, error) {
 // (piping literal content into a container); captureIn is capture with a
 // caller-supplied stdin (streaming content in AND reading a result back);
 // streamOut connects child stdout to a caller-supplied writer (streaming
-// arbitrary content OUT of a container, too big or too binary to capture).
+// arbitrary content OUT of a container, too big or too binary to capture);
+// streamIO is stream with BOTH stdin and stdout caller-supplied (an attached
+// session whose I/O byre owns rather than hands through).
 type Runner struct {
 	engine Engine
 	// exe is the absolute path the engine CLI was resolved to, pinned for the
@@ -116,6 +118,7 @@ type Runner struct {
 	streamIn  func(stdin io.Reader, name string, args ...string) error
 	captureIn func(stdin io.Reader, name string, args ...string) (string, error)
 	streamOut func(stdout io.Writer, name string, args ...string) error
+	streamIO  func(stdin io.Reader, stdout io.Writer, name string, args ...string) error
 	// captureBounded is capture with a wall-clock deadline, for the engine
 	// calls byre makes from a goroutine that has no other way out: the netns
 	// helper and the sock-group probe run CONTAINERS, and the network-mode
@@ -148,6 +151,7 @@ func New(e Engine, exe string) *Runner {
 		streamIn:         streamInExec,
 		captureIn:        captureInExec,
 		streamOut:        streamOutExec,
+		streamIO:         streamIOExec,
 		captureBounded:   captureBoundedExec,
 		captureBoundedIn: captureBoundedInExec,
 		pipe:             pipeExec,
@@ -324,6 +328,15 @@ func (r *Runner) Create(args []string) (string, error) {
 // stderr (streamed) names the cause.
 func (r *Runner) StartAttach(container string) error {
 	return r.stream(r.bin(), "start", "--attach", "--interactive", container)
+}
+
+// StartAttachIO is StartAttach with the session's stdin and stdout supplied
+// by the caller instead of byre's own; stderr stays byre's. A nil stdin is NO
+// stdin: the engine client reads /dev/null, so the box sees EOF at once.
+// --interactive stays on the argv because the attach shape was fixed at
+// create (-i is always on the create argv).
+func (r *Runner) StartAttachIO(container string, stdin io.Reader, stdout io.Writer) error {
+	return r.streamIO(stdin, stdout, r.bin(), "start", "--attach", "--interactive", container)
 }
 
 // RunningContainersByLabel returns the ids of running containers carrying label
@@ -806,9 +819,15 @@ chown -R "$BYRE_OWNER" /dest`
 }
 
 func streamInExec(stdin io.Reader, name string, args ...string) error {
+	return streamIOExec(stdin, os.Stdout, name, args...)
+}
+
+// streamIOExec runs name with the given stdin and stdout and byre's own
+// stderr. A nil stdin leaves Cmd.Stdin nil, which exec turns into /dev/null.
+func streamIOExec(stdin io.Reader, stdout io.Writer, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Stdin = stdin
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	cmd.Stdout, cmd.Stderr = stdout, os.Stderr
 	return cmd.Run()
 }
 
