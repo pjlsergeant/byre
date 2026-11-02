@@ -328,6 +328,19 @@ confirm writes it as this project's `byre.config`. A preset's
 walk-through, and for the error remedies if you decline and develop
 later. Both verbs also take an explicit path or https URL.
 
+`byre preset apply --yes` is the unattended form, for CI (ADR 0063): it
+runs without a terminal, prints the full review to stderr all the same,
+skips the confirm, and passes `--yes` to the walk-through's installs.
+It refuses three ways, all before anything is installed or written:
+without `--yes`, a pipe still refuses (the review is the point); an
+https `[sources]` row with no digest refuses, naming the row, because
+nobody looks at what it fetches; and an `encrypted:`/`encrypted-file:`
+credential row in the preset OR in the config it would replace refuses,
+naming the rows, on a terminal too -- a swapped ciphertext is invisible
+in the review, and only your confirm vouches for it (ADR 0057). Apply
+those on a terminal, or keep credentials out of the preset and deliver
+them with `env_from_host` from the runner's environment.
+
 After applying, develop and status stay quiet while the repo's preset
 matches what you applied, and note when it changes ("differs from the
 version you applied -- `byre preset apply` to review the changes") or

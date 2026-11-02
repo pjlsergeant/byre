@@ -277,6 +277,27 @@ with a diff against your current config -- applying replaces the whole
 file -- and writes the project's config on your confirm.
 `byre preset inspect` is the same review without the write.
 
+`byre preset apply --yes` applies without a terminal -- for CI. The
+review still prints, to stderr; the confirm and the install confirms are
+skipped. It refuses, before installing or writing anything, an https
+`[sources]` row with no digest, and any encrypted credential row in the
+preset or in the config it would replace (on a terminal too: only your
+own confirm vouches for a credential value). A preset meant for CI
+therefore pins every package and passes credentials through from the
+runner's environment:
+
+```toml
+agent  = "claude"
+skills = ["firewall", "owner/linter"]
+egress = ["api.github.com:443"]
+
+[env_from_host]
+ANTHROPIC_API_KEY = "env:ANTHROPIC_API_KEY"
+
+[sources]
+"owner/linter" = { uri = "https://raw.githubusercontent.com/owner/linter/v1.0.0/skill.toml", digest = "sha256:..." }
+```
+
 ## Named layers
 
 A **layer** (`~/.byre/layers/<name>/layer.config`) is a config file any

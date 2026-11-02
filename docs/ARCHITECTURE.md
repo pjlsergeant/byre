@@ -389,7 +389,9 @@ gives you a file, not a prompt: nothing takes effect until an explicit
 `byre preset apply`, which chauffeurs installs for missing packages,
 shows the composed box's full grant review (with a diff against the
 current store config -- applying replaces the whole file), and writes
-the store `byre.config` on confirm, recording an `applied` marker. Drift
+the store `byre.config` on confirm, recording an `applied` marker
+(`--yes` is the unattended form: the review still prints, and credential
+rows on either side or a digest-less https source refuse -- ADR 0063). Drift
 from the applied version is a passive develop/status note, never a
 question. `--self-edit` is the one announced exception: the
 session opens with a loud escalation warning and closes by reporting what

@@ -135,22 +135,47 @@ any script; nothing in it is specific to a CI vendor. The bundled claude,
 codex and grok skills have a headless mode; an agent without one is
 refused by name.
 
-**Configure once.** On a machine you keep (a laptop, a self-hosted
-runner), configure the project the usual way -- `byre config`, or
-`byre preset apply` for a committed preset. The agent's credential is a
-host passthrough: in the **Env vars** section, add
-`ANTHROPIC_API_KEY` (or `OPENAI_API_KEY` for codex) with its source set to
-the host variable of the same name, and let your CI secret store set that
-variable for the job. A fresh hosted runner has no config at all, so give
-the run both first-run flags --
-`byre run --template <t> --agent <a> ...` (`none` for no template) writes
-the project's config from them and proceeds -- and put the credential
-passthrough in the machine baseline instead: make it with
-`byre config --global` and have the job install that file as
-`~/.byre/default.config` (the baseline can carry skills, egress and
-`env_from_host`, but never the agent, which is why the flag is needed).
-Packages that are not bundled install first with
-`byre skill install <url> --digest sha256:... --yes`.
+**Configure once, with a committed preset.** Commit a `byre.preset`
+that carries the agent, its skills -- the firewall among them -- the
+egress the job needs, and the agent's credential as a host passthrough,
+and have the job apply it before running:
+
+```sh
+byre preset apply --yes
+```
+
+Make the preset on your own machine with the editor: `byre config` in
+the project, pick the agent and skills, open the egress doors the job
+needs, and in the **Env vars** section add `ANTHROPIC_API_KEY` (or
+`OPENAI_API_KEY` for codex) with its source set to the host variable of
+the same name. Then copy the file the editor's footer names
+(`Saves to: ~/.byre/projects/<id>/byre.config`) into the repo as
+`byre.preset`. Your CI secret store sets that variable for the job.
+Packages that are not bundled need a `[sources]` row each, with its
+digest (`byre skill inspect <url>` prints it) -- the
+[configuration reference](/docs/configuration-reference/#presets-byrepreset)
+has the shape.
+
+`--yes` prints the whole review into the job log and applies without
+asking, installing the packages the preset's `[sources]` name. It
+refuses two things, before installing or writing anything:
+
+- an https `[sources]` row with no digest -- nobody would look at what
+  it fetched;
+- an encrypted credential row (`byre credentials set`), in the preset or
+  in the config it would replace -- a swapped value is something only
+  your own confirm can catch, so `--yes` never stands in for it. That is
+  why the credential travels as a host passthrough here.
+
+**Or, for the minimal box, two flags.** On a checkout byre has never
+configured, `byre run --template <t> --agent <a> ...` (`none` for no
+template) writes the project's config from them and proceeds. That
+config carries no credential passthrough, so the agent's credential has
+to come from a machine you keep: your baseline (`byre config --global`,
+the same **Env vars** row). On a fresh hosted runner, use the preset.
+
+Either way, packages the preset does not install for you go in first
+with `byre skill install <url> --digest sha256:... --yes`.
 
 **Run it.**
 

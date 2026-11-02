@@ -22,6 +22,17 @@
   that dir only. A never-configured checkout needs `--template` and
   `--agent`; the CI recipe is in the cookbook ("Run one task headlessly
   (CI)?"). ADR 0061.
+- **`byre preset apply --yes`: apply a committed preset in CI.** Runs
+  without a terminal, prints the full review to stderr all the same,
+  skips the confirm and passes `--yes` to the package installs it walks
+  through. Before installing or writing anything it refuses an https
+  `[sources]` row with no digest, and any encrypted credential row in
+  the preset or in the config it would replace -- on a terminal too,
+  since only your own confirm vouches for a credential value; pass
+  credentials through from the runner's environment with
+  `env_from_host` instead. Without `--yes`, a pipe still refuses, now
+  naming `--yes`. The CI cookbook entry configures the box through it.
+  ADR 0063.
 - **Agent skills can declare a headless command.** `[agent] headless =
   "<command>"` in a skill.toml is what `byre run` executes; an agent
   without one is refused by name. The bundled claude, codex and grok

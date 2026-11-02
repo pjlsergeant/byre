@@ -396,7 +396,8 @@ attributed to the layer that supplied it.
 A saved answer to onboarding's questions: a complete proposed config in
 byre.config format, from anywhere -- conventionally `byre.preset` in a
 repo. Not a package (no identity, no version, no install). Applied only
-via `byre preset apply` (review + chauffeur + confirm + write);
+via `byre preset apply` (review + chauffeur + confirm + write; `--yes`
+replaces the confirm and never covers a credential row, ADR 0063);
 `byre.config` is reserved for the box's live consent document.
 
 **Chauffeur**:
