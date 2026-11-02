@@ -67,6 +67,9 @@ func recorderApp(calls map[string]string) app {
 		restore: func(_ commands.Streams, file, dir string, opts commands.RestoreOptions) error {
 			return note("restore", file+" "+dir+" "+boolStr(opts.AllowNonempty))
 		},
+		build: func(_ commands.Streams, dir string, o commands.BuildOptions) error {
+			return note("build", strings.Join([]string{dir, o.Agent, o.Template}, " "))
+		},
 		rebuild: func(_ commands.Streams, dir string) error { return note("rebuild", dir) },
 		rehome: func(_ commands.Streams, dir, oldID string, ig commands.IgnoreEngines) error {
 			return note("rehome", dir+" "+oldID+ignoreStr(ig))
@@ -196,6 +199,9 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"worktree", "feat", "--path", "/tmp/x", "--self-edit"}, "worktree", "/proj feat /tmp/x  true"},
 		{[]string{"worktree", "feat", "-a", "codex"}, "worktree", "/proj feat  codex false"},
 		{[]string{"rebuild"}, "rebuild", "/proj"},
+		{[]string{"build"}, "build", "/proj  "},
+		{[]string{"build", "-a", "codex"}, "build", "/proj codex "},
+		{[]string{"build", "--template", "go", "--agent", "claude"}, "build", "/proj claude go"},
 		// backup's DIR is optional and defaults to the directory byre ran in;
 		// --no-volume is repeatable, so both names must reach the options.
 		{[]string{"backup"}, "backup", "/proj   false false"},
@@ -381,6 +387,9 @@ func TestRunUsageErrors(t *testing.T) {
 		{[]string{"run", "--task", "t.md", "-a", " "}, "--agent: blank value"},
 		{[]string{"run", "--task", "t.md", "extra"}, "unexpected arguments"},
 		{[]string{"run", "--bogus"}, ""}, // unknown flag
+		{[]string{"build", "--agent="}, "--agent: blank value"},
+		{[]string{"build", "extra"}, "unexpected arguments"},
+		{[]string{"build", "--fresh"}, ""}, // unknown flag: byre rebuild is the fresh build
 	}
 	for _, tc := range cases {
 		calls := map[string]string{}

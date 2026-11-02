@@ -45,7 +45,7 @@ var commandsPageAreas = []struct {
 	{"Inspection", []string{"status", "dockerfile", "dockerrun", "ejectfirewall", "version"}},
 	{"Configuration", []string{"config", "preset", "layer", "mcp", "claude-skill", "context", "credentials"}},
 	{"Skills & templates", []string{"skill", "template"}},
-	{"Lifecycle & recovery", []string{"reset", "rebuild", "rehome", "forget", "backup", "restore"}},
+	{"Lifecycle & recovery", []string{"reset", "build", "rebuild", "rehome", "forget", "backup", "restore"}},
 	{"Shell integration", []string{"completion"}},
 }
 
@@ -110,7 +110,7 @@ func exitCodeSection() string {
 	return fmt.Sprintf("\n## Exit codes\n\n"+
 		"Scriptable, and the same for every command unless a row says otherwise.\n\n"+
 		"| Code | Meaning |\n|---|---|\n"+
-		"| `0` | Success. For `byre deliver` and `byre grab`, that means bytes landed. |\n"+
+		"| `0` | Success. For `byre deliver` and `byre grab`, that means bytes landed; for `byre build`, that the image built and its tag is the one line on stdout. |\n"+
 		"| `1` | byre failed, with the reason on stderr. Also every nothing-was-delivered outcome -- a cancelled picker, an empty paste, an ambiguous box set with no terminal. |\n"+
 		"| `2` | You typed it wrong: an unknown flag, a bad argument count. One known exception, recorded rather than fixed: a panic on a goroutine other than the main one ends the process through Go's runtime, which also exits `2` -- byre cannot recover another goroutine's panic to re-code it. A Go panic trace on stderr, rather than a usage message, is what tells you which happened. |\n"+
 		"| `%d` | `byre develop` declined to start: a session is already live in this directory, or a live box of this project is holding a volume declared `sharing = \"exclusive\"` (or byre could not establish that none is). `reset` and `forget` decline the same situation with `1` -- a deliberate asymmetry, since only `develop` has a code to spare. |\n"+

@@ -41,6 +41,7 @@ type app struct {
 	grab          func(s commands.Streams, dir string, opts deliver.Options, boxPath, hostPath string) error
 	installApp    func(s commands.Streams, o commands.InstallAppOptions) error
 	worktree      func(s commands.Streams, dir, name, path, agent string, selfEdit bool, credMode commands.CredentialMode) error
+	build         func(s commands.Streams, dir string, o commands.BuildOptions) error
 	rebuild       func(s commands.Streams, dir string) error
 	rehome        func(s commands.Streams, dir, oldID string, ignore commands.IgnoreEngines) error
 	backup        func(s commands.Streams, dir string, opts commands.BackupOptions) error
@@ -66,6 +67,7 @@ var realApp = app{
 	grab:             commands.Grab,
 	installApp:       commands.InstallApp,
 	worktree:         commands.Worktree,
+	build:            commands.Build,
 	rebuild:          commands.Rebuild,
 	rehome:           commands.Rehome,
 	backup:           commands.Backup,
@@ -214,6 +216,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 		credentialsCmd(dir, s),
 		presetCmd(dir, s),
 		resetCmd(a, dir, s),
+		buildCmd(a, dir, s),
 		rebuildCmd(a, dir, s),
 		rehomeCmd(a, dir, s),
 		forgetCmd(a, dir, s),
@@ -1189,6 +1192,38 @@ caches — not the image). Prompts first; refuses while a session is running.`,
 	}
 	c.Flags().BoolVarP(&force, "force", "y", false, "skip the confirmation prompt")
 	ignoreEngineFlags(c, &ignore, "its containers and volumes of this project are not checked and not removed")
+	return c
+}
+
+// buildCmd is `byre build`: develop's image build without a session. The
+// blank --agent refusal lives here because only usageError exits 2.
+func buildCmd(a app, dir string, s commands.Streams) *cobra.Command {
+	var o commands.BuildOptions
+	c := &cobra.Command{
+		Use:   "build",
+		Short: "Build the project's image without starting a session; print its tag.",
+		Long: `Generate and build this project's image exactly as 'byre develop' would,
+then stop: no volumes seeded, no container created. stdout is the image tag
+and nothing else; the engine's build output goes to stderr.
+
+The build uses the engine's own cache, as develop's does. That makes it
+useful on a machine that keeps its engine between jobs: warm the cache before
+a run, check that a config still builds, or read the tag. It does not speed
+up a hosted CI runner that starts empty each job -- every job there rebuilds.
+For a build with the cache off and the base pulled, use 'byre rebuild'.
+
+A live session does not stop a build; it waits only for another setup of
+this project to finish. The running box keeps the image it started from.`,
+		Args: noArgsU,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("agent") && strings.TrimSpace(o.Agent) == "" {
+				return usageError(`--agent: blank value — name an agent skill, or "none" for an agentless build`)
+			}
+			return a.build(s, dir, o)
+		},
+	}
+	c.Flags().StringVarP(&o.Agent, "agent", "a", "", `agent to build with: on a configured project, a one-off override (nothing written); on a NEW project, with --template, seeds its config`)
+	c.Flags().StringVar(&o.Template, "template", "", `template for a NEW project's config ("none" to skip) -- a new project needs both --template and --agent`)
 	return c
 }
 

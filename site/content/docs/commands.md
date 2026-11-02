@@ -94,6 +94,7 @@ every command and flag.
 | Command | What it does |
 |---|---|
 | `byre reset` | Wipe this project's named volumes. |
+| `byre build` | Build the project's image without starting a session; print its tag. |
 | `byre rebuild` | Rebuild the image from fresh upstream: base pulled, cache off. |
 | `byre rehome [<old-id>]` | Re-point this directory's identity after a move. |
 | `byre forget` | Remove all byre host-side state for this directory. |
@@ -112,7 +113,7 @@ Scriptable, and the same for every command unless a row says otherwise.
 
 | Code | Meaning |
 |---|---|
-| `0` | Success. For `byre deliver` and `byre grab`, that means bytes landed. |
+| `0` | Success. For `byre deliver` and `byre grab`, that means bytes landed; for `byre build`, that the image built and its tag is the one line on stdout. |
 | `1` | byre failed, with the reason on stderr. Also every nothing-was-delivered outcome -- a cancelled picker, an empty paste, an ambiguous box set with no terminal. |
 | `2` | You typed it wrong: an unknown flag, a bad argument count. One known exception, recorded rather than fixed: a panic on a goroutine other than the main one ends the process through Go's runtime, which also exits `2` -- byre cannot recover another goroutine's panic to re-code it. A Go panic trace on stderr, rather than a usage message, is what tells you which happened. |
 | `3` | `byre develop` declined to start: a session is already live in this directory, or a live box of this project is holding a volume declared `sharing = "exclusive"` (or byre could not establish that none is). `reset` and `forget` decline the same situation with `1` -- a deliberate asymmetry, since only `develop` has a code to spare. |
