@@ -482,12 +482,37 @@ Each is on the security-model page too.
   convention: an agent that writes a different answer or status line
   through its own script changes only what it could have written anyway.
 - **The interactive login hooks run on the agent PATH.** The
-  codex-login, grok-login, opencode-login and grok-shared-auth hooks
-  still run the agent CLIs and their own helpers through the inherited
-  PATH, so a helper planted in `~/.local/bin` runs there. They are
-  interactive-login code that stands down under a headless launch, and a
-  plant there gains only what the agent, which can already write that
-  directory, already has.
+  codex-login, grok-login, opencode-login and grok-shared-auth first-run
+  hooks still run the agent CLIs and their own helpers through the
+  inherited PATH, so a helper planted in `~/.local/bin` runs there. They
+  are interactive-login code that stands down under a headless launch,
+  and a plant there gains only what the agent, which can already write
+  that directory, already has. The standing-down covers grok-shared-auth's
+  first-run hook only, not its broker (next-but-one entry).
+- **The agent's command resolves on the agent PATH.** The chassis execs
+  `/etc/byre/agent-headless`, which is `exec <the skill's headless
+  command>`, with the inherited PATH restored so the agent's own
+  subprocesses see the image PATH -- exactly as the launcher execs
+  `/etc/byre/agent-cmd` for an interactive session. A same-named script
+  planted in `~/.local/bin` by repo code therefore replaces the user's
+  agent with repo code's for that session, headless or interactive. It
+  gains agent-tier trust only: exits 0, 10, 11, 13 and 15 are what the
+  agent's own script reports and are agent-trust already, while the
+  chassis-owned 12, 14 and 16 and the host's outcome are not forgeable
+  this way. It is the same acceptance this ADR makes for the unguarded
+  `agent-headless`. Closing it would mean byre resolving the command on
+  the system PATH while handing the agent its PATH through a separate
+  variable, a contract change deferred to its own decision.
+- **The grok-shared-auth broker runs on grok's PATH, headless runs
+  included.** The broker (ADR 0036) is `GROK_AUTH_PROVIDER_COMMAND`,
+  which grok runs on every credential request it makes -- in a headless
+  run as in an interactive one -- with grok's PATH, the inherited agent
+  PATH. The command's `bash` and the broker's helpers (`jq`, `curl`,
+  `flock`, `date`, `mv`) resolve there, so a plant in `~/.local/bin` runs
+  inside the code that refreshes the machine-wide grok login, and reaches
+  that login. It gains nothing the agent lacks: the shared store sits in
+  the identity volume mounted in the box, which the agent can already
+  read and write, as it can that directory.
 - **Exit codes are not unique to their owners.** A box that exits 1, 2, 3
   or 70 reaches the host as that number; `--data` tells them apart.
 

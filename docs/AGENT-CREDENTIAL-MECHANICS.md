@@ -1115,9 +1115,16 @@ grok and opencode, whose binaries live outside `~/.local/bin`, are named
 by the root-owned `/usr/local/bin` link each skill installs, so a
 planted copy never runs in their place.
 The interactive login hooks (codex-login, grok-login, opencode-login,
-grok-shared-auth) still run the agent CLIs and their helpers on the agent
-PATH: they stand down under a headless launch, and a plant there gains
-only what the agent already has.
+grok-shared-auth's first-run hook) still run the agent CLIs and their
+helpers on the agent PATH: they stand down under a headless launch, and a
+plant there gains only what the agent already has. grok-shared-auth's
+broker does not stand down: grok runs `GROK_AUTH_PROVIDER_COMMAND` on
+every credential request, headless runs included, on grok's PATH, so the
+command's `bash` and the broker's `jq`, `curl`, `flock`, `date` and `mv`
+resolve through `~/.local/bin` inside the code that refreshes the
+machine-wide grok login -- a plant there reaches the shared store, which
+the agent can already read and write in the identity volume (ADR 0061
+residuals).
 
 ### codex: a key in the env is logged into a CODEX_HOME made for the run
 

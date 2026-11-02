@@ -416,11 +416,23 @@ absolute, build-guarded path and which runs its own helper tools from the
 system directories only, never from the agent-writable `~/.local/bin`.
 The agents' launch wrappers and codex-shared-auth's credential
 reconciler do the same, handing the agent's own PATH only to the agent
-program itself, so a helper planted there never runs inside byre's
-launch or credential machinery. The exception is the interactive login
-steps (codex, grok, opencode and grok-shared-auth), which still run on
-the agent's PATH: they stand down in a headless run, and code planted
-there gains only what the agent already has; **the
+program itself, and the skills' launch env hooks run with only the
+system directories on PATH, so a helper planted there never runs inside
+those. The exceptions run on the agent's PATH, and code planted there
+gains only what the agent already has. The interactive login steps
+(codex, grok, opencode and grok-shared-auth's first-run step) stand down
+in a headless run. grok-shared-auth's broker, which grok runs whenever
+it needs a credential, does not: it runs in headless runs too, on grok's
+PATH, and refreshes the grok login every project on the machine shares,
+which the agent can already read and write in the box. And the agent
+itself: byre starts the agent's own command, headless
+or interactive, by its name on the agent's PATH, so a same-named program
+repo code planted in `~/.local/bin` runs as your agent for that session.
+It is trusted as the agent is and no further: the exit codes the agent's
+script reports were already the agent's word, while byre's own (timeout,
+contract breach, changed task) and the host's verdict cannot be forged
+this way. Resolving the agent's command off the system directories alone
+is a contract change left to its own decision; **the
 chassis's own file claims rely on nothing else running yet** -- it
 checks each name is free and then creates it, two steps that are only
 safe because the agent has not started and the repo code has finished,
