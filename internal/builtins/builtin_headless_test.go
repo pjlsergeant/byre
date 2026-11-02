@@ -24,6 +24,7 @@ func TestBundledHeadlessCommandsShip(t *testing.T) {
 	for agent, want := range map[string]string{
 		"claude": "byre-claude-headless",
 		"codex":  "byre-codex-headless",
+		"grok":   "byre-grok-headless",
 	} {
 		res, err := skills.Resolve(config.Config{Agent: agent}, cat)
 		if err != nil {

@@ -491,7 +491,7 @@ headless`, ADR 0061): a command string like `command`, baked to
 `BYRE_RUN_TASK_FILE`, the answer written to the descriptor in
 `BYRE_RUN_RESULT_FILE`, an exit from a closed set (0, 10, 11, 13, 15),
 never a terminal read. It must not be blank or equal `command`. The
-bundled claude and codex skills declare one, each running the CLI through
+bundled claude, codex and grok skills declare one, each running the CLI through
 the same launch adapter as the interactive command so injection is
 unchanged. An agent without one has no headless mode; status's Agent row,
 the Skills screen and `skill inspect` say which.

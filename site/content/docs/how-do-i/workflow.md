@@ -131,9 +131,9 @@ terminal, and byre's verdict as the exit code.
 
 `byre run` sets up the box exactly as `byre develop` does, hands one task
 to the agent's headless mode, and exits when the agent does. It works from
-any script; nothing in it is specific to a CI vendor. The bundled claude
-and codex skills have a headless mode; an agent without one is refused by
-name.
+any script; nothing in it is specific to a CI vendor. The bundled claude,
+codex and grok skills have a headless mode; an agent without one is
+refused by name.
 
 **Configure once.** On a machine you keep (a laptop, a self-hosted
 runner), configure the project the usual way -- `byre config`, or
@@ -178,8 +178,8 @@ rc=$?
   are capped at 1 MiB.
 - **No time limit unless you set one.** `--timeout 30m` stops the agent
   and exits `12`. Use it for an agent that can hang instead of failing --
-  grok, for one, hangs on a dead login refresh (grok has no headless mode
-  yet).
+  grok, for one, hangs on a dead login refresh, so set `--timeout` for
+  grok runs that rely on a saved login.
 - **Encrypted credentials** (`byre credentials set`) need
   `--credentials stdin` with the passphrase on stdin, which then can't
   also carry the task.

@@ -1179,6 +1179,26 @@ exits 1 when it reports a failure, so the event is judged before the exit
 status. A nonzero status with no reported failure, or no result event at
 all, is the process failing (exit 11, with its status recorded).
 
+### grok: presence is the whole preflight
+
+grok has no `login status` probe, so `byre-grok-headless` checks presence
+only, in this order: `XAI_API_KEY` non-empty; `GROK_AUTH_PROVIDER_COMMAND`
+non-empty (the grok-shared-auth broker); a regular, non-symlink
+`$GROK_HOME/auth.json` containing a `"key"` member -- the grok login
+hook's own shape sniff. Anything else is a 13. A stored login whose
+refresh chain has died passes this check and then HANGS inside grok at
+use time (above): the check cannot see it, which is why the docs point
+grok runs at `byre run --timeout`.
+
+The run is one `--prompt-file` turn with `--output-format json`
+(probed against the grok CLI): grok prints ONE document when it finishes, the
+answer at `.text`; a reported failure is `{"type":"error","message":...}`
+with exit 1, so the document is judged before the exit status -- an error
+document is 10 whatever the status, its message written as the answer. A
+nonzero status with no error document, or no answer document at all, is
+11. Because the document arrives only at the end, the live stream `byre
+run` relays is silent until grok finishes.
+
 ## Source list
 
 - Empirical, this box: Claude Code 2.1.201 live `~/.claude` (with

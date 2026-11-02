@@ -24,8 +24,8 @@
   (CI)?"). ADR 0061.
 - **Agent skills can declare a headless command.** `[agent] headless =
   "<command>"` in a skill.toml is what `byre run` executes; an agent
-  without one is refused by name. The bundled claude and codex skills
-  declare one. `byre status`'s Agent row, the config editor's Skills
+  without one is refused by name. The bundled claude, codex and grok
+  skills declare one. `byre status`'s Agent row, the config editor's Skills
   screen and `byre skill inspect` show each agent's headless command (or
   `no headless command`). `docs/SKILLS.md` has the contract for authors.
 - **codex never saves an env key in a headless run.** Given
@@ -46,6 +46,13 @@
   an enabled skill whose requirement is off, `(requires codex -- not
   enabled)`, without stopping you switching it off. A manifest carrying
   the key is refused by older byre releases. ADR 0062.
+- **grok runs headless.** `byre run -a grok` gives grok the task as one
+  `--prompt-file` turn and reads its json output: the answer, or grok's
+  own error message with exit 10. The credential is `XAI_API_KEY`, the
+  grok-shared-auth broker, or a saved login; with none, exit 13 and the
+  remedy. grok prints its whole output at the end, so nothing streams
+  while it works, and a saved login that can no longer refresh makes grok
+  hang -- pass `--timeout`. The grok skill now installs `jq`.
 - **The claude skill installs `jq`.** Its headless command reads
   claude's result event with it.
 - **`status --data` carries `agent_headless`** (StatusDataVersion 4 → 5):

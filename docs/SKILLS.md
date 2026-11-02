@@ -240,8 +240,8 @@ Your login hook should not prompt under `BYRE_HEADLESS=1` (byre sets it
 from the launch's argv for every headless run) or without a terminal: a
 headless run has nobody to answer. Don't set any `BYRE_RUN_*` name in your
 `[runtime].env` -- status then stops vouching for the headless command.
-byre's own `claude-headless.sh` and `codex-headless.sh` are worked
-examples.
+byre's own `claude-headless.sh`, `codex-headless.sh` and
+`grok-headless.sh` are worked examples.
 
 A skill that does not work without another -- a wrapper that drives
 codex's binary, say -- declares it at the top level of its skill.toml:

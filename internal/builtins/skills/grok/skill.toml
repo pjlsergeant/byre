@@ -37,16 +37,18 @@
 description = "The Grok CLI agent (Grok Build); login persists per project."
 
 [build]
-apt = ["curl", "ca-certificates"]
+# jq: the headless command reads grok's json output document with it.
+apt = ["curl", "ca-certificates", "jq"]
 # First-run auth: ship a firstrun hook that runs `grok login --device-auth` on
 # a fresh box (guarded by auth.json), so grok works without hunting for a
 # shell to log in from. Runs before the agent launches; skippable with Ctrl-C.
 # grok-bundled bridges $GROK_HOME/bundled to the image tree (see its header).
-files = { "grok-login.sh" = "/etc/byre/firstrun.d/grok-login", "grok-bundled.sh" = "/etc/byre/firstrun.d/grok-bundled", "grok-launch.sh" = "/usr/local/bin/byre-grok-launch" }
+# grok-headless.sh: the headless command `byre run` drives ([agent] below).
+files = { "grok-login.sh" = "/etc/byre/firstrun.d/grok-login", "grok-bundled.sh" = "/etc/byre/firstrun.d/grok-bundled", "grok-launch.sh" = "/usr/local/bin/byre-grok-launch", "grok-headless.sh" = "/usr/local/bin/byre-grok-headless" }
 dockerfile = [
-  # The launch wrapper must be executable: bundled extraction writes 0644
-  # (the codex/opencode wrappers carry the same line).
-  "RUN chmod +x /usr/local/bin/byre-grok-launch",
+  # The launch wrapper and the headless command must be executable: bundled
+  # extraction writes 0644 (the codex/opencode wrappers carry the same line).
+  "RUN chmod +x /usr/local/bin/byre-grok-launch /usr/local/bin/byre-grok-headless",
   # byre-fetch-run (core block): fetch, check it is a script, then run -- never a curl|sh pipe.
   "RUN HOME=/home/dev gosu dev byre-fetch-run https://x.ai/cli/install.sh bash",
   # grok installs its BINARY into ~/.grok (downloads/ holds the file, bin/
@@ -92,6 +94,11 @@ egress_offered = ["x.ai"]
 # legal-but-large
 # context must degrade, not kill the exec.
 command = "byre-grok-launch --always-approve"
+# The headless command `byre run` drives: one --prompt-file turn through the
+# same adapter, its json document translated into byre's closed exit set.
+# grok has no default time limit and can wait on a dead login's device
+# prompt; `byre run --timeout` bounds that.
+headless = "byre-grok-headless"
 state = ".grok"
 # context = "inject": the command's --append-system-prompt carries the baked
 # context; byre writes NOTHING into $GROK_HOME — its AGENTS.md is the user's
