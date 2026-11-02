@@ -1680,12 +1680,16 @@ func writeCodexSharedLinkHook(t *testing.T, cat *packages.Catalog, identity stri
 
 // runCodexLoginHook runs the hook bounded, so a guard that fails to stop an
 // unbounded call reports as a timeout instead of hanging the suite.
+// WaitDelay covers the hook's `setsid codex app-server`, which inherits its
+// stdout: killing the hook leaves that grandchild holding the output pipe,
+// and without it the wait would outlast the bound.
 func runCodexLoginHook(t *testing.T, hook string, env []string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "bash", hook)
 	cmd.Env = env
+	cmd.WaitDelay = time.Second
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {
 		t.Fatalf("hook did not finish within 10s: %s", out)

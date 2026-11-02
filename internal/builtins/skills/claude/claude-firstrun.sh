@@ -15,11 +15,19 @@
 # raced in after the test is refused by the publish itself: the bytes go to a
 # mktemp'd dotfile (O_EXCL, a fresh name), and `ln -n` claims the final name
 # with link(2), which fails EEXIST on any existing node and never follows a
-# symlink (-n keeps even a link to a directory from being read as one; a real
-# directory planted there takes the marker inside it, out of everyone's way).
+# symlink (-n keeps even a link to a directory from being read as one).
 # Noclobber would not do: it refuses only an existing regular file, and opens
-# a symlink to a FIFO, blocking the launch. A lost claim leaves nothing
-# behind. Never prompts; always exits 0.
+# a symlink to a FIFO, blocking the launch. A claim lost to a file or symlink
+# leaves nothing behind. A REAL directory planted at the name is the one
+# exception: ln links the marker inside it under the temp's basename, so
+# `rm -f` removes only the temp name and that second link stays. Accepted:
+# the bytes are the onboarding flag, not a credential, and a directory at
+# that name means claude's config dir is already broken by something else.
+# The reopen of the mktemp'd name by `printf >` is a window too (a concurrent
+# writer could swap the entry in between); it stays open because nothing
+# untrusted runs alongside firstrun hooks -- the launcher checks out a
+# pending worktree before the hooks and starts the agent after them.
+# Never prompts; always exits 0.
 [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || [ -n "${ANTHROPIC_API_KEY:-}" ] ||
   [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ] || exit 0
 cfg="${CLAUDE_CONFIG_DIR:-/home/dev/.claude}"

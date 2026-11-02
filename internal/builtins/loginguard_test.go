@@ -20,6 +20,8 @@ const ptyScript = "import os, pty, sys\nsys.exit(os.waitstatus_to_exitcode(pty.s
 // runHookOnPTY is runHook with the hook's stdio on a real terminal, the case
 // the BYRE_ASSUME_TTY seam only stands in for. stdin is forwarded into the
 // pty. Returns the terminal's output (stdout and stderr share it).
+// WaitDelay bounds the wait as runHook's does: a descendant left holding the
+// output pipe or the stdin copy after the kill cannot outlast the bound.
 func runHookOnPTY(t *testing.T, shell, hook, stdin string, env ...string) string {
 	t.Helper()
 	testtools.NeedTool(t, "python3")
@@ -28,6 +30,7 @@ func runHookOnPTY(t *testing.T, shell, hook, stdin string, env ...string) string
 	cmd := exec.CommandContext(ctx, "python3", "-I", "-c", ptyScript, shell, hook)
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stdin = strings.NewReader(stdin)
+	cmd.WaitDelay = time.Second
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {
 		t.Fatalf("hook did not finish within 5s on the pty: %s", out)
