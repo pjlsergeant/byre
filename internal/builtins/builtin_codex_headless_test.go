@@ -15,7 +15,7 @@ import (
 // run, including what the run's CODEX_HOME held, and writes STUB_ANSWER to
 // the --output-last-message path.
 const stubCodex = `#!/bin/sh
-case "$1" in
+` + stubHeldCheck + `case "$1" in
 --version) echo "codex-cli 9.9.9"; exit 0 ;;
 login)
   case "$2" in

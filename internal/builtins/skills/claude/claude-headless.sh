@@ -19,6 +19,16 @@
 # reach a headless run exactly as they reach an interactive one.
 set -u
 
+# The result and status descriptors (5 and 6) and the variables naming them
+# are this script's alone. The names move into script locals before anything
+# runs, and every program the script starts -- claude, its probes, jq, tee,
+# the file helpers -- runs through run_child, which closes both descriptors
+# for it. So nothing claude or a probe leaves running can rewrite the answer
+# or append status lines after the script's own writes.
+result_file=$BYRE_RUN_RESULT_FILE status_file=$BYRE_RUN_STATUS_FILE
+unset BYRE_RUN_RESULT_FILE BYRE_RUN_STATUS_FILE
+run_child() { "$@" 5>&- 6>&-; }
+
 say() { printf 'byre-claude-headless: %s\n' "$*" >&2; }
 
 for tool in claude byre-claude-launch jq; do
@@ -49,15 +59,15 @@ env_cred=""
 if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || [ -n "${ANTHROPIC_API_KEY:-}" ] ||
   [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
   env_cred=1
-elif [ -f "$creds" ] && [ ! -L "$creds" ] && grep -q '"claudeAiOauth"' "$creds" 2>/dev/null; then
+elif [ -f "$creds" ] && [ ! -L "$creds" ] && run_child grep -q '"claudeAiOauth"' "$creds" 2>/dev/null; then
   :
 else
-  auth=$(timeout -k 5 30 claude auth status </dev/null 2>/dev/null)
+  auth=$(run_child timeout -k 5 30 claude auth status </dev/null 2>/dev/null)
   rc=$?
   if [ "$rc" = 124 ] || [ "$rc" = 137 ]; then
     no_credential "\`claude auth status\` did not answer within 30 s"
   fi
-  if [ "$rc" != 0 ] || ! printf '%s' "$auth" | jq -e '.loggedIn == true' >/dev/null 2>&1; then
+  if [ "$rc" != 0 ] || ! printf '%s' "$auth" | run_child jq -e '.loggedIn == true' >/dev/null 2>&1; then
     no_credential "\`claude auth status\` reports no login"
   fi
 fi
@@ -71,17 +81,17 @@ fi
 # and `ln -n` claims the final one with link(2), which fails on any node raced
 # in and never follows a symlink. A lost claim leaves nothing behind.
 if [ -n "$env_cred" ] && [ ! -e "$cfg/.claude.json" ] && [ ! -L "$cfg/.claude.json" ]; then
-  if mkdir -p -- "$cfg" 2>/dev/null && seed=$(mktemp -- "$cfg/.claude.json.byre-XXXXXX" 2>/dev/null); then
+  if run_child mkdir -p -- "$cfg" 2>/dev/null && seed=$(run_child mktemp -- "$cfg/.claude.json.byre-XXXXXX" 2>/dev/null); then
     if printf '{"hasCompletedOnboarding": true}\n' >"$seed" 2>/dev/null; then
-      ln -n -- "$seed" "$cfg/.claude.json" 2>/dev/null || true
+      run_child ln -n -- "$seed" "$cfg/.claude.json" 2>/dev/null || true
     fi
-    rm -f -- "$seed"
+    run_child rm -f -- "$seed"
   fi
 fi
 
-version=$(timeout -k 5 10 claude --version </dev/null 2>/dev/null | head -n 1)
+version=$(run_child timeout -k 5 10 claude --version </dev/null 2>/dev/null | run_child head -n 1)
 if [ -n "$version" ]; then
-  printf 'agent_version=%s\n' "$version" >>"$BYRE_RUN_STATUS_FILE"
+  printf 'agent_version=%s\n' "$version" >>"$status_file"
 fi
 
 # --- the run ------------------------------------------------------------------
@@ -91,11 +101,11 @@ fi
 # there. A box that cannot make a temp file is broken in a way no exit in the
 # contract names, so this exits 1 and the chassis's verdict -- the headless
 # command failed -- is the true one.
-log=$(mktemp "${TMPDIR:-/tmp}/byre-claude-headless.XXXXXXXX") || {
+log=$(run_child mktemp "${TMPDIR:-/tmp}/byre-claude-headless.XXXXXXXX") || {
   say "cannot create a temp file for the event stream"
   exit 1
 }
-trap 'rm -f -- "$log"' EXIT
+trap 'run_child rm -f -- "$log"' EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
 
@@ -106,17 +116,8 @@ args=(-p --dangerously-skip-permissions --mcp-config /etc/byre/mcp.json
 if [ -n "${BYRE_RUN_MODEL:-}" ]; then
   args+=(--model "$BYRE_RUN_MODEL")
 fi
-# The result and status descriptors (5 and 6) and the variables naming them
-# are this script's alone: claude and its tee never get them, so nothing
-# claude leaves running can rewrite the answer or append status lines after
-# the script's own writes.
-{
-  (
-    unset BYRE_RUN_RESULT_FILE BYRE_RUN_STATUS_FILE
-    exec byre-claude-launch "${args[@]}"
-  ) <"$BYRE_RUN_TASK_FILE" | tee -- "$log"
-  rc=${PIPESTATUS[0]}
-} 5>&- 6>&-
+run_child byre-claude-launch "${args[@]}" <"$BYRE_RUN_TASK_FILE" | run_child tee -- "$log"
+rc=${PIPESTATUS[0]}
 
 # --- the verdict --------------------------------------------------------------
 
@@ -125,18 +126,20 @@ fi
 # claude exits 1 when it reports a failure, so the event is judged before the
 # exit status: a reported failure is 10 whatever the status, and its message
 # is still written as the answer, because the chassis prints it either way.
-result=$(jq -cR 'fromjson? | select(type == "object" and .type == "result")' <"$log" 2>/dev/null | tail -n 1)
+# jq writes the answer to its stdout, which the script opens on the result
+# file; jq itself never holds fd 5.
+result=$(run_child jq -cR 'fromjson? | select(type == "object" and .type == "result")' <"$log" 2>/dev/null | run_child tail -n 1)
 if [ -n "$result" ]; then
   printf '%s' "$result" |
-    jq -j '.result // "" | if type == "string" then . else tojson end' >"$BYRE_RUN_RESULT_FILE" 2>/dev/null
-  if printf '%s' "$result" | jq -e '.is_error == true' >/dev/null 2>&1; then
+    run_child jq -j '.result // "" | if type == "string" then . else tojson end' >"$result_file" 2>/dev/null
+  if printf '%s' "$result" | run_child jq -e '.is_error == true' >/dev/null 2>&1; then
     exit 10
   fi
 fi
 # A nonzero status without a reported failure, or any status without a result
 # event, is claude failing as a process.
 if [ "$rc" != 0 ] || [ -z "$result" ]; then
-  printf 'backend_exit=%s\n' "$rc" >>"$BYRE_RUN_STATUS_FILE"
+  printf 'backend_exit=%s\n' "$rc" >>"$status_file"
   exit 11
 fi
 exit 0

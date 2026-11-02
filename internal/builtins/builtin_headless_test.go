@@ -57,8 +57,9 @@ func TestBundledHeadlessCommandsShip(t *testing.T) {
 
 // headlessBox is a stand-in for the in-box environment a headless command
 // runs in: a bin dir holding the stub agent, the REAL launch adapter, and a
-// stub timeout; a tools dir of links to the host programs the scripts use; and
-// the chassis's three files, with regular files standing in for its
+// stub timeout; a tools dir of the host programs the scripts use, each behind
+// a wrapper that reports whether it was handed the result or status channel;
+// and the chassis's three files, with regular files standing in for its
 // descriptors. PATH is exactly bin:tools, so the box's own claude or codex can
 // never answer in place of the stub, and the environment is built from
 // scratch, so the suite box's real credentials never reach a case.
@@ -103,7 +104,15 @@ func newHeadlessBox(t *testing.T) *headlessBox {
 		if err != nil {
 			continue // the scripts degrade without the optional ones (iconv)
 		}
-		if err := os.Symlink(p, filepath.Join(tools, name)); err != nil {
+		// The shells stay plain links: the wrapper is itself a shell script.
+		if name == "bash" || name == "sh" {
+			if err := os.Symlink(p, filepath.Join(tools, name)); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		wrapper := "#!/bin/sh\n" + stubHeldCheck + "exec '" + p + "' \"$@\"\n"
+		if err := os.WriteFile(filepath.Join(tools, name), []byte(wrapper), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -115,7 +124,7 @@ func newHeadlessBox(t *testing.T) *headlessBox {
 	// instead, so a hung probe proves the bound without a 30 s wait. A -k is
 	// honoured as a 1 s KILL follow-up, and only when asked for: a probe that
 	// ignores TERM is then cut off only if the script passed -k.
-	b.writeExec("timeout", "#!/bin/sh\nprintf '%s\\n' \"$*\" >>'"+b.timeoutLog+"'\n"+
+	b.writeExec("timeout", "#!/bin/sh\n"+stubHeldCheck+"printf '%s\\n' \"$*\" >>'"+b.timeoutLog+"'\n"+
 		"if [ \"$1\" = -k ]; then shift 3; exec '"+realTimeout+"' -k 1 2 \"$@\"; fi\n"+
 		"shift\nexec '"+realTimeout+"' 2 \"$@\"\n")
 	for _, f := range []string{b.task, b.result, b.status} {
@@ -170,6 +179,9 @@ func (b *headlessBox) run(script string) (int, string, string) {
 	if err != nil {
 		b.t.Fatal(err)
 	}
+	if err := os.Remove(filepath.Join(b.record, "held")); err != nil && !os.IsNotExist(err) {
+		b.t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bash, script)
@@ -200,6 +212,11 @@ func (b *headlessBox) run(script string) (int, string, string) {
 	} else if err != nil {
 		b.t.Fatal(err)
 	}
+	// Whatever the case asserts, no program the script started -- the agent,
+	// a probe, a login, a helper -- was handed the result or status channel.
+	if held, _ := b.recorded("held"); held != "" {
+		b.t.Errorf("a child of the headless command was handed the result/status channel:\n%s", held)
+	}
 	return code, stdout.String(), stderr.String()
 }
 
@@ -221,8 +238,10 @@ func (b *headlessBox) argv() []string {
 	return strings.Split(strings.TrimSuffix(raw, "\x00"), "\x00")
 }
 
-// agentHeldNothing fails when the stub agent saw the headless command's
-// result or status descriptor, or a variable naming one.
+// agentHeldNothing fails unless the stub agent ran and no child of the
+// headless command saw its result or status descriptor, or a variable naming
+// one. run checks the second half on every case; this pins that the agent
+// itself was among the children checked.
 func (b *headlessBox) agentHeldNothing() {
 	b.t.Helper()
 	if _, ran := b.recorded("argv"); !ran {
@@ -242,13 +261,18 @@ func (b *headlessBox) file(p string) string {
 	return string(raw)
 }
 
-// The stub agent's run arm: argv NUL-separated, stdin byte-exact, any of
-// the headless command's held descriptors (5, 6) or the variables naming them
-// that reached it, then the canned stream on stdout and the canned exit
-// status.
+// stubHeldCheck opens every stub and tool wrapper: it records, under the
+// program's name, any of the headless command's held descriptors (5, 6) or
+// the variables naming them that reached it. Builtins only, so the check
+// starts nothing that could itself be checked.
+const stubHeldCheck = `for n in 5 6; do [ ! -e /dev/fd/$n ] || echo "${0##*/}: fd $n" >>"$STUB_RECORD/held"; done
+[ -z "${BYRE_RUN_RESULT_FILE+x}" ] || echo "${0##*/}: BYRE_RUN_RESULT_FILE" >>"$STUB_RECORD/held"
+[ -z "${BYRE_RUN_STATUS_FILE+x}" ] || echo "${0##*/}: BYRE_RUN_STATUS_FILE" >>"$STUB_RECORD/held"
+`
+
+// The stub agent's run arm: argv NUL-separated, stdin byte-exact, then the
+// canned stream on stdout and the canned exit status.
 const stubRunArm = `for a in "$@"; do printf '%s\0' "$a"; done >"$STUB_RECORD/argv"
-for n in 5 6; do [ ! -e /dev/fd/$n ] || echo "fd $n" >>"$STUB_RECORD/held"; done
-env | grep '^BYRE_RUN_\(RESULT\|STATUS\)_FILE=' >>"$STUB_RECORD/held"
 cat >"$STUB_RECORD/stdin"
 [ -z "${STUB_STREAM:-}" ] || cat "$STUB_STREAM"
 exit "${STUB_RC:-0}"
@@ -257,7 +281,7 @@ exit "${STUB_RC:-0}"
 // stubClaude answers `--version`, `auth status` per STUB_AUTH (in / out /
 // hang -- ignoring TERM, so only a KILL ends it), and records everything else as the run.
 const stubClaude = `#!/bin/sh
-case "$1" in
+` + stubHeldCheck + `case "$1" in
 --version) echo "9.9.9 (Claude Code)"; exit 0 ;;
 auth)
   case "${STUB_AUTH:-out}" in

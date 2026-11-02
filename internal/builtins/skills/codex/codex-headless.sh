@@ -20,6 +20,16 @@
 # exactly as they reach an interactive one.
 set -u
 
+# The result and status descriptors (5 and 6) and the variables naming them
+# are this script's alone. The names move into script locals before anything
+# runs, and every program the script starts -- codex, its login and probes,
+# jq, tee, the file helpers -- runs through run_child, which closes both
+# descriptors for it. So nothing codex or a probe leaves running can rewrite
+# the answer or append status lines after the script's own writes.
+result_file=$BYRE_RUN_RESULT_FILE status_file=$BYRE_RUN_STATUS_FILE
+unset BYRE_RUN_RESULT_FILE BYRE_RUN_STATUS_FILE
+run_child() { "$@" 5>&- 6>&-; }
+
 say() { printf 'byre-codex-headless: %s\n' "$*" >&2; }
 
 for tool in codex byre-codex-mcp-launch jq; do
@@ -37,9 +47,9 @@ no_credential() {
 
 home="" out="" log=""
 cleanup() {
-  if [ -n "$home" ]; then rm -rf -- "$home"; fi
-  if [ -n "$out" ]; then rm -f -- "$out"; fi
-  if [ -n "$log" ]; then rm -f -- "$log"; fi
+  if [ -n "$home" ]; then run_child rm -rf -- "$home"; fi
+  if [ -n "$out" ]; then run_child rm -f -- "$out"; fi
+  if [ -n "$log" ]; then run_child rm -f -- "$log"; fi
 }
 trap cleanup EXIT
 trap 'exit 143' TERM
@@ -81,15 +91,15 @@ if [ -n "$key" ]; then
   # A box that cannot make a temp dir is broken in a way no exit in the
   # contract names, so this exits 1 and the chassis's verdict -- the headless
   # command failed -- is the true one.
-  home=$(mktemp -d "${TMPDIR:-/tmp}/byre-codex-home.XXXXXXXX") || {
+  home=$(run_child mktemp -d "${TMPDIR:-/tmp}/byre-codex-home.XXXXXXXX") || {
     say "cannot create a temporary CODEX_HOME for the run"
     exit 1
   }
   if [ -f "$real_home/config.toml" ] && [ ! -L "$real_home/config.toml" ]; then
-    cp -- "$real_home/config.toml" "$home/config.toml" 2>/dev/null ||
+    run_child cp -- "$real_home/config.toml" "$home/config.toml" 2>/dev/null ||
       say "could not copy config.toml from $real_home; the run uses codex's defaults"
   fi
-  printf '%s' "$key" | CODEX_HOME=$home timeout -k 5 30 codex login "$login_flag" >&2
+  printf '%s' "$key" | CODEX_HOME=$home run_child timeout -k 5 30 codex login "$login_flag" >&2
   rc=$?
   if [ "$rc" = 124 ] || [ "$rc" = 137 ]; then
     no_credential "\`codex login $login_flag\` did not finish within 30 s"
@@ -98,7 +108,7 @@ if [ -n "$key" ]; then
   fi
   export CODEX_HOME="$home"
 else
-  CODEX_HOME=$real_home timeout -k 5 30 codex login status </dev/null >/dev/null 2>&1
+  CODEX_HOME=$real_home run_child timeout -k 5 30 codex login status </dev/null >/dev/null 2>&1
   rc=$?
   if [ "$rc" = 124 ] || [ "$rc" = 137 ]; then
     no_credential "\`codex login status\` did not answer within 30 s"
@@ -108,9 +118,9 @@ else
   export CODEX_HOME="$real_home"
 fi
 
-version=$(timeout -k 5 10 codex --version </dev/null 2>/dev/null | head -n 1)
+version=$(run_child timeout -k 5 10 codex --version </dev/null 2>/dev/null | run_child head -n 1)
 if [ -n "$version" ]; then
-  printf 'agent_version=%s\n' "$version" >>"$BYRE_RUN_STATUS_FILE"
+  printf 'agent_version=%s\n' "$version" >>"$status_file"
 fi
 
 # --- the run ------------------------------------------------------------------
@@ -119,8 +129,8 @@ fi
 # whole and then copied to the result descriptor once. The log is a private
 # copy of the stream for the failure check: the chassis's transcript lives in
 # the agent-writable result dir, and this script reads nothing from there.
-out=$(mktemp "${TMPDIR:-/tmp}/byre-codex-answer.XXXXXXXX") &&
-  log=$(mktemp "${TMPDIR:-/tmp}/byre-codex-headless.XXXXXXXX") || {
+out=$(run_child mktemp "${TMPDIR:-/tmp}/byre-codex-answer.XXXXXXXX") &&
+  log=$(run_child mktemp "${TMPDIR:-/tmp}/byre-codex-headless.XXXXXXXX") || {
   say "cannot create a temp file for the run"
   exit 1
 }
@@ -133,32 +143,23 @@ if [ -n "${BYRE_RUN_MODEL:-}" ]; then
   args+=(-m "$BYRE_RUN_MODEL")
 fi
 args+=(-)
-# The result and status descriptors (5 and 6) and the variables naming them
-# are this script's alone: codex and its tee never get them, so nothing codex
-# leaves running can rewrite the answer or append status lines after the
-# script's own writes.
-{
-  (
-    unset BYRE_RUN_RESULT_FILE BYRE_RUN_STATUS_FILE
-    exec byre-codex-mcp-launch "${args[@]}"
-  ) <"$BYRE_RUN_TASK_FILE" | tee -- "$log"
-  rc=${PIPESTATUS[0]}
-} 5>&- 6>&-
+run_child byre-codex-mcp-launch "${args[@]}" <"$BYRE_RUN_TASK_FILE" | run_child tee -- "$log"
+rc=${PIPESTATUS[0]}
 
 # --- the verdict --------------------------------------------------------------
 
-cat -- "$out" >"$BYRE_RUN_RESULT_FILE" 2>/dev/null
+run_child cat -- "$out" >"$result_file" 2>/dev/null
 
 # turn.failed is codex's one failure signal. Top-level error events and
 # error items also appear on runs that go on to succeed (reconnect retries,
 # a model-metadata fallback), so they are not failures. codex exits 1 when it
 # reports a failure, so the event is judged before the exit status: a reported
 # failure is 10 whatever the status.
-if jq -enR 'any(inputs | fromjson? | select(type == "object"); .type == "turn.failed")' <"$log" >/dev/null 2>&1; then
+if run_child jq -enR 'any(inputs | fromjson? | select(type == "object"); .type == "turn.failed")' <"$log" >/dev/null 2>&1; then
   exit 10
 fi
 if [ "$rc" != 0 ]; then
-  printf 'backend_exit=%s\n' "$rc" >>"$BYRE_RUN_STATUS_FILE"
+  printf 'backend_exit=%s\n' "$rc" >>"$status_file"
   exit 11
 fi
 exit 0

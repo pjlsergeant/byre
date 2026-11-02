@@ -24,6 +24,16 @@
 # --timeout` is the bound for that; this script sets none of its own.
 set -u
 
+# The result and status descriptors (5 and 6) and the variables naming them
+# are this script's alone. The names move into script locals before anything
+# runs, and every program the script starts -- grok, its version probe, jq,
+# tee, the file helpers -- runs through run_child, which closes both
+# descriptors for it. So nothing grok or a probe leaves running can rewrite
+# the answer or append status lines after the script's own writes.
+result_file=$BYRE_RUN_RESULT_FILE status_file=$BYRE_RUN_STATUS_FILE
+unset BYRE_RUN_RESULT_FILE BYRE_RUN_STATUS_FILE
+run_child() { "$@" 5>&- 6>&-; }
+
 say() { printf 'byre-grok-headless: %s\n' "$*" >&2; }
 
 for tool in grok byre-grok-launch jq; do
@@ -51,15 +61,15 @@ grok_home="${GROK_HOME:-/home/dev/.grok-home}"
 cred="$grok_home/auth.json"
 if [ -n "${XAI_API_KEY:-}" ] || [ -n "${GROK_AUTH_PROVIDER_COMMAND:-}" ]; then
   :
-elif [ -f "$cred" ] && [ ! -L "$cred" ] && grep -q '"key"' "$cred" 2>/dev/null; then
+elif [ -f "$cred" ] && [ ! -L "$cred" ] && run_child grep -q '"key"' "$cred" 2>/dev/null; then
   :
 else
   no_credential
 fi
 
-version=$(timeout -k 5 10 grok --version </dev/null 2>/dev/null | head -n 1)
+version=$(run_child timeout -k 5 10 grok --version </dev/null 2>/dev/null | run_child head -n 1)
 if [ -n "$version" ]; then
-  printf 'agent_version=%s\n' "$version" >>"$BYRE_RUN_STATUS_FILE"
+  printf 'agent_version=%s\n' "$version" >>"$status_file"
 fi
 
 # --- the run ------------------------------------------------------------------
@@ -69,11 +79,11 @@ fi
 # there. A box that cannot make a temp file is broken in a way no exit in the
 # contract names, so this exits 1 and the chassis's verdict -- the headless
 # command failed -- is the true one.
-log=$(mktemp "${TMPDIR:-/tmp}/byre-grok-headless.XXXXXXXX") || {
+log=$(run_child mktemp "${TMPDIR:-/tmp}/byre-grok-headless.XXXXXXXX") || {
   say "cannot create a temp file for grok's output"
   exit 1
 }
-trap 'rm -f -- "$log"' EXIT
+trap 'run_child rm -f -- "$log"' EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
 
@@ -84,17 +94,8 @@ args=(--prompt-file "$BYRE_RUN_TASK_FILE" --always-approve --output-format json)
 if [ -n "${BYRE_RUN_MODEL:-}" ]; then
   args+=(-m "$BYRE_RUN_MODEL")
 fi
-# The result and status descriptors (5 and 6) and the variables naming them
-# are this script's alone: grok and its tee never get them, so nothing grok
-# leaves running can rewrite the answer or append status lines after the
-# script's own writes.
-{
-  (
-    unset BYRE_RUN_RESULT_FILE BYRE_RUN_STATUS_FILE
-    exec byre-grok-launch "${args[@]}"
-  ) </dev/null | tee -- "$log"
-  rc=${PIPESTATUS[0]}
-} 5>&- 6>&-
+run_child byre-grok-launch "${args[@]}" </dev/null | run_child tee -- "$log"
+rc=${PIPESTATUS[0]}
 
 # --- the verdict --------------------------------------------------------------
 
@@ -102,22 +103,23 @@ fi
 # {"type":"error","message":...}. grok exits 1 when it reports a failure, so
 # the document is judged before the exit status: a reported failure is 10
 # whatever the status, and its message is written as the answer, because the
-# chassis prints it either way.
-doc=$(jq -c 'select(type == "object")' <"$log" 2>/dev/null | tail -n 1)
-if [ -n "$doc" ] && printf '%s' "$doc" | jq -e '.type == "error"' >/dev/null 2>&1; then
+# chassis prints it either way. jq writes the answer to its stdout, which the
+# script opens on the result file; jq itself never holds fd 5.
+doc=$(run_child jq -c 'select(type == "object")' <"$log" 2>/dev/null | run_child tail -n 1)
+if [ -n "$doc" ] && printf '%s' "$doc" | run_child jq -e '.type == "error"' >/dev/null 2>&1; then
   printf '%s' "$doc" |
-    jq -j '.message // "" | if type == "string" then . else tojson end' >"$BYRE_RUN_RESULT_FILE" 2>/dev/null
+    run_child jq -j '.message // "" | if type == "string" then . else tojson end' >"$result_file" 2>/dev/null
   exit 10
 fi
 answered=""
-if [ -n "$doc" ] && printf '%s' "$doc" | jq -e '.text | type == "string"' >/dev/null 2>&1; then
+if [ -n "$doc" ] && printf '%s' "$doc" | run_child jq -e '.text | type == "string"' >/dev/null 2>&1; then
   answered=1
-  printf '%s' "$doc" | jq -j '.text' >"$BYRE_RUN_RESULT_FILE" 2>/dev/null
+  printf '%s' "$doc" | run_child jq -j '.text' >"$result_file" 2>/dev/null
 fi
 # A nonzero status without a reported failure, or any status without an
 # answer document, is grok failing as a process.
 if [ "$rc" != 0 ] || [ -z "$answered" ]; then
-  printf 'backend_exit=%s\n' "$rc" >>"$BYRE_RUN_STATUS_FILE"
+  printf 'backend_exit=%s\n' "$rc" >>"$status_file"
   exit 11
 fi
 exit 0

@@ -12,7 +12,7 @@ import (
 // stubGrok answers `--version` per STUB_VERSION (ok / hang -- ignoring TERM,
 // so only a KILL ends it) and records everything else as the run.
 const stubGrok = `#!/bin/sh
-case "$1" in
+` + stubHeldCheck + `case "$1" in
 --version)
   [ "${STUB_VERSION:-ok}" = hang ] && { trap '' TERM; exec sleep 60; }
   echo "grok 9.9.9"; exit 0 ;;
