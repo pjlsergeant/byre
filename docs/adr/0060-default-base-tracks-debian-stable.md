@@ -5,28 +5,29 @@ when no `base` is configured and no template supplies one -- is Debian's
 CURRENT stable release, spelled by codename: `debian:<codename>`, today
 `debian:trixie` (Debian 13). The three shipped templates track the matching
 `-<codename>` variants of their official images: `golang:1.27-trixie`,
-`node:24-trixie`, `python:3.13-trixie`. When a new Debian stable ships, byre
+`node:26-trixie`, `python:3.13-trixie`. When a new Debian stable ships, byre
 moves the default and the templates together, within a release, once the
 agent-contract tier (`BYRE_AGENT_TESTS`) builds green on the new codename.
 
 The template move is a toolchain bump as well as a codename bump: Go 1.26 ->
-1.27, Node 22 -> 24, Python 3.12 -> 3.13. Template language lines are chosen
+1.27, Node 22 -> 26, Python 3.12 -> 3.13. Template language lines are chosen
 at each bump and recorded here, not derived by one rule. This bump:
 
 - **Go 1.27** is the current Go release; Go supports two lines, so the
   newest is the one with the longest runway.
-- **Node 24** is in Maintenance LTS since 2026-10-20, supported to
-  2028-04-30. Node 26 became Active LTS on 2026-10-28, five days before
-  this decision, and was judged too new for a starter template; the next
-  bump revisits it.
+- **Node 26** is Active LTS since 2026-10-28, enters maintenance on
+  2027-10-20, and is supported to 2029-04-30. Node 24 was rejected: it
+  entered maintenance on 2026-10-20, and a starter template should not
+  begin life on a maintenance line.
 - **Python 3.13** is the `python3` line trixie itself ships, so apt-installed
   Python tooling in the box and the template's interpreter agree on a
   version.
 
 (Checked 2026-11-02: Go against go.dev/dl, which lists Go 1.27 as current
-and two lines supported; Node dates against nodejs.org/dist/index.json and
-the nodejs/Release schedule.json; Python against Debian trixie's `python3`
-package, 3.13.5-1, packages.debian.org/trixie/python3.)
+and two lines supported; Node dates against the nodejs/Release
+schedule.json, and `node:26-trixie` against Docker Hub (amd64 and arm64);
+Python against Debian trixie's `python3` package, 3.13.5-1,
+packages.debian.org/trixie/python3.)
 
 What the codename pins is the Debian RELEASE FAMILY, not an image.
 `debian:trixie` and the template tags are mutable: Docker republishes them

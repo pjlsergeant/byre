@@ -196,7 +196,7 @@ func TestAgentContractGemini(t *testing.T) {
 
 // TestAgentContractGeminiKeepsTheTemplatesNode: the gemini skill's first RUN
 // keeps a base image's Node when it is 20+ with npm, and that branch exists
-// for the node template, whose base carries Node 24. TestAgentContractGemini
+// for the node template, whose base carries Node 26. TestAgentContractGemini
 // builds on the bare default base, so it only ever takes the install branch
 // (Node 22) and cannot stand in for this one. Kept means the template's
 // major survives the gemini build and the CLI still runs on it.
@@ -207,8 +207,8 @@ func TestAgentContractGeminiKeepsTheTemplatesNode(t *testing.T) {
 	t.Logf("gemini version: %s", strings.TrimSpace(agentProbe(t, r, image, nil, "gemini", "--version")))
 
 	node := strings.TrimSpace(agentProbe(t, r, image, nil, "node", "--version"))
-	if major, _, _ := strings.Cut(strings.TrimPrefix(node, "v"), "."); major != "24" {
-		t.Errorf("node --version in the node-template gemini box is %q, want major 24 (the template's) -- the keep branch did not fire and the skill's install branch replaced the base's Node", node)
+	if major, _, _ := strings.Cut(strings.TrimPrefix(node, "v"), "."); major != "26" {
+		t.Errorf("node --version in the node-template gemini box is %q, want major 26 (the template's) -- the keep branch did not fire and the skill's install branch replaced the base's Node", node)
 	}
 	t.Logf("npm version: %s", strings.TrimSpace(agentProbe(t, r, image, nil, "npm", "--version")))
 }

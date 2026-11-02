@@ -8,7 +8,7 @@
   `byre develop`; `byre status` shows the pending `~ Base` line beforehand
   where the box's launch record is recent enough to hold its base. The
   go, node and python templates move to `golang:1.27-trixie`,
-  `node:24-trixie` and `python:3.13-trixie` -- a new Go, Node and Python
+  `node:26-trixie` and `python:3.13-trixie` -- a new Go, Node and Python
   as well as a new Debian, so project code can notice. To stay where you
   were, set the base in `byre config` (Base image row), or in the config:
   a project with no `base` key pins `base = "debian:bookworm"`; a project
@@ -18,7 +18,7 @@
   ADR 0060 has the rule for future bumps.
 - **The gemini skill keeps a Node the base already has.** It installed
   Node 22 over whatever was there, so on the node template it replaced
-  Node 24 with 22. A base with Node 20 or newer AND npm now keeps its own;
+  Node 26 with 22. A base with Node 20 or newer AND npm now keeps its own;
   gemini still brings Node 22 where there is none, an older one, or one
   without npm (Debian's own `nodejs` package).
 

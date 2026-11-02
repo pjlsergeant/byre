@@ -79,7 +79,7 @@ func TestCatalogTemplatesAndListAgents(t *testing.T) {
 func TestTemplateBasesContract(t *testing.T) {
 	want := map[string]string{
 		"go":     "golang:1.27-trixie",
-		"node":   "node:24-trixie",
+		"node":   "node:26-trixie",
 		"python": "python:3.13-trixie",
 	}
 	codename, ok := strings.CutPrefix(gen.DefaultBase, "debian:")
