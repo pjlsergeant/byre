@@ -99,9 +99,9 @@ const runTimeoutMaxSecs = 3650 * 86400
 
 // CheckRunTimeout validates --timeout. A zero duration is no timeout at all,
 // and a run has none unless asked, so 0 is refused with the remedy rather
-// than read as "no timer". The chassis counts the timeout in whole seconds,
-// rounded down, so a duration under 1s would arm a deadline that has
-// already passed; it is refused, as is one over 3650d.
+// than read as "no timer". The chassis bounds the range in whole seconds,
+// rounded down (its deadline itself is monotonic to the centisecond), so a
+// duration under 1s is refused here as it is there, as is one over 3650d.
 func CheckRunTimeout(v string) error {
 	if !runTimeoutRE.MatchString(v) {
 		return fmt.Errorf("--timeout %q: not a duration -- use a number with an optional s/m/h/d suffix, e.g. 600, 30m, 1.5h", packages.EscapeTerminal(v))
