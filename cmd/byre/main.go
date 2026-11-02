@@ -325,7 +325,7 @@ start of every run: archive it before running again.`,
 	}
 	c.Flags().StringVar(&o.TaskFlag, "task", "", "the task: a file, or - to read stdin to EOF (default: BYRE_TASK from the environment)")
 	c.Flags().BoolVar(&o.Data, "data", false, "print byre's outcome as one versioned JSON document on stdout, instead of the agent's answer")
-	c.Flags().BoolVar(&o.Quiet, "quiet", false, "keep the agent's live output in .byre-run/ only, and drop byre's notices; errors, refusals, the exit report and the summary line still print")
+	c.Flags().BoolVar(&o.Quiet, "quiet", false, "keep the agent's live output in .byre-run/ only, and drop byre's notices; errors, refusals, a failed run's last agent stderr lines, the exit report and the summary line still print")
 	c.Flags().StringVarP(&o.Agent, "agent", "a", "", `agent for THIS run: on a configured project, a one-off override (nothing written); on a NEW project, with --template, seeds its config`)
 	c.Flags().StringVar(&o.Template, "template", "", `template for a NEW project's config (first run only; "none" to skip) -- a new project needs both --template and --agent`)
 	c.Flags().StringVar(&o.Model, "model", "", "model for the agent's headless command (default: the agent's own)")

@@ -219,7 +219,8 @@ exit code, since a reported failure still carries a message worth reading.
   `message`, `exit_report`. byre prints it on the host after the box has
   exited, so nothing in the box can write into it.
 - **stderr:** everything else -- the agent's live stream and diagnostics
-  (kept in the result dir only under `--quiet`), hook output, the build,
+  (kept in the result dir only under `--quiet`, except that a failed run
+  prints the last lines of the command's stderr), hook output, the build,
   byre's banners, the exit report, and last, one **summary line**:
   `byre: run <run id>: <outcome>, exit <n> (<authority>)`.
 
@@ -228,10 +229,13 @@ summary line is informational and forgeable: stderr belongs to the agent
 for the whole run, so an agent can print an identical line before byre's.
 Every doc that shows the line says to gate on the exit code or `--data`.
 
-`--quiet` keeps the agent's stream in the result dir only and drops byre's
-banner-class notices (the worktree and preset notes, the run-scoped agent
-line, the exposure and network lines). It never drops an error, a refusal,
-a warning, the exit report or the summary line.
+`--quiet` sends the agent's live stream and the headless command's stderr
+to the result dir only and drops byre's banner-class notices (the worktree
+and preset notes, the run-scoped agent line, the exposure and network
+lines). When the run fails -- any exit but 0 and 10 -- the chassis prints
+the last lines of the command's stderr before the summary, so a refusal's
+remedy is never hidden. It never drops an error, a refusal, a warning, the
+exit report or the summary line.
 
 The default is loud: the agent's raw event JSON on stderr is accepted. A
 readable per-agent rendering of that progress on stderr is recorded as

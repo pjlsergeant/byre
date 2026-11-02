@@ -18,10 +18,12 @@
   credential; 12: `--timeout` expired -- there is no time limit unless you
   set one); the commands page has the table. The agent's files land in
   `.byre-run/` in the work tree, which byre empties at the start of every
-  run and never reads back. `--quiet` keeps the agent's live output in
-  that dir only. A never-configured checkout needs `--template` and
-  `--agent`; the CI recipe is in the cookbook ("Run one task headlessly
-  (CI)?"). ADR 0061.
+  run and never reads back. `--quiet` sends the agent's live output and
+  stderr to that dir only; a failed run (any exit but 0 and 10) still
+  prints the last lines of the agent's stderr before the summary, so a
+  refusal's remedy is never hidden. A never-configured checkout needs
+  `--template` and `--agent`; the CI recipe is in the cookbook ("Run one
+  task headlessly (CI)?"). ADR 0061.
 - **`byre preset apply --yes`: apply a committed preset in CI.** Runs
   without a terminal, prints the full review to stderr all the same,
   skips the confirm and passes `--yes` to the package installs it walks

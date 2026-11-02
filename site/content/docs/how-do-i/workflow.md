@@ -241,8 +241,11 @@ rc=$?
 - **Encrypted credentials** (`byre credentials set`) need
   `--credentials stdin` with the passphrase on stdin, which then can't
   also carry the task.
-- `--quiet` keeps the agent's live output in the result dir instead of
-  on stderr; errors, the exit report and the summary line still print.
+- `--quiet` sends the agent's live output and stderr to the result dir
+  instead of your terminal; errors, the exit report and the summary line
+  still print, and a failed run (any exit but 0 and 10) prints the last
+  lines of the agent's stderr before the summary, so a refusal's remedy
+  is never hidden.
 
 **Keep the output.** The agent's files, its full transcript and the
 answer land in `.byre-run/` in the work tree, which ignores itself in git
