@@ -394,7 +394,10 @@ centisecond deadline (31,536,000,000 at most) well inside 64 bits. The
 chassis compares that deadline on the monotonic clock in `/proc/uptime`,
 to the centisecond and rounded down, so a wall-clock step during the run
 cannot disable the timer, the real timer's signal always passes the
-deadline, and a forged `USR1` is ignored until the final 10 ms. The
+deadline, and a forged `USR1` is ignored until under 20 ms remain (the
+duration and the arming time are each floored to the centisecond; the
+duration's fraction is kept to nine digits, so the floor is exact for
+every suffix). The
 chassis refuses the same range in a
 `BYRE_RUN_TIMEOUT` a raw `run_args` sets (exit 16). When set, the
 timer is the chassis's own, so exit 12 means byre's timer fired -- never

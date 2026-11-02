@@ -174,9 +174,13 @@ fi
 # handler holds the monotonic clock in /proc/uptime (seconds since boot to
 # the centisecond, unmoved by a wall-clock step) to arming time plus this.
 # A clock correction during the run cannot hold the deadline off, so the
-# timer's one signal always counts; a forged signal is ignored until the
-# final 10 ms; and the real timer's always passes, because sleep(1) of the
+# timer's one signal always counts; a forged signal is ignored until under
+# 20 ms remain (the duration and the arming time are each floored to the
+# centisecond); and the real timer's always passes, because sleep(1) of the
 # exact duration never wakes early and the deadline is rounded down.
+# The fraction keeps nine digits, multiplied by the unit before dividing, so
+# timeout_cs is exact for every suffix; a tenth digit is under 1e-10 d
+# (8.64 us), below a centisecond, and is dropped.
 # timeout_secs, the whole seconds rounded down, is only the range check:
 # the smallest timeout is 1 s, the largest 3650 d (31,536,000,000 cs, well
 # inside 64 bits), and the integer part's digits are counted before
@@ -196,14 +200,14 @@ if [ -n "$timeout_spec" ]; then
   while [[ $int == 0* ]]; do int=${int#0}; done
   [ "${#int}" -le 9 ] ||
     refuse "BYRE_RUN_TIMEOUT is over the largest timeout, 3650d: $(printf '%q' "$timeout_spec")"
-  frac=${frac:0:6}
-  while [ "${#frac}" -lt 6 ]; do frac+=0; done
-  timeout_secs=$(((10#${int:-0}) * mult + (10#$frac) * mult / 1000000))
+  frac=${frac:0:9}
+  while [ "${#frac}" -lt 9 ]; do frac+=0; done
+  timeout_secs=$(((10#${int:-0}) * mult + (10#$frac) * mult / 1000000000))
   [ "$timeout_secs" -ge 1 ] ||
     refuse "BYRE_RUN_TIMEOUT is under the smallest timeout, 1s: $(printf '%q' "$timeout_spec")"
   [ "$timeout_secs" -le "$timeout_max_secs" ] ||
     refuse "BYRE_RUN_TIMEOUT is over the largest timeout, 3650d: $(printf '%q' "$timeout_spec")"
-  timeout_cs=$(((10#${int:-0}) * mult * 100 + (10#$frac) * mult / 10000))
+  timeout_cs=$(((10#${int:-0}) * mult * 100 + (10#$frac) * mult / 10000000))
   uptime_cs || refuse "cannot read the monotonic clock in /proc/uptime, which a timeout needs"
 fi
 

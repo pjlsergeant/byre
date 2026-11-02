@@ -120,8 +120,10 @@ func CheckRunTimeout(v string) error {
 }
 
 // runTimeoutSecs is a grammar-valid duration in whole seconds, rounded down
-// the way the chassis rounds it; ok is false when the integer part has more
-// than 9 digits, which is over the cap whatever the suffix.
+// the way the chassis rounds it: nine fractional digits, multiplied by the
+// unit before dividing (a tenth digit is under 1e-10 d, below a centisecond).
+// ok is false when the integer part has more than 9 digits, which is over the
+// cap whatever the suffix.
 func runTimeoutSecs(v string) (secs int64, ok bool) {
 	mult := int64(1)
 	switch v[len(v)-1] {
@@ -139,7 +141,7 @@ func runTimeoutSecs(v string) (secs int64, ok bool) {
 	if len(intPart) > 9 {
 		return 0, false
 	}
-	frac = (frac + "000000")[:6]
+	frac = (frac + "000000000")[:9]
 	var i, f int64
 	for _, c := range intPart {
 		i = i*10 + int64(c-'0')
@@ -147,7 +149,7 @@ func runTimeoutSecs(v string) (secs int64, ok bool) {
 	for _, c := range frac {
 		f = f*10 + int64(c-'0')
 	}
-	return i*mult + f*mult/1000000, true
+	return i*mult + f*mult/1000000000, true
 }
 
 // runLaunch starts the session; production is developCommandWith, tests

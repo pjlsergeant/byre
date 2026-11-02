@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/gen"
 	"github.com/pjlsergeant/byre/internal/project"
+	"github.com/pjlsergeant/byre/internal/testtools"
 )
 
 // The `byre run` tests drive runWith with a launch that is develop's real
@@ -993,7 +996,7 @@ func TestRunCrashWritesSummary(t *testing.T) {
 // --timeout's grammar: coreutils durations, zero refused with the remedy,
 // and the 1s..3650d range the chassis's whole-second deadline holds.
 func TestCheckRunTimeout(t *testing.T) {
-	for _, v := range []string{"600", "30m", "1.5h", "2d", "10s", "1", "1s", "2s", "0.02m", "3650d", "315360000", "0000000000001s"} {
+	for _, v := range []string{"600", "30m", "1.5h", "2d", "10s", "1", "1s", "2s", "0.02m", "3650d", "315360000", "0000000000001s", "0.0000249d"} {
 		if err := CheckRunTimeout(v); err != nil {
 			t.Errorf("%q: %v", v, err)
 		}
@@ -1003,6 +1006,70 @@ func TestCheckRunTimeout(t *testing.T) {
 		"3651d": "the largest --timeout is 3650d", "315360001": "the largest --timeout is 3650d", "3650.00002d": "the largest --timeout is 3650d", "999999999999999999d": "the largest --timeout is 3650d", "1000000000": "the largest --timeout is 3650d"} {
 		if err := CheckRunTimeout(v); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: want %q, got %v", v, want, err)
+		}
+	}
+}
+
+// The host's --timeout check and the chassis's BYRE_RUN_TIMEOUT parse are
+// two implementations of one range: each spelling is accepted by both or
+// refused by both, with the same whole seconds. The chassis's centisecond
+// deadline is pinned too: the fraction is scaled by the unit before it is
+// floored, so 0.0000249d (2.15136 s) is 215 cs, not the 207 a fraction cut
+// to six digits before scaling gives. The spellings are the host's grammar:
+// the chassis's also takes a bare point (1., .5), which the host refuses.
+func TestRunTimeoutMatchesTheChassis(t *testing.T) {
+	testtools.NeedTool(t, "bash")
+	src := string(gen.HeadlessScript())
+	start := strings.Index(src, "\ntimeout_spec=${BYRE_RUN_TIMEOUT:-}\n")
+	end := strings.Index(src, "\n# --- 2.")
+	if start < 0 || end < start {
+		t.Fatal("headless.sh has no BYRE_RUN_TIMEOUT parse block before section 2")
+	}
+	parse := "refuse() { echo refused; exit 16; }\nuptime_cs() { :; }\n" + src[start:end] +
+		"\nprintf '%s %s\\n' \"$timeout_secs\" \"$timeout_cs\"\n"
+	chassis := func(v string) (secs, cs int64, ok bool) {
+		cmd := exec.Command("bash", "-c", parse)
+		cmd.Env = []string{"BYRE_RUN_TIMEOUT=" + v, "PATH=" + os.Getenv("PATH")}
+		out, err := cmd.Output()
+		if strings.TrimSpace(string(out)) == "refused" {
+			return 0, 0, false
+		}
+		if err != nil {
+			t.Fatalf("%q: the parse block failed: %v (%q)", v, err, out)
+		}
+		f := strings.Fields(string(out))
+		if len(f) != 2 {
+			t.Fatalf("%q: the parse block printed %q", v, out)
+		}
+		secs, _ = strconv.ParseInt(f[0], 10, 64)
+		cs, _ = strconv.ParseInt(f[1], 10, 64)
+		return secs, cs, true
+	}
+	wantCS := map[string]int64{
+		"0.0000249d": 215, "0.0000249999999d": 215, "0.00002314814814d": 199,
+		"1.9s": 190, "1.999999999s": 199, "1.9999999999s": 199, "0.02m": 120,
+		"1.5h": 540000, "1.0000000001d": 8640000, "3650d": 31536000000,
+	}
+	spellings := []string{"600", "30m", "1.5h", "2d", "10s", "1", "1s", "2s", "0.02m", "3650d", "315360000", "0000000000001s",
+		"0.5", "0.9s", "0.000001s", "0.0000001d", "0.0000116d", "0.0000115740d", "0.000011574074d",
+		"3651d", "315360001", "3650.00002d", "3650.0000000001d", "999999999999999999d", "1000000000", "10x", "-5"}
+	for v := range wantCS {
+		spellings = append(spellings, v)
+	}
+	for _, v := range spellings {
+		secs, cs, accepted := chassis(v)
+		if hostOK := CheckRunTimeout(v) == nil; hostOK != accepted {
+			t.Errorf("%q: host accepts %v, chassis accepts %v", v, hostOK, accepted)
+			continue
+		}
+		if !accepted {
+			continue
+		}
+		if hostSecs, _ := runTimeoutSecs(v); hostSecs != secs {
+			t.Errorf("%q: host %d s, chassis %d s", v, hostSecs, secs)
+		}
+		if want, ok := wantCS[v]; ok && cs != want {
+			t.Errorf("%q: chassis timeout_cs = %d, want %d", v, cs, want)
 		}
 	}
 }
