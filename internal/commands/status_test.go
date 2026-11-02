@@ -1068,12 +1068,15 @@ func TestWarnGuardCollisions(t *testing.T) {
 
 	// No netns skill: the gate/firewall paths aren't guarded, but the launcher
 	// always is — a launcher clobber still warns, a gate clobber does not.
-	cfg2 := config.Config{Files: map[string]string{"g": gen.LaunchGatePath, "l": gen.LauncherPath}}
+	cfg2 := config.Config{Files: map[string]string{"g": gen.LaunchGatePath, "l": gen.LauncherPath, "h": gen.HeadlessPath}}
 	var b2 strings.Builder
 	warnGuardCollisions(&b2, cfg2, skills.Resolved{})
 	out2 := b2.String()
 	if !strings.Contains(out2, gen.LauncherPath) {
 		t.Fatalf("launcher clobber should warn without a netns skill:\n%s", out2)
+	}
+	if !strings.Contains(out2, gen.HeadlessPath) {
+		t.Fatalf("headless chassis clobber should warn without a netns skill:\n%s", out2)
 	}
 	if strings.Contains(out2, gen.LaunchGatePath) {
 		t.Fatalf("gate is not guarded without a netns skill; should not warn:\n%s", out2)

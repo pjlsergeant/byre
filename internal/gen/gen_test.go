@@ -57,6 +57,8 @@ RUN mkdir -p /etc/byre && printf '%s\n' "$PATH" > /etc/byre/image-path
 # --- byre security guard (re-assert chassis paths after the project block) ---
 COPY byre-launch /usr/local/bin/byre-launch
 RUN chmod +x /usr/local/bin/byre-launch
+COPY byre-headless /usr/local/bin/byre-headless
+RUN chmod +x /usr/local/bin/byre-headless
 
 HEALTHCHECK NONE
 USER dev
@@ -64,6 +66,54 @@ ENTRYPOINT ["/usr/local/bin/byre-launch"]
 `
 	if got := Dockerfile(Input{Base: "node:22"}); got != want {
 		t.Fatalf("golden mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+// TestDockerfileAgentBlockGolden pins the agent block byte-exact for an agent
+// that declares every baked file, headless command included. It is a contract
+// for the same reason as the full golden: these lines sit in the per-project
+// layers and their order decides what a change rebuilds.
+func TestDockerfileAgentBlockGolden(t *testing.T) {
+	const want = `
+# --- agent ---
+COPY agent-cmd /etc/byre/agent-cmd
+RUN chmod +x /etc/byre/agent-cmd
+COPY agent-headless /etc/byre/agent-headless
+RUN chmod +x /etc/byre/agent-headless
+COPY agent-context.md /etc/byre/agent-context.md
+COPY self-edit.md /etc/byre/self-edit.md
+COPY config-reference.md /etc/byre/config-reference.md
+`
+	got := agentBlock(t, Dockerfile(Input{Base: "node:22", AgentCmd: true, AgentHeadless: true, AgentContext: true, SelfEditDoc: true}))
+	if got != want {
+		t.Fatalf("agent block mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+
+	// An agent without a headless command bakes no agent-headless.
+	got = agentBlock(t, Dockerfile(Input{Base: "node:22", AgentCmd: true, AgentContext: true}))
+	if strings.Contains(got, AgentHeadlessName) {
+		t.Errorf("agent-headless baked without a headless command:\n%s", got)
+	}
+}
+
+// agentBlock returns the Dockerfile text from the agent header up to the mcp
+// header that always follows it.
+func agentBlock(t *testing.T, df string) string {
+	t.Helper()
+	start := strings.Index(df, "\n# --- agent ---\n")
+	end := strings.Index(df, "\n# --- mcp ")
+	if start < 0 || end < start {
+		t.Fatalf("no agent block:\n%s", df)
+	}
+	return df[start:end]
+}
+
+// TestHeadlessChassisDefaultsToAgentHeadlessPath pins the one cross-file
+// contract between the gen-baked path and the chassis that reads it: the
+// chassis run without a positional execs exactly what the agent block bakes.
+func TestHeadlessChassisDefaultsToAgentHeadlessPath(t *testing.T) {
+	if want := "cmd=${1:-" + AgentHeadlessPath + "}\n"; !strings.Contains(string(HeadlessScript()), want) {
+		t.Errorf("headless.sh does not default to %s (want line %q)", AgentHeadlessPath, want)
 	}
 }
 
@@ -203,6 +253,7 @@ func TestDockerfileGuardReassertsAfterProjectFiles(t *testing.T) {
 		// A hostile project `files` clobber of every security path.
 		Files: map[string]string{
 			"files/evil-launch": LauncherPath,
+			"files/evil-head":   HeadlessPath,
 			"files/evil-fw":     "/usr/local/bin/byre-firewall",
 			"files/empty-gate":  LaunchGatePath,
 		},
@@ -218,6 +269,7 @@ func TestDockerfileGuardReassertsAfterProjectFiles(t *testing.T) {
 		guard   string
 	}{
 		{CopyLine("files/evil-launch", LauncherPath), "COPY byre-launch " + LauncherPath},
+		{CopyLine("files/evil-head", HeadlessPath), "COPY byre-headless " + HeadlessPath},
 		{CopyLine("files/evil-fw", "/usr/local/bin/byre-firewall"), CopyLine("skills/firewall/firewall.sh", "/usr/local/bin/byre-firewall")},
 		{CopyLine("files/empty-gate", LaunchGatePath), CopyLine("skills/firewall/launch-gate", LaunchGatePath)},
 	} {

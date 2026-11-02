@@ -1528,12 +1528,12 @@ func configEgress(entries []string) []skills.EgressAllow {
 }
 
 // guardedPaths returns the image paths byre re-asserts at the Dockerfile tail
-// for this project — the launcher always, plus a network-posture skill's launch
+// for this project — the launcher and the headless chassis always, plus a network-posture skill's launch
 // gate and netns enforcement script(s). A project `files` entry (or raw build
 // line) targeting one of these is overridden by byre's own copy at build time
 // (gen's security guard); the caller warns so the override isn't silent.
 func guardedPaths(res skills.Resolved) []string {
-	paths := []string{gen.LauncherPath}
+	paths := []string{gen.LauncherPath, gen.HeadlessPath}
 	if len(res.NetnsInits()) > 0 {
 		paths = append(paths, gen.LaunchGatePath)
 		for _, h := range res.NetnsInits() {
@@ -1634,7 +1634,7 @@ func (r managedRoot) shadows(target string) bool {
 // managedRoots are the image paths byre owns for this project: the whole
 // /etc/byre directory -- the launch gate and every baked artifact live under
 // it, so this stays right for artifacts added later -- the launcher, the
-// credential session tmpfs, and any netns enforcement script a
+// headless chassis, the credential session tmpfs, and any netns enforcement script a
 // network-posture skill declares.
 //
 // The credential tmpfs entry is the feature's load-bearing residual: a
@@ -1644,7 +1644,7 @@ func (r managedRoot) shadows(target string) bool {
 // the existing shadow machinery, never gated (the user is not the
 // adversary).
 func managedRoots(res skills.Resolved) []managedRoot {
-	roots := []managedRoot{{Path: gen.ByreDir, Dir: true}, {Path: gen.LauncherPath}, {Path: credTmpfsTarget, Dir: true}}
+	roots := []managedRoot{{Path: gen.ByreDir, Dir: true}, {Path: gen.LauncherPath}, {Path: gen.HeadlessPath}, {Path: credTmpfsTarget, Dir: true}}
 	for _, h := range res.NetnsInits() {
 		// Clean the hook path: skills.Resolve requires it absolute but not
 		// clean, so a target on its CANONICAL form (e.g. /usr/local/../usr/
