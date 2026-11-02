@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -64,6 +66,9 @@ func sha256Hex(b []byte) string {
 
 func runHeadless(t *testing.T, c headlessCase) headlessResult {
 	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("the chassis runs in a Linux box: it reads /proc (the timeout's monotonic clock)")
+	}
 	testtools.NeedTool(t, "bash", "setsid", "sha256sum", "tee", "mktemp", "awk")
 	ws := t.TempDir()
 	runDir := filepath.Join(ws, "run")
@@ -358,6 +363,54 @@ printf 'own answer' >"$BYRE_RUN_RESULT_FILE"`
 				t.Fatalf("exit %d, want 12\nstderr:\n%s", r.code, r.stderr)
 			}
 		})
+	}
+}
+
+// The timeout deadline is held on a monotonic clock. A wall-clock step
+// during a run cannot be staged in a test, so this pins the contract
+// instead: uptime_cs reads /proc/uptime, the deadline is armed from it and
+// the USR1 handler checks against it, and no wall clock -- bash's
+// EPOCHREALTIME, EPOCHSECONDS or SECONDS, or date(1) -- feeds either. A
+// deadline on a wall clock moves with it: a backward step lets the real
+// timer's one USR1 arrive "early" and be ignored, and the run is unbounded.
+// (SECONDS and date still time and stamp the record; they decide nothing.)
+func TestHeadlessTimeoutClockIsMonotonic(t *testing.T) {
+	src := string(HeadlessScript())
+	wall := regexp.MustCompile(`EPOCHREALTIME|EPOCHSECONDS|SECONDS|\bdate\b`)
+	body := func(fn string) string {
+		start := strings.Index(src, "\n"+fn+"() {\n")
+		if start < 0 {
+			t.Fatalf("headless.sh defines no %s()", fn)
+		}
+		end := strings.Index(src[start:], "\n}\n")
+		if end < 0 {
+			t.Fatalf("headless.sh's %s() has no closing brace", fn)
+		}
+		return src[start : start+end]
+	}
+	if clock := body("uptime_cs"); !strings.Contains(clock, "read -r up rest </proc/uptime") {
+		t.Errorf("uptime_cs does not read /proc/uptime:\n%s", clock)
+	}
+	handler := body("on_timeout")
+	if !regexp.MustCompile(`(?m)^\s*uptime_cs \|\| return$`).MatchString(handler) ||
+		!strings.Contains(handler, `[ "$now_cs" -ge "$deadline_cs" ]`) {
+		t.Errorf("on_timeout does not check the deadline against uptime_cs:\n%s", handler)
+	}
+	if w := wall.FindString(handler); w != "" {
+		t.Errorf("on_timeout reads a wall clock (%q)", w)
+	}
+	arms := regexp.MustCompile(`(?m)^.*\bdeadline_cs=.*$`).FindAllString(src, -1)
+	want := []string{
+		`child="" timer="" killer="" deadline_cs=""`,
+		`    deadline_cs=$((now_cs + timeout_cs))`,
+	}
+	if strings.Join(arms, "\n") != strings.Join(want, "\n") {
+		t.Errorf("deadline_cs assignments = %q, want only the reset and the arming from now_cs, %q", arms, want)
+	}
+	for _, l := range regexp.MustCompile(`(?m)^.*\bnow_cs=.*$`).FindAllString(src, -1) {
+		if w := wall.FindString(l); w != "" || !strings.Contains(l, "${up/./}") {
+			t.Errorf("now_cs is set from something other than /proc/uptime: %q", l)
+		}
 	}
 }
 

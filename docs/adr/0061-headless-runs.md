@@ -390,10 +390,12 @@ default, ever. How long a task may take is the caller's call; a default
 would kill legitimate long runs that nothing in the config asked to bound.
 `--timeout 0` is a usage error that says to omit the flag, and so is a
 duration under 1s or over 3650d: the cap keeps the chassis's
-microsecond deadline inside 64 bits. The chassis compares that deadline
-exactly, to the microsecond, so there is no slack: a forged `USR1` before
-it is ignored, and the real timer's signal always passes it. The chassis
-refuses the same range in a
+centisecond deadline (31,536,000,000 at most) well inside 64 bits. The
+chassis compares that deadline on the monotonic clock in `/proc/uptime`,
+to the centisecond and rounded down, so a wall-clock step during the run
+cannot disable the timer, the real timer's signal always passes the
+deadline, and a forged `USR1` is ignored until the final 10 ms. The
+chassis refuses the same range in a
 `BYRE_RUN_TIMEOUT` a raw `run_args` sets (exit 16). When set, the
 timer is the chassis's own, so exit 12 means byre's timer fired -- never
 an agent that exited 124 or 137 on its own, which `timeout(1)` would make

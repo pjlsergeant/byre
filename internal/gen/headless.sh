@@ -63,6 +63,16 @@ refuse() {
   exit 16
 }
 
+# uptime_cs sets now_cs to the monotonic clock: /proc/uptime's first field
+# (seconds since boot, two decimals) as whole centiseconds. A builtin read of
+# a kernel file, so it is safe inside a trap handler.
+uptime_cs() {
+  local up rest
+  read -r up rest </proc/uptime || return 1
+  [[ $up =~ ^[0-9]+\.[0-9][0-9]$ ]] || return 1
+  now_cs=$((10#${up/./}))
+}
+
 # --- JSON -------------------------------------------------------------------
 
 # json_str prints its argument as a JSON string: quote, backslash and every
@@ -160,18 +170,19 @@ if [ -n "$timeout_spec" ]; then
   if [[ ${timeout_spec%[smhd]} =~ ^[0.]*$ ]]; then timeout_spec=""; fi
 fi
 
-# timeout_us is the exact duration in microseconds (digits past the sixth
-# are dropped, which only shortens it): the USR1 handler holds the
-# $EPOCHREALTIME clock (read as digits only: its radix character follows
-# the locale) to arming time plus this, so there is no slack -- a forged
-# signal before the deadline is ignored to the microsecond, and the real
-# timer's always passes because sleep(1) of the same duration never wakes
-# early. timeout_secs, the whole seconds rounded down, is only the
-# range check: the smallest timeout is 1 s, the largest 3650 d, and the
-# integer part's digits are counted before multiplying so neither 64-bit
-# product can wrap to a deadline already past.
+# timeout_cs is the duration in centiseconds, rounded down: the USR1
+# handler holds the monotonic clock in /proc/uptime (seconds since boot to
+# the centisecond, unmoved by a wall-clock step) to arming time plus this.
+# A clock correction during the run cannot hold the deadline off, so the
+# timer's one signal always counts; a forged signal is ignored until the
+# final 10 ms; and the real timer's always passes, because sleep(1) of the
+# exact duration never wakes early and the deadline is rounded down.
+# timeout_secs, the whole seconds rounded down, is only the range check:
+# the smallest timeout is 1 s, the largest 3650 d (31,536,000,000 cs, well
+# inside 64 bits), and the integer part's digits are counted before
+# multiplying so neither product can wrap to a deadline already past.
 timeout_max_secs=315360000
-timeout_secs=0 timeout_us=0
+timeout_secs=0 timeout_cs=0
 if [ -n "$timeout_spec" ]; then
   num=${timeout_spec%[smhd]}
   case $timeout_spec in
@@ -192,7 +203,8 @@ if [ -n "$timeout_spec" ]; then
     refuse "BYRE_RUN_TIMEOUT is under the smallest timeout, 1s: $(printf '%q' "$timeout_spec")"
   [ "$timeout_secs" -le "$timeout_max_secs" ] ||
     refuse "BYRE_RUN_TIMEOUT is over the largest timeout, 3650d: $(printf '%q' "$timeout_spec")"
-  timeout_us=$(((10#${int:-0}) * mult * 1000000 + (10#$frac) * mult))
+  timeout_cs=$(((10#${int:-0}) * mult * 100 + (10#$frac) * mult / 10000))
+  uptime_cs || refuse "cannot read the monotonic clock in /proc/uptime, which a timeout needs"
 fi
 
 # --- 2. claim byre's own files, exclusively, once -----------------------------
@@ -226,7 +238,7 @@ set +C
 
 cmd=${1:-/etc/byre/agent-headless}
 timed_out=0
-child="" timer="" killer="" deadline_us=""
+child="" timer="" killer="" deadline_cs=""
 
 # --- 4. supervise -------------------------------------------------------------
 
@@ -262,7 +274,9 @@ on_signal() {
 # either way: the trap cut the wait short, and the loop must wait again.
 on_timeout() {
   interrupted=1
-  if [ -z "$deadline_us" ] || [ "${EPOCHREALTIME//[!0-9]/}" -lt "$deadline_us" ]; then return; fi
+  [ -n "$deadline_cs" ] || return
+  uptime_cs || return
+  [ "$now_cs" -ge "$deadline_cs" ] || return
   [ "$timed_out" = 0 ] || return
   timed_out=1
   kill -TERM -- "-$child" 2>/dev/null
@@ -329,7 +343,10 @@ else
   # timeout(1) is not used: a headless command that exits 124 or 137 on its
   # own must not read as a timeout, so the verdict comes from this flag.
   if [ -n "$timeout_spec" ]; then
-    deadline_us=$((${EPOCHREALTIME//[!0-9]/} + timeout_us))
+    # A failed re-read keeps the probe's earlier reading: that deadline is
+    # only sooner than the timer's, so the timer still passes it.
+    uptime_cs
+    deadline_cs=$((now_cs + timeout_cs))
     (
       trap 'kill $! 2>/dev/null; exit 0' TERM
       sleep "$timeout_spec" &
