@@ -12,6 +12,18 @@
 # file is a launch-owned temp file, never the user's memory (ADR 0046).
 set -eu
 
+# The adapter's own helpers (mktemp, cat, mv, rm) run from the image's system
+# directories only: the inherited PATH starts with the agent-writable
+# ~/.local/bin, and repository code (a worktree checkout's hooks) runs in the
+# launcher before this adapter, so a helper found there would decide what
+# claude is told. The inherited PATH is claude's own -- claude lives in
+# ~/.local/bin, and everything it starts needs the full image PATH -- so it is
+# restored on the exec of claude alone. env resolves from the pinned PATH;
+# claude, from the restored one.
+agent_path=${PATH-}
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
 CTX=${BYRE_AGENT_CONTEXT:-/etc/byre/agent-context.md}
 
 # ONE launch-owned path, replaced on every start: exec replaces this shell,
@@ -54,9 +66,9 @@ else
 fi
 
 if [ -n "$merged" ]; then
-  exec claude --append-system-prompt-file "$merged" "$@"
+  exec env PATH="$agent_path" claude --append-system-prompt-file "$merged" "$@"
 fi
 if [ -r "$CTX" ]; then
-  exec claude --append-system-prompt-file "$CTX" "$@"
+  exec env PATH="$agent_path" claude --append-system-prompt-file "$CTX" "$@"
 fi
-exec claude "$@"
+exec env PATH="$agent_path" claude "$@"

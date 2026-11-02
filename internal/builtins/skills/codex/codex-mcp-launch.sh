@@ -29,6 +29,18 @@
 # colon object syntax is NOT valid TOML.
 set -eu
 
+# The adapter's own helpers (jq, cat, head, wc, iconv) run from the image's
+# system directories only: the inherited PATH starts with the agent-writable
+# ~/.local/bin, and repository code (a worktree checkout's hooks) runs in the
+# launcher before this adapter, so a helper found there would decide what
+# codex is told -- jq writes the MCP server commands codex runs. The inherited
+# PATH is codex's own -- codex lives in ~/.local/bin, and everything it starts
+# needs the full image PATH -- so it is restored on the exec of codex alone.
+# env resolves from the pinned PATH; codex, from the restored one.
+agent_path=${PATH-}
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
 # Overridable for tests (and hand-wiring experiments); byre boxes use the bake.
 MCP=${BYRE_MCP_CONFIG:-/etc/byre/mcp.json}
 
@@ -118,4 +130,4 @@ fi
 
 # ${flags[@]+...}: bash < 4.4 (macOS's 3.2 included, where the unit test
 # runs this under the host bash) trips `set -u` expanding an EMPTY array.
-exec codex ${flags[@]+"${flags[@]}"} "$@"
+exec env PATH="$agent_path" codex ${flags[@]+"${flags[@]}"} "$@"

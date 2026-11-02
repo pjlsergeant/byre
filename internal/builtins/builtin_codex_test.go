@@ -82,7 +82,7 @@ func runCodexSharedAuthHook(t *testing.T, identityBase, codexHome string) {
 	needCodexReconciler(t)
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "firstrun.sh")
-	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	reconcile := stageReconcile(t, cat, os.Getenv("PATH"))
 	cmd := exec.Command("bash", hook)
 	cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+identityBase, "CODEX_HOME="+codexHome,
 		"BYRE_CODEX_AUTH_RECONCILE="+reconcile, sharedAuthLibSeam(t, cat, "codex-shared-auth"))
@@ -115,6 +115,53 @@ func codexReconcileEnv(t *testing.T, cat *packages.Catalog, base, home string, e
 	needCodexReconciler(t)
 	return append(append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CODEX_HOME="+home,
 		sharedAuthLibSeam(t, cat, "codex-shared-auth")), extra...)
+}
+
+// stageReconcile copies the real reconcile.sh to a temp dir with its pinned
+// helper PATH set to pin: the suite's own PATH for most tests (on a macOS
+// host jq lives outside the image's system directories), a stub dir ahead of
+// it where a test races a helper.
+func stageReconcile(t *testing.T, cat *packages.Catalog, pin string) string {
+	t.Helper()
+	return stagePinned(t, filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh"),
+		filepath.Join(t.TempDir(), "reconcile.sh"), pin)
+}
+
+// The reconciler runs only system helpers: decoys of jq (which decides
+// which credential is valid), cp (which publishes one machine-wide) and
+// flock (which serializes the publish), planted first on the inherited PATH
+// where the agent-writable ~/.local/bin sits in a box, never run, and the
+// local login is still published and linked.
+func TestCodexReconcileIgnoresPlantedHelpers(t *testing.T) {
+	needCodexReconciler(t)
+	_, cat := testCat(t)
+	base, home, plant := physTempDir(t), physTempDir(t), t.TempDir()
+	decoyLog := filepath.Join(plant, "decoy.log")
+	for _, name := range []string{"jq", "cp", "flock", "mv", "chmod", "cmp", "mktemp"} {
+		decoy := "#!/bin/sh\necho \"${0##*/} $*\" >> " + strconv.Quote(decoyLog) + "\nexit 99\n"
+		if err := os.WriteFile(filepath.Join(plant, name), []byte(decoy), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	local := `{"auth_mode":"chatgpt","tokens":{"access_token":"a","refresh_token":"r"},"last_refresh":"2026-07-21T00:00:00Z"}`
+	cred := filepath.Join(home, "auth.json")
+	if err := os.WriteFile(cred, []byte(local), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reconcile := stageReconcile(t, cat, os.Getenv("PATH"))
+	cmd := exec.Command("bash", reconcile, "test_planted_helpers")
+	cmd.Env = codexReconcileEnv(t, cat, base, home, "PATH="+plant+":"+os.Getenv("PATH"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("reconcile failed: %v\n%s", err, out)
+	}
+	if b, err := os.ReadFile(decoyLog); err == nil {
+		t.Fatalf("a helper planted on the inherited PATH ran: %q", b)
+	}
+	shared := filepath.Join(base, "codex", "auth.json")
+	isRegularWith(t, shared, local)
+	if got, err := os.Readlink(cred); err != nil || got != shared {
+		t.Fatalf("the local login was not linked to the published one: %q (%v)", got, err)
+	}
 }
 
 // needCodexReconciler gates every test that runs reconcile.sh on the tools
@@ -156,7 +203,7 @@ func needCodexFlock(t *testing.T) {
 func TestCodexSharedAuthDiagnosticsAreGatedAndRedacted(t *testing.T) {
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "firstrun.sh")
-	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	reconcile := stageReconcile(t, cat, os.Getenv("PATH"))
 	base, home := physTempDir(t), physTempDir(t)
 	shared := filepath.Join(base, "codex", "auth.json")
 	cred := filepath.Join(home, "auth.json")
@@ -235,7 +282,7 @@ func TestCodexSharedAuthHookIgnoresPlantedHelpers(t *testing.T) {
 	}
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "firstrun.sh")
-	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	reconcile := stageReconcile(t, cat, os.Getenv("PATH"))
 	base, home, bin := physTempDir(t), physTempDir(t), t.TempDir()
 	decoyLog := filepath.Join(bin, "decoy.log")
 	for _, name := range []string{"timeout", "bash"} {
@@ -408,7 +455,7 @@ func TestCodexSharedAuthWhitespaceTokensCannotReplaceShared(t *testing.T) {
 
 func TestCodexSharedAuthPublishFailureReturnsNonzero(t *testing.T) {
 	_, cat := testCat(t)
-	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	reconcile := stageReconcile(t, cat, os.Getenv("PATH"))
 	base, home := physTempDir(t), physTempDir(t)
 	identity := filepath.Join(base, "codex")
 	if err := os.MkdirAll(identity, 0o755); err != nil {
@@ -519,7 +566,7 @@ func TestCodexSharedAuthAssertLinkHardening(t *testing.T) {
 	// publish over the planted link, the local login and the decoy as they
 	// were.
 	_, cat := testCat(t)
-	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	reconcile := stageReconcile(t, cat, os.Getenv("PATH"))
 	base3, home3 := physTempDir(t), physTempDir(t)
 	identity3 := filepath.Join(base3, "codex")
 	shared3 := filepath.Join(identity3, "auth.json")
@@ -595,7 +642,7 @@ func TestCodexSharedAuthConcurrentPromotesKeepNewest(t *testing.T) {
 	needCodexFlock(t)
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "firstrun.sh")
-	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	reconcile := stageReconcile(t, cat, os.Getenv("PATH"))
 	base, homeOld, homeNew := physTempDir(t), physTempDir(t), physTempDir(t)
 	oldAuth := `{"auth_mode":"chatgpt","tokens":{"access_token":"old","refresh_token":"old-refresh"},"last_refresh":"2026-07-20T00:00:00Z"}`
 	newAuth := `{"auth_mode":"chatgpt","tokens":{"access_token":"new","refresh_token":"new-refresh"},"last_refresh":"2026-07-21T00:00:00Z"}`
@@ -643,7 +690,7 @@ func TestCodexSharedAuthConcurrentPromotesKeepNewest(t *testing.T) {
 func TestCodexSharedAuthLockTimeoutSkipsReconciliation(t *testing.T) {
 	needCodexFlock(t)
 	_, cat := testCat(t)
-	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	reconcile := stageReconcile(t, cat, os.Getenv("PATH"))
 	base, home := physTempDir(t), physTempDir(t)
 	identity := filepath.Join(base, "codex")
 	if err := os.MkdirAll(identity, 0o755); err != nil {
@@ -717,7 +764,7 @@ func TestCodexSharedAuthNonRegularLockIsReplaced(t *testing.T) {
 	needCodexFlock(t)
 	testtools.NeedTool(t, "mkfifo")
 	_, cat := testCat(t)
-	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	reconcile := stageReconcile(t, cat, os.Getenv("PATH"))
 
 	for name, plant := range map[string]func(t *testing.T, lock, victim string){
 		"fifo": func(t *testing.T, lock, _ string) {
@@ -854,7 +901,6 @@ func TestCodexSharedAuthPublishRetainsDisplacedShared(t *testing.T) {
 func TestCodexSharedAuthPublishLeavesNothingInARacedInDirectory(t *testing.T) {
 	testtools.NeedTool(t, "bash", "jq")
 	_, cat := testCat(t)
-	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
 	realCp, err := exec.LookPath("cp")
 	if err != nil {
 		t.Skip("no cp on PATH")
@@ -889,8 +935,11 @@ func TestCodexSharedAuthPublishLeavesNothingInARacedInDirectory(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(bin, "cp"), []byte(stub), 0o755); err != nil {
 				t.Fatal(err)
 			}
+			// The stub cp leads the reconciler's pinned PATH: its helpers
+			// never come from the inherited one.
+			reconcile := stageReconcile(t, cat, bin+":"+os.Getenv("PATH"))
 			cmd := exec.Command("bash", reconcile, "test_raced_in_directory")
-			cmd.Env = codexReconcileEnv(t, cat, base, home, "PATH="+bin+":"+os.Getenv("PATH"))
+			cmd.Env = codexReconcileEnv(t, cat, base, home)
 			out, err := cmd.CombinedOutput()
 			if err == nil {
 				t.Fatalf("publishing into a raced-in directory must be refused, got success:\n%s", out)
@@ -1130,7 +1179,7 @@ func TestCodexLoginHookPublishesSuccessfulDeviceLogin(t *testing.T) {
 	needCodexReconciler(t)
 	_, cat := testCat(t)
 	loginHook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
-	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	reconcile := stageReconcile(t, cat, os.Getenv("PATH"))
 	base, home, bin := physTempDir(t), physTempDir(t), physTempDir(t)
 	shared := filepath.Join(base, "codex", "auth.json")
 	freshAuth := `{"auth_mode":"chatgpt","tokens":{"access_token":"fresh","refresh_token":"fresh-refresh"},"last_refresh":"2026-07-21T00:00:00Z"}`
@@ -1390,7 +1439,7 @@ func TestCodexLoginHookDetachesSharedLinkBeforeDeviceLogin(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	reconcile := stageReconcile(t, cat, os.Getenv("PATH"))
 	cmd := exec.Command("bash", testHook)
 	cmd.Env = codexLoginHookEnv(t, cat, "PATH="+bin+":/usr/bin:/bin", "CODEX_HOME="+home,
 		"BYRE_IDENTITY_BASE="+base, "BYRE_CODEX_AUTH_RECONCILE="+reconcile)
@@ -1604,7 +1653,7 @@ func TestCodexLoginHookRestoresSharedLinkAfterFailedLogin(t *testing.T) {
 // exit, nothing at the link's target, the local login exactly as it was.
 func TestCodexSharedAuthRefusesSymlinkedIdentityDir(t *testing.T) {
 	_, cat := testCat(t)
-	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	reconcile := stageReconcile(t, cat, os.Getenv("PATH"))
 	local := `{"auth_mode":"chatgpt","tokens":{"access_token":"l","refresh_token":"lr"},"last_refresh":"2026-07-21T00:00:00Z"}`
 	for _, tc := range []struct {
 		name  string

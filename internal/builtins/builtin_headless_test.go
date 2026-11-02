@@ -64,12 +64,13 @@ func TestBundledHeadlessCommandsShip(t *testing.T) {
 // standing in for its descriptors. The inherited PATH is exactly bin:tools,
 // so the box's own claude or codex can never answer in place of the stub, and
 // the environment is built from scratch, so the suite box's real credentials
-// never reach a case. stage points a script's pinned PATH and adapter path at
-// sys.
+// never reach a case. stage points the script's and the adapter's pinned PATH
+// and absolute paths at sys. The stubs run their own tools from the tools dir
+// (STUB_TOOLS), so a decoy planted in bin catches the scripts, not the stubs.
 type headlessBox struct {
 	t              *testing.T
 	dir, bin, tmp  string
-	sys            string
+	sys, tools     string
 	task, result   string
 	status, record string
 	timeoutLog     string
@@ -89,6 +90,7 @@ func newHeadlessBox(t *testing.T) *headlessBox {
 		t: t, dir: dir,
 		bin:        filepath.Join(dir, "bin"),
 		sys:        filepath.Join(dir, "sys"),
+		tools:      filepath.Join(dir, "tools"),
 		tmp:        filepath.Join(dir, "tmp"),
 		task:       filepath.Join(dir, "run", "task.md"),
 		result:     filepath.Join(dir, "run", "result.md"),
@@ -97,7 +99,7 @@ func newHeadlessBox(t *testing.T) *headlessBox {
 		timeoutLog: filepath.Join(dir, "timeout.log"),
 		env:        map[string]string{},
 	}
-	tools := filepath.Join(dir, "tools")
+	tools := b.tools
 	for _, d := range []string{b.bin, tools, b.sys, b.tmp, b.record, filepath.Dir(b.task), filepath.Join(dir, "home")} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
@@ -158,6 +160,7 @@ func newHeadlessBox(t *testing.T) *headlessBox {
 		"BYRE_RUN_RESULT_FILE": "/dev/fd/5",
 		"BYRE_RUN_STATUS_FILE": "/dev/fd/6",
 		"STUB_RECORD":          b.record,
+		"STUB_TOOLS":           tools,
 	}
 	return b
 }
@@ -182,36 +185,40 @@ func (b *headlessBox) writeSys(name, body string) {
 // helpers, the image's system directories.
 const headlessSystemPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-// stage installs a skill's real launch adapter in the stand-in system
-// directory under its in-box name, and returns a copy of the headless script
-// whose pinned PATH and absolute adapter path name that directory. Each is
-// replaced exactly once, so a script that stops pinning either fails here.
-func (b *headlessBox) stage(script, adapterSrc, adapter string) string {
-	b.t.Helper()
-	body, err := os.ReadFile(adapterSrc)
+// stagePinned copies a script that pins its helpers' PATH to dst, the pinned
+// PATH replaced by pin and then each from/to pair in rewrites applied. Every
+// replacement must match exactly once, so a script that stops pinning, or
+// stops naming a program by the absolute path a rewrite targets, fails here.
+func stagePinned(t *testing.T, src, dst, pin string, rewrites ...string) string {
+	t.Helper()
+	raw, err := os.ReadFile(src)
 	if err != nil {
-		b.t.Fatal(err)
+		t.Fatal(err)
 	}
-	b.writeSys(adapter, string(body))
-	raw, err := os.ReadFile(script)
-	if err != nil {
-		b.t.Fatal(err)
-	}
-	src := string(raw)
-	for from, to := range map[string]string{
-		"\nPATH=" + headlessSystemPath + "\n": "\nPATH=" + b.sys + "\n",
-		"=/usr/local/bin/" + adapter + "\n":   "=" + filepath.Join(b.sys, adapter) + "\n",
-	} {
-		if n := strings.Count(src, from); n != 1 {
-			b.t.Fatalf("%s: %q appears %d times, want once", script, strings.TrimSpace(from), n)
+	body := string(raw)
+	pairs := append([]string{"\nPATH=" + headlessSystemPath + "\n", "\nPATH=" + pin + "\n"}, rewrites...)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		if n := strings.Count(body, pairs[i]); n != 1 {
+			t.Fatalf("%s: %q appears %d times, want once", src, strings.TrimSpace(pairs[i]), n)
 		}
-		src = strings.Replace(src, from, to, 1)
+		body = strings.Replace(body, pairs[i], pairs[i+1], 1)
 	}
-	staged := filepath.Join(b.dir, filepath.Base(script))
-	if err := os.WriteFile(staged, []byte(src), 0o755); err != nil {
-		b.t.Fatal(err)
+	if err := os.WriteFile(dst, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	return staged
+	return dst
+}
+
+// stage installs a skill's real launch adapter in the stand-in system
+// directory under its in-box name, its pinned PATH naming that directory, and
+// returns a copy of the headless script whose pinned PATH and absolute adapter
+// path name it too. rewrites apply to both files: a program both name by
+// absolute path.
+func (b *headlessBox) stage(script, adapterSrc, adapter string, rewrites ...string) string {
+	b.t.Helper()
+	stagePinned(b.t, adapterSrc, filepath.Join(b.sys, adapter), b.sys, rewrites...)
+	return stagePinned(b.t, script, filepath.Join(b.dir, filepath.Base(script)), b.sys,
+		append([]string{"=/usr/local/bin/" + adapter + "\n", "=" + filepath.Join(b.sys, adapter) + "\n"}, rewrites...)...)
 }
 
 // agentCmd is how a script's bounded probe names an agent command to
@@ -318,11 +325,16 @@ const stubHeldCheck = `for n in 5 6; do [ ! -e /dev/fd/$n ] || echo "${0##*/}: f
 [ -z "${BYRE_RUN_STATUS_FILE+x}" ] || echo "${0##*/}: BYRE_RUN_STATUS_FILE" >>"$STUB_RECORD/held"
 `
 
+// stubAgentStart opens every stub agent: the held check, then the PATH it was
+// given set aside for the run arm to record, and its own tools taken from the
+// tools dir, so a decoy planted on the inherited PATH answers only a lookup
+// the scripts or adapters made.
+const stubAgentStart = "#!/bin/sh\n" + stubHeldCheck + "stub_path=$PATH PATH=$STUB_TOOLS\n"
+
 // The stub agent's run arm: argv NUL-separated, the PATH it was given, stdin
-// byte-exact, then the
-// canned stream on stdout and the canned exit status.
+// byte-exact, then the canned stream on stdout and the canned exit status.
 const stubRunArm = `for a in "$@"; do printf '%s\0' "$a"; done >"$STUB_RECORD/argv"
-printf '%s' "$PATH" >"$STUB_RECORD/path"
+printf '%s' "$stub_path" >"$STUB_RECORD/path"
 cat >"$STUB_RECORD/stdin"
 [ -z "${STUB_STREAM:-}" ] || cat "$STUB_STREAM"
 exit "${STUB_RC:-0}"
@@ -330,8 +342,7 @@ exit "${STUB_RC:-0}"
 
 // stubClaude answers `--version`, `auth status` per STUB_AUTH (in / out /
 // hang -- ignoring TERM, so only a KILL ends it), and records everything else as the run.
-const stubClaude = `#!/bin/sh
-` + stubHeldCheck + `case "$1" in
+const stubClaude = stubAgentStart + `case "$1" in
 --version) echo "9.9.9 (Claude Code)"; exit 0 ;;
 auth)
   case "${STUB_AUTH:-out}" in
@@ -594,15 +605,19 @@ func TestClaudeHeadlessBackendAbsentIs15(t *testing.T) {
 }
 
 // The inherited PATH starts with the agent-writable ~/.local/bin, so a
-// helper the scripts found there would run inside the verdict. Decoys of
-// timeout, env, jq, tee and the launch adapter planted first on it never run,
-// the verdict and answer are unchanged, the system timeout is the one that
-// bounds the probes -- and the agent itself still sees the inherited PATH.
+// helper the scripts or the launch adapters found there would run inside the
+// verdict, or decide what the agent is told. Decoys of every helper either
+// one runs, of the launch adapter, and of grok (which is named by its
+// root-owned link) planted first on it never run; the verdict and answer are
+// unchanged, the system timeout is the one that bounds the probes -- and the
+// agent itself still sees the inherited PATH. The context is over the
+// adapters' argv budget, so their truncation chain runs too.
 func TestHeadlessHelpersIgnoreTheInheritedPath(t *testing.T) {
 	type agentCase struct {
 		name    string
 		adapter string
 		setup   func(t *testing.T) (*headlessBox, string)
+		probe   func(b *headlessBox) string
 	}
 	for _, c := range []agentCase{
 		{"claude", "byre-claude-launch", func(t *testing.T) (*headlessBox, string) {
@@ -610,24 +625,30 @@ func TestHeadlessHelpersIgnoreTheInheritedPath(t *testing.T) {
 			b.env["ANTHROPIC_API_KEY"] = "sk-test"
 			b.stream(claudeOK)
 			return b, script
-		}},
+		}, func(*headlessBox) string { return "claude --version" }},
 		{"codex", "byre-codex-mcp-launch", func(t *testing.T) (*headlessBox, string) {
 			b, script := newCodexBox(t)
 			b.env["OPENAI_API_KEY"] = "sk-test"
 			b.env["STUB_ANSWER"] = "pong"
 			b.stream(codexMessage, codexDone)
 			return b, script
-		}},
+		}, func(*headlessBox) string { return "codex --version" }},
 		{"grok", "byre-grok-launch", func(t *testing.T) (*headlessBox, string) {
 			b, script := newGrokBox(t)
 			b.env["XAI_API_KEY"] = "xai-test"
 			b.stream(grokOK)
 			return b, script
-		}},
+		}, func(b *headlessBox) string { return b.grokBin() + " --version" }},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			b, script := c.setup(t)
-			for _, name := range []string{"timeout", "env", "jq", "tee", c.adapter} {
+			big := filepath.Join(b.dir, "big-context.md")
+			if err := os.WriteFile(big, []byte(strings.Repeat("é", 70_000)), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			b.env["BYRE_AGENT_CONTEXT"] = big
+			for _, name := range []string{"timeout", "env", "jq", "tee", "cat", "head", "wc", "iconv",
+				"mktemp", "mv", "rm", "cp", "flock", "grok", c.adapter} {
 				b.writeExec(name, "#!/bin/sh\necho \"${0##*/}\" >>\"$STUB_RECORD/decoy\"\nexit 99\n")
 			}
 			code, _, stderr := b.run(script)
@@ -640,7 +661,7 @@ func TestHeadlessHelpersIgnoreTheInheritedPath(t *testing.T) {
 			if got := b.file(b.result); got != "pong" {
 				t.Fatalf("answer = %q, want pong", got)
 			}
-			if !strings.Contains(b.file(b.timeoutLog), " "+b.agentCmd(c.name+" --version")+"\n") {
+			if !strings.Contains(b.file(b.timeoutLog), " "+b.agentCmd(c.probe(b))+"\n") {
 				t.Fatalf("the system timeout did not bound the version probe: %q", b.file(b.timeoutLog))
 			}
 			if got, _ := b.recorded("path"); got != b.env["PATH"] {

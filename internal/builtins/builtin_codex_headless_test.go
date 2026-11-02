@@ -14,8 +14,7 @@ import (
 // CODEX_HOME/auth.json the way codex does; and records everything else as the
 // run, including what the run's CODEX_HOME held, and writes STUB_ANSWER to
 // the --output-last-message path.
-const stubCodex = `#!/bin/sh
-` + stubHeldCheck + `case "$1" in
+const stubCodex = stubAgentStart + `case "$1" in
 --version) echo "codex-cli 9.9.9"; exit 0 ;;
 login)
   case "$2" in

@@ -37,7 +37,8 @@ run_child() { "$@" 5>&- 6>&-; }
 # planted timeout voids every bound, a planted jq judges the answer. The
 # inherited PATH is codex's own (codex itself may live in ~/.local/bin):
 # codex's login and probes and its launch adapter run with it restored
-# through env, the adapter named by its absolute path.
+# through env, the adapter named by its absolute path. The adapter treats the
+# PATH it is given as the agent's, pins its own, and hands this one to codex.
 agent_path=${PATH-}
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH

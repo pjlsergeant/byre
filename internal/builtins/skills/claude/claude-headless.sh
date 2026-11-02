@@ -35,7 +35,9 @@ run_child() { "$@" 5>&- 6>&-; }
 # chassis ran, and a helper found there would run inside the verdict -- a
 # planted timeout voids every bound, a planted jq judges the answer. The
 # inherited PATH is claude's own: claude's probes and its launch adapter run
-# with it restored through env, the adapter named by its absolute path.
+# with it restored through env, the adapter named by its absolute path. The
+# adapter treats the PATH it is given as the agent's, pins its own, and hands
+# this one to claude.
 agent_path=${PATH-}
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH

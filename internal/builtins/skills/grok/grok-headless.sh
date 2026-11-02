@@ -39,19 +39,23 @@ run_child() { "$@" 5>&- 6>&-; }
 # agent-writable ~/.local/bin, which repository code could write before the
 # chassis ran, and a helper found there would run inside the verdict -- a
 # planted timeout voids the version probe's bound, a planted jq judges the
-# answer. The inherited PATH is grok's own (grok itself lives in
-# ~/.local/bin): grok's probe and its launch adapter run with it restored
-# through env, the adapter named by its absolute path.
+# answer. grok is named by the root-owned link the skill installs, as the
+# adapter names it, so a grok planted on the inherited PATH never answers in
+# its place. The inherited PATH is the one everything grok starts needs:
+# grok's probe and its launch adapter run with it restored through env, both
+# named by absolute path. The adapter treats the PATH it is given as the
+# agent's, pins its own, and hands this one to grok.
 agent_path=${PATH-}
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
+grok=/usr/local/bin/grok
 launch=/usr/local/bin/byre-grok-launch
 
 say() { printf 'byre-grok-headless: %s\n' "$*" >&2; }
 
 missing=""
-if ! (PATH=$agent_path && command -v grok) >/dev/null 2>&1; then
-  missing=grok
+if [ ! -x "$grok" ]; then
+  missing=$grok
 elif [ ! -x "$launch" ]; then
   missing=$launch
 elif ! command -v jq >/dev/null 2>&1; then
@@ -86,7 +90,7 @@ else
   no_credential
 fi
 
-version=$(run_child timeout -k 5 10 env PATH="$agent_path" grok --version </dev/null 2>/dev/null | run_child head -n 1)
+version=$(run_child timeout -k 5 10 env PATH="$agent_path" "$grok" --version </dev/null 2>/dev/null | run_child head -n 1)
 if [ -n "$version" ]; then
   printf 'agent_version=%s\n' "$version" >>"$status_file"
 fi

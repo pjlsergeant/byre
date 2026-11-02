@@ -11,8 +11,7 @@ import (
 
 // stubGrok answers `--version` per STUB_VERSION (ok / hang -- ignoring TERM,
 // so only a KILL ends it) and records everything else as the run.
-const stubGrok = `#!/bin/sh
-` + stubHeldCheck + `case "$1" in
+const stubGrok = stubAgentStart + `case "$1" in
 --version)
   [ "${STUB_VERSION:-ok}" = hang ] && { trap '' TERM; exec sleep 60; }
   echo "grok 9.9.9"; exit 0 ;;
@@ -26,19 +25,25 @@ const (
 	grokPretty = "{\n  \"text\": \"pong\",\n  \"stopReason\": \"end_turn\",\n  \"usage\": {\n    \"total_tokens\": 3\n  }\n}"
 )
 
-// newGrokBox stages the stub, the real adapter, and an empty GROK_HOME.
+// newGrokBox stages the stub, the real adapter, and an empty GROK_HOME. The
+// stub stands in the system directory: grok is named by the root-owned link
+// /usr/local/bin/grok, never looked up on the inherited PATH.
 func newGrokBox(t *testing.T) (*headlessBox, string) {
 	t.Helper()
 	b := newHeadlessBox(t)
-	b.writeExec("grok", stubGrok)
+	b.writeSys("grok", stubGrok)
 	home := filepath.Join(b.dir, "grok-home")
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	b.env["GROK_HOME"] = home
 	return b, b.stage(filepath.Join("skills", "grok", "grok-headless.sh"),
-		filepath.Join("skills", "grok", "grok-launch.sh"), "byre-grok-launch")
+		filepath.Join("skills", "grok", "grok-launch.sh"), "byre-grok-launch",
+		"=/usr/local/bin/grok\n", "="+b.grokBin()+"\n")
 }
+
+// grokBin is the stand-in for /usr/local/bin/grok.
+func (b *headlessBox) grokBin() string { return filepath.Join(b.sys, "grok") }
 
 // The run argv is a contract with the grok CLI: the adapter is what runs (its
 // context flag comes first), then a single --prompt-file turn naming the task
@@ -72,7 +77,7 @@ func TestGrokHeadlessRunsTheAdapter(t *testing.T) {
 	if st := b.file(b.status); !strings.Contains(st, "agent_version=grok 9.9.9\n") || strings.Contains(st, "backend_exit") {
 		t.Fatalf("status = %q", st)
 	}
-	if !strings.Contains(b.file(b.timeoutLog), "-k 5 10 "+b.agentCmd("grok --version")+"\n") {
+	if !strings.Contains(b.file(b.timeoutLog), "-k 5 10 "+b.agentCmd(b.grokBin()+" --version")+"\n") {
 		t.Fatalf("the version probe is not bounded at 10 s with a KILL follow-up: %q", b.file(b.timeoutLog))
 	}
 	if ents, _ := os.ReadDir(b.tmp); len(ents) != 0 {
@@ -233,14 +238,14 @@ func TestGrokHeadlessCredentialPreflight(t *testing.T) {
 		if st := b.file(b.status); strings.Contains(st, "agent_version") {
 			t.Fatalf("a hung version probe has no version: %q", st)
 		}
-		if !strings.Contains(b.file(b.timeoutLog), "-k 5 10 "+b.agentCmd("grok --version")+"\n") {
+		if !strings.Contains(b.file(b.timeoutLog), "-k 5 10 "+b.agentCmd(b.grokBin()+" --version")+"\n") {
 			t.Fatalf("the version probe is not bounded: %q", b.file(b.timeoutLog))
 		}
 	})
 }
 
 func TestGrokHeadlessBackendAbsentIs15(t *testing.T) {
-	for _, gone := range []string{filepath.Join("bin", "grok"), filepath.Join("sys", "byre-grok-launch")} {
+	for _, gone := range []string{filepath.Join("sys", "grok"), filepath.Join("sys", "byre-grok-launch")} {
 		b, script := newGrokBox(t)
 		b.env["XAI_API_KEY"] = "xai-test"
 		if err := os.Remove(filepath.Join(b.dir, gone)); err != nil {

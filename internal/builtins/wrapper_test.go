@@ -26,6 +26,24 @@ func writeTestContext(t *testing.T, dir string) string {
 	return p
 }
 
+// stageCodexAdapter copies the real codex adapter into dir, its pinned helper
+// PATH set to the suite's own: on a macOS host jq and iconv live outside the
+// image's system directories.
+func stageCodexAdapter(t *testing.T, dir string) string {
+	t.Helper()
+	return stagePinned(t, filepath.Join("skills", "codex", "codex-mcp-launch.sh"),
+		filepath.Join(dir, "codex-mcp-launch.sh"), os.Getenv("PATH"))
+}
+
+// stageGrokAdapter is stageCodexAdapter for grok, with the grok in dir
+// standing in for the root-owned /usr/local/bin/grok the adapter names.
+func stageGrokAdapter(t *testing.T, dir string) string {
+	t.Helper()
+	return stagePinned(t, filepath.Join("skills", "grok", "grok-launch.sh"),
+		filepath.Join(dir, "grok-launch.sh"), os.Getenv("PATH"),
+		"=/usr/local/bin/grok\n", "="+filepath.Join(dir, "grok")+"\n")
+}
+
 // The codex MCP adapter is a shell wrapper deriving `-c` overrides from the
 // canonical mcp.json. This drives the REAL script against the REAL
 // renderer's output (the two halves of the contract), with a stub codex
@@ -59,7 +77,7 @@ func TestCodexMCPLaunchWrapperDerivesFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	script := filepath.Join("skills", "codex", "codex-mcp-launch.sh")
+	script := stageCodexAdapter(t, dir)
 	cmd := exec.Command("bash", script, "--dangerously-bypass-approvals-and-sandbox")
 	cmd.Env = append(os.Environ(),
 		"BYRE_MCP_CONFIG="+mcpPath,
@@ -252,7 +270,7 @@ func TestCodexMCPLaunchWrapperEmptySet(t *testing.T) {
 	if err := os.WriteFile(mcpPath, config.MCPConfigJSON(nil), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("bash", filepath.Join("skills", "codex", "codex-mcp-launch.sh"), "--flag")
+	cmd := exec.Command("bash", stageCodexAdapter(t, dir), "--flag")
 	cmd.Env = append(os.Environ(), "BYRE_MCP_CONFIG="+mcpPath, "BYRE_AGENT_CONTEXT="+ctxPath, "BYRE_SESSION_CONTEXT=", "PATH="+dir+":"+os.Getenv("PATH"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("wrapper failed on the empty set: %v\n%s", err, out)
@@ -317,7 +335,7 @@ func TestGrokLaunchWrapperInjectsAndCaps(t *testing.T) {
 
 	run := func(env ...string) []string {
 		t.Helper()
-		cmd := exec.Command("bash", filepath.Join("skills", "grok", "grok-launch.sh"), "--always-approve")
+		cmd := exec.Command("bash", stageGrokAdapter(t, dir), "--always-approve")
 		cmd.Env = append(append([]string{}, os.Environ()...), append(env, "PATH="+dir+":"+os.Getenv("PATH"))...)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("wrapper failed: %v\n%s", err, out)
@@ -373,7 +391,7 @@ func TestCodexLaunchWrapperCapsContext(t *testing.T) {
 	if err := os.WriteFile(big, []byte(strings.Repeat("x", 150_000)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("bash", filepath.Join("skills", "codex", "codex-mcp-launch.sh"), "--flag")
+	cmd := exec.Command("bash", stageCodexAdapter(t, dir), "--flag")
 	cmd.Env = append(os.Environ(), "BYRE_MCP_CONFIG="+mcpPath, "BYRE_AGENT_CONTEXT="+big, "BYRE_SESSION_CONTEXT=", "PATH="+dir+":"+os.Getenv("PATH"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("wrapper failed: %v\n%s", err, out)
@@ -441,7 +459,7 @@ func TestGrokLaunchWrapperCapIsByteAccurateAndKeepsSession(t *testing.T) {
 	if err := os.WriteFile(big, []byte(strings.Repeat("é", 70_000)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("bash", filepath.Join("skills", "grok", "grok-launch.sh"), "--always-approve")
+	cmd := exec.Command("bash", stageGrokAdapter(t, dir), "--always-approve")
 	cmd.Env = append(os.Environ(),
 		"BYRE_AGENT_CONTEXT="+big, "BYRE_SESSION_CONTEXT=\n\nsession survives",
 		"PATH="+dir+":"+os.Getenv("PATH"))
@@ -470,7 +488,7 @@ func TestGrokLaunchWrapperCapIsByteAccurateAndKeepsSession(t *testing.T) {
 
 	// Absurd corner: a session larger than the whole budget truncates too —
 	// degrade, never a dead exec — and the total stays under the wire limit.
-	cmd = exec.Command("bash", filepath.Join("skills", "grok", "grok-launch.sh"), "--always-approve")
+	cmd = exec.Command("bash", stageGrokAdapter(t, dir), "--always-approve")
 	cmd.Env = append(os.Environ(),
 		"BYRE_AGENT_CONTEXT="+big,
 		"BYRE_SESSION_CONTEXT=\n\n"+strings.Repeat("s", 120_000),
@@ -520,7 +538,7 @@ func TestCodexLaunchWrapperCapIsByteAccurateAndKeepsSession(t *testing.T) {
 	if err := os.WriteFile(big, []byte(strings.Repeat("é", 70_000)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("bash", filepath.Join("skills", "codex", "codex-mcp-launch.sh"), "--flag")
+	cmd := exec.Command("bash", stageCodexAdapter(t, dir), "--flag")
 	cmd.Env = append(os.Environ(),
 		"BYRE_MCP_CONFIG="+mcpPath, "BYRE_AGENT_CONTEXT="+big,
 		"BYRE_SESSION_CONTEXT=\n\nsession survives", "PATH="+dir+":"+os.Getenv("PATH"))
@@ -562,14 +580,10 @@ func TestClaudeLaunchWrapperMergesContextIntoOneFlag(t *testing.T) {
 	dir := t.TempDir()
 	ctxPath := writeTestContext(t, dir)
 	// The real wrapper goes on PATH under its in-box name, so the resolved
-	// command string runs verbatim.
-	wrapper, err := os.ReadFile(filepath.Join("skills", "claude", "claude-launch.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "byre-claude-launch"), wrapper, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// command string runs verbatim. Its pinned helper PATH leads with dir,
+	// where the mv shim below plants its race.
+	stagePinned(t, filepath.Join("skills", "claude", "claude-launch.sh"),
+		filepath.Join(dir, "byre-claude-launch"), dir+":"+os.Getenv("PATH"))
 	argvFile := filepath.Join(dir, "argv")
 	stub := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\0' \"$a\"; done > " + argvFile + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(stub), 0o755); err != nil {
@@ -718,5 +732,76 @@ func TestClaudeLaunchWrapperMergesContextIntoOneFlag(t *testing.T) {
 	}
 	if file, got := readInjected(run("\n\nsession note", dir, "BYRE_TEST_PLANT="+mergePath)); file != ctxPath || got != "test context\n" {
 		t.Errorf("lost probe race must degrade to the baked file, injected %q content %q", file, got)
+	}
+}
+
+// Each launch adapter serves the interactive session and every headless run,
+// and the inherited PATH it is started with leads with the agent-writable
+// ~/.local/bin, which repository code can write before the adapter runs.
+// Decoys of the adapter's helpers -- and of grok, which the grok adapter names
+// by its root-owned link -- planted first on that PATH never run: the jq that
+// writes codex's MCP commands and the cat/head/wc/iconv chain that builds the
+// context come from the pinned PATH. The agent CLI still gets the inherited
+// PATH whole, because everything it starts needs it.
+func TestLaunchAdaptersIgnoreTheInheritedPath(t *testing.T) {
+	testtools.NeedTool(t, "bash", "jq", "env")
+	for _, c := range []struct {
+		agent, script string
+	}{
+		{"claude", "claude-launch.sh"},
+		{"codex", "codex-mcp-launch.sh"},
+		{"grok", "grok-launch.sh"},
+	} {
+		t.Run(c.agent, func(t *testing.T) {
+			dir, plant := t.TempDir(), t.TempDir()
+			decoyLog := filepath.Join(dir, "decoy.log")
+			for _, name := range []string{"cat", "jq", "head", "wc", "iconv", "mktemp", "mv", "rm", "env", "grok"} {
+				decoy := "#!/bin/sh\necho \"${0##*/}\" >>'" + decoyLog + "'\nexit 99\n"
+				if err := os.WriteFile(filepath.Join(plant, name), []byte(decoy), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			stub := "#!/bin/sh\nprintf '%s' \"$PATH\" >'" + filepath.Join(dir, "path") + "'\n" +
+				"for a in \"$@\"; do printf '%s\\0' \"$a\"; done >'" + filepath.Join(dir, "argv") + "'\n"
+			if err := os.WriteFile(filepath.Join(dir, c.agent), []byte(stub), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			// Over the argv budget, so the codex and grok truncation chains run.
+			big := filepath.Join(dir, "big.md")
+			if err := os.WriteFile(big, []byte(strings.Repeat("é", 70_000)), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			mcpPath := filepath.Join(dir, "mcp.json")
+			mcp := config.MCPConfigJSON([]config.MCP{{Name: "github", Command: []string{"gh-mcp", "stdio"}}})
+			if err := os.WriteFile(mcpPath, mcp, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var rewrites []string
+			if c.agent == "grok" {
+				rewrites = []string{"=/usr/local/bin/grok\n", "=" + filepath.Join(dir, "grok") + "\n"}
+			}
+			script := stagePinned(t, filepath.Join("skills", c.agent, c.script),
+				filepath.Join(t.TempDir(), c.script), os.Getenv("PATH"), rewrites...)
+			inherited := plant + ":" + dir + ":" + os.Getenv("PATH")
+			cmd := exec.Command("bash", script, "--flag")
+			cmd.Env = append(os.Environ(), "BYRE_MCP_CONFIG="+mcpPath, "BYRE_AGENT_CONTEXT="+big,
+				"BYRE_SESSION_CONTEXT=\n\nsession note", "TMPDIR="+t.TempDir(), "PATH="+inherited)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("adapter failed: %v\n%s", err, out)
+			}
+			if ran, err := os.ReadFile(decoyLog); err == nil {
+				t.Fatalf("a helper planted on the inherited PATH ran: %q", ran)
+			}
+			if got, err := os.ReadFile(filepath.Join(dir, "path")); err != nil || string(got) != inherited {
+				t.Fatalf("the %s stub ran with PATH %q (%v), want the inherited %q", c.agent, got, err, inherited)
+			}
+			argv, err := os.ReadFile(filepath.Join(dir, "argv"))
+			if err != nil || !strings.HasSuffix(string(argv), "--flag\x00") {
+				t.Fatalf("argv = %q (%v), want the adapter's flags then --flag", argv, err)
+			}
+			if c.agent == "codex" && !strings.Contains(string(argv), "mcp_servers.github.command=\"gh-mcp\"\x00") {
+				t.Fatalf("the MCP flags did not come from the real jq: %q", argv)
+			}
+		})
 	}
 }
