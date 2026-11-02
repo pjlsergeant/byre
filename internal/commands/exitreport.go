@@ -521,28 +521,36 @@ func exitDisplay(paths project.Paths, p string) string {
 
 // reportExit prints what changed between two snapshots. Silent unless something
 // worth saying changed -- which is what makes it worth reading when it appears.
+// It returns the lines exactly as printed (nil when silent), so a caller that
+// reports the session in another form carries the same report.
 //
 // Attribution is passive ("these changed"), never "the agent changed": the
 // common git dir is shared with concurrent sibling worktree sessions, and the
 // user's own host-side git can write it mid-session. reportSelfEditChanges
 // makes the same choice for the store, for the same reason.
-func reportExit(w io.Writer, before, after exitSnapshot) {
+func reportExit(w io.Writer, before, after exitSnapshot) []string {
 	var lines []string
 	lines = append(lines, diffConfig(before, after)...)
 	lines = append(lines, diffHooks(before, after)...)
 	lines = append(lines, diffEnv(before, after)...)
 	if len(lines) == 0 {
-		return
+		return nil
 	}
-	fmt.Fprintln(w, "⚠ we thought you should know -- a few things changed during this run")
-	fmt.Fprintln(w, "  (byre checks a handful of places, not everything):")
+	printed := []string{
+		"⚠ we thought you should know -- a few things changed during this run",
+		"  (byre checks a handful of places, not everything):",
+	}
 	// Every line names a path or a git config value the session wrote, so the
 	// content is the agent's to choose; the strip lands on the one funnel all
 	// three diffs pour through, and keeps a value with an embedded newline from
 	// inventing extra report lines.
 	for _, l := range lines {
-		fmt.Fprintln(w, "   "+packages.EscapeTerminal(l))
+		printed = append(printed, "   "+packages.EscapeTerminal(l))
 	}
+	for _, l := range printed {
+		fmt.Fprintln(w, l)
+	}
+	return printed
 }
 
 // diffHooks names every hook added, changed or removed. Unlike config, no

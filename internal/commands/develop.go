@@ -60,6 +60,13 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 // create/re-enroll the project, while the automatic handoff from `byre
 // worktree` must not undo a forget that won during worktree creation.
 func developCommand(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAuth *bool, selfEdit bool, credMode CredentialMode, mayEnroll bool) error {
+	return developCommandWith(s, projectDir, flagTemplate, flagAgent, flagSharedAuth, selfEdit, credMode, mayEnroll, nil)
+}
+
+// developCommandWith is developCommand with the headless seams (nil = develop
+// unchanged); `byre run` is its caller.
+func developCommandWith(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAuth *bool, selfEdit bool, credMode CredentialMode, mayEnroll bool, h *headlessOptions) error {
+	h.reset()
 	if err := requireNonRootHost(s.Err); err != nil {
 		return err
 	}
@@ -162,7 +169,7 @@ func developCommand(s Streams, projectDir, flagTemplate, flagAgent string, flagS
 		// authors under a box-writable root, which is the shadow precondition.
 		dataf(s.Err, "%s\n", disclosure)
 	}
-	derr := develop(runner.New(eng, engExe), s, paths, rv, selfEdit, credMode)
+	derr := developWith(runner.New(eng, engExe), s, paths, rv, selfEdit, credMode, h)
 	if derr != nil && !mayEnroll {
 		// The engine-facing core takes the setup lock again after credential
 		// prompts. If forget won during that human wait, replace its generic
@@ -189,6 +196,13 @@ func wrapForgottenWorktreeHandoff(projectDir string, err error) error {
 // exit-status mapping. Split from Develop (which does the host-side resolution
 // and onboarding) so it can run end-to-end against a fake engine.
 func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEdit bool, credMode CredentialMode) error {
+	return developWith(r, s, paths, rv, selfEdit, credMode, nil)
+}
+
+// developWith is develop with the headless seams; h == nil is develop.
+func developWith(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEdit bool, credMode CredentialMode, h *headlessOptions) error {
+	h.reset()
+	res := h.result()
 	// Mode-select (ADR 0032): host identity on rootful engines, the generic
 	// keep-id identity under rootless Podman — or the old refusal where the
 	// engine can't do the mapping. Everything identity-shaped below (image
@@ -281,7 +295,7 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 	// re-read under the lock has happened (prep.rv is that re-read). prep's
 	// fields are read-only from here.
 	prep, err := setupLockedProject(s.Err, paths, func() (preparedLaunch, error) {
-		return prepareLaunchLocked(r, s, paths, rv, image, selfEdit, ident, unlocked, credMode == CredentialSkip)
+		return prepareLaunchLocked(r, s, paths, rv, image, selfEdit, ident, unlocked, credMode == CredentialSkip, h)
 	})
 	if err != nil {
 		return err
@@ -360,7 +374,14 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 		credWait = func() error { close(done); <-finished; return injectErr }
 	}
 
-	runErr := r.StartAttach(containerName(paths))
+	var runErr error
+	if h != nil && h.AttachStdout != nil {
+		runErr = r.StartAttachIO(containerName(paths), nil, h.AttachStdout)
+	} else {
+		runErr = r.StartAttach(containerName(paths))
+	}
+	res.Phase = phaseAttached
+	res.ContainerStatus = containerStatus(runErr)
 	var credErr error
 	if credWait != nil {
 		credErr = credWait()
@@ -386,13 +407,14 @@ func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEd
 			live = l
 		}
 	}
+	res.Live = len(live) > 0
 	// The session is over (runErr may just be the agent's own exit status):
 	// show what changed before the exit paths below return.
 	if len(live) == 0 && !liveUnknown {
 		if selfEdit {
 			reportSelfEditChanges(s.Err, paths.Dir, store)
 		}
-		reportExit(s.Err, watch, snapshotExit(paths, prep.rv.gitExe))
+		res.ExitReport = reportExit(s.Err, watch, snapshotExit(paths, prep.rv.gitExe))
 	}
 	// A failed delivery is a failed LAUNCH, and its cause outranks the exit
 	// status of an agent byre just stopped out from under.
@@ -443,8 +465,9 @@ type preparedLaunch struct {
 // container Create and record reaping included, because the created container
 // is the session-ownership marker (never hoist them out). The preparedLaunch
 // is built only on the all-success path.
-func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv resolved, image string, selfEdit bool, ident runner.Identity, unlocked unlockedFiles, credSkipped bool) (preparedLaunch, error) {
+func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv resolved, image string, selfEdit bool, ident runner.Identity, unlocked unlockedFiles, credSkipped bool, h *headlessOptions) (preparedLaunch, error) {
 	none := preparedLaunch{}
+	res := h.result()
 	// Re-establish enrollment UNDER the lock before any store/engine mutation.
 	// develop resolved config/skills BEFORE taking the lock, so a concurrent
 	// `byre forget` could have cleared the store (path record included) while
@@ -484,6 +507,16 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	if err != nil {
 		return none, err
 	}
+	// A headless run's own env lands after everything runParams merged -- the
+	// BYRE_EGRESS precedent: no skill's [runtime].env can skew what the run is
+	// told. Raw run_args still follow on the argv and win (ADR 0006).
+	if h != nil {
+		for k, v := range h.Env {
+			params.Env[k] = v
+		}
+		params.Command = append([]string(nil), h.Command...)
+	}
+	res.RawRunArgs = len(params.RunArgs) > 0
 	if err := refuseMissingMountHosts(r, s.Err, rv.mounts, rv.skills); err != nil {
 		return none, err
 	}
@@ -618,6 +651,7 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	rec.CredentialUnlock = creds.unlock
 	rec.Credentials = creds.record
 	launchLabel, launchHash := recordLaunch(s.Err, paths, rec)
+	res.LaunchHash = launchHash
 	if launchLabel != "" {
 		params.Labels = append(params.Labels, launchLabel)
 	}
@@ -632,6 +666,21 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 		}
 		return none, fmt.Errorf("creating the session container: %w (if a stale container holds the name: %s rm %s)", cerr, r.Engine(), containerName(paths))
 	}
+	res.Phase = phaseCreated
+	// Headless staging rides here, under the lock and after Create, because
+	// the created container is what makes this launch the worktree's one
+	// session: a second launch loses the name at Create before it can reach
+	// this step. A Stage failure is a launch that never starts -- remove the
+	// container (forceless and best-effort, as after a start that never ran)
+	// and hand the callback's error back untouched; the phase returns to
+	// prelaunch because no box of this launch is left to have run.
+	if h != nil && h.Stage != nil {
+		if serr := h.Stage(paths, rv); serr != nil {
+			_ = r.ContainerRemove(containerName(paths))
+			res.Phase = phasePrelaunch
+			return none, serr
+		}
+	}
 	// Records outlive their containers otherwise: this is the only moment
 	// byre holds the lock AND knows which containers of the project exist.
 	// Opportunistic by construction -- nothing here can fail the launch.
@@ -641,6 +690,20 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	// the ADR 0004 check, so this costs no new host probing.
 	reapLaunchRecords(paths, launchHash, append([]sessionRunner{r}, rv.otherEngines...), rv.declinedEngines)
 	return preparedLaunch{rv: rv, hostEnv: hostEnv, hooks: hooks, netnsLabel: netnsLabel, netnsEnv: netnsEnv, containerID: containerID, creds: creds}, nil
+}
+
+// containerStatus is the box's raw exit status from an attach: 0 for a clean
+// one, the engine-reported code for an exit status, -1 when there is none to
+// read (a signal-terminated client, or a failure that never ran the client).
+func containerStatus(runErr error) int {
+	if runErr == nil {
+		return 0
+	}
+	var exitErr *exec.ExitError
+	if errors.As(runErr, &exitErr) {
+		return exitErr.ExitCode()
+	}
+	return -1
 }
 
 // decodeAgentExit distinguishes the agent/container's own exit from a byre
