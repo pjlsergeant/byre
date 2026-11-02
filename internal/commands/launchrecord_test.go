@@ -69,7 +69,7 @@ const launchRecordGolden = `# byre launch record -- written under the setup lock
 # sha256 of its own bytes; the container carries byre.launch=<that hash>, and
 # byre re-hashes rather than trusts. It records what byre TOLD THE ENGINE --
 # env KEYS only, values never. Delete it and status degrades honestly.
-record = 1
+record = 2
 byre = 'v1.4.0'
 created = 2026-07-28T21:40:11Z
 project = 'byre-dev-4f21bc'
@@ -130,6 +130,57 @@ func TestLaunchRecordSerializationContract(t *testing.T) {
 	sum := sha256.Sum256([]byte(launchRecordGolden))
 	if hash != hex.EncodeToString(sum[:]) {
 		t.Errorf("hash %q is not the sha256 of the rendered bytes", hash)
+	}
+}
+
+// A headless run's scalars are part of the same contract. They sit after
+// credential_unlock and before [image] -- TOML puts every key after a table
+// header inside that table, so anywhere later they would parse as image keys
+// -- and a run without a timeout still says so with an empty run_timeout.
+// The develop golden above is the other half: none of the four keys appear.
+func TestLaunchRecordHeadlessScalarsContract(t *testing.T) {
+	rec := sampleLaunchRecord()
+	rec.CredentialUnlock = "unlocked"
+	none := ""
+	rec.Headless, rec.RunID, rec.TaskSHA256, rec.RunTimeout = true, "r-0123abcd", strings.Repeat("ab", 32), &none
+	content, _, err := encodeLaunchRecord(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "run_args = ['-e', 'INTTEST_VM=172.17.0.1']\n" +
+		"credential_unlock = 'unlocked'\n" +
+		"headless = true\n" +
+		"run_id = 'r-0123abcd'\n" +
+		"task_sha256 = '" + strings.Repeat("ab", 32) + "'\n" +
+		"run_timeout = ''\n" +
+		"\n[image]\n"
+	if !strings.Contains(content, want) {
+		t.Errorf("headless scalars must sit between credential_unlock and [image]:\n--- want fragment ---\n%s\n--- got ---\n%s", want, content)
+	}
+	timeout := "30m"
+	rec.RunTimeout = &timeout
+	content, _, err = encodeLaunchRecord(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(content, "run_timeout = '30m'\n\n[image]\n") {
+		t.Errorf("a given timeout is recorded as given:\n%s", content)
+	}
+}
+
+// Records from before the headless scalars stay readable: status shows a box
+// launched by the previous schema as it always did.
+func TestLaunchRecordReadsVersionOne(t *testing.T) {
+	p, _ := testPaths(t)
+	rec := sampleLaunchRecord()
+	rec.Record = 1
+	hash, err := writeLaunchRecord(p, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, st := readLaunchRecord(p, map[string]string{launchKey: hash})
+	if st != launchRecordOK || got.Record != 1 || got.Headless || got.RunTimeout != nil {
+		t.Fatalf("a version-1 record must read as itself: state %v, rec %+v", st, got)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
+	"github.com/pjlsergeant/byre/internal/hostopen"
 	"github.com/pjlsergeant/byre/internal/lock"
 	"github.com/pjlsergeant/byre/internal/project"
 	"github.com/pjlsergeant/byre/internal/skills"
@@ -182,6 +183,57 @@ func TestHeadlessEnvBeatsSkillEnvAndLosesToRunArgs(t *testing.T) {
 	}
 	if raw < ours {
 		t.Errorf("raw run_args must follow the run's env (last-wins): ours at %d, raw at %d in %q", ours, raw, argv)
+	}
+}
+
+// A headless launch writes its run facts into the record it creates the box
+// with; the task's hash, never the task. A develop launch writes none.
+func TestHeadlessLaunchRecordCarriesRun(t *testing.T) {
+	p, _ := testPaths(t)
+	var res developResult
+	sum := strings.Repeat("cd", 32)
+	h := &headlessOptions{RunID: "r-1", TaskSHA256: sum, Result: &res}
+	f := &fakeRunner{}
+	if err := developWith(f, discardStreams(), p, combine(merged(config.Config{}), skills.Resolved{}), false, CredentialAsk, h); err != nil {
+		t.Fatal(err)
+	}
+	rec, st := readLaunchRecord(p, map[string]string{launchKey: res.LaunchHash})
+	if st != launchRecordOK {
+		t.Fatalf("record state %v", st)
+	}
+	if !rec.Headless || rec.RunID != "r-1" || rec.TaskSHA256 != sum || rec.RunTimeout == nil || *rec.RunTimeout != "" {
+		t.Errorf("headless record = headless %v run_id %q task %q timeout %v", rec.Headless, rec.RunID, rec.TaskSHA256, rec.RunTimeout)
+	}
+
+	var plain developResult
+	p2, _ := testPaths(t)
+	if err := developWith(&fakeRunner{}, discardStreams(), p2, combine(merged(config.Config{}), skills.Resolved{}), false, CredentialAsk, &headlessOptions{Result: &plain}); err != nil {
+		t.Fatal(err)
+	}
+	if err := developWith(&fakeRunner{}, discardStreams(), p2, combine(merged(config.Config{}), skills.Resolved{}), false, CredentialAsk, nil); err != nil {
+		t.Fatal(err)
+	}
+	b, err := hostopen.ReadDirNoFollow(launchesDir(p2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	developRecords := 0
+	for _, e := range b {
+		name := e.Name()
+		if strings.TrimSuffix(name, ".toml") == plain.LaunchHash {
+			continue
+		}
+		r, st := readLaunchRecord(p2, map[string]string{launchKey: strings.TrimSuffix(name, ".toml")})
+		if st != launchRecordOK {
+			continue
+		}
+		developRecords++
+		if r.Headless || r.RunID != "" || r.TaskSHA256 != "" || r.RunTimeout != nil {
+			t.Errorf("a develop record carries no run facts: %+v", r)
+		}
+	}
+	if developRecords == 0 {
+		t.Fatal("test setup: no develop record found")
 	}
 }
 

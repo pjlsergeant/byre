@@ -650,6 +650,10 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	rec := launchRecordOf(paths, rv, params, r.Engine(), imageRecord(r, s.Err, image, rv.cfg.Base))
 	rec.CredentialUnlock = creds.unlock
 	rec.Credentials = creds.record
+	if h != nil {
+		timeout := h.RunTimeout
+		rec.Headless, rec.RunID, rec.TaskSHA256, rec.RunTimeout = true, h.RunID, h.TaskSHA256, &timeout
+	}
 	launchLabel, launchHash := recordLaunch(s.Err, paths, rec)
 	res.LaunchHash = launchHash
 	if launchLabel != "" {
