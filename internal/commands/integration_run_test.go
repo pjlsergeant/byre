@@ -118,12 +118,45 @@ func (e *runEnv) task(t *testing.T, name, body string) string {
 // so the answer is copied raw), stdin empty.
 func (e *runEnv) run(t *testing.T, o RunOptions) (code int, stdout []byte, stderr string) {
 	t.Helper()
+	code, stdout, stderr, _ = e.runBox(t, o)
+	return code, stdout, stderr
+}
+
+// runBox is run that also returns the box's own stderr. The box's stderr is
+// the engine client's, which the runner hands this PROCESS's os.Stderr, not
+// Streams.Err: the live stream, the hooks' lines and the chassis's own
+// summary arrive there. So os.Stderr is a pipe for the duration of the run,
+// drained concurrently so the client never blocks on it, and restored after.
+// byre's own lines stay in the stderr return (Streams.Err).
+func (e *runEnv) runBox(t *testing.T, o RunOptions) (code int, stdout []byte, stderr, box string) {
+	t.Helper()
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	drained := make(chan []byte, 1)
+	go func() {
+		b, _ := io.ReadAll(pr)
+		pr.Close()
+		drained <- b
+	}()
+	saved := os.Stderr
+	os.Stderr = pw
 	var out, errb bytes.Buffer
 	s := Streams{Out: &out, Err: &errb, In: strings.NewReader("")}
-	err := Run(s, e.proj, o)
-	code = runExitCode(err)
-	t.Logf("byre run %+v -> exit %d (err %v)\n--- stderr ---\n%s", o, code, err, errb.String())
-	return code, out.Bytes(), errb.String()
+	runErr := Run(s, e.proj, o)
+	os.Stderr = saved
+	pw.Close()
+	var boxErr []byte
+	select {
+	case boxErr = <-drained:
+	case <-time.After(30 * time.Second):
+		// Something the run started still holds the pipe's write end.
+		t.Fatalf("byre run %+v: the box's stderr never reached EOF", o)
+	}
+	code = runExitCode(runErr)
+	t.Logf("byre run %+v -> exit %d (err %v)\n--- stderr ---\n%s\n--- box stderr ---\n%s", o, code, runErr, errb.String(), boxErr)
+	return code, out.Bytes(), errb.String(), string(boxErr)
 }
 
 func (e *runEnv) runDir() string { return filepath.Join(e.proj, runDirName) }
@@ -258,7 +291,7 @@ func TestIntegrationRun(t *testing.T) {
 			{"empty", 14, false}, // 0 without an answer
 		} {
 			body := c.marker + " the task text, verbatim\nsecond line\n"
-			code, out, stderr := e.run(t, RunOptions{TaskFlag: e.task(t, c.marker+".md", body)})
+			code, out, stderr, box := e.runBox(t, RunOptions{TaskFlag: e.task(t, c.marker+".md", body)})
 			if code != c.want {
 				t.Errorf("%s: exit %d, want %d", c.marker, code, c.want)
 			}
@@ -269,10 +302,10 @@ func TestIntegrationRun(t *testing.T) {
 			if string(out) != wantOut {
 				t.Errorf("%s: stdout must be the answer and nothing else: got %q, want %q", c.marker, out, wantOut)
 			}
-			if !strings.Contains(stderr, "headless-echo-marker: "+c.marker) {
+			if !strings.Contains(box, "headless-echo-marker: "+c.marker) {
 				t.Errorf("%s: the headless command's live stream (the marker line) is not on stderr", c.marker)
 			}
-			if !strings.Contains(stderr, hookNoTTY) {
+			if !strings.Contains(box, hookNoTTY) {
 				t.Errorf("%s: the firstrun hook must see no terminal under a headless launch (want %q)", c.marker, hookNoTTY)
 			}
 			if !strings.Contains(stderr, summary(c.want, authorityVerified)) {
