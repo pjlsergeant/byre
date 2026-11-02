@@ -21,8 +21,9 @@ the engine-level artifact (the status row, port mappings, engine errors).
 noun itself.
 
 **Session**:
-One foreground run of a project's box (one `byre develop`, one container).
-Single-session per project directory; parallelism comes from worktrees.
+One run of a project's box, one container: a foreground `byre develop`, or
+a headless run started by `byre run`. Single-session per project
+directory, whichever verb started it; parallelism comes from worktrees.
 
 **Launch record**:
 What byre TOLD THE ENGINE for one container, made durable: the exposure
@@ -78,7 +79,8 @@ _Avoid_: runtime (collides with a skill's `[runtime]` contributions)
 **Launcher**:
 The constant, unprivileged entrypoint script that preps the box (git
 identity, agent context, first-run hooks, launch gate) and execs the
-selected agent's command.
+selected agent's command -- or, for a headless run, the headless-run
+chassis `byre-headless`.
 
 **Launch gate**:
 The launcher's wait, at its very top, for the firewall ready signal before
@@ -140,6 +142,77 @@ _Avoid_: "manifest" (taken: a package's `[package]` table), "export" /
 "import" (the retired v5 design's words, and both read as a format other
 tools consume), "snapshot" (taken: an installed package's content-addressed
 snapshot)
+
+### Headless runs
+
+**Headless run**:
+A session whose agent executes ONE task non-interactively and exits,
+started by `byre run`. Still a session: one container, and the
+single-session rule applies. The box gets no terminal and no stdin, and
+byre exits with its own verdict. (ADR 0061)
+_Avoid_: "batch run", "job" (CI's word for the step that calls `byre run`,
+not for the session), "ephemeral" (implies byre discards state it keeps:
+the volumes persist as for any session)
+
+**Task**:
+The text a headless run gives the agent: from `--task <file>`, `--task -`
+(byre's stdin, read to EOF), or `BYRE_TASK` in byre's own environment; the
+flag wins when both are set. Bounded at 1 MiB. There is no implicit task
+file in the repo.
+_Avoid_: "prompt" (the agent's word for everything it is sent, which can
+carry more than the task), "job"
+
+**Result dir**:
+`.byre-run/` at the working-tree root, self-ignoring (its own `.gitignore`
+is `*`, the devlog-dir pattern): the task as byre staged it, what the agent
+produced, the chassis's record of the run (`result.md`, `result.json`,
+`transcript.jsonl`, `stderr.log`, `status`), and byre's copy of the
+outcome. Emptied by byre at the start of every headless run. **Agent-trust,
+all of it**: byre reads nothing back from it, and a script must not gate on
+it.
+_Avoid_: "artifact" (CI's word for what a job uploads -- archiving the
+result dir is how it becomes one), "output" (the answer is on stdout)
+
+**Answer**:
+The agent's final message: the one thing `byre run` prints on stdout
+without `--data`, escaped on a terminal and byte for byte into a file or a
+pipe. Agent-trust text.
+_Avoid_: "result" (the result dir holds more than the answer), "output"
+
+**Outcome**:
+byre's own verdict on a headless run: the exit code, and the versioned
+JSON document `byre run --data` prints on stdout (`RunDataVersion`) --
+`outcome` (`ran`, `refused`, `box_exited`, `byre_failed`, `crashed`),
+`phase`, `authority` and the rest. **Only these two are authoritative.**
+`authority` reads `unverified: raw run_args` when raw `run_args` were in
+force. A copy lands in the result dir as `outcome.json` for humans and
+carries no authority there.
+_Avoid_: "status" (taken: `byre status`, and the chassis's `status` file),
+"result" (the result dir is agent-trust; the outcome is not)
+
+**Summary line**:
+The one line byre prints last on stderr after a headless run:
+`byre: run <run id>: <outcome>, exit <n> (<authority>)`. Informational and
+FORGEABLE: the agent shares stderr for the whole run and can print an
+identical line first. Gate a script on the exit code or `--data`, never on
+this line.
+_Avoid_: "result line", "verdict" (the verdict is the outcome)
+
+**Headless command**:
+The `[agent] headless = "..."` command an agent skill declares: the in-box
+program `byre-headless` runs for a headless run, honouring the contract in
+ADR 0061 -- the task from `BYRE_RUN_TASK_FILE`, the answer to
+`BYRE_RUN_RESULT_FILE`, an exit from the closed set. Absent means the agent
+has no headless mode, and `byre run` refuses it by name.
+_Avoid_: "headless mode" for the command itself (the mode is the agent's;
+the command is what provides it), "batch command"
+
+**Run id**:
+The per-invocation nonce `byre run` mints and stamps into the outcome,
+`result.json`, the summary line and the launch record. Distinct from the
+`byre.run=<nonce>` container label (ADR 0006), which is the netns
+ownership proof.
+_Avoid_: "job id" (CI's), "session id"
 
 ### Config
 
@@ -387,7 +460,8 @@ skill by name.
 **Chassis**:
 Core's constant provision to every box -- the core block at build time
 plus the runtime constants (the core `env_from_host` layer: git
-identity, TERM, TZ; launcher behavior; the launch gate). What a box has regardless of config; "core chassis"
+identity, TERM, TZ; launcher behavior; the launch gate; the headless-run
+chassis `byre-headless`). What a box has regardless of config; "core chassis"
 when ownership needs saying. Cf. the microservice-chassis pattern.
 _Avoid_: plumbing (the old spec's word), fittings, infra
 
@@ -395,7 +469,8 @@ _Avoid_: plumbing (the old spec's word), fittings, infra
 The build-time slice of the chassis -- core's constant contribution to
 the generated Dockerfile: the `dev` user
 baked at the host UID/GID, home/workspace ownership, the launcher install,
-the `byre-fetch-run` installer helper skills build with (plus the `USER dev` + ENTRYPOINT tail, emitted last so earlier steps build
+the `byre-fetch-run` installer helper skills build with, the
+`byre-headless` headless-run chassis (plus the `USER dev` + ENTRYPOINT tail, emitted last so earlier steps build
 as root). The block family is named by contributor: template block, core
 block, skill blocks, project block.
 _Avoid_: infra layer (collides with cascade layers and Docker image
