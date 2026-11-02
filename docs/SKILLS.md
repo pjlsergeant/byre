@@ -338,13 +338,13 @@ later. Both verbs also take an explicit path or https URL.
 `byre preset apply --yes` is the unattended form, for CI (ADR 0063): it
 runs without a terminal, prints the full review to stderr all the same,
 skips the confirm, and passes `--yes` to the walk-through's installs.
-It refuses four ways, all before anything is fetched or written:
-without `--yes`, a pipe still refuses (the review is the point); an
-https preset URL refuses, because nobody looks at what it serves --
+Without `--yes`, a pipe still refuses (the review is the point). With
+`--yes`, three things refuse, all before anything is fetched or
+written: an https preset URL, because nobody looks at what it serves --
 commit the preset to the repo (or fetch it in a step you control) and
-apply the path; an https `[sources]` row with no digest refuses, naming
-the row, for the same reason; and anything the credential review would
-show refuses, naming it, on a terminal too: an `encrypted:`/`encrypted-file:`
+apply the path; an https `[sources]` row with no digest, naming the
+row, for the same reason; and anything the credential review would
+show, naming it, on a terminal too: an `encrypted:`/`encrypted-file:`
 row in the preset OR in the config it would replace (an unchanged row,
 or one an `[env]` literal shadows, included), a `[credentials]` identity
 arriving, leaving or replaced, or a side byre could not read -- a swapped

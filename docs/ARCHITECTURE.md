@@ -777,7 +777,9 @@ Runtime constants:
   file's own `[credentials]` identity opens, and it is delivered over
   the credential channel onto the session tmpfs rather than as `-e`
   (ADR 0057). Host env is otherwise isolated (ADR 0026).
-- The launcher: wait at the launch gate if a network-posture skill is
+- The launcher (its own helpers on the system PATH from its first line,
+  the inherited PATH saved for the first-run hooks and the agent's exec
+  only): wait at the launch gate if a network-posture skill is
   enabled (ADR 0011), export the per-session context additions as
   `BYRE_SESSION_CONTEXT` (under an allowlist posture, the session's
   enforced egress allowlist -- the same `BYRE_EGRESS` string the netns

@@ -414,11 +414,11 @@ refuses a changed one (exit 16), but the code has already run -- what it
 cannot do is stand in for the chassis, which byre launches by its
 absolute, build-guarded path and which runs its own helper tools from the
 system directories only, never from the agent-writable `~/.local/bin`.
-The agents' launch wrappers and codex-shared-auth's credential
-reconciler do the same, handing the agent's own PATH only to the agent
-program itself, and the skills' launch env hooks run with only the
-system directories on PATH, so a helper planted there never runs inside
-those. The exceptions run on the agent's PATH, and code planted there
+byre's own launcher, the agents' launch wrappers and codex-shared-auth's
+credential reconciler do the same, handing the agent's own PATH only to
+the agent program itself (and, for the launcher, to the first-run steps),
+and the skills' launch env hooks run with only the system directories on
+PATH, so a helper planted there never runs inside those. The exceptions run on the agent's PATH, and code planted there
 gains only what the agent already has. The interactive login steps
 (codex, grok, opencode, and claude-shared-auth's and grok-shared-auth's
 first-run steps) stand down in a headless run before they run anything. grok-shared-auth's broker, which grok runs whenever

@@ -81,5 +81,6 @@ refused by every byre before the release that ships the field. A
 published skill that adopts it bumps its `requires_byre` to that release.
 
 [arm: TestResolveRefusesUnmetRequires, TestRequiresSelfRefused,
+TestRequiresSelfRefusedAtTheBytesBoundary, TestInstallRefusesSelfRequirement,
 TestRequiresUnderAgentOverride, TestSkillsScreenAnnotatesUnmetRequires,
 TestSkillInspectEscapesManifestValues]

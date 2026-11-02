@@ -107,7 +107,15 @@ interactive-only `byre-opencode-mcp-launch`, and the codex-shared-auth
 reconciler follow the same rule: their own helpers
 (`cat`, `jq`, `head`, `wc`, `iconv`, `cp`, `flock`, `mktemp`) run on the
 system PATH, and only the final exec of the agent CLI gets the inherited
-agent PATH. A helper planted in `~/.local/bin` by repo code therefore
+agent PATH. byre's launcher, which runs before all of them, does the same
+from its first line: it saves the inherited PATH as the agent PATH and
+runs its own helpers (`tr`, `sleep`, `git`, `sed`, `head`, `ls`, `grep`,
+`rm`, `cat`) on the system PATH -- the worktree populate's checkout, the
+egress and self-edit lines of the session context, the credential wait
+-- and sources the env.d hooks there, re-pinned before each one. Only the
+first-run hooks (they run the agent CLIs for device login) and the final
+exec of the agent command, the chassis included, get the agent PATH back.
+A helper planted in `~/.local/bin` by repo code therefore
 never runs inside byre's launch or credential machinery; the interactive
 login hooks are the remaining exception (Accepted residuals). This is a convention of the contract, not a
 containment: the answer and the status lines are agent-trust either way
@@ -481,15 +489,16 @@ Each is on the security-model page too.
   document. That is also why the descriptor convention above is a
   convention: an agent that writes a different answer or status line
   through its own script changes only what it could have written anyway.
-- **The interactive login hooks run on the agent PATH.** The
-  codex-login, grok-login, opencode-login, claude-shared-auth and
-  grok-shared-auth first-run hooks still run the agent CLIs and their own
-  helpers through the inherited PATH, so a helper planted in
-  `~/.local/bin` runs there. They are interactive-login code that stands
-  down under a headless launch before any credential probe or store
-  write, so a headless run executes none of their helpers, and in an
-  interactive session a plant there gains only what the agent, which can
-  already write that directory, already has. The standing-down covers grok-shared-auth's
+- **The interactive login hooks run on the agent PATH.** The launcher
+  hands every first-run hook the inherited PATH, so the codex-login,
+  grok-login, opencode-login, claude-shared-auth and grok-shared-auth
+  first-run hooks still run the agent CLIs and their own helpers through
+  it, and a helper planted in `~/.local/bin` runs there. They are
+  interactive-login code that stands down under a headless launch before
+  any credential probe or store write, so a headless run executes none of
+  their helpers, and in an interactive session a plant there gains only
+  what the agent, which can already write that directory, already has.
+  The standing-down covers grok-shared-auth's
   first-run hook only, not its broker (next-but-one entry).
 - **The agent's command resolves on the agent PATH.** The chassis execs
   `/etc/byre/agent-headless`, which is `exec <the skill's headless

@@ -127,6 +127,8 @@ is restated on the security-model page.
 
 `TestPresetApplyYesRefusesCredentialRows` (either side, env and file rows,
 on a terminal and off one, nothing written or installed);
+`TestPresetApplyYesRefusesARowShadowedOnBothSides`;
+`TestPresetApplyYesRefusesBeforeStoreMaintenance`;
 `TestPresetApplyYesRefusesUndigestedHTTPSHint`;
 `TestPresetApplyYesRefusesHTTPSPresetURI`;
 `TestPresetApplyYesOffTTYAppliesAndChauffeurs`;
