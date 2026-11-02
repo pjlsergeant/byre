@@ -108,6 +108,33 @@ skills = ["pete/linter"]
 	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
 }
 
+// An https preset URI refuses under --yes before any fetch: unattended,
+// nobody inspects what it serves, and nothing committed pins it. The URL is
+// unroutable, so a fetch attempt would surface as a different error.
+func TestPresetApplyYesRefusesHTTPSPresetURI(t *testing.T) {
+	p, proj := onboardPaths(t)
+	s, _, _ := testStreams("", false)
+	err := PresetApply(s, proj, "https://example.invalid/team/byre.preset", true)
+	if err == nil || !strings.Contains(err.Error(), remotePresetRule) || !strings.Contains(err.Error(), "https://example.invalid/team/byre.preset") {
+		t.Fatalf("an https preset URI must refuse naming the URI, got %v", err)
+	}
+	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
+}
+
+// An explicit preset path passes --yes: it names bytes the caller controls.
+func TestPresetApplyYesAllowsPresetPath(t *testing.T) {
+	p, proj := onboardPaths(t)
+	path := filepath.Join(t.TempDir(), "team.preset")
+	mustWriteFile(t, path, []byte("agent = \"none\"\n"), 0o644)
+	s, _, stderr := testStreams("", false)
+	if err := PresetApply(s, proj, path, true); err != nil {
+		t.Fatalf("a preset path must pass under --yes, got %v\n%s", err, stderr)
+	}
+	if b, err := os.ReadFile(filepath.Join(p.Dir, "byre.config")); err != nil || !strings.Contains(string(b), "none") {
+		t.Fatalf("config not written: %v / %s", err, b)
+	}
+}
+
 // A path source needs no digest: it names local bytes, and the install lands.
 func TestPresetApplyYesAllowsUndigestedPathSource(t *testing.T) {
 	p, proj := onboardPaths(t)

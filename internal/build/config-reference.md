@@ -279,9 +279,11 @@ file -- and writes the project's config on your confirm.
 
 `byre preset apply --yes` applies without a terminal -- for CI. The
 review still prints, to stderr; the confirm and the install confirms are
-skipped. It refuses, before installing or writing anything, an https
-`[sources]` row with no digest, and any encrypted credential row in the
-preset or in the config it would replace (on a terminal too: only your
+skipped. It refuses, before installing or writing anything, a preset
+named by an https URL (commit it to the repo, or fetch it in a step you
+control, and apply the path), an https `[sources]` row with no digest,
+and any encrypted credential row in the preset or in the config it would
+replace (on a terminal too: only your
 own confirm vouches for a credential value). A preset meant for CI
 therefore pins every package and passes credentials through from the
 runner's environment:

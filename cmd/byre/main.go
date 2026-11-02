@@ -1086,7 +1086,7 @@ func presetCmd(dir string, s commands.Streams) *cobra.Command {
 			return commands.PresetApply(s, dir, optArg(args), applyYes)
 		},
 	}
-	apply.Flags().BoolVar(&applyYes, "yes", false, "apply unattended: the review still prints, the confirm and the chauffeured installs' confirms are skipped (required in a pipe; refuses credential rows and digest-less https sources)")
+	apply.Flags().BoolVar(&applyYes, "yes", false, "apply unattended: the review still prints, the confirm and the chauffeured installs' confirms are skipped (required in a pipe; refuses an https preset URI, credential rows and digest-less https sources)")
 	preset.AddCommand(
 		apply,
 		&cobra.Command{

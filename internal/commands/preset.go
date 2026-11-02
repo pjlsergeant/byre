@@ -64,16 +64,21 @@ const errReviewDiffRead = "cannot read this project's byre.config for the review
 // yes is the unattended form (ADR 0063): the invocation is the consent to the
 // rendered grants, so it runs without a TTY, skips the confirm, and passes
 // --yes to the chauffeured installs. The review still prints in full -- into
-// the CI log when there is no terminal. Two things it can never consent to
-// refuse before anything is fetched or written: an https [sources] hint with
-// no digest (nobody looks at the fetched bytes), and credential rows on
-// either side of the replacement (ADR 0057: only a human's confirm against the
-// credential lines vouches for a ciphertext).
+// the CI log when there is no terminal. Three things it can never consent to
+// refuse before anything is fetched or written: an https preset URI and an
+// https [sources] hint with no digest (nobody looks at the fetched bytes),
+// and credential rows on either side of the replacement (ADR 0057: only a
+// human's confirm against the credential lines vouches for a ciphertext).
 func PresetApply(s Streams, projectDir, arg string, yes bool) error {
 	// Without --yes a pipe refuses: the review is the point, and nobody is
 	// there to read it and answer.
 	if !s.TTY && !yes {
-		return fmt.Errorf("preset apply is interactive (the review is the point) -- run it on a TTY, or pass --yes to apply unattended (the review still prints; credential rows and digest-less https sources refuse)")
+		return fmt.Errorf("preset apply is interactive (the review is the point) -- run it on a TTY, or pass --yes to apply unattended (the review still prints; an https preset URI, credential rows and digest-less https sources refuse)")
+	}
+	if yes {
+		if err := remotePresetRefusal(arg); err != nil {
+			return err
+		}
 	}
 	paths, err := project.Resolve(projectDir)
 	if err != nil {
@@ -543,6 +548,23 @@ func unattendedCredentialRefusal(store, content []byte) error {
 	}
 	return fmt.Errorf("%s: %s -- an encrypted value can be swapped without the review showing it, and only your confirm can vouch for it (ADR 0057). Apply on a TTY without --yes, or keep credentials out of the preset and deliver them with env_from_host from the runner's environment (KEY = \"env:KEY\")",
 		unattendedCredentialsRule, strings.Join(found, "; "))
+}
+
+// remotePresetRule is the stable head of the `apply --yes` preset-URI
+// refusal, which docs and tests key on.
+const remotePresetRule = "preset apply --yes applies a preset file, not an https URI"
+
+// remotePresetRefusal is ADR 0063's uninspected-bytes rule applied to the
+// preset itself: under --yes nobody reads what an https URI serves at apply
+// time, and unlike a [sources] row there is no committed digest to vouch for
+// it. A path -- or the conventional byre.preset -- names bytes the caller
+// controls, typically committed in the same checkout, and passes.
+func remotePresetRefusal(arg string) error {
+	if k, err := packages.ParseSourceURI(arg); arg == "" || err != nil || k != "https" {
+		return nil
+	}
+	return fmt.Errorf("%s: %s -- unattended, nobody inspects what it serves. Commit the preset to the repo (or fetch it in a step you control) and apply the path, or apply on a TTY without --yes",
+		remotePresetRule, arg)
 }
 
 // undigestedSourceRule is the stable head of the `apply --yes` source

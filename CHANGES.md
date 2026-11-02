@@ -25,7 +25,8 @@
 - **`byre preset apply --yes`: apply a committed preset in CI.** Runs
   without a terminal, prints the full review to stderr all the same,
   skips the confirm and passes `--yes` to the package installs it walks
-  through. Before installing or writing anything it refuses an https
+  through. Before installing or writing anything it refuses a preset
+  named by an https URL (commit it and apply the path), an https
   `[sources]` row with no digest, and any encrypted credential row in
   the preset or in the config it would replace -- on a terminal too,
   since only your own confirm vouches for a credential value; pass

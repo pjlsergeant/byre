@@ -3,9 +3,9 @@
 Decided 2026-11-02. `byre preset apply --yes` applies a preset without a
 terminal: the full review still prints to stderr, the confirm is skipped,
 and the chauffeured installs run with `--yes`. It refuses, before anything
-is fetched or written, in two cases: an https `[sources]` hint it would
-install from carries no digest, or the preset or the stored config it would
-replace carries credential rows. Without `--yes`, a pipe still refuses, and
+is fetched or written, in three cases: the preset is named by an https
+URI, an https `[sources]` hint it would install from carries no digest, or
+the preset or the stored config it would replace carries credential rows. Without `--yes`, a pipe still refuses, and
 the refusal now names `--yes`.
 
 Principles: P5 (consent to applied content is consent to its RENDERED
@@ -51,6 +51,16 @@ names local bytes, in CI typically a file in the same checkout whose
 committed preset is the consent. The route around the refusal is the
 user's own: `byre skill install <url> --yes` before the apply, which is
 the user choosing those bytes by name.
+
+## An https preset URI refuses
+
+The same rule covers the preset itself. `byre preset apply --yes
+https://...` would apply whatever the URL serves at that moment, and no
+committed digest pins it: the uninspected-bytes case the `[sources]` rule
+refuses, one level up. So `--yes` refuses an https preset URI, naming it,
+before any fetch. A path and the conventional `byre.preset` pass: they
+name bytes the job controls. The remedy is to commit the preset to the
+repo (or fetch it in a step you control) and apply the path.
 
 ## Credential rows refuse
 
@@ -116,6 +126,7 @@ is restated on the security-model page.
 `TestPresetApplyYesRefusesCredentialRows` (either side, env and file rows,
 on a terminal and off one, nothing written or installed);
 `TestPresetApplyYesRefusesUndigestedHTTPSHint`;
+`TestPresetApplyYesRefusesHTTPSPresetURI`;
 `TestPresetApplyYesOffTTYAppliesAndChauffeurs`;
 `TestPresetApplyYesOnTTYSkipsTheConfirm`;
 `TestPresetApplyYesRefusesAnIdentityArriving`;
