@@ -139,8 +139,9 @@ On an unchanged config every instruction is a Docker cache hit, so the
 build is a near-no-op and launch is effectively instant. A change
 rebuilds only the layers from the changed instruction onward. Freshness
 is deliberate staleness: `byre rebuild` (`--no-cache --pull`) is the
-valve for pulling a republished base and fresh upstream packages; byre guarantees Dockerfile determinism,
-not upstream-artifact reproducibility (ADR 0001).
+valve for pulling a republished base and fresh upstream packages; byre
+guarantees Dockerfile determinism, not upstream-artifact reproducibility
+(ADR 0001).
 
 **Instruction ordering is load-bearing** -- not for byre's own caching
 (it has none) but because it determines how well *Docker's* layer cache
@@ -814,13 +815,13 @@ byre status       The legibility surface (PRINCIPLES.md #4): resolved config,
 
                       Project id:   repo-abc123
                       Agent:        byre/claude
-                      Template:     byre/go             bundled v1.3.1
+                      Template:     byre/go             bundled v1.14.0
                       Engine:       docker
                       Project:      /repo -> /workspace  (rw)
                       Network:      open
                       Ports:        none
                       Host mounts:  none
-                      Skills:       byre/claude         bundled v1.3.1
+                      Skills:       byre/claude         bundled v1.14.0
                                     pjlsergeant/devlog  installed 1.0.0
                                     (--full for package digests)
                       State vols:   .claude
