@@ -517,9 +517,19 @@ func reapLaunchRecords(paths project.Paths, keep string, engines []sessionRunner
 		if !ok || !launchHashRe.MatchString(name) || live[name] {
 			continue
 		}
-		// Unlink, which acts on the name and never on what a link points at.
-		_ = hostopen.PlainRemove(filepath.Join(dir, e.Name()), hostopen.StoreOwned)
+		removeLaunchRecord(paths, name)
 	}
+}
+
+// removeLaunchRecord unlinks the record at hash, best-effort: a record left
+// behind is litter the next reap collects. A hash that is not one names no
+// record and is never joined into a path.
+func removeLaunchRecord(paths project.Paths, hash string) {
+	if !launchHashRe.MatchString(hash) {
+		return
+	}
+	// Unlink, which acts on the name and never on what a link points at.
+	_ = hostopen.PlainRemove(filepath.Join(launchesDir(paths), hash+".toml"), hostopen.StoreOwned)
 }
 
 // recordLaunch writes the record and hands back the label to stamp on the

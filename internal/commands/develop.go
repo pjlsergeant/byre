@@ -674,10 +674,15 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	// this step. A Stage failure is a launch that never starts -- remove the
 	// container (forceless and best-effort, as after a start that never ran)
 	// and hand the callback's error back untouched; the phase returns to
-	// prelaunch because no box of this launch is left to have run.
+	// prelaunch because no box of this launch is left to have run. Its
+	// launch record goes too, and the result names none: a record describes
+	// a box, and this one never ran. The record is this launch's alone -- a
+	// headless record carries its run id, so no other box shares its hash.
 	if h != nil && h.Stage != nil {
 		if serr := h.Stage(paths, rv); serr != nil {
 			_ = r.ContainerRemove(containerName(paths))
+			removeLaunchRecord(paths, launchHash)
+			res.LaunchHash = ""
 			res.Phase = phasePrelaunch
 			return none, serr
 		}

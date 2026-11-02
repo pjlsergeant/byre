@@ -3,6 +3,8 @@ package commands
 import (
 	"bytes"
 	"errors"
+	"io/fs"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -81,15 +83,19 @@ func TestHeadlessCreateFailureNeverStages(t *testing.T) {
 	}
 }
 
-// A stage failure removes the just-created container, never attaches, and
-// hands the callback's own error back for its caller to map -- develop adds no
-// wrapping text of its own around it.
+// A stage failure removes the just-created container and its launch record,
+// never attaches, and hands the callback's own error back for its caller to
+// map -- develop adds no wrapping text of its own around it.
 func TestHeadlessStageFailureRemovesContainer(t *testing.T) {
 	p, _ := testPaths(t)
 	f := &fakeRunner{}
 	var res developResult
 	stageErr := ExitError{Code: 1}
-	h := &headlessOptions{Stage: func(project.Paths, resolved) error { return stageErr }, Result: &res}
+	recordsAtStage := -1
+	h := &headlessOptions{Stage: func(sp project.Paths, _ resolved) error {
+		recordsAtStage = len(launchRecordFiles(t, sp))
+		return stageErr
+	}, Result: &res}
 	s, _, stderr := testStreams("", false)
 	err := developWith(f, s, p, combine(merged(config.Config{}), skills.Resolved{}), false, CredentialAsk, h)
 	var exitErr ExitError
@@ -107,6 +113,12 @@ func TestHeadlessStageFailureRemovesContainer(t *testing.T) {
 	}
 	if res.Phase != phasePrelaunch {
 		t.Errorf("phase = %v, want prelaunch (the box was removed before it ran)", res.Phase)
+	}
+	if recordsAtStage != 1 {
+		t.Errorf("control: want the launch record written before the stage, saw %d", recordsAtStage)
+	}
+	if left := launchRecordFiles(t, p); len(left) != 0 || res.LaunchHash != "" {
+		t.Errorf("a launch that never ran keeps no record: left %v, LaunchHash %q", left, res.LaunchHash)
 	}
 	if strings.Contains(stderr.String(), "byre: exposure:") {
 		t.Errorf("a launch that never started claims no walls: %s", stderr.String())
@@ -343,4 +355,21 @@ func TestReportExitReturnsPrintedLines(t *testing.T) {
 	if lines := reportExit(&silent, empty, empty); lines != nil || silent.Len() != 0 {
 		t.Errorf("a silent report returns nil and prints nothing, got %q / %q", lines, silent.String())
 	}
+}
+
+// launchRecordFiles lists the launch records in the project store; a missing
+// launches dir holds none.
+func launchRecordFiles(t *testing.T, p project.Paths) []string {
+	t.Helper()
+	ents, err := os.ReadDir(launchesDir(p))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range ents {
+		if strings.HasSuffix(e.Name(), ".toml") {
+			names = append(names, e.Name())
+		}
+	}
+	return names
 }

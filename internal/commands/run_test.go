@@ -358,8 +358,11 @@ func TestRunStagesAfterCreate(t *testing.T) {
 			if !slices.Contains(f.rmContainers, containerName(p)) || len(f.starts) != 0 {
 				t.Errorf("a stage failure removes the created box and never starts it: rm %v starts %v", f.rmContainers, f.starts)
 			}
-			if d := decodeRunData(t, out.Bytes()); d.Outcome != outcomeRefused {
-				t.Errorf("outcome %q, want refused", d.Outcome)
+			if d := decodeRunData(t, out.Bytes()); d.Outcome != outcomeRefused || d.LaunchRecord != "" {
+				t.Errorf("outcome %q launch_record %q, want refused and no record (the box never ran)", d.Outcome, d.LaunchRecord)
+			}
+			if left := launchRecordFiles(t, p); len(left) != 0 {
+				t.Errorf("a stage failure keeps no launch record: %v", left)
 			}
 			check(t)
 		})
