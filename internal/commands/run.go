@@ -162,7 +162,17 @@ func runWith(s Streams, projectDir string, o RunOptions, launch runLaunch) (err 
 		}
 	}()
 	err = st.run(projectDir, launch)
-	st.finish(classifyRun(err, st.res, st.refusal))
+	out := classifyRun(err, st.res, st.refusal)
+	// A plain error is main's to print, and main prints after this returns:
+	// the summary line would no longer be last. So the run prints it here,
+	// in main's register, and hands main a bare exit code it exits with
+	// silently.
+	var ee ExitError
+	if err != nil && !errors.As(err, &ee) {
+		fmt.Fprintf(st.s.Err, "byre: %s\n", EscapeMultiline(err.Error()))
+		err = ExitError{Code: 1}
+	}
+	st.finish(out)
 	return err
 }
 

@@ -590,6 +590,30 @@ func TestRunPassesChassisExitThrough(t *testing.T) {
 	}
 }
 
+// A plain error from the launch prints in main's register BEFORE the summary
+// line, and main gets a bare exit code, so the summary line stays last.
+func TestRunPlainErrorPrintsBeforeSummary(t *testing.T) {
+	_, proj := runProject(t, configuredAgenty)
+	t.Setenv("BYRE_TASK", "do it")
+	s, _, stderr := runStreams("", false, false)
+	err := runWith(s, proj, RunOptions{}, func(Streams, *headlessOptions) error {
+		return errors.New("credential delivery failed")
+	})
+	var ee ExitError
+	if !errors.As(err, &ee) || ee.Code != 1 {
+		t.Fatalf("want ExitError{1}, got %v", err)
+	}
+	got := stderr.String()
+	banner := strings.Index(got, "byre: credential delivery failed\n")
+	summary := strings.Index(got, ": byre_failed, exit 1 (")
+	if banner < 0 || summary < 0 || banner > summary {
+		t.Errorf("want the error line before the summary line:\n%s", got)
+	}
+	if !strings.HasSuffix(lastLine(got), ": byre_failed, exit 1 (verified)") {
+		t.Errorf("the summary line must be last: %q", lastLine(got))
+	}
+}
+
 // The outcome classes, read from develop's typed result.
 func TestRunOutcomeClassification(t *testing.T) {
 	plain := errors.New("credential delivery failed")
