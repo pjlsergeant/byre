@@ -155,6 +155,9 @@ func TestCodexHeadlessKeyGetsItsOwnHome(t *testing.T) {
 	if strings.Join(argv, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("argv mismatch:\n got %q\nwant %q", argv, want)
 	}
+	// The answer and status below arrive through fds 5 and 6, which the agent
+	// itself never held.
+	b.agentHeldNothing()
 	if got, _ := b.recorded("stdin"); got != headlessTask {
 		t.Fatalf("task not delivered byte-exact on stdin: %q", got)
 	}

@@ -133,8 +133,17 @@ if [ -n "${BYRE_RUN_MODEL:-}" ]; then
   args+=(-m "$BYRE_RUN_MODEL")
 fi
 args+=(-)
-byre-codex-mcp-launch "${args[@]}" <"$BYRE_RUN_TASK_FILE" | tee -- "$log"
-rc=${PIPESTATUS[0]}
+# The result and status descriptors (5 and 6) and the variables naming them
+# are this script's alone: codex and its tee never get them, so nothing codex
+# leaves running can rewrite the answer or append status lines after the
+# script's own writes.
+{
+  (
+    unset BYRE_RUN_RESULT_FILE BYRE_RUN_STATUS_FILE
+    exec byre-codex-mcp-launch "${args[@]}"
+  ) <"$BYRE_RUN_TASK_FILE" | tee -- "$log"
+  rc=${PIPESTATUS[0]}
+} 5>&- 6>&-
 
 # --- the verdict --------------------------------------------------------------
 

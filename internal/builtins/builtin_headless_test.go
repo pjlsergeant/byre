@@ -137,8 +137,8 @@ func newHeadlessBox(t *testing.T) *headlessBox {
 		"BYRE_AGENT_CONTEXT":   ctx,
 		"BYRE_MCP_CONFIG":      filepath.Join(dir, "no-mcp.json"),
 		"BYRE_RUN_TASK_FILE":   b.task,
-		"BYRE_RUN_RESULT_FILE": b.result,
-		"BYRE_RUN_STATUS_FILE": b.status,
+		"BYRE_RUN_RESULT_FILE": "/dev/fd/5",
+		"BYRE_RUN_STATUS_FILE": "/dev/fd/6",
 		"STUB_RECORD":          b.record,
 	}
 	return b
@@ -172,6 +172,17 @@ func (b *headlessBox) run(script string) (int, string, string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bash, script)
+	// The result and status files ride fds 5 and 6, as the chassis holds them.
+	var held []*os.File
+	for _, p := range []string{b.result, b.status} {
+		f, err := os.OpenFile(p, os.O_WRONLY|os.O_APPEND, 0)
+		if err != nil {
+			b.t.Fatal(err)
+		}
+		defer f.Close()
+		held = append(held, f)
+	}
+	cmd.ExtraFiles = append([]*os.File{nil, nil}, held...)
 	for k, v := range b.env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
@@ -209,6 +220,18 @@ func (b *headlessBox) argv() []string {
 	return strings.Split(strings.TrimSuffix(raw, "\x00"), "\x00")
 }
 
+// agentHeldNothing fails when the stub agent saw the headless command's
+// result or status descriptor, or a variable naming one.
+func (b *headlessBox) agentHeldNothing() {
+	b.t.Helper()
+	if _, ran := b.recorded("argv"); !ran {
+		b.t.Fatal("the stub agent never ran")
+	}
+	if held, _ := b.recorded("held"); held != "" {
+		b.t.Errorf("the agent was handed the result/status channel: %q", held)
+	}
+}
+
 func (b *headlessBox) file(p string) string {
 	b.t.Helper()
 	raw, err := os.ReadFile(p)
@@ -218,9 +241,13 @@ func (b *headlessBox) file(p string) string {
 	return string(raw)
 }
 
-// The stub agent's run arm: argv NUL-separated, stdin byte-exact, then the
-// canned stream on stdout and the canned exit status.
+// The stub agent's run arm: argv NUL-separated, stdin byte-exact, any of
+// the headless command's held descriptors (5, 6) or the variables naming them
+// that reached it, then the canned stream on stdout and the canned exit
+// status.
 const stubRunArm = `for a in "$@"; do printf '%s\0' "$a"; done >"$STUB_RECORD/argv"
+for n in 5 6; do [ ! -e /dev/fd/$n ] || echo "fd $n" >>"$STUB_RECORD/held"; done
+env | grep '^BYRE_RUN_\(RESULT\|STATUS\)_FILE=' >>"$STUB_RECORD/held"
 cat >"$STUB_RECORD/stdin"
 [ -z "${STUB_STREAM:-}" ] || cat "$STUB_STREAM"
 exit "${STUB_RC:-0}"
@@ -291,6 +318,9 @@ func TestClaudeHeadlessRunsTheAdapter(t *testing.T) {
 	if got := b.argv(); strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("argv mismatch:\n got %q\nwant %q", got, want)
 	}
+	// The answer and status below arrive through fds 5 and 6, which the agent
+	// itself never held.
+	b.agentHeldNothing()
 	if got, _ := b.recorded("stdin"); got != headlessTask {
 		t.Fatalf("task not delivered byte-exact on stdin: %q", got)
 	}
