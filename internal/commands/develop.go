@@ -86,16 +86,7 @@ func developCommandWith(s Streams, projectDir, flagTemplate, flagAgent string, f
 	if err := builtins.EnsureStoreOut(paths.Home, s.Err); err != nil {
 		return err
 	}
-	// Worktree: announce the inherited identity up front, so any onboarding
-	// prompts below are understood as configuring the whole project (all its worktrees).
-	announceWorktree(s.Err, paths)
-	// A repo-shipped preset is like package.json: cloning gives you a file,
-	// not a prompt (the adoption offer is retired). Passive visibility
-	// only: state 1 (not applied) and state 3 (diverged) get one note; the
-	// steady state is silent. `byre preset apply` is the solicited flow.
-	if note := presetNote(projectDir, paths); note != "" {
-		fmt.Fprintf(s.Err, "byre: %s\n", note)
-	}
+	developNotices(s.Err, projectDir, paths, h)
 	// First-run onboarding is a setup mutation too. Hold the setup lock through
 	// its questions and write: reset/forget then refuse as "setup in progress",
 	// and a forget that won before this lock cancels onboarding instead of
@@ -169,7 +160,11 @@ func developCommandWith(s Streams, projectDir, flagTemplate, flagAgent string, f
 		// authors under a box-writable root, which is the shadow precondition.
 		dataf(s.Err, "%s\n", disclosure)
 	}
-	derr := developWith(runner.New(eng, engExe), s, paths, rv, selfEdit, credMode, h)
+	sr := runner.New(eng, engExe)
+	if h != nil && h.StreamStdout != nil {
+		sr = sr.WithStreamStdout(h.StreamStdout)
+	}
+	derr := developWith(sr, s, paths, rv, selfEdit, credMode, h)
 	if derr != nil && !mayEnroll {
 		// The engine-facing core takes the setup lock again after credential
 		// prompts. If forget won during that human wait, replace its generic
@@ -219,7 +214,7 @@ func developWith(r engineRunner, s Streams, paths project.Paths, rv resolved, se
 	// every session: a branch that
 	// edits a build input would otherwise silently run an image built from
 	// other content.
-	if paths.IsWorktree {
+	if paths.IsWorktree && !h.quiet() {
 		fmt.Fprintf(s.Err, "byre: worktree session — the shared project image builds from the main worktree (%s); `files` sources changed only in this worktree don't reach the image.\n", paths.Canonical)
 	}
 
@@ -263,7 +258,7 @@ func developWith(r engineRunner, s Streams, paths project.Paths, rv resolved, se
 	// front (like the self-edit warning, it frames the session), and say what
 	// it does not do — the config is untouched, the next develop reverts.
 	// dataf: the agent is a package id byre did not author (P4's funnel).
-	if rv.agentOverride != "" {
+	if rv.agentOverride != "" && !h.quiet() {
 		dataf(s.Err, "byre: agent for this run: %s (--agent override; nothing written — the next develop uses byre.config again).\n", config.OrNone(rv.cfg.Agent))
 	}
 	// Credential unlock (launch step 1) is deliberately PRE-lock: a prompt
@@ -319,9 +314,11 @@ func developWith(r engineRunner, s Streams, paths project.Paths, rv resolved, se
 	// warning above is consciously pre-create: it guards a decision, not a
 	// session.) The config UI renders the same tally (config.Exposure owns the
 	// words); `byre status` is the detailed, attributed view.
-	exp := exposureOf(prep.rv, selfEdit, prep.hostEnv)
-	fmt.Fprintf(s.Err, "byre: exposure: %s\n", exp.GrantsLine())
-	fmt.Fprintf(s.Err, "byre: %s\n", exp.NetworkLine())
+	if !h.quiet() {
+		exp := exposureOf(prep.rv, selfEdit, prep.hostEnv)
+		fmt.Fprintf(s.Err, "byre: exposure: %s\n", exp.GrantsLine())
+		fmt.Fprintf(s.Err, "byre: %s\n", exp.NetworkLine())
+	}
 	// Containment holes (e.g. docker-host): loud standing grant, at least
 	// self-edit's 🛑 weight. Skill-owned text; byre frames and attributes.
 	for _, c := range prep.rv.skills.Containments() {
@@ -886,6 +883,24 @@ func warnCompatLegacy(w io.Writer, projectDir string) {
 // announceWorktree notes, on stderr, that this directory is a linked worktree
 // inheriting the main repo's identity — so shared config/volumes/image and any
 // onboarding prompts are legible rather than surprising. No-op for a plain project.
+// developNotices prints the session's opening notes. The worktree
+// announcement goes first, so any onboarding prompts are understood as
+// configuring the whole project (all its worktrees). A repo-shipped preset
+// is like package.json: cloning gives you a file, not a prompt (the adoption
+// offer is retired) -- passive visibility only: state 1 (not applied) and
+// state 3 (diverged) get one note; the steady state is silent, and `byre
+// preset apply` is the solicited flow. Both are banner-class, so a quiet
+// headless run drops them.
+func developNotices(w io.Writer, projectDir string, paths project.Paths, h *headlessOptions) {
+	if h.quiet() {
+		return
+	}
+	announceWorktree(w, paths)
+	if note := presetNote(projectDir, paths); note != "" {
+		fmt.Fprintf(w, "byre: %s\n", note)
+	}
+}
+
 func announceWorktree(w io.Writer, paths project.Paths) {
 	if paths.IsWorktree {
 		fmt.Fprintf(w, "byre: worktree of %s — inheriting its config, volumes, and image.\n", paths.Canonical)

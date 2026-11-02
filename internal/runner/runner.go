@@ -818,6 +818,18 @@ chown -R "$BYRE_OWNER" /dest`
 	return r.stream(r.bin(), args...)
 }
 
+// WithStreamStdout returns a copy of r whose streamed engine calls -- the
+// build, the volume seeds, the helper runs that print progress -- send their
+// stdout to w instead of byre's own. A caller whose stdout is a product (a
+// headless run's answer) routes them to stderr with it. The attach is not a
+// streamed call here: StartAttachIO already takes the caller's stdout.
+func (r *Runner) WithStreamStdout(w io.Writer) *Runner {
+	c := *r
+	c.stream = func(name string, args ...string) error { return streamIOExec(os.Stdin, w, name, args...) }
+	c.streamIn = func(stdin io.Reader, name string, args ...string) error { return streamIOExec(stdin, w, name, args...) }
+	return &c
+}
+
 func streamInExec(stdin io.Reader, name string, args ...string) error {
 	return streamIOExec(stdin, os.Stdout, name, args...)
 }

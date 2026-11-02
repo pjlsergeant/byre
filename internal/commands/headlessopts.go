@@ -36,6 +36,16 @@ type headlessOptions struct {
 	RunID      string
 	TaskSHA256 string
 	RunTimeout string
+	// Quiet drops develop's banner-class notices -- the worktree and preset
+	// notes, the run-scoped agent line, the exposure/network summary. It
+	// never drops an error, a refusal, a warning, or the exit report: those
+	// are what a quiet run's reader still needs.
+	Quiet bool
+	// StreamStdout is where the engine calls develop streams before the
+	// attach (the build, the volume seeds) send their stdout. Unset, they
+	// write to byre's own stdout as develop always has; a headless run's
+	// stdout is the answer and nothing else, so it routes them to stderr.
+	StreamStdout io.Writer
 	// Result, when set, is filled as develop goes (see developResult).
 	Result *developResult
 }
@@ -89,6 +99,9 @@ type developResult struct {
 	// anything, and byre does not parse the block (ADR 0006).
 	RawRunArgs bool
 }
+
+// quiet reports whether develop's banner-class notices are suppressed.
+func (h *headlessOptions) quiet() bool { return h != nil && h.Quiet }
 
 // result is the record develop writes into: the caller's when it asked for
 // one, a discarded scratch value otherwise, so develop writes unconditionally.

@@ -37,11 +37,16 @@ type Streams struct {
 	Err io.Writer
 	In  io.Reader
 	TTY bool
+	// OutTTY says whether Out is a terminal. Detected once by main, like TTY;
+	// a command that relays text it did not author to Out escapes it for a
+	// terminal and passes it byte for byte to a file or a pipe.
+	OutTTY bool
 }
 
-// StdStreams is the process's real stdio, with TTY detected from stdin.
+// StdStreams is the process's real stdio, with TTY detected from stdin and
+// OutTTY from stdout.
 func StdStreams() Streams {
-	return Streams{Out: os.Stdout, Err: os.Stderr, In: os.Stdin, TTY: isTTY(os.Stdin)}
+	return Streams{Out: os.Stdout, Err: os.Stderr, In: os.Stdin, TTY: isTTY(os.Stdin), OutTTY: isTTY(os.Stdout)}
 }
 
 // isTTY reports whether f is an interactive terminal. It uses an isatty (ioctl)
