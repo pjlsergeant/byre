@@ -1,7 +1,7 @@
 ---
 title: Packaging reference
 weight: 55
-description: provenance, manifests, digest pinning, the MCP / Claude Skills wiring contract, and the headless command
+description: provenance, manifests, digest pinning, the MCP / Claude Skills wiring contract, the headless command, and required skills
 params:
   reference: true
 ---
@@ -124,3 +124,19 @@ makes status stop vouching for the headless command. Authoring notes:
 [docs/SKILLS.md](https://github.com/pjlsergeant/byre/blob/main/docs/SKILLS.md);
 the decision:
 [ADR 0061](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0061-headless-runs.md).
+
+## Required skills
+
+`requires = ["<skill>", ...]` at the top level of a skill.toml names
+skills this one does not work without. Each name expands through the
+catalog like any skill name and must be ENABLED -- in the cascade's
+`skills` list or as the agent -- or develop and `byre run` refuse:
+`skill "owner/name" requires "codex", which is not enabled -- add it to
+skills = [...]`. byre never enables a requirement itself. The check is
+the same under `develop -a`. `validate` refuses a malformed name, a
+duplicate, or the skill's own id; a name that does not exist is reported
+at resolve. `byre skill inspect` and the install summary print
+`requires: <name>`, and the config editor's Skills screen marks an
+enabled skill whose requirement is off, `(requires codex -- not
+enabled)`, leaving the row toggleable. The decision:
+[ADR 0062](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0062-skill-requires.md).

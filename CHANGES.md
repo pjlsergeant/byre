@@ -37,6 +37,15 @@
   already has, for that run. It matters on a laptop or self-hosted runner,
   never on a discarded hosted runner; docs/AGENT-CREDENTIAL-MECHANICS.md
   explains.
+- **Skills can declare what they require.** `requires = ["codex"]` at
+  the top level of a skill.toml names skills it does not work without;
+  develop and `byre run` refuse a box where one is not enabled, naming
+  both and the remedy (`add it to skills = [...]`). byre never enables
+  the requirement itself. `byre skill inspect` and the install summary
+  print `requires: <name>`, and the config editor's Skills screen marks
+  an enabled skill whose requirement is off, `(requires codex -- not
+  enabled)`, without stopping you switching it off. A manifest carrying
+  the key is refused by older byre releases. ADR 0062.
 - **The claude skill installs `jq`.** Its headless command reads
   claude's result event with it.
 - **`status --data` carries `agent_headless`** (StatusDataVersion 4 → 5):

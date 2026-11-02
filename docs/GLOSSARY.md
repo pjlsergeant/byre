@@ -428,6 +428,14 @@ by `shared_auth_for` (the shared-auth offer's vouch); it is a fact, not
 a readiness claim, and is what nests the companion under its agent's
 row in the config UI (ADR 0034).
 
+**Required skill (`requires`)**:
+A skill another skill names in its top-level `requires` list because it
+does not work without it (zai requires codex). A requirement is MET only
+when the user has enabled it -- in `skills` or as the agent -- and
+develop refuses otherwise; byre never enables one on the user's behalf
+(ADR 0062). Not a companion: a companion augments an agent, a
+requirement is something the requiring skill uses.
+
 **docker-host**:
 The builtin skill that grants the box access to the **host's Docker
 daemon** via its socket -- root-equivalent on the host, declared as a

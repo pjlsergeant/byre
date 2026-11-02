@@ -77,7 +77,8 @@ alone, and some of byre's rules are properties of a SET that only exists
 once a config selects one: two skills declaring a `network_posture` or a
 `netns_init`, two setting the same env key to different values, MCP or
 Claude Skill names colliding across skills and config, the `agent`
-scalar naming a skill that is not enabled. Those are checked when the
+scalar naming a skill that is not enabled, a `requires` entry naming one
+that is not. Those are checked when the
 cascade resolves -- at develop -- and no per-package command can check
 them earlier, because the other packages are not in view. A green
 `validate` says this manifest is sound, never that any particular box
@@ -241,6 +242,25 @@ headless run has nobody to answer. Don't set any `BYRE_RUN_*` name in your
 `[runtime].env` -- status then stops vouching for the headless command.
 byre's own `claude-headless.sh` and `codex-headless.sh` are worked
 examples.
+
+A skill that does not work without another -- a wrapper that drives
+codex's binary, say -- declares it at the top level of its skill.toml:
+
+```toml
+requires = ["codex"]
+```
+
+develop (and `byre run`) then refuses any box where codex is not
+enabled, naming both skills and the remedy (`add it to skills =
+[...]`). byre never enables the requirement for the user: enabling a
+skill is consent to its egress, mounts and build, and that is theirs to
+give ([ADR 0062](adr/0062-skill-requires.md)). `skill inspect` and the
+install summary show the line, and the config editor marks an enabled
+skill whose requirement is off. Names are skill names (an alias or
+`owner/name`); one byre cannot find is reported at develop, not by
+`validate`. Older byre releases refuse a manifest carrying the key, so a
+published skill that adopts it raises its `requires_byre` to the first
+release that has it.
 
 To publish, declare identity in `[package]` -- a qualified id
 (`owner/name`), a `version`, and a `requires_byre` constraint -- then:
