@@ -82,9 +82,9 @@ Verified 2026-11-02: the agent-contract tier built every agent's box cold on
 `debian:trixie` and the full gated integration suite passed. docker-host's
 apt step and the three template images were exercised directly on the
 runner. The gemini skill's keep-the-base-Node branch was exercised on
-`node:24-trixie` (Node 24 kept) and its install branch on bare
-`debian:trixie` (Node 22 fetched, checksum OK), and the gemini
-agent-contract test passed on trixie.
+`node:26-trixie` (Node v26.13.0 kept, npm 11.20.0, gemini CLI 0.66.0 ran on
+it) and its install branch on bare `debian:trixie` (Node 22 fetched,
+checksum OK), and both gemini agent-contract tests passed on trixie.
 
 ## Consequences
 
@@ -140,7 +140,7 @@ agent-contract test passed on trixie.
 The gemini skill's keep-the-base-Node branch has one gated arm,
 `TestAgentContractGeminiKeepsTheTemplatesNode` (`BYRE_AGENT_TESTS=1`,
 `internal/commands/agent_contract_test.go`): it builds `template = "node"`
-with `agent = "gemini"` and asserts the box still runs Node 24 with npm and
+with `agent = "gemini"` and asserts the box still runs Node 26 with npm and
 the gemini CLI. It is absent from the list below because an index line
 carries one marker: `go test ./...` says nothing about it, and the
 agent-contract tier is where it fires.
