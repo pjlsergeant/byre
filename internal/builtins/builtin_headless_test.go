@@ -56,16 +56,20 @@ func TestBundledHeadlessCommandsShip(t *testing.T) {
 }
 
 // headlessBox is a stand-in for the in-box environment a headless command
-// runs in: a bin dir holding the stub agent, the REAL launch adapter, and a
-// stub timeout; a tools dir of the host programs the scripts use, each behind
-// a wrapper that reports whether it was handed the result or status channel;
-// and the chassis's three files, with regular files standing in for its
-// descriptors. PATH is exactly bin:tools, so the box's own claude or codex can
-// never answer in place of the stub, and the environment is built from
-// scratch, so the suite box's real credentials never reach a case.
+// runs in: a bin dir holding the stub agent; a tools dir of the host programs
+// the scripts and adapters use, each behind a wrapper that reports whether it
+// was handed the result or status channel; a sys dir standing in for the
+// image's system directories, holding the same wrappers, a stub timeout and
+// the REAL launch adapter; and the chassis's three files, with regular files
+// standing in for its descriptors. The inherited PATH is exactly bin:tools,
+// so the box's own claude or codex can never answer in place of the stub, and
+// the environment is built from scratch, so the suite box's real credentials
+// never reach a case. stage points a script's pinned PATH and adapter path at
+// sys.
 type headlessBox struct {
 	t              *testing.T
 	dir, bin, tmp  string
+	sys            string
 	task, result   string
 	status, record string
 	timeoutLog     string
@@ -84,6 +88,7 @@ func newHeadlessBox(t *testing.T) *headlessBox {
 	b := &headlessBox{
 		t: t, dir: dir,
 		bin:        filepath.Join(dir, "bin"),
+		sys:        filepath.Join(dir, "sys"),
 		tmp:        filepath.Join(dir, "tmp"),
 		task:       filepath.Join(dir, "run", "task.md"),
 		result:     filepath.Join(dir, "run", "result.md"),
@@ -93,7 +98,7 @@ func newHeadlessBox(t *testing.T) *headlessBox {
 		env:        map[string]string{},
 	}
 	tools := filepath.Join(dir, "tools")
-	for _, d := range []string{b.bin, tools, b.tmp, b.record, filepath.Dir(b.task), filepath.Join(dir, "home")} {
+	for _, d := range []string{b.bin, tools, b.sys, b.tmp, b.record, filepath.Dir(b.task), filepath.Join(dir, "home")} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -104,16 +109,18 @@ func newHeadlessBox(t *testing.T) *headlessBox {
 		if err != nil {
 			continue // the scripts degrade without the optional ones (iconv)
 		}
-		// The shells stay plain links: the wrapper is itself a shell script.
-		if name == "bash" || name == "sh" {
-			if err := os.Symlink(p, filepath.Join(tools, name)); err != nil {
+		for _, d := range []string{tools, b.sys} {
+			// The shells stay plain links: the wrapper is itself a shell script.
+			if name == "bash" || name == "sh" {
+				if err := os.Symlink(p, filepath.Join(d, name)); err != nil {
+					t.Fatal(err)
+				}
+				continue
+			}
+			wrapper := "#!/bin/sh\n" + stubHeldCheck + "exec '" + p + "' \"$@\"\n"
+			if err := os.WriteFile(filepath.Join(d, name), []byte(wrapper), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			continue
-		}
-		wrapper := "#!/bin/sh\n" + stubHeldCheck + "exec '" + p + "' \"$@\"\n"
-		if err := os.WriteFile(filepath.Join(tools, name), []byte(wrapper), 0o755); err != nil {
-			t.Fatal(err)
 		}
 	}
 	realTimeout, err := exec.LookPath("timeout")
@@ -123,8 +130,9 @@ func newHeadlessBox(t *testing.T) *headlessBox {
 	// The stub timeout records the bound it was asked for and enforces 2 s
 	// instead, so a hung probe proves the bound without a 30 s wait. A -k is
 	// honoured as a 1 s KILL follow-up, and only when asked for: a probe that
-	// ignores TERM is then cut off only if the script passed -k.
-	b.writeExec("timeout", "#!/bin/sh\n"+stubHeldCheck+"printf '%s\\n' \"$*\" >>'"+b.timeoutLog+"'\n"+
+	// ignores TERM is then cut off only if the script passed -k. It is the
+	// system one: the scripts never look timeout up on the inherited PATH.
+	b.writeSys("timeout", "#!/bin/sh\n"+stubHeldCheck+"printf '%s\\n' \"$*\" >>'"+b.timeoutLog+"'\n"+
 		"if [ \"$1\" = -k ]; then shift 3; exec '"+realTimeout+"' -k 1 2 \"$@\"; fi\n"+
 		"shift\nexec '"+realTimeout+"' 2 \"$@\"\n")
 	for _, f := range []string{b.task, b.result, b.status} {
@@ -154,6 +162,7 @@ func newHeadlessBox(t *testing.T) *headlessBox {
 	return b
 }
 
+// writeExec puts a program on the inherited PATH, where the agent lives.
 func (b *headlessBox) writeExec(name, body string) {
 	b.t.Helper()
 	if err := os.WriteFile(filepath.Join(b.bin, name), []byte(body), 0o755); err != nil {
@@ -161,15 +170,54 @@ func (b *headlessBox) writeExec(name, body string) {
 	}
 }
 
-// installAdapter stages a skill's real launch adapter on the box PATH under
-// its in-box name.
-func (b *headlessBox) installAdapter(src, name string) {
+// writeSys puts a program in the stand-in system directory.
+func (b *headlessBox) writeSys(name, body string) {
 	b.t.Helper()
-	body, err := os.ReadFile(src)
+	if err := os.WriteFile(filepath.Join(b.sys, name), []byte(body), 0o755); err != nil {
+		b.t.Fatal(err)
+	}
+}
+
+// headlessSystemPath is the PATH every headless script pins for its own
+// helpers, the image's system directories.
+const headlessSystemPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+// stage installs a skill's real launch adapter in the stand-in system
+// directory under its in-box name, and returns a copy of the headless script
+// whose pinned PATH and absolute adapter path name that directory. Each is
+// replaced exactly once, so a script that stops pinning either fails here.
+func (b *headlessBox) stage(script, adapterSrc, adapter string) string {
+	b.t.Helper()
+	body, err := os.ReadFile(adapterSrc)
 	if err != nil {
 		b.t.Fatal(err)
 	}
-	b.writeExec(name, string(body))
+	b.writeSys(adapter, string(body))
+	raw, err := os.ReadFile(script)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	src := string(raw)
+	for from, to := range map[string]string{
+		"\nPATH=" + headlessSystemPath + "\n": "\nPATH=" + b.sys + "\n",
+		"=/usr/local/bin/" + adapter + "\n":   "=" + filepath.Join(b.sys, adapter) + "\n",
+	} {
+		if n := strings.Count(src, from); n != 1 {
+			b.t.Fatalf("%s: %q appears %d times, want once", script, strings.TrimSpace(from), n)
+		}
+		src = strings.Replace(src, from, to, 1)
+	}
+	staged := filepath.Join(b.dir, filepath.Base(script))
+	if err := os.WriteFile(staged, []byte(src), 0o755); err != nil {
+		b.t.Fatal(err)
+	}
+	return staged
+}
+
+// agentCmd is how a script's bounded probe names an agent command to
+// timeout: through env, with the inherited PATH restored.
+func (b *headlessBox) agentCmd(cmd string) string {
+	return "env PATH=" + b.env["PATH"] + " " + cmd
 }
 
 // run executes a headless script and returns its exit code, stdout, stderr.
@@ -270,9 +318,11 @@ const stubHeldCheck = `for n in 5 6; do [ ! -e /dev/fd/$n ] || echo "${0##*/}: f
 [ -z "${BYRE_RUN_STATUS_FILE+x}" ] || echo "${0##*/}: BYRE_RUN_STATUS_FILE" >>"$STUB_RECORD/held"
 `
 
-// The stub agent's run arm: argv NUL-separated, stdin byte-exact, then the
+// The stub agent's run arm: argv NUL-separated, the PATH it was given, stdin
+// byte-exact, then the
 // canned stream on stdout and the canned exit status.
 const stubRunArm = `for a in "$@"; do printf '%s\0' "$a"; done >"$STUB_RECORD/argv"
+printf '%s' "$PATH" >"$STUB_RECORD/path"
 cat >"$STUB_RECORD/stdin"
 [ -z "${STUB_STREAM:-}" ] || cat "$STUB_STREAM"
 exit "${STUB_RC:-0}"
@@ -296,13 +346,9 @@ func newClaudeBox(t *testing.T) (*headlessBox, string) {
 	t.Helper()
 	b := newHeadlessBox(t)
 	b.writeExec("claude", stubClaude)
-	b.installAdapter(filepath.Join("skills", "claude", "claude-launch.sh"), "byre-claude-launch")
 	b.env["CLAUDE_CONFIG_DIR"] = filepath.Join(b.dir, "claude-config")
-	script, err := filepath.Abs(filepath.Join("skills", "claude", "claude-headless.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b, script
+	return b, b.stage(filepath.Join("skills", "claude", "claude-headless.sh"),
+		filepath.Join("skills", "claude", "claude-launch.sh"), "byre-claude-launch")
 }
 
 // stream writes a canned event stream for the stub to print.
@@ -453,7 +499,7 @@ func TestClaudeHeadlessCredentialPreflight(t *testing.T) {
 		if code != 13 || !strings.Contains(stderr, "env_from_host") || !strings.Contains(stderr, "within 30 s") {
 			t.Fatalf("exit %d, want 13 for the timed-out probe: %s", code, stderr)
 		}
-		if !strings.Contains(b.file(b.timeoutLog), "-k 5 30 claude auth status\n") {
+		if !strings.Contains(b.file(b.timeoutLog), "-k 5 30 "+b.agentCmd("claude auth status")+"\n") {
 			t.Fatalf("auth status not bounded at 30 s with a KILL follow-up: %q", b.file(b.timeoutLog))
 		}
 	})
@@ -464,7 +510,7 @@ func TestClaudeHeadlessCredentialPreflight(t *testing.T) {
 		if code, _, stderr := b.run(script); code != 0 {
 			t.Fatalf("exit %d: %s", code, stderr)
 		}
-		if !strings.Contains(b.file(b.timeoutLog), "-k 5 10 claude --version\n") {
+		if !strings.Contains(b.file(b.timeoutLog), "-k 5 10 "+b.agentCmd("claude --version")+"\n") {
 			t.Fatalf("the version probe is not bounded at 10 s with a KILL follow-up: %q", b.file(b.timeoutLog))
 		}
 	})
@@ -544,5 +590,63 @@ func TestClaudeHeadlessBackendAbsentIs15(t *testing.T) {
 	}
 	if code, _, stderr := b.run(script); code != 15 {
 		t.Fatalf("exit %d, want 15: %s", code, stderr)
+	}
+}
+
+// The inherited PATH starts with the agent-writable ~/.local/bin, so a
+// helper the scripts found there would run inside the verdict. Decoys of
+// timeout, env, jq, tee and the launch adapter planted first on it never run,
+// the verdict and answer are unchanged, the system timeout is the one that
+// bounds the probes -- and the agent itself still sees the inherited PATH.
+func TestHeadlessHelpersIgnoreTheInheritedPath(t *testing.T) {
+	type agentCase struct {
+		name    string
+		adapter string
+		setup   func(t *testing.T) (*headlessBox, string)
+	}
+	for _, c := range []agentCase{
+		{"claude", "byre-claude-launch", func(t *testing.T) (*headlessBox, string) {
+			b, script := newClaudeBox(t)
+			b.env["ANTHROPIC_API_KEY"] = "sk-test"
+			b.stream(claudeOK)
+			return b, script
+		}},
+		{"codex", "byre-codex-mcp-launch", func(t *testing.T) (*headlessBox, string) {
+			b, script := newCodexBox(t)
+			b.env["OPENAI_API_KEY"] = "sk-test"
+			b.env["STUB_ANSWER"] = "pong"
+			b.stream(codexMessage, codexDone)
+			return b, script
+		}},
+		{"grok", "byre-grok-launch", func(t *testing.T) (*headlessBox, string) {
+			b, script := newGrokBox(t)
+			b.env["XAI_API_KEY"] = "xai-test"
+			b.stream(grokOK)
+			return b, script
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			b, script := c.setup(t)
+			for _, name := range []string{"timeout", "env", "jq", "tee", c.adapter} {
+				b.writeExec(name, "#!/bin/sh\necho \"${0##*/}\" >>\"$STUB_RECORD/decoy\"\nexit 99\n")
+			}
+			code, _, stderr := b.run(script)
+			if code != 0 {
+				t.Fatalf("exit %d, want 0: %s", code, stderr)
+			}
+			if ran, ok := b.recorded("decoy"); ok {
+				t.Fatalf("a helper planted on the inherited PATH ran: %q", ran)
+			}
+			if got := b.file(b.result); got != "pong" {
+				t.Fatalf("answer = %q, want pong", got)
+			}
+			if !strings.Contains(b.file(b.timeoutLog), " "+b.agentCmd(c.name+" --version")+"\n") {
+				t.Fatalf("the system timeout did not bound the version probe: %q", b.file(b.timeoutLog))
+			}
+			if got, _ := b.recorded("path"); got != b.env["PATH"] {
+				t.Fatalf("the agent ran with PATH %q, want the inherited %q", got, b.env["PATH"])
+			}
+			b.agentHeldNothing()
+		})
 	}
 }

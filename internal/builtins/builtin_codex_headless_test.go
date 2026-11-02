@@ -63,7 +63,6 @@ func newCodexBox(t *testing.T) (*headlessBox, string) {
 	t.Helper()
 	b := newHeadlessBox(t)
 	b.writeExec("codex", stubCodex)
-	b.installAdapter(filepath.Join("skills", "codex", "codex-mcp-launch.sh"), "byre-codex-mcp-launch")
 	real := filepath.Join(b.dir, "codex-home")
 	if err := os.MkdirAll(real, 0o755); err != nil {
 		t.Fatal(err)
@@ -74,11 +73,8 @@ func newCodexBox(t *testing.T) (*headlessBox, string) {
 		}
 	}
 	b.env["CODEX_HOME"] = real
-	script, err := filepath.Abs(filepath.Join("skills", "codex", "codex-headless.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b, script
+	return b, b.stage(filepath.Join("skills", "codex", "codex-headless.sh"),
+		filepath.Join("skills", "codex", "codex-mcp-launch.sh"), "byre-codex-mcp-launch")
 }
 
 // realHomeUntouched fails unless the real CODEX_HOME still holds exactly the
@@ -134,7 +130,7 @@ func TestCodexHeadlessKeyGetsItsOwnHome(t *testing.T) {
 	if _, asked := b.recorded("status-home"); asked {
 		t.Fatal("the real home's login was consulted although a key was given")
 	}
-	if !strings.Contains(b.file(b.timeoutLog), "-k 5 30 codex login --with-api-key\n") {
+	if !strings.Contains(b.file(b.timeoutLog), "-k 5 30 "+b.agentCmd("codex login --with-api-key")+"\n") {
 		t.Fatalf("the key login is not bounded at 30 s: %q", b.file(b.timeoutLog))
 	}
 	b.realHomeUntouched()
@@ -203,10 +199,10 @@ func TestCodexHeadlessExistingLogin(t *testing.T) {
 	if _, loggedIn := b.recorded("login"); loggedIn {
 		t.Fatal("no key was given, yet a login ran")
 	}
-	if !strings.Contains(b.file(b.timeoutLog), "-k 5 30 codex login status\n") {
+	if !strings.Contains(b.file(b.timeoutLog), "-k 5 30 "+b.agentCmd("codex login status")+"\n") {
 		t.Fatalf("login status not bounded at 30 s: %q", b.file(b.timeoutLog))
 	}
-	if !strings.Contains(b.file(b.timeoutLog), "-k 5 10 codex --version\n") {
+	if !strings.Contains(b.file(b.timeoutLog), "-k 5 10 "+b.agentCmd("codex --version")+"\n") {
 		t.Fatalf("the version probe is not bounded at 10 s with a KILL follow-up: %q", b.file(b.timeoutLog))
 	}
 	b.realHomeUntouched()

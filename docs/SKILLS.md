@@ -214,11 +214,11 @@ must not equal `command`. The command honours a small contract
   `/dev/fd/5`: if your agent wants a path, give it a temp file and copy
   that in afterwards). byre prints it on `byre run`'s stdout. Keep fds 5
   and 6 and the `BYRE_RUN_RESULT_FILE` / `BYRE_RUN_STATUS_FILE` variables
-  to your script's own writes -- never hand them to the agent binary (unset
-  the two variables and close the two descriptors, `5>&- 6>&-`, for the
-  agent's process). A grandchild that outlives your script while
-  holding them could rewrite the answer or the status lines before byre
-  reads them.
+  to your script's own writes -- no child ever inherits them: copy the two
+  names into script locals and unset them first, and start every program
+  (the agent, its probes, `jq`, `tee`, ...) with `5>&- 6>&-`. A child
+  that outlives your script while holding them could rewrite the answer or
+  the status lines before byre reads them.
 - Exit with exactly one of: `0` (success -- an empty answer turns it into
   14), `10` (the agent reported failure), `11` (the agent process failed:
   append `backend_exit=<its status>` to `BYRE_RUN_STATUS_FILE` first), `13`
@@ -234,7 +234,14 @@ must not equal `command`. The command honours a small contract
   `agent_version=<text>` in the status file is shown in `result.json`.
 - Run your agent through the same launch adapter your interactive command
   uses, so the injection your `mcp`/`claude_skills`/`context` vouches
-  promise holds in a headless run too.
+  promise holds in a headless run too. Keep your own helpers (`timeout`,
+  `env`, `jq`, `tee`, ...) on the system PATH
+  (`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`) and
+  invoke the agent by the adapter's absolute path with the inherited PATH
+  restored for that call alone (`timeout -k 5 30 env PATH="$agent_path"
+  /usr/local/bin/<adapter> ...`): the inherited PATH starts with the
+  agent-writable `~/.local/bin`, where a planted `timeout` or `jq` would
+  run inside your verdict.
 
 Your login hook should not prompt under `BYRE_HEADLESS=1` (byre sets it
 from the launch's argv for every headless run) or without a terminal: a

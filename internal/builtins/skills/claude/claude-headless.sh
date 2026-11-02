@@ -29,14 +29,32 @@ result_file=$BYRE_RUN_RESULT_FILE status_file=$BYRE_RUN_STATUS_FILE
 unset BYRE_RUN_RESULT_FILE BYRE_RUN_STATUS_FILE
 run_child() { "$@" 5>&- 6>&-; }
 
+# The script's own helpers (timeout, env, jq, tee, mktemp, ...) run from the
+# image's system directories only: the inherited PATH starts with the
+# agent-writable ~/.local/bin, which repository code could write before the
+# chassis ran, and a helper found there would run inside the verdict -- a
+# planted timeout voids every bound, a planted jq judges the answer. The
+# inherited PATH is claude's own: claude's probes and its launch adapter run
+# with it restored through env, the adapter named by its absolute path.
+agent_path=${PATH-}
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+launch=/usr/local/bin/byre-claude-launch
+
 say() { printf 'byre-claude-headless: %s\n' "$*" >&2; }
 
-for tool in claude byre-claude-launch jq; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    say "$tool is not installed in this box; rebuild it with the claude skill enabled"
-    exit 15
-  fi
-done
+missing=""
+if ! (PATH=$agent_path && command -v claude) >/dev/null 2>&1; then
+  missing=claude
+elif [ ! -x "$launch" ]; then
+  missing=$launch
+elif ! command -v jq >/dev/null 2>&1; then
+  missing=jq
+fi
+if [ -n "$missing" ]; then
+  say "$missing is not installed in this box; rebuild it with the claude skill enabled"
+  exit 15
+fi
 
 no_credential() {
   say "no Claude credential${1:+ ($1)}."
@@ -62,7 +80,7 @@ if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || [ -n "${ANTHROPIC_API_KEY:-}" ] ||
 elif [ -f "$creds" ] && [ ! -L "$creds" ] && run_child grep -q '"claudeAiOauth"' "$creds" 2>/dev/null; then
   :
 else
-  auth=$(run_child timeout -k 5 30 claude auth status </dev/null 2>/dev/null)
+  auth=$(run_child timeout -k 5 30 env PATH="$agent_path" claude auth status </dev/null 2>/dev/null)
   rc=$?
   if [ "$rc" = 124 ] || [ "$rc" = 137 ]; then
     no_credential "\`claude auth status\` did not answer within 30 s"
@@ -89,7 +107,7 @@ if [ -n "$env_cred" ] && [ ! -e "$cfg/.claude.json" ] && [ ! -L "$cfg/.claude.js
   fi
 fi
 
-version=$(run_child timeout -k 5 10 claude --version </dev/null 2>/dev/null | run_child head -n 1)
+version=$(run_child timeout -k 5 10 env PATH="$agent_path" claude --version </dev/null 2>/dev/null | run_child head -n 1)
 if [ -n "$version" ]; then
   printf 'agent_version=%s\n' "$version" >>"$status_file"
 fi
@@ -116,7 +134,7 @@ args=(-p --dangerously-skip-permissions --mcp-config /etc/byre/mcp.json
 if [ -n "${BYRE_RUN_MODEL:-}" ]; then
   args+=(--model "$BYRE_RUN_MODEL")
 fi
-run_child byre-claude-launch "${args[@]}" <"$BYRE_RUN_TASK_FILE" | run_child tee -- "$log"
+run_child env PATH="$agent_path" "$launch" "${args[@]}" <"$BYRE_RUN_TASK_FILE" | run_child tee -- "$log"
 rc=${PIPESTATUS[0]}
 
 # --- the verdict --------------------------------------------------------------

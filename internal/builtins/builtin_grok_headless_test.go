@@ -31,17 +31,13 @@ func newGrokBox(t *testing.T) (*headlessBox, string) {
 	t.Helper()
 	b := newHeadlessBox(t)
 	b.writeExec("grok", stubGrok)
-	b.installAdapter(filepath.Join("skills", "grok", "grok-launch.sh"), "byre-grok-launch")
 	home := filepath.Join(b.dir, "grok-home")
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	b.env["GROK_HOME"] = home
-	script, err := filepath.Abs(filepath.Join("skills", "grok", "grok-headless.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b, script
+	return b, b.stage(filepath.Join("skills", "grok", "grok-headless.sh"),
+		filepath.Join("skills", "grok", "grok-launch.sh"), "byre-grok-launch")
 }
 
 // The run argv is a contract with the grok CLI: the adapter is what runs (its
@@ -76,7 +72,7 @@ func TestGrokHeadlessRunsTheAdapter(t *testing.T) {
 	if st := b.file(b.status); !strings.Contains(st, "agent_version=grok 9.9.9\n") || strings.Contains(st, "backend_exit") {
 		t.Fatalf("status = %q", st)
 	}
-	if !strings.Contains(b.file(b.timeoutLog), "-k 5 10 grok --version\n") {
+	if !strings.Contains(b.file(b.timeoutLog), "-k 5 10 "+b.agentCmd("grok --version")+"\n") {
 		t.Fatalf("the version probe is not bounded at 10 s with a KILL follow-up: %q", b.file(b.timeoutLog))
 	}
 	if ents, _ := os.ReadDir(b.tmp); len(ents) != 0 {
@@ -237,17 +233,17 @@ func TestGrokHeadlessCredentialPreflight(t *testing.T) {
 		if st := b.file(b.status); strings.Contains(st, "agent_version") {
 			t.Fatalf("a hung version probe has no version: %q", st)
 		}
-		if !strings.Contains(b.file(b.timeoutLog), "-k 5 10 grok --version\n") {
+		if !strings.Contains(b.file(b.timeoutLog), "-k 5 10 "+b.agentCmd("grok --version")+"\n") {
 			t.Fatalf("the version probe is not bounded: %q", b.file(b.timeoutLog))
 		}
 	})
 }
 
 func TestGrokHeadlessBackendAbsentIs15(t *testing.T) {
-	for _, gone := range []string{"grok", "byre-grok-launch"} {
+	for _, gone := range []string{filepath.Join("bin", "grok"), filepath.Join("sys", "byre-grok-launch")} {
 		b, script := newGrokBox(t)
 		b.env["XAI_API_KEY"] = "xai-test"
-		if err := os.Remove(filepath.Join(b.bin, gone)); err != nil {
+		if err := os.Remove(filepath.Join(b.dir, gone)); err != nil {
 			t.Fatal(err)
 		}
 		if code, _, stderr := b.run(script); code != 15 {

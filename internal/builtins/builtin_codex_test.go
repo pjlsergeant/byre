@@ -224,6 +224,41 @@ func TestCodexSharedAuthDiagnosticsAreGatedAndRedacted(t *testing.T) {
 	}
 }
 
+// The shared-auth hook bounds its reconciler with the system timeout and runs
+// it with the system bash, both by absolute path: decoys of either planted
+// first on PATH (where the agent-writable ~/.local/bin sits in a box) never
+// run, and the reconciler still asserts the link.
+func TestCodexSharedAuthHookIgnoresPlantedHelpers(t *testing.T) {
+	needCodexReconciler(t)
+	if _, err := os.Stat("/bin/bash"); err != nil {
+		testtools.Unavailable(t, "/bin/bash", err)
+	}
+	_, cat := testCat(t)
+	hook := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "firstrun.sh")
+	reconcile := filepath.Join(skillDir(t, cat, "codex-shared-auth"), "reconcile.sh")
+	base, home, bin := physTempDir(t), physTempDir(t), t.TempDir()
+	decoyLog := filepath.Join(bin, "decoy.log")
+	for _, name := range []string{"timeout", "bash"} {
+		decoy := "#!/bin/sh\necho \"${0##*/} $*\" >> " + strconv.Quote(decoyLog) + "\nexit 99\n"
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(decoy), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command("/bin/bash", hook)
+	cmd.Env = append(codexReconcileEnv(t, cat, base, home, "BYRE_CODEX_AUTH_RECONCILE="+reconcile),
+		"PATH="+bin+":"+os.Getenv("PATH"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("hook failed: %v (%s)", err, out)
+	}
+	if b, err := os.ReadFile(decoyLog); err == nil {
+		t.Fatalf("a helper planted on PATH ran: %q", b)
+	}
+	shared := filepath.Join(base, "codex", "auth.json")
+	if got, err := os.Readlink(filepath.Join(home, "auth.json")); err != nil || got != shared {
+		t.Fatalf("the reconciler did not run: want a link to %q, got %q (%v)", shared, got, err)
+	}
+}
+
 // The reconciliation hook's core behaviors, driven for real: fresh box gets a
 // dangling link; an existing per-project login is published; a newer local
 // login replaces stale shared auth; a newer shared login beats a stale local
@@ -1721,17 +1756,37 @@ func TestCodexLoginHookStandsDownWhenHeadless(t *testing.T) {
 // not logged in, and the no-terminal guard then exits 0 with the remedy --
 // never the device login. A timeout shim records the bound the hook asked for
 // and enforces a short one (honouring -k only when asked), so the test does
-// not wait out 30 s.
+// not wait out 30 s. The hook names the system timeout by absolute path, so
+// the shim stands in for that path in a copy of the hook, and a decoy timeout
+// planted first on PATH -- where the agent-writable ~/.local/bin sits in a
+// box -- must never be what runs.
 func TestCodexLoginHookBoundsLoginStatus(t *testing.T) {
 	_, cat := testCat(t)
-	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
-	bin, home := t.TempDir(), physTempDir(t)
-	bounds := filepath.Join(bin, "timeout.argv")
+	src, err := os.ReadFile(filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin, sys, home := t.TempDir(), t.TempDir(), physTempDir(t)
+	bounds := filepath.Join(sys, "timeout.argv")
+	shimPath := filepath.Join(sys, "timeout")
 	shim := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + strconv.Quote(bounds) + "\n" +
 		"[ \"$1\" = --foreground ] && shift\nk=\"\"\n[ \"$1\" = -k ] && { k=1; shift 2; }\nshift\n" +
 		"\"$@\" & p=$!\n( sleep 1; kill -TERM $p; [ -n \"$k\" ] && { sleep 1; kill -KILL $p; } ) >/dev/null 2>&1 &\n" +
 		"wait $p\n"
-	if err := os.WriteFile(filepath.Join(bin, "timeout"), []byte(shim), 0o755); err != nil {
+	if err := os.WriteFile(shimPath, []byte(shim), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const pinned = `[ -x /usr/bin/timeout ] && STO="/usr/bin/timeout -k 5 30"`
+	if n := strings.Count(string(src), pinned); n != 1 {
+		t.Fatalf("the login status bound must name the system timeout by absolute path (%q appears %d times)", pinned, n)
+	}
+	hook := filepath.Join(physTempDir(t), "codex-login.sh")
+	if err := os.WriteFile(hook, []byte(strings.ReplaceAll(string(src), "/usr/bin/timeout", shimPath)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	decoyLog := filepath.Join(bin, "decoy.log")
+	decoy := "#!/bin/sh\necho \"$*\" >> " + strconv.Quote(decoyLog) + "\nexit 99\n"
+	if err := os.WriteFile(filepath.Join(bin, "timeout"), []byte(decoy), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	logins := filepath.Join(bin, "device-login")
@@ -1746,6 +1801,9 @@ func TestCodexLoginHookBoundsLoginStatus(t *testing.T) {
 		"CODEX_HOME="+home), noTerminalEnv...))
 	if b, _ := os.ReadFile(bounds); !strings.Contains(string(b), "-k 5 30 codex login status") {
 		t.Fatalf("login status must run under the 30 s bound with a KILL follow-up; timeout saw %q", b)
+	}
+	if b, err := os.ReadFile(decoyLog); err == nil {
+		t.Fatalf("the timeout planted on PATH ran: %q", b)
 	}
 	if _, err := os.Stat(logins); !os.IsNotExist(err) {
 		t.Fatal("no terminal: the device login must not run")

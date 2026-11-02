@@ -30,14 +30,33 @@ result_file=$BYRE_RUN_RESULT_FILE status_file=$BYRE_RUN_STATUS_FILE
 unset BYRE_RUN_RESULT_FILE BYRE_RUN_STATUS_FILE
 run_child() { "$@" 5>&- 6>&-; }
 
+# The script's own helpers (timeout, env, jq, tee, mktemp, ...) run from the
+# image's system directories only: the inherited PATH starts with the
+# agent-writable ~/.local/bin, which repository code could write before the
+# chassis ran, and a helper found there would run inside the verdict -- a
+# planted timeout voids every bound, a planted jq judges the answer. The
+# inherited PATH is codex's own (codex itself may live in ~/.local/bin):
+# codex's login and probes and its launch adapter run with it restored
+# through env, the adapter named by its absolute path.
+agent_path=${PATH-}
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+launch=/usr/local/bin/byre-codex-mcp-launch
+
 say() { printf 'byre-codex-headless: %s\n' "$*" >&2; }
 
-for tool in codex byre-codex-mcp-launch jq; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    say "$tool is not installed in this box; rebuild it with the codex skill enabled"
-    exit 15
-  fi
-done
+missing=""
+if ! (PATH=$agent_path && command -v codex) >/dev/null 2>&1; then
+  missing=codex
+elif [ ! -x "$launch" ]; then
+  missing=$launch
+elif ! command -v jq >/dev/null 2>&1; then
+  missing=jq
+fi
+if [ -n "$missing" ]; then
+  say "$missing is not installed in this box; rebuild it with the codex skill enabled"
+  exit 15
+fi
 
 no_credential() {
   say "no Codex credential${1:+ ($1)}."
@@ -99,7 +118,7 @@ if [ -n "$key" ]; then
     run_child cp -- "$real_home/config.toml" "$home/config.toml" 2>/dev/null ||
       say "could not copy config.toml from $real_home; the run uses codex's defaults"
   fi
-  printf '%s' "$key" | CODEX_HOME=$home run_child timeout -k 5 30 codex login "$login_flag" >&2
+  printf '%s' "$key" | CODEX_HOME=$home run_child timeout -k 5 30 env PATH="$agent_path" codex login "$login_flag" >&2
   rc=$?
   if [ "$rc" = 124 ] || [ "$rc" = 137 ]; then
     no_credential "\`codex login $login_flag\` did not finish within 30 s"
@@ -108,7 +127,7 @@ if [ -n "$key" ]; then
   fi
   export CODEX_HOME="$home"
 else
-  CODEX_HOME=$real_home run_child timeout -k 5 30 codex login status </dev/null >/dev/null 2>&1
+  CODEX_HOME=$real_home run_child timeout -k 5 30 env PATH="$agent_path" codex login status </dev/null >/dev/null 2>&1
   rc=$?
   if [ "$rc" = 124 ] || [ "$rc" = 137 ]; then
     no_credential "\`codex login status\` did not answer within 30 s"
@@ -118,7 +137,7 @@ else
   export CODEX_HOME="$real_home"
 fi
 
-version=$(run_child timeout -k 5 10 codex --version </dev/null 2>/dev/null | run_child head -n 1)
+version=$(run_child timeout -k 5 10 env PATH="$agent_path" codex --version </dev/null 2>/dev/null | run_child head -n 1)
 if [ -n "$version" ]; then
   printf 'agent_version=%s\n' "$version" >>"$status_file"
 fi
@@ -143,7 +162,7 @@ if [ -n "${BYRE_RUN_MODEL:-}" ]; then
   args+=(-m "$BYRE_RUN_MODEL")
 fi
 args+=(-)
-run_child byre-codex-mcp-launch "${args[@]}" <"$BYRE_RUN_TASK_FILE" | run_child tee -- "$log"
+run_child env PATH="$agent_path" "$launch" "${args[@]}" <"$BYRE_RUN_TASK_FILE" | run_child tee -- "$log"
 rc=${PIPESTATUS[0]}
 
 # --- the verdict --------------------------------------------------------------

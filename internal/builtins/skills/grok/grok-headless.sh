@@ -34,14 +34,33 @@ result_file=$BYRE_RUN_RESULT_FILE status_file=$BYRE_RUN_STATUS_FILE
 unset BYRE_RUN_RESULT_FILE BYRE_RUN_STATUS_FILE
 run_child() { "$@" 5>&- 6>&-; }
 
+# The script's own helpers (timeout, env, jq, tee, mktemp, ...) run from the
+# image's system directories only: the inherited PATH starts with the
+# agent-writable ~/.local/bin, which repository code could write before the
+# chassis ran, and a helper found there would run inside the verdict -- a
+# planted timeout voids the version probe's bound, a planted jq judges the
+# answer. The inherited PATH is grok's own (grok itself lives in
+# ~/.local/bin): grok's probe and its launch adapter run with it restored
+# through env, the adapter named by its absolute path.
+agent_path=${PATH-}
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+launch=/usr/local/bin/byre-grok-launch
+
 say() { printf 'byre-grok-headless: %s\n' "$*" >&2; }
 
-for tool in grok byre-grok-launch jq; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    say "$tool is not installed in this box; rebuild it with the grok skill enabled"
-    exit 15
-  fi
-done
+missing=""
+if ! (PATH=$agent_path && command -v grok) >/dev/null 2>&1; then
+  missing=grok
+elif [ ! -x "$launch" ]; then
+  missing=$launch
+elif ! command -v jq >/dev/null 2>&1; then
+  missing=jq
+fi
+if [ -n "$missing" ]; then
+  say "$missing is not installed in this box; rebuild it with the grok skill enabled"
+  exit 15
+fi
 
 no_credential() {
   say "no Grok credential${1:+ ($1)}."
@@ -67,7 +86,7 @@ else
   no_credential
 fi
 
-version=$(run_child timeout -k 5 10 grok --version </dev/null 2>/dev/null | run_child head -n 1)
+version=$(run_child timeout -k 5 10 env PATH="$agent_path" grok --version </dev/null 2>/dev/null | run_child head -n 1)
 if [ -n "$version" ]; then
   printf 'agent_version=%s\n' "$version" >>"$status_file"
 fi
@@ -94,7 +113,7 @@ args=(--prompt-file "$BYRE_RUN_TASK_FILE" --always-approve --output-format json)
 if [ -n "${BYRE_RUN_MODEL:-}" ]; then
   args+=(-m "$BYRE_RUN_MODEL")
 fi
-run_child byre-grok-launch "${args[@]}" </dev/null | run_child tee -- "$log"
+run_child env PATH="$agent_path" "$launch" "${args[@]}" </dev/null | run_child tee -- "$log"
 rc=${PIPESTATUS[0]}
 
 # --- the verdict --------------------------------------------------------------

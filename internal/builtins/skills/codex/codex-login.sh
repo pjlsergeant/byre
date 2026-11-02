@@ -291,9 +291,14 @@ fi
 needs_login=""
 # Bounded like the reconciler calls: a status probe that hangs (planted state,
 # a wedged CLI) must not hold the launch. A timeout reads as not logged in,
-# which a terminal-less launch turns into the remedy below.
+# which a terminal-less launch turns into the remedy below. The bound is the
+# system timeout by absolute path, as at every bound below: the inherited PATH
+# starts with the agent-writable ~/.local/bin, and a timeout planted there
+# would void the bound. codex itself still resolves on the inherited PATH,
+# where it legitimately lives. A shell without /usr/bin/timeout (a macOS
+# test host) runs the call unbounded.
 STO=""
-command -v timeout >/dev/null 2>&1 && STO="timeout -k 5 30"
+[ -x /usr/bin/timeout ] && STO="/usr/bin/timeout -k 5 30"
 if $STO codex login status >/dev/null 2>&1; then
   diag_event login_status_authenticated
   if ! needs_live_probe; then
@@ -422,16 +427,17 @@ echo ""
 # reaches it immediately (without it, timeout runs the child in its own group and
 # the interrupt wouldn't land until the timeout elapsed).
 TO=""
-command -v timeout >/dev/null 2>&1 && TO="timeout --foreground 600"
+[ -x /usr/bin/timeout ] && TO="/usr/bin/timeout --foreground 600"
 if $TO codex login --device-auth; then
   diag_event device_login_succeeded
   reconcile="${BYRE_CODEX_AUTH_RECONCILE:-/usr/local/lib/byre-codex-auth-reconcile}"
   if [ -r "$reconcile" ]; then
     # Same hard bound as the firstrun call site: adversarial-filesystem
-    # stalls inside the shared identity volume must not hang the launch.
+    # stalls inside the shared identity volume must not hang the launch. The
+    # reconciler is byre's own code, so its shell is the system one too.
     RTO=""
-    command -v timeout >/dev/null 2>&1 && RTO="timeout -k 5 30"
-    $RTO bash "$reconcile" post_device_login ||
+    [ -x /usr/bin/timeout ] && RTO="/usr/bin/timeout -k 5 30"
+    $RTO /bin/bash "$reconcile" post_device_login ||
       echo "byre: Codex login succeeded, but its machine-wide shared-auth reconciliation failed; it will retry next launch." >&2
   fi
 else
