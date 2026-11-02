@@ -44,7 +44,11 @@ import (
 // 4 (2026-10-04): `container.engine` names the engine holding a found box,
 // omitted when there is none. It can differ from `engine.name`, so a reader
 // acting on `container.id` must now take the engine from here.
-const StatusDataVersion = 4
+// 5 (2026-11-02): `agent_headless` carries the agent's headless-run command
+// the Agent row prints, "" when it declares none or the row cannot say;
+// whether it is warranted reads off `reserved_env` (the "headless run"
+// claim), as the page's hedge does.
+const StatusDataVersion = 5
 
 type statusData struct {
 	Version int `json:"version"`
@@ -63,11 +67,15 @@ type statusData struct {
 	// AgentNote mirrors the human page's Agent-row qualifier: set when a
 	// launch record made the running box the subject and its agent is an
 	// override or differs from today's config.
-	AgentNote  string   `json:"agent_note,omitempty"`
-	Template   string   `json:"template,omitempty"`
-	Extends    []string `json:"extends,omitempty"`
-	PresetNote string   `json:"preset_note,omitempty"`
-	SelfEdit   string   `json:"self_edit,omitempty"`
+	AgentNote string `json:"agent_note,omitempty"`
+	// AgentHeadless is the agent's headless-run command, always written:
+	// "" means the agent declares none, or (skill_error set, or a launched
+	// agent other than the config's) that byre cannot say.
+	AgentHeadless string   `json:"agent_headless"`
+	Template      string   `json:"template,omitempty"`
+	Extends       []string `json:"extends,omitempty"`
+	PresetNote    string   `json:"preset_note,omitempty"`
+	SelfEdit      string   `json:"self_edit,omitempty"`
 
 	Engine  statusDataEngine  `json:"engine"`
 	Network statusDataNetwork `json:"network"`
@@ -336,17 +344,18 @@ func writeStatusData(w io.Writer, s statusInfo) error {
 // different boxes.
 func statusDataOf(s statusInfo) statusData {
 	d := statusData{
-		Version:    StatusDataVersion,
-		Subject:    statusSubject(s),
-		ProjectID:  s.ID,
-		Workdir:    s.Canonical,
-		WorktreeOf: s.WorktreeOf,
-		Agent:      s.Agent,
-		AgentNote:  s.AgentNote,
-		Template:   s.Template,
-		Extends:    s.Chain,
-		PresetNote: s.PresetNote,
-		SelfEdit:   s.SelfEdit,
+		Version:       StatusDataVersion,
+		Subject:       statusSubject(s),
+		ProjectID:     s.ID,
+		Workdir:       s.Canonical,
+		WorktreeOf:    s.WorktreeOf,
+		Agent:         s.Agent,
+		AgentNote:     s.AgentNote,
+		AgentHeadless: s.AgentHeadless,
+		Template:      s.Template,
+		Extends:       s.Chain,
+		PresetNote:    s.PresetNote,
+		SelfEdit:      s.SelfEdit,
 		Engine: statusDataEngine{
 			Name:          s.Engine,
 			Error:         s.EngineErr,

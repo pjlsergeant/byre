@@ -566,6 +566,25 @@ func (r Resolved) AgentCommand() string {
 	return r.Agent.Command
 }
 
+// HeadlessHedge qualifies a rendered headless command when a skill's runtime
+// env holds a ClaimHeadless knob: the command is still what the chassis
+// execs, but the run's inputs are no longer byre's alone to state.
+const HeadlessHedge = "not warranted: a skill sets BYRE_RUN_*"
+
+// HeadlessSuffix is an agent's headless mode in one line, the register every
+// surface listing an agent appends: "headless: <cmd>" (hedged when asked) or
+// "no headless command". cmd is skill-manifest text and is returned as
+// given; the caller renders the line as data.
+func HeadlessSuffix(cmd string, hedged bool) string {
+	if cmd == "" {
+		return "no headless command"
+	}
+	if hedged {
+		return "headless: " + cmd + " -- " + HeadlessHedge
+	}
+	return "headless: " + cmd
+}
+
 // AgentHeadless is the selected agent's headless-run command ("" if no agent,
 // or the agent declares none).
 func (r Resolved) AgentHeadless() string {

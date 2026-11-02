@@ -28,25 +28,31 @@ type statusInfo struct {
 	// AgentNote qualifies the Agent row when a launch record replaced it
 	// (applyLaunchRecord): a --agent override, or a config edited since the
 	// box launched. "" when config and box agree.
-	AgentNote       string
-	Template        string
-	Chain           []string // named-layer extends chain, root-first ("" = none)
-	Engine          string
-	ID              string
-	Canonical       string // the dir bound at /workspace (the worktree, for a worktree)
-	WorktreeOf      string // main-worktree path when this is a linked worktree, else ""
-	Skills          []string
-	Binds           []config.Mount
-	Ports           []config.Port
-	Volumes         []config.Volume
-	Grants          []skills.Grant  // per-skill runtime grants (attribution)
-	HostEnv         []hostEnvResult // resolved host-value passthrough, source AND outcome (ADR 0026)
-	RunArgs         []string
-	BuildRaw        []string             // dockerfile_pre + dockerfile_post (raw, not introspected)
-	NetPosture      string               // a skill's declared network posture ("" = default open)
-	NetPostureSkill string               // the skill declaring it
-	Egress          []skills.EgressAllow // resolved allowlist (host:port + skill), shown when a posture is declared
-	EgressClosed    []string             // the config's `!host[:port]` closures that survived the cascade
+	AgentNote string
+	// AgentHeadless is the resolved agent's headless-run command ("" = the
+	// agent declares none). AgentHeadlessKnown says whether it describes the
+	// agent the row names: false when skills did not resolve, or when a
+	// launch record swapped in an agent other than the config's.
+	AgentHeadless      string
+	AgentHeadlessKnown bool
+	Template           string
+	Chain              []string // named-layer extends chain, root-first ("" = none)
+	Engine             string
+	ID                 string
+	Canonical          string // the dir bound at /workspace (the worktree, for a worktree)
+	WorktreeOf         string // main-worktree path when this is a linked worktree, else ""
+	Skills             []string
+	Binds              []config.Mount
+	Ports              []config.Port
+	Volumes            []config.Volume
+	Grants             []skills.Grant  // per-skill runtime grants (attribution)
+	HostEnv            []hostEnvResult // resolved host-value passthrough, source AND outcome (ADR 0026)
+	RunArgs            []string
+	BuildRaw           []string             // dockerfile_pre + dockerfile_post (raw, not introspected)
+	NetPosture         string               // a skill's declared network posture ("" = default open)
+	NetPostureSkill    string               // the skill declaring it
+	Egress             []skills.EgressAllow // resolved allowlist (host:port + skill), shown when a posture is declared
+	EgressClosed       []string             // the config's `!host[:port]` closures that survived the cascade
 	// MCPs is the effective declared MCP set — wiring, not grants (its
 	// carried egress rides the Egress rows attributed mcp:<name>); MCPClosed
 	// is the config's `!name` MCP closures; AgentMCP is the selected agent's
@@ -330,6 +336,8 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 				info.AgentMCP = res.Agent.MCP
 				info.AgentClaudeSkills = res.Agent.ClaudeSkills
 				info.AgentContext = res.Agent.Context
+				info.AgentHeadless = res.Agent.Headless
+				info.AgentHeadlessKnown = true
 			}
 			for k := range res.Env() {
 				info.EnvProvided[k] = true
@@ -727,6 +735,9 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 	agentRow := orDefault(s.Agent, "(none)")
 	if s.AgentNote != "" {
 		agentRow += " " + s.AgentNote
+	}
+	if h := agentHeadlessLine(s); h != "" {
+		agentRow += ", " + h
 	}
 	row("Agent", agentRow)
 	pkgW := pkgIDWidth(s.Cat, append(s.Skills[:len(s.Skills):len(s.Skills)], s.Template), tier)
@@ -1380,6 +1391,23 @@ func (v deliveryVerdict) mark(tier statusTier) string {
 // ownRow reports whether the verdict prints as its own arrow row.
 func (v deliveryVerdict) ownRow(tier statusTier) bool {
 	return tier.full() || v.Short == ""
+}
+
+// agentHeadlessLine is the Agent row's headless suffix, "" when the row cannot
+// speak for it (no agent, skills unresolved, or a launched agent other than
+// the one the config resolves). The hedge follows the delivery lines: a skill
+// holding a BYRE_RUN_* knob takes the headless claim away. The command is
+// skill-manifest text; writeStatusRows renders the row as data.
+func agentHeadlessLine(s statusInfo) string {
+	if s.Agent == "" || !s.AgentHeadlessKnown {
+		return ""
+	}
+	hedged := s.AgentHeadless != "" && skills.ReservedEnvTouches(s.SkillReservedEnv, skills.ClaimHeadless)
+	line := skills.HeadlessSuffix(s.AgentHeadless, hedged)
+	if hedged {
+		line += " (see Reserved env)"
+	}
+	return line
 }
 
 // mcpDeliveryLine says how (whether) the declared set reaches the agent
