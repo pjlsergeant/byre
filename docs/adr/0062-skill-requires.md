@@ -44,9 +44,11 @@ requiring it refuses rather than running without it.
 **Validate judges what one manifest can say.** Each entry is held to the
 skill-name grammar (no `!` marker, not the `none` sentinel, at most one
 `/`), a name listed twice is refused, and a skill may not require its own
-id (refused at load, which validate, install and develop all run; an alias
-spelling of itself is refused at resolve, where the catalog can expand
-it). An unknown name is NOT a validate error: whether it exists is a fact
+id (refused at the manifest-bytes check install and catalog ingest run,
+wherever a `[package]` table states the id, and at load, which validate
+and develop run and where a package-less local skill's directory supplies
+it; an alias spelling of itself is refused at resolve, where the catalog
+can expand it). An unknown name is NOT a validate error: whether it exists is a fact
 about the catalog and the config, which only resolve has -- the same
 split `docs/SKILLS.md` records for the `agent` scalar.
 
