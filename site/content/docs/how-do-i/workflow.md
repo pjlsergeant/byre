@@ -124,6 +124,34 @@ byre completion fish | source         # ~/.config/fish/config.fish
 
 `byre completion --help` has the powershell line and the details.
 
+## Build the box without starting a session?
+
+tldr: `tag=$(byre build)` -- the image `byre develop` would build, and
+its tag on stdout.
+
+`byre build` generates and builds the project's image exactly as
+`byre develop` does, then stops: no volumes seeded, no container. stdout
+is the image tag and nothing else; the build output goes to stderr. Use
+it to warm a persistent runner's engine cache before a job, to read the
+tag, or to fail a job early on a config that no longer builds.
+
+It does not make a hosted CI runner faster: a hosted runner rebuilds the
+image every job, because the engine's build cache lives on the machine
+and the machine is new each time. A persistent runner keeps that cache,
+so its builds after the first are quick with or without `byre build`.
+
+- It uses the engine's cache, as develop does. For a build with the
+  cache off and the base pulled again, use `byre rebuild`.
+- A live session does not stop it; it waits only for another setup of
+  the project to finish. The running box keeps the image it started
+  from, and the next `byre develop` uses the new one.
+- A never-configured checkout needs `--template` and `--agent`, as
+  `byre run` does. On a configured one, `-a <agent>` builds with that
+  agent for this build only; nothing is written.
+- It checks what the build needs -- the config, the skills, the
+  Dockerfile -- not what only a launch reads, such as mount paths or
+  credentials.
+
 ## Run one task headlessly (CI)?
 
 tldr: `byre run --task task.md --data > outcome.json` -- one task, no

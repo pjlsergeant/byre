@@ -33,6 +33,12 @@
   `env_from_host` instead. Without `--yes`, a pipe still refuses, now
   naming `--yes`. The CI cookbook entry configures the box through it.
   ADR 0063.
+- **`byre build`: the image without a session.** It builds what `byre
+  develop` would, with the engine cache, and prints the image tag as the one
+  line on stdout (the build output goes to stderr) -- no volumes seeded, no
+  container. For warming a persistent runner, reading the tag, or failing a
+  job early on a config that no longer builds; a hosted runner still rebuilds
+  every job. Cookbook: "Build the box without starting a session?".
 - **Agent skills can declare a headless command.** `[agent] headless =
   "<command>"` in a skill.toml is what `byre run` executes; an agent
   without one is refused by name. The bundled claude, codex and grok

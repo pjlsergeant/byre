@@ -873,6 +873,11 @@ byre rebuild      Rebuild the image from fresh upstream (--no-cache
                   --pull=true): the base pulled again, every step re-run --
                   the deliberate-staleness valve (ADR 0001).
 
+byre build        Generate and build the image as develop would (engine cache
+                  on), then stop: no seed, no launch record, no container.
+                  stdout is the image tag; the build stream is on stderr.
+                  Waits for the setup lock; a live session does not stop it.
+
 byre status       The legibility surface (PRINCIPLES.md #4): resolved config,
                   every grant and who granted it, network posture + egress,
                   volumes, raw blocks flagged as not introspected, session

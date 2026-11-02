@@ -133,6 +133,8 @@ By default the agent can't access your host filesystem, environment, or credenti
 `byre develop`, `byre config`, and `byre deliver` are the ones you'll use frequently. `byre run` runs one task headlessly -- from CI or any script -- and exits with byre's verdict. There's a full table at
 [getbyre.com/docs/commands/](https://getbyre.com/docs/commands/).
 
+`byre build` builds the image without starting a session and prints its tag -- to warm a persistent runner's cache or fail a job early on a broken config.
+
 ## Why not...?
 
 A list of comparisons against other sandboxing solutions: [getbyre.com/why-not](https://getbyre.com/why-not/).
