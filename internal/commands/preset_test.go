@@ -62,8 +62,9 @@ func TestPresetApplyRefusesNonTTY(t *testing.T) {
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"none\"\n")
 	s := discardStreams()
-	if err := PresetApply(s, proj, "", false); err == nil || !strings.Contains(err.Error(), "TTY") {
-		t.Fatalf("non-TTY apply must refuse (the review is the point), got %v", err)
+	err := PresetApply(s, proj, "", false)
+	if err == nil || !strings.Contains(err.Error(), "the review is the point") || !strings.Contains(err.Error(), "--yes") {
+		t.Fatalf("non-TTY apply must refuse (the review is the point) and name --yes as the unattended route, got %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(p.Dir, "applied")); !os.IsNotExist(err) {
 		t.Error("nothing may be written on refusal")
