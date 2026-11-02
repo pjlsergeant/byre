@@ -392,6 +392,15 @@ byre_credentials_apply() {
 }
 byre_credentials_apply
 
+# Headless signal: a headless run (`byre run`) is keyed on ARGV, the one input
+# a skill's [runtime].env and raw run_args cannot reach -- so the variable is
+# exported from it, and UNSET otherwise, whatever the environment carried.
+# Hooks test it to never prompt. Under headless the box's stdout is the
+# product (the agent's answer, written once by byre-headless), so it is saved
+# on fd 9 and everything from here on -- this launcher, every hook, the
+# chassis -- writes stdout to stderr instead.
+if [ "${1:-}" = byre-headless ]; then export BYRE_HEADLESS=1; exec 9>&1 >&2; else unset BYRE_HEADLESS; fi
+
 # First-run hooks — agent skills drop scripts here. They run as the dev user
 # (the launcher is unprivileged), so a hook does its own user-level setup directly
 # (codex device-auth login → the .codex volume; devlog → /workspace). A hook that

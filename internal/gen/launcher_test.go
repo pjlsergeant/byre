@@ -854,3 +854,126 @@ func TestLauncherGateWaitsAboveCredentialWait(t *testing.T) {
 		t.Fatalf("the credential wait ran before the gate opened:\n%s", out)
 	}
 }
+
+// runLauncherSplit drives the real launcher with the hook dirs it is given
+// and a bin dir prepended to PATH, keeping stdout and stderr apart: the
+// headless tests are about which bytes land on which stream.
+func runLauncherSplit(t *testing.T, dir, bin string, env []string, args ...string) (int, string, string) {
+	t.Helper()
+	script := filepath.Join(dir, "launcher.sh")
+	if err := os.WriteFile(script, LauncherScript(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c := exec.Command("bash", append([]string{script}, args...)...)
+	c.Env = launcherEnv(append([]string{
+		"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"BYRE_LAUNCH_GATE_FILE=" + filepath.Join(dir, "no-such-gate"),
+		"BYRE_FIRSTRUN_DIR=" + filepath.Join(dir, "firstrun.d"),
+		"BYRE_ENVD_DIR=" + filepath.Join(dir, "env.d"),
+	}, env...)...)
+	var stdout, stderr strings.Builder
+	c.Stdout = &stdout
+	c.Stderr = &stderr
+	err := c.Run()
+	if err == nil {
+		return 0, stdout.String(), stderr.String()
+	}
+	if ee, ok := err.(*exec.ExitError); ok {
+		return ee.ExitCode(), stdout.String(), stderr.String()
+	}
+	t.Fatalf("launcher did not run: %v (%s)", err, stderr.String())
+	return -1, "", ""
+}
+
+// headlessLauncherFixture stages a firstrun hook and an env.d hook that each
+// print to stdout, and a stub byre-headless on PATH that records its argv
+// and BYRE_HEADLESS, prints to its stdout, and writes the answer to fd 9.
+func headlessLauncherFixture(t *testing.T) (dir, bin string) {
+	t.Helper()
+	dir = t.TempDir()
+	bin = filepath.Join(dir, "bin")
+	firstrun := filepath.Join(dir, "firstrun.d")
+	envd := filepath.Join(dir, "env.d")
+	for _, d := range []string{bin, firstrun, envd} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		filepath.Join(firstrun, "10-loud"): "echo FIRSTRUN-STDOUT\n",
+		filepath.Join(envd, "10-loud.sh"):  "echo ENVD-STDOUT\n",
+		filepath.Join(bin, "byre-headless"): "#!/bin/sh\n" +
+			`printf '%s|%s' "${BYRE_HEADLESS-unset}" "$*" >"` + filepath.Join(dir, "seen") + `"` + "\n" +
+			"echo CHASSIS-STDOUT\n" +
+			"printf THE-ANSWER >&9\n",
+	}
+	for p, body := range files {
+		if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir, bin
+}
+
+// BYRE_HEADLESS is keyed on the launcher's argv: exported as 1 when the
+// command is byre-headless -- whatever the environment said -- and the
+// explicit-argv arm still execs it.
+func TestLauncherHeadlessExportsSignalFromArgv(t *testing.T) {
+	for _, inherited := range []string{"", "BYRE_HEADLESS=0"} {
+		dir, bin := headlessLauncherFixture(t)
+		var env []string
+		if inherited != "" {
+			env = append(env, inherited)
+		}
+		code, _, stderr := runLauncherSplit(t, dir, bin, env, "byre-headless", "--probe")
+		if code != 0 {
+			t.Fatalf("exit %d\n%s", code, stderr)
+		}
+		seen, err := os.ReadFile(filepath.Join(dir, "seen"))
+		if err != nil {
+			t.Fatalf("the explicit-argv arm did not exec byre-headless: %v\n%s", err, stderr)
+		}
+		if string(seen) != "1|--probe" {
+			t.Errorf("byre-headless saw BYRE_HEADLESS|argv = %q, want 1|--probe (env %q)", seen, inherited)
+		}
+	}
+}
+
+// Any other launch UNSETS BYRE_HEADLESS even when the environment carried it:
+// a skill's [runtime].env or raw run_args can set the variable, and neither
+// may make an interactive session look headless to its hooks.
+func TestLauncherNonHeadlessUnsetsSignal(t *testing.T) {
+	dir, bin := headlessLauncherFixture(t)
+	code, stdout, stderr := runLauncherSplit(t, dir, bin, []string{"BYRE_HEADLESS=1"},
+		"bash", "-c", `printf '%s' "${BYRE_HEADLESS-unset}"; if { : >&9; } 2>/dev/null; then printf " fd9-open"; fi`)
+	if code != 0 {
+		t.Fatalf("exit %d\n%s", code, stderr)
+	}
+	if !strings.HasSuffix(stdout, "unset") {
+		t.Errorf("an interactive launch kept BYRE_HEADLESS (or opened fd 9): stdout %q", stdout)
+	}
+	// Outside headless, stdout is untouched: the hooks still print there.
+	if !strings.Contains(stdout, "FIRSTRUN-STDOUT") || !strings.Contains(stdout, "ENVD-STDOUT") {
+		t.Errorf("an interactive launch moved hook output off stdout: %q", stdout)
+	}
+}
+
+// Under headless the box's stdout is the product: the launcher's own output
+// (a sourced env.d hook), a firstrun hook's and the chassis's stdout all land
+// on stderr, and fd 9 is the original stdout -- the only bytes on it are what
+// the chassis wrote there.
+func TestLauncherHeadlessMovesStdoutToStderr(t *testing.T) {
+	dir, bin := headlessLauncherFixture(t)
+	code, stdout, stderr := runLauncherSplit(t, dir, bin, nil, "byre-headless")
+	if code != 0 {
+		t.Fatalf("exit %d\n%s", code, stderr)
+	}
+	if stdout != "THE-ANSWER" {
+		t.Errorf("the box's stdout = %q, want only the bytes written to fd 9", stdout)
+	}
+	for _, line := range []string{"FIRSTRUN-STDOUT", "ENVD-STDOUT", "CHASSIS-STDOUT"} {
+		if !strings.Contains(stderr, line) {
+			t.Errorf("%s did not land on stderr:\n%s", line, stderr)
+		}
+	}
+}
