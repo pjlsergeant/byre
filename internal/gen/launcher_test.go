@@ -1032,3 +1032,71 @@ func TestLauncherHeadlessMovesStdoutToStderr(t *testing.T) {
 		}
 	}
 }
+
+// A firstrun hook runs under /bin/bash by path, never the `bash` PATH finds
+// first: PATH starts with the agent-writable ~/.local/bin and repo code has
+// run above the loop, so a planted `bash` there must not stand in for every
+// hook. The decoy logs that it ran; the hook records the interpreter that ran
+// it.
+func TestLauncherFirstrunHookIgnoresBashOnPath(t *testing.T) {
+	dir, bin, chassis, launcher := headlessLauncherFixture(t)
+	decoyLog := filepath.Join(dir, "decoy-bash-ran")
+	interp := filepath.Join(dir, "interp")
+	files := map[string]string{
+		filepath.Join(bin, "bash"): "#!/bin/sh\n" +
+			`echo ran >>"` + decoyLog + `"` + "\n" +
+			`exec /bin/bash "$@"` + "\n",
+		filepath.Join(dir, "firstrun.d", "20-interp"): `printf '%s' "$BASH" >"` + interp + `"` + "\n",
+	}
+	for p, body := range files {
+		if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"true"}, {chassis}} {
+		if err := os.RemoveAll(interp); err != nil {
+			t.Fatal(err)
+		}
+		code, _, stderr := runLauncherSplitScript(t, dir, bin, launcher, nil, args...)
+		if code != 0 {
+			t.Fatalf("%v: exit %d\n%s", args, code, stderr)
+		}
+		got, err := os.ReadFile(interp)
+		if err != nil {
+			t.Fatalf("%v: the firstrun hook did not run: %v\n%s", args, err, stderr)
+		}
+		if string(got) != "/bin/bash" {
+			t.Errorf("%v: the firstrun hook ran under %q, want /bin/bash", args, got)
+		}
+		if _, err := os.Stat(decoyLog); err == nil {
+			t.Errorf("%v: the bash on PATH ran", args)
+		}
+	}
+}
+
+// Under headless a firstrun hook does not hold fd 9, the box's real stdout:
+// only the chassis writes the answer there, so a hook -- or whatever ran in
+// its place -- cannot forge one.
+func TestLauncherFirstrunHookCannotSeeAnswerFd(t *testing.T) {
+	dir, bin, chassis, launcher := headlessLauncherFixture(t)
+	probe := filepath.Join(dir, "fd9")
+	hook := `if [ -e /dev/fd/9 ]; then printf open >"` + probe + `"; else printf closed >"` + probe + `"; fi` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "firstrun.d", "20-fd9"), []byte(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := runLauncherSplitScript(t, dir, bin, launcher, nil, chassis)
+	if code != 0 {
+		t.Fatalf("exit %d\n%s", code, stderr)
+	}
+	got, err := os.ReadFile(probe)
+	if err != nil {
+		t.Fatalf("the firstrun hook did not run: %v\n%s", err, stderr)
+	}
+	if string(got) != "closed" {
+		t.Errorf("a firstrun hook under headless saw fd 9 %s", got)
+	}
+	// The chassis still holds it: the answer reaches the box's stdout.
+	if stdout != "THE-ANSWER" {
+		t.Errorf("the box's stdout = %q, want THE-ANSWER", stdout)
+	}
+}

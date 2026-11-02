@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # byre launcher — the constant ENTRYPOINT.
 #
 # Runs UNPRIVILEGED as the in-box 'dev' user (the Dockerfile bakes that user to
@@ -9,6 +9,10 @@
 # exports delivered credentials, runs first-run hooks, and execs the agent —
 # all as the same user. Agent context is INJECTED by the agent command (ADR
 # 0046); the launcher writes no agent file.
+#
+# The interpreter is /bin/bash by path, not `env bash`: the image's PATH puts
+# the agent-writable ~/.local/bin first, and the pinned path does not depend on
+# what that directory holds when the box starts.
 set -euo pipefail
 
 # The dev user's home is baked at build time (skills.DevHome); not an env
@@ -302,9 +306,9 @@ byre_credentials_apply() {
   # a partial set. The only external command left in this function is the wait
   # loop's `sleep`, which the second pass never reaches (.done exists by then)
   # and the first pass runs before any credential is exported. PAST this
-  # function, `bash "$hook"` and the final exec do resolve on PATH: a
-  # credential that re-points those breaks the user's own box, which is theirs
-  # to do (P1), and byre says so rather than reserving the name.
+  # function, the final exec resolves on PATH: a credential that re-points it
+  # breaks the user's own box, which is theirs to do (P1), and byre says so
+  # rather than reserving the name.
   BYRE_cred_nl='
 '
   BYRE_cred_manifest=""
@@ -421,11 +425,17 @@ if [ -d "$BYRE_firstrun_dir" ]; then
     # leaves behind -- are a silent no-op. A hook that RAN and failed is not:
     # the launcher continues (one skill's broken setup must not cost the user
     # their box) but says so, because a hook failing invisibly is how a box
-    # boots subtly wrong. The `if bash ...; then :; else` shape is load-bearing
-    # under `set -e`: the naive `bash "$BYRE_hook"; BYRE_hook_status=$?` kills
-    # the launcher on the failing hook, the exact inversion of best-effort.
+    # boots subtly wrong. The `if /bin/bash ...; then :; else` shape is
+    # load-bearing under `set -e`: the naive `/bin/bash "$BYRE_hook";
+    # BYRE_hook_status=$?` kills the launcher on the failing hook, the exact
+    # inversion of best-effort.
+    # The interpreter is /bin/bash, never a PATH lookup, and fd 9 is closed
+    # for the hook: repo code has run above and PATH starts with the
+    # agent-writable ~/.local/bin, so a bare `bash` could be a planted binary
+    # that runs in place of every hook -- and under headless, one holding the
+    # box's real stdout, free to write a forged answer there.
     if [ -r "$BYRE_hook" ]; then
-      if bash "$BYRE_hook"; then
+      if /bin/bash "$BYRE_hook" 9>&-; then
         :
       else
         BYRE_hook_status=$?

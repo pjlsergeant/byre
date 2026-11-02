@@ -428,6 +428,14 @@ Each is on the security-model page too.
   starts; that code can rewrite `.byre-run/task.md`. The chassis verifies
   the task's hash before exec, so the result is a loud exit 16, never a
   silent swap -- but the code has run.
+- **Launch env hooks hold fd 9.** First-run hooks run under `/bin/bash` by
+  path with fd 9 closed, so neither a planted `bash` nor the hook itself
+  holds the box's real stdout. Launch env hooks (`env.d`) are SOURCED into
+  the launcher's own shell (ADR 0028), so fd 9 cannot be closed for them
+  without closing it for the launcher, and the chassis needs it. They are
+  skill code the user enabled (trusted machinery, P2), and the only thing
+  fd 9 lets them forge is the answer on stdout, which is agent-trust
+  content under the next entry anyway.
 - **Everything the box can write is agent-trust.** The contents of
   `.byre-run/` (`result.md`, `result.json`, the transcript, the copy of
   `outcome.json`), the answer on stdout, and everything on stderr --
@@ -470,4 +478,6 @@ TestHeadlessEnvBeatsSkillEnvAndLosesToRunArgs, TestRunUsageErrors,
 TestRunTaskPrecedence, TestRunTaskFileContained, TestRunStagesAfterCreate,
 TestRunForcesNonInteractive, TestRunOutcomeClassification,
 TestRunStdoutIsTheAnswer, TestRunDataDocument,
-TestLaunchRecordHeadlessScalarsContract]
+TestLaunchRecordHeadlessScalarsContract,
+TestLauncherFirstrunHookIgnoresBashOnPath,
+TestLauncherFirstrunHookCannotSeeAnswerFd]
