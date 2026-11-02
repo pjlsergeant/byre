@@ -52,14 +52,18 @@ var (
 // runHook runs one hook script under shell with env added to the process
 // environment, and returns its combined output. Bounded: a hook that opens a
 // FIFO blocks forever, and the containment cases that plant one must fail as
-// a timeout instead of hanging the suite. The shared-auth and login hooks are
-// best-effort and exit 0 on every path, so a non-zero exit fails the test.
+// a timeout instead of hanging the suite. WaitDelay covers a write blocked in
+// a subshell: killing the hook leaves that child holding the output pipe,
+// and without it the wait would outlast the bound. The shared-auth and login
+// hooks are best-effort and exit 0 on every path, so a non-zero exit fails
+// the test.
 func runHook(t *testing.T, shell, hook string, env ...string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, shell, hook)
 	cmd.Env = append(os.Environ(), env...)
+	cmd.WaitDelay = time.Second
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {
 		t.Fatalf("hook did not finish within 5s (blocked on a non-regular path?): %s", out)

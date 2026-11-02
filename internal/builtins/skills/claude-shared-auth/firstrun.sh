@@ -16,14 +16,24 @@ TOKEN_FILE="$IDENTITY_DIR/token"
 # Claude use the token directly. FRESH volumes only — never touch an existing
 # .claude.json (Claude owns it; it rewrites via temp+rename), and never write
 # through a symlink at that name: `-e` is false for a dangling one, so `-L` is
-# tested too, and the write runs under noclobber, which opens O_EXCL and
-# refuses a link raced in after the test. Trade recorded: skipping the wizard
-# skips the theme picker; /config re-opens it in-session.
+# tested too. A node raced in after the test is refused by the publish
+# itself: the bytes go to a mktemp'd dotfile (O_EXCL, a fresh name), and
+# `ln -n` claims the final name with link(2), which fails EEXIST on any
+# existing node and never follows a symlink (-n keeps even a link to a
+# directory from being read as one; a real directory planted there takes the
+# marker inside it, out of everyone's way). Noclobber would not do: it
+# refuses only an existing regular file, and opens a symlink to a FIFO,
+# blocking the launch. A lost claim leaves nothing behind. Trade recorded:
+# skipping the wizard skips the theme picker; /config re-opens it in-session.
 seed_onboarding() {
   cfg="${CLAUDE_CONFIG_DIR:-/home/dev/.claude}"
   if [ -s "$TOKEN_FILE" ] && [ ! -e "$cfg/.claude.json" ] && [ ! -L "$cfg/.claude.json" ]; then
     mkdir -p "$cfg" 2>/dev/null || return 0
-    (set -C; printf '{"hasCompletedOnboarding": true}\n' >"$cfg/.claude.json") 2>/dev/null || true
+    tmp=$(mktemp -- "$cfg/.claude.json.byre-XXXXXX" 2>/dev/null) || return 0
+    if printf '{"hasCompletedOnboarding": true}\n' >"$tmp" 2>/dev/null; then
+      ln -n -- "$tmp" "$cfg/.claude.json" 2>/dev/null || true
+    fi
+    rm -f -- "$tmp"
   fi
 }
 

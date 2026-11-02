@@ -1068,8 +1068,12 @@ prompts when nobody can answer:
   login is displaced, all without a word.
 - **The claude onboarding seed refuses a symlink.** `[ ! -e ]` is true for a
   dangling symlink and a plain `>` writes through it, so both seeds also test
-  `[ ! -L ]` and write under `set -C` (noclobber: an `O_EXCL` open, which
-  refuses a symlink raced in after the test).
+  `[ ! -L ]`. A node raced in after the test is refused by the publish: the
+  bytes go to a `mktemp`'d dotfile and `ln -n` claims `.claude.json` with
+  link(2), which fails `EEXIST` on any existing node and never follows a
+  symlink; the temp is removed either way. `set -C` would not do: noclobber
+  refuses only an existing regular file, so it opens a symlink to a FIFO and
+  the hook blocks.
 
 ## Source list
 

@@ -4,7 +4,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/pjlsergeant/byre/internal/config"
@@ -107,6 +109,71 @@ func TestClaudeSharedAuthHookSeedsOnboarding(t *testing.T) {
 	run(base2, cfg2)
 	if _, err := os.Stat(filepath.Join(cfg2, ".claude.json")); !os.IsNotExist(err) {
 		t.Fatal("seeded onboarding without a shared token")
+	}
+
+	seedRefusesFIFOLink(t, func(t *testing.T, cfg string, env ...string) {
+		runHook(t, "bash", hook, append([]string{"BYRE_IDENTITY_BASE=" + base, "CLAUDE_CONFIG_DIR=" + cfg}, env...)...)
+	})
+}
+
+// seedRefusesFIFOLink pins an onboarding seed's publish against a symlink to
+// a FIFO at .claude.json: present at launch, and raced in between the hook's
+// existence pre-check and its write. A mkdir shim plants the raced link, since
+// the seed runs mkdir in exactly that window. The FIFO has no reader, so a
+// write through the link blocks and runHook's bound fails the test; returning
+// in time, the link and FIFO untouched and no temp file left over is the
+// refusal. seed runs the hook against cfg with env added.
+func seedRefusesFIFOLink(t *testing.T, seed func(t *testing.T, cfg string, env ...string)) {
+	t.Helper()
+	for _, raced := range []bool{false, true} {
+		name := "symlink to a FIFO present"
+		if raced {
+			name = "symlink to a FIFO raced in after the check"
+		}
+		t.Run(name, func(t *testing.T) {
+			cfg := t.TempDir()
+			fifo := filepath.Join(t.TempDir(), "fifo")
+			if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(cfg, ".claude.json")
+			var env []string
+			if raced {
+				realMkdir, err := exec.LookPath("mkdir")
+				if err != nil {
+					t.Fatal(err)
+				}
+				bin := t.TempDir()
+				shim := "#!/bin/sh\n[ -L " + strconv.Quote(marker) + " ] || ln -s " + strconv.Quote(fifo) + " " +
+					strconv.Quote(marker) + "\nexec " + strconv.Quote(realMkdir) + " \"$@\"\n"
+				if err := os.WriteFile(filepath.Join(bin, "mkdir"), []byte(shim), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				env = []string{"PATH=" + bin + ":" + os.Getenv("PATH")}
+			} else if err := os.Symlink(fifo, marker); err != nil {
+				t.Fatal(err)
+			}
+			seed(t, cfg, env...)
+			// In the raced case the link exists only if the shim ran, so this
+			// also proves the hook passed its pre-check and reached the write.
+			if got, err := os.Readlink(marker); err != nil || got != fifo {
+				t.Fatalf("the link at .claude.json must be untouched: %q (%v)", got, err)
+			}
+			if fi, err := os.Lstat(fifo); err != nil || fi.Mode()&os.ModeNamedPipe == 0 {
+				t.Fatalf("the FIFO must be untouched: %v %v", fi, err)
+			}
+			entries, err := os.ReadDir(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 {
+				var names []string
+				for _, e := range entries {
+					names = append(names, e.Name())
+				}
+				t.Fatalf("a lost claim must leave nothing behind: %q", names)
+			}
+		})
 	}
 }
 
@@ -427,5 +494,8 @@ func TestClaudeOnboardingHookSeedsOnEnvCredential(t *testing.T) {
 		if _, err := os.Lstat(victim); !os.IsNotExist(err) {
 			t.Fatalf("seed wrote through a dangling symlink: %v", err)
 		}
+	})
+	seedRefusesFIFOLink(t, func(t *testing.T, cfg string, env ...string) {
+		run(t, cfg, append([]string{"ANTHROPIC_API_KEY=x"}, env...)...)
 	})
 }
