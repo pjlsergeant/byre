@@ -111,8 +111,12 @@ func newHeadlessBox(t *testing.T) *headlessBox {
 		t.Fatal(err)
 	}
 	// The stub timeout records the bound it was asked for and enforces 2 s
-	// instead, so a hung probe proves the bound without a 30 s wait.
-	b.writeExec("timeout", "#!/bin/sh\nprintf '%s\\n' \"$*\" >>'"+b.timeoutLog+"'\nshift\nexec '"+realTimeout+"' 2 \"$@\"\n")
+	// instead, so a hung probe proves the bound without a 30 s wait. A -k is
+	// honoured as a 1 s KILL follow-up, and only when asked for: a probe that
+	// ignores TERM is then cut off only if the script passed -k.
+	b.writeExec("timeout", "#!/bin/sh\nprintf '%s\\n' \"$*\" >>'"+b.timeoutLog+"'\n"+
+		"if [ \"$1\" = -k ]; then shift 3; exec '"+realTimeout+"' -k 1 2 \"$@\"; fi\n"+
+		"shift\nexec '"+realTimeout+"' 2 \"$@\"\n")
 	for _, f := range []string{b.task, b.result, b.status} {
 		body := ""
 		if f == b.task {
@@ -223,14 +227,14 @@ exit "${STUB_RC:-0}"
 `
 
 // stubClaude answers `--version`, `auth status` per STUB_AUTH (in / out /
-// hang), and records everything else as the run.
+// hang -- ignoring TERM, so only a KILL ends it), and records everything else as the run.
 const stubClaude = `#!/bin/sh
 case "$1" in
 --version) echo "9.9.9 (Claude Code)"; exit 0 ;;
 auth)
   case "${STUB_AUTH:-out}" in
   in) echo '{"loggedIn":true,"authMethod":"claude.ai"}'; exit 0 ;;
-  hang) exec sleep 60 ;;
+  hang) trap '' TERM; exec sleep 60 ;;
   *) echo '{"loggedIn":false,"authMethod":"none"}'; exit 1 ;;
   esac ;;
 esac
@@ -394,8 +398,8 @@ func TestClaudeHeadlessCredentialPreflight(t *testing.T) {
 		if code != 13 || !strings.Contains(stderr, "env_from_host") || !strings.Contains(stderr, "within 30 s") {
 			t.Fatalf("exit %d, want 13 for the timed-out probe: %s", code, stderr)
 		}
-		if !strings.Contains(b.file(b.timeoutLog), "30 claude auth status\n") {
-			t.Fatalf("auth status not bounded at 30 s: %q", b.file(b.timeoutLog))
+		if !strings.Contains(b.file(b.timeoutLog), "-k 5 30 claude auth status\n") {
+			t.Fatalf("auth status not bounded at 30 s with a KILL follow-up: %q", b.file(b.timeoutLog))
 		}
 	})
 	t.Run("auth status logged in", func(t *testing.T) {
@@ -404,6 +408,9 @@ func TestClaudeHeadlessCredentialPreflight(t *testing.T) {
 		b.stream(claudeOK)
 		if code, _, stderr := b.run(script); code != 0 {
 			t.Fatalf("exit %d: %s", code, stderr)
+		}
+		if !strings.Contains(b.file(b.timeoutLog), "-k 5 10 claude --version\n") {
+			t.Fatalf("the version probe is not bounded at 10 s with a KILL follow-up: %q", b.file(b.timeoutLog))
 		}
 	})
 	t.Run("stored inference login", func(t *testing.T) {

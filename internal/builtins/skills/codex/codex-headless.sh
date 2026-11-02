@@ -89,7 +89,7 @@ if [ -n "$key" ]; then
     cp -- "$real_home/config.toml" "$home/config.toml" 2>/dev/null ||
       say "could not copy config.toml from $real_home; the run uses codex's defaults"
   fi
-  printf '%s' "$key" | CODEX_HOME=$home timeout 30 codex login "$login_flag" >&2
+  printf '%s' "$key" | CODEX_HOME=$home timeout -k 5 30 codex login "$login_flag" >&2
   rc=$?
   if [ "$rc" = 124 ] || [ "$rc" = 137 ]; then
     no_credential "\`codex login $login_flag\` did not finish within 30 s"
@@ -98,7 +98,7 @@ if [ -n "$key" ]; then
   fi
   export CODEX_HOME="$home"
 else
-  CODEX_HOME=$real_home timeout 30 codex login status </dev/null >/dev/null 2>&1
+  CODEX_HOME=$real_home timeout -k 5 30 codex login status </dev/null >/dev/null 2>&1
   rc=$?
   if [ "$rc" = 124 ] || [ "$rc" = 137 ]; then
     no_credential "\`codex login status\` did not answer within 30 s"
@@ -108,7 +108,7 @@ else
   export CODEX_HOME="$real_home"
 fi
 
-version=$(timeout 10 codex --version </dev/null 2>/dev/null | head -n 1)
+version=$(timeout -k 5 10 codex --version </dev/null 2>/dev/null | head -n 1)
 if [ -n "$version" ]; then
   printf 'agent_version=%s\n' "$version" >>"$BYRE_RUN_STATUS_FILE"
 fi

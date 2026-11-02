@@ -9,7 +9,8 @@ import (
 
 // stubCodex answers `--version`; `login status` per STUB_STATUS (in / out /
 // hang), recording the CODEX_HOME it was asked about; `login --with-*` per
-// STUB_LOGIN (ok / fail / hang), writing the key it read from stdin into
+// STUB_LOGIN (ok / fail / hang -- a hang ignores TERM, so only a KILL ends
+// it), writing the key it read from stdin into
 // CODEX_HOME/auth.json the way codex does; and records everything else as the
 // run, including what the run's CODEX_HOME held, and writes STUB_ANSWER to
 // the --output-last-message path.
@@ -22,11 +23,11 @@ login)
     printf '%s\n' "$CODEX_HOME" >>"$STUB_RECORD/status-home"
     case "${STUB_STATUS:-out}" in
     in) echo "Logged in using ChatGPT"; exit 0 ;;
-    hang) exec sleep 60 ;;
+    hang) trap '' TERM; exec sleep 60 ;;
     *) echo "Not logged in"; exit 1 ;;
     esac ;;
   *)
-    [ "${STUB_LOGIN:-ok}" = hang ] && exec sleep 60
+    [ "${STUB_LOGIN:-ok}" = hang ] && { trap '' TERM; exec sleep 60; }
     printf '%s %s\n' "$2" "$CODEX_HOME" >>"$STUB_RECORD/login"
     printf '{"OPENAI_API_KEY":"%s","auth_mode":"apikey"}' "$(cat)" >"$CODEX_HOME/auth.json"
     [ "${STUB_LOGIN:-ok}" = fail ] && exit 1
@@ -133,7 +134,7 @@ func TestCodexHeadlessKeyGetsItsOwnHome(t *testing.T) {
 	if _, asked := b.recorded("status-home"); asked {
 		t.Fatal("the real home's login was consulted although a key was given")
 	}
-	if !strings.Contains(b.file(b.timeoutLog), "30 codex login --with-api-key\n") {
+	if !strings.Contains(b.file(b.timeoutLog), "-k 5 30 codex login --with-api-key\n") {
 		t.Fatalf("the key login is not bounded at 30 s: %q", b.file(b.timeoutLog))
 	}
 	b.realHomeUntouched()
@@ -199,8 +200,11 @@ func TestCodexHeadlessExistingLogin(t *testing.T) {
 	if _, loggedIn := b.recorded("login"); loggedIn {
 		t.Fatal("no key was given, yet a login ran")
 	}
-	if !strings.Contains(b.file(b.timeoutLog), "30 codex login status\n") {
+	if !strings.Contains(b.file(b.timeoutLog), "-k 5 30 codex login status\n") {
 		t.Fatalf("login status not bounded at 30 s: %q", b.file(b.timeoutLog))
+	}
+	if !strings.Contains(b.file(b.timeoutLog), "-k 5 10 codex --version\n") {
+		t.Fatalf("the version probe is not bounded at 10 s with a KILL follow-up: %q", b.file(b.timeoutLog))
 	}
 	b.realHomeUntouched()
 }

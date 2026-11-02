@@ -293,7 +293,7 @@ needs_login=""
 # a wedged CLI) must not hold the launch. A timeout reads as not logged in,
 # which a terminal-less launch turns into the remedy below.
 STO=""
-command -v timeout >/dev/null 2>&1 && STO="timeout 30"
+command -v timeout >/dev/null 2>&1 && STO="timeout -k 5 30"
 if $STO codex login status >/dev/null 2>&1; then
   diag_event login_status_authenticated
   if ! needs_live_probe; then
@@ -430,7 +430,7 @@ if $TO codex login --device-auth; then
     # Same hard bound as the firstrun call site: adversarial-filesystem
     # stalls inside the shared identity volume must not hang the launch.
     RTO=""
-    command -v timeout >/dev/null 2>&1 && RTO="timeout 30"
+    command -v timeout >/dev/null 2>&1 && RTO="timeout -k 5 30"
     $RTO bash "$reconcile" post_device_login ||
       echo "byre: Codex login succeeded, but its machine-wide shared-auth reconciliation failed; it will retry next launch." >&2
   fi

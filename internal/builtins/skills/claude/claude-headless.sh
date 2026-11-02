@@ -52,7 +52,7 @@ if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || [ -n "${ANTHROPIC_API_KEY:-}" ] ||
 elif [ -f "$creds" ] && [ ! -L "$creds" ] && grep -q '"claudeAiOauth"' "$creds" 2>/dev/null; then
   :
 else
-  auth=$(timeout 30 claude auth status </dev/null 2>/dev/null)
+  auth=$(timeout -k 5 30 claude auth status </dev/null 2>/dev/null)
   rc=$?
   if [ "$rc" = 124 ] || [ "$rc" = 137 ]; then
     no_credential "\`claude auth status\` did not answer within 30 s"
@@ -79,7 +79,7 @@ if [ -n "$env_cred" ] && [ ! -e "$cfg/.claude.json" ] && [ ! -L "$cfg/.claude.js
   fi
 fi
 
-version=$(timeout 10 claude --version </dev/null 2>/dev/null | head -n 1)
+version=$(timeout -k 5 10 claude --version </dev/null 2>/dev/null | head -n 1)
 if [ -n "$version" ]; then
   printf 'agent_version=%s\n' "$version" >>"$BYRE_RUN_STATUS_FILE"
 fi

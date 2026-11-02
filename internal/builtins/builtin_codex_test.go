@@ -1716,25 +1716,27 @@ func TestCodexLoginHookStandsDownWhenHeadless(t *testing.T) {
 }
 
 // `codex login status` runs before anything else can bound the hook, so it
-// carries its own 30 s bound: a status probe that hangs is cut off, reads as
+// carries its own 30 s bound, with a KILL follow-up for a probe that ignores
+// TERM: a status probe that hangs is cut off, reads as
 // not logged in, and the no-terminal guard then exits 0 with the remedy --
 // never the device login. A timeout shim records the bound the hook asked for
-// and enforces a short one, so the test does not wait out 30 s.
+// and enforces a short one (honouring -k only when asked), so the test does
+// not wait out 30 s.
 func TestCodexLoginHookBoundsLoginStatus(t *testing.T) {
 	_, cat := testCat(t)
 	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
 	bin, home := t.TempDir(), physTempDir(t)
 	bounds := filepath.Join(bin, "timeout.argv")
 	shim := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + strconv.Quote(bounds) + "\n" +
-		"[ \"$1\" = --foreground ] && shift\nshift\n" +
-		"\"$@\" & p=$!\n( sleep 1; kill -TERM $p ) >/dev/null 2>&1 &\n" +
+		"[ \"$1\" = --foreground ] && shift\nk=\"\"\n[ \"$1\" = -k ] && { k=1; shift 2; }\nshift\n" +
+		"\"$@\" & p=$!\n( sleep 1; kill -TERM $p; [ -n \"$k\" ] && { sleep 1; kill -KILL $p; } ) >/dev/null 2>&1 &\n" +
 		"wait $p\n"
 	if err := os.WriteFile(filepath.Join(bin, "timeout"), []byte(shim), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	logins := filepath.Join(bin, "device-login")
 	stub := "#!/bin/sh\n" +
-		"if [ \"$1 $2\" = 'login status' ]; then exec sleep 30; fi\n" +
+		"if [ \"$1 $2\" = 'login status' ]; then trap '' TERM; exec sleep 30; fi\n" +
 		"if [ \"$1 $2\" = 'login --device-auth' ]; then touch " + strconv.Quote(logins) + "; fi\n" +
 		"exit 0\n"
 	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(stub), 0o755); err != nil {
@@ -1742,8 +1744,8 @@ func TestCodexLoginHookBoundsLoginStatus(t *testing.T) {
 	}
 	out := runCodexLoginHook(t, hook, append(codexLoginHookEnv(t, cat, "PATH="+bin+":/usr/bin:/bin",
 		"CODEX_HOME="+home), noTerminalEnv...))
-	if b, _ := os.ReadFile(bounds); !strings.Contains(string(b), "30 codex login status") {
-		t.Fatalf("login status must run under the 30 s bound; timeout saw %q", b)
+	if b, _ := os.ReadFile(bounds); !strings.Contains(string(b), "-k 5 30 codex login status") {
+		t.Fatalf("login status must run under the 30 s bound with a KILL follow-up; timeout saw %q", b)
 	}
 	if _, err := os.Stat(logins); !os.IsNotExist(err) {
 		t.Fatal("no terminal: the device login must not run")
