@@ -490,5 +490,6 @@ else
   BYRE_cmd=(bash -l)
 fi
 
+# Plain assignment, not `exec env PATH=...`: env would swallow a leading NAME=value argv word as an assignment.
 PATH="$BYRE_agent_path"
 exec "${BYRE_cmd[@]}"

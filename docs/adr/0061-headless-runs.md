@@ -372,8 +372,9 @@ default. How long a task may take is the caller's call; a default would
 kill legitimate long runs that nothing in the config asked to bound.
 `--timeout 0` is a usage error that says to omit the flag, and so is a
 duration under 1s or over 3650d: the cap keeps the chassis's centisecond
-deadline well inside 64 bits. The chassis refuses the same range in a
-`BYRE_RUN_TIMEOUT` a raw `run_args` sets (exit 16). It holds the deadline
+deadline well inside 64 bits. A `BYRE_RUN_TIMEOUT` a raw `run_args` sets
+is refused by the chassis (exit 16) when it is malformed, under 1s or
+over 3650d; a raw zero (`0`, `0s`, `0.0m`) reads as unset. The chassis holds the deadline
 on the monotonic clock in `/proc/uptime`, so a wall-clock step during the
 run cannot disable the timer. Durations are floored to the centisecond
 with nine fractional digits kept, so a value within 1e-10 of a boundary

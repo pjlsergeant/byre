@@ -390,8 +390,10 @@ The limitations, each recorded in
 - **Repo code runs before the chassis**: a pending worktree checkout runs
   your repository's git hooks and filters in the box first; a rewritten
   task is refused (exit 16), but the code has already run.
-- **The chassis's exclusive file claims assume nothing else runs during
-  setup**: the agent has not started and the repo code has finished.
+- **The chassis's exclusive file claims and the onboarding seeds'
+  publish (`mktemp`, then reopen) are not atomic**: both assume nothing
+  else runs during setup, where the agent has not started and the repo
+  code has finished.
 - **The answer is agent-trust**: the channel it travels on is reachable
   by any process in the box running as the same user.
 - **Raw `run_args` make the verdict unverified**: byre does not parse
@@ -400,6 +402,11 @@ The limitations, each recorded in
   your tools live there, so a program repo code planted in `~/.local/bin`
   under the agent's name runs as your agent; byre's pin to the system
   directories covers byre's own helpers only.
+- **The interactive login hooks run on the agent's PATH** (codex-login,
+  grok-login, opencode-login and the shared-auth first-run hooks), because
+  they run the agent CLIs, so in an interactive session a helper planted
+  in `~/.local/bin` runs there; under a headless launch they stand down
+  before any credential work.
 - **grok-shared-auth's broker runs on grok's PATH**, in headless runs too,
   and refreshes the machine-wide grok login the agent can already read
   and write.

@@ -951,8 +951,8 @@ func TestRunInTreeCopySkippedOnPlant(t *testing.T) {
 	if d := decodeRunData(t, out2.Bytes()); d.Outcome != outcomeRan {
 		t.Errorf("the document on stdout is unaffected: %+v", d)
 	}
-	if !strings.Contains(stderr2.String(), "outcome.json not written") {
-		t.Errorf("a skipped copy is said so:\n%s", stderr2)
+	if !strings.Contains(stderr2.String(), "outcome.json not written") || !strings.Contains(stderr2.String(), "the exit code and --data are the outcome") {
+		t.Errorf("a skipped copy is said so, naming the outcome's authority:\n%s", stderr2)
 	}
 }
 

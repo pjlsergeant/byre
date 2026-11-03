@@ -269,8 +269,9 @@ box gets no terminal and no stdin, its command is the `byre-headless`
 chassis, and byre exits with its own verdict. Under the setup lock, right
 after Create, byre stages the result dir `.byre-run/` in the work tree,
 so a second run on the same worktree loses the container name before it
-can reach the dir. The box's stdout is the agent's answer (under
-`--data`, byre's JSON outcome instead); everything else is on stderr.
+can reach the dir. The box's stdout is the agent's answer; under
+`--data` byre discards it and prints its JSON outcome on stdout after
+the box exits. Everything else is on stderr.
 
 A running session is identified by **labels** (`byre.project` +
 `byre.workdir`), not an assumed name (ADR 0004); that's how `byre status`

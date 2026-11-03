@@ -147,6 +147,25 @@ func TestPresetApplyYesRefusesHTTPSPresetURI(t *testing.T) {
 	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
 }
 
+// A hostile https preset URI is shell-quoted in the pasteable curl line, so
+// its metacharacters stay one argument instead of splitting or executing.
+func TestPresetApplyYesQuotesHostilePresetURI(t *testing.T) {
+	p, proj := onboardPaths(t)
+	s, _, _ := testStreams("", false)
+	uri := "https://example.invalid/a;rm -rf $(id)"
+	err := PresetApply(s, proj, uri, true)
+	if err == nil || !strings.Contains(err.Error(), remotePresetRule) {
+		t.Fatalf("a hostile https preset URI must refuse, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "byre.preset '"+uri+"')") {
+		t.Fatalf("the curl argument must be shell-quoted, got %v", err)
+	}
+	if strings.Contains(err.Error(), "byre.preset "+uri) {
+		t.Fatalf("the curl argument must not carry raw metacharacters, got %v", err)
+	}
+	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
+}
+
 // An explicit preset path passes --yes: it names bytes the caller controls.
 func TestPresetApplyYesAllowsPresetPath(t *testing.T) {
 	p, proj := onboardPaths(t)

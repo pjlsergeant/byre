@@ -752,7 +752,7 @@ func (st *runState) writeInTreeCopy(doc []byte) {
 		_, werr := w.Write(doc)
 		return werr
 	}, nil); err != nil {
-		dataf(st.s.Err, "byre: run: outcome.json not written to the result dir (%v)\n", err)
+		dataf(st.s.Err, "byre: run: outcome.json not written to the result dir (%v); the exit code and --data are the outcome\n", err)
 	}
 }
 
