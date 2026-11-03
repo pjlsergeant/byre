@@ -380,10 +380,10 @@ headless command starts, so a wall-clock step during the run cannot move
 it. It checks the deadline between polls of the child at 0.1 s intervals,
 so the timeout acts within 0.1 s of the deadline, and a run that ends on
 its own inside that window keeps its own verdict. TERM goes to the group
-at the deadline, KILL 15 s later. The wait between deadline checks is a
-builtin `read -t` on a pipe PID 1 holds, so no child process exists for
-the agent to stop; the deadline is PID 1's own, and no signal produces
-exit 12. Durations are floored to the centisecond with nine fractional
+at the deadline, KILL 15 s later. No timer process exists and no signal
+produces exit 12. `--timeout` bounds a run that cooperates or crashes,
+not one that sets out to stall its own end (see the residuals below).
+Durations are floored to the centisecond with nine fractional
 digits kept, so a value within 1e-10 of a boundary can move one
 centisecond -- accepted.
 
@@ -480,13 +480,15 @@ Each is on the security-model page too.
   route, not the `/proc` one. The exit code and the `--data` document do
   not pass through fd 9.
 
-**Processes that escape the run's group**
+**A run that stalls its own end**
 
-- A process that escapes the run's group (its own `setsid`) survives the
-  group KILL and can SIGSTOP an external command the chassis runs after
-  the run (the publish step); the verdict is then never published. The
-  host has no bound of its own and waits. A host-side bound is recorded
-  as future work.
+- Every external command PID 1 runs -- the poll's `sleep`, the task hash,
+  the publish step -- is a same-uid child the run can pause with SIGSTOP,
+  and PID 1's resource limits can be lowered from inside the group. The
+  deadline is then not checked and the verdict waits until the box is
+  stopped. The box stays contained; the cost is the user's wall-clock. A
+  host-side bound (byre on the host is outside the run's reach) is
+  recorded as future work in TODO.md.
 
 **Executable lookup**
 
@@ -524,7 +526,7 @@ Each is on the security-model page too.
   empty the result dir of a run that already owns a box.
 
 [arm: TestHeadlessExitMap, TestHeadlessHasNoHelperProcesses,
-TestHeadlessTickFloodStillTimesOut, TestHeadlessRefusesInvalidInputs,
+TestHeadlessRefusesInvalidInputs,
 TestHeadlessFIFOsPlantedDuringTheRunNeverBlock,
 TestHeadlessStreamRouting, TestLauncherHeadlessExportsSignalFromArgv,
 TestLauncherNonHeadlessUnsetsSignal, TestLauncherHelpersIgnoreInheritedPath,

@@ -215,8 +215,8 @@ child="" deadline_cs="" kill_cs=""
 
 # The tee relays and the headless command itself start with the descriptors
 # they must not hold closed: a relay pipe held open elsewhere keeps its tee
-# from seeing EOF, fd 9 is the chassis's alone -- the headless command never
-# writes the box's real stdout -- and fd 10, the tick pipe, is PID 1's alone.
+# from seeing EOF, and fd 9 is the chassis's alone -- the headless command
+# never writes the box's real stdout.
 
 # tee_to appends a stream to a held file and, unless BYRE_RUN_QUIET, relays it
 # to the box's stderr. It ignores TERM/INT so a signal aimed at the run never
@@ -241,14 +241,9 @@ else
   export BYRE_RUN_RESULT_FILE=/dev/fd/5
   export BYRE_RUN_STATUS_FILE=/dev/fd/6
 
-  # The tick pipe, fd 10: the process substitution's `:` exits at once, and
-  # opening its pipe read-write makes PID 1 its only reader and writer, so a
-  # `read -t` on it waits out the full timeout with no other process involved.
-  exec 10<> <(:)
-
-  exec 7> >(exec 4>&- 5>&- 6>&- 9>&- 10>&-; tee_to 3)
+  exec 7> >(exec 4>&- 5>&- 6>&- 9>&-; tee_to 3)
   tee_out=$!
-  exec 8> >(exec 3>&- 5>&- 6>&- 7>&- 9>&- 10>&-; tee_to 4)
+  exec 8> >(exec 3>&- 5>&- 6>&- 7>&- 9>&-; tee_to 4)
   tee_err=$!
 
   trap 'on_signal TERM' TERM
@@ -267,7 +262,7 @@ else
     trap - INT QUIT USR1
     PATH=$byre_saved_path
     exec "$setsid_bin" -- "$cmd"
-  ) </dev/null >&7 2>&8 3>&- 4>&- 7>&- 8>&- 9>&- 10>&- &
+  ) </dev/null >&7 2>&8 3>&- 4>&- 7>&- 8>&- 9>&- &
   child=$!
   exec 7>&- 8>&-
 
@@ -278,18 +273,13 @@ else
     deadline_cs=$((now_cs + timeout_cs))
   fi
 
-  # A poll, not `wait`: when a trapped signal lands as the `wait` builtin
-  # reaps the child, bash drops the child's status. The wait between polls
-  # is a builtin `read -t` on the tick pipe, so no child process exists for
-  # the agent to stop: a same-uid SIGSTOP to a foreground child (a sleep)
-  # would leave bash blocked in waitpid, with no trap and no deadline check
-  # ever running again. bash reaps and records the headless command as it
-  # exits, and a trap runs when the read returns, so a signal's handler
-  # waits at most 0.1 s. The deadline is checked between polls, so the
-  # timeout acts within one poll interval: TERM to the group at the
-  # deadline, KILL 15 s later. A same-uid process that reaches the pipe
-  # through /proc/1/fd and floods it makes the loop spin, and the deadline
-  # still fires on every iteration. A failed clock read skips one check;
+  # A poll on a foreground sleep, not `wait`: when a trapped signal lands as
+  # the `wait` builtin reaps the child, bash drops the child's status. The
+  # foreground sleep reaps and records the child safely, and a trap runs when
+  # the sleep ends, so a signal's handler waits at most 0.1 s. The deadline
+  # is checked between polls, so the timeout acts within one poll interval
+  # and no helper process the agent could kill is involved: TERM to the group
+  # at the deadline, KILL 15 s later. A failed clock read skips one check;
   # the next poll retries.
   while kill -0 "$child" 2>/dev/null; do
     if [ -n "$deadline_cs" ] && uptime_cs; then
@@ -303,7 +293,7 @@ else
         kill -KILL -- "-$child" 2>/dev/null
       fi
     fi
-    read -r -t 0.1 -u 10 _ || :
+    sleep 0.1
   done
   trap - TERM INT
   # Reaped and recorded, so this returns at once: the leader is reaped,
@@ -317,17 +307,13 @@ else
 
   # Let the tees drain to EOF, bounded: a process that left the group with a
   # relay pipe still open must not hold PID 1 forever. KILL, because the tees
-  # ignore TERM. The wait is the tick pipe's builtin read, for the reason the
-  # poll above gives.
+  # ignore TERM.
   for ((i = 0; i < 100; i++)); do
     kill -0 "$tee_out" 2>/dev/null || kill -0 "$tee_err" 2>/dev/null || break
-    read -r -t 0.05 -u 10 _ || :
+    sleep 0.05
   done
   kill -KILL "$tee_out" "$tee_err" 2>/dev/null
   wait "$tee_out" "$tee_err" 2>/dev/null
-  # Closed before the post-run helpers start, so none of them holds the
-  # tick pipe.
-  exec 10>&-
 
   # status: key=value lines the headless command appended to fd 6. Only these
   # two keys are read, from a bounded read of the held descriptor.
