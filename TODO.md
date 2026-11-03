@@ -113,6 +113,15 @@ the rationale lives.
   (changes who receives the terminal's signals; check the TUI path).
   Seen 2026-11-03.
 
+- [ ] (M) **Host-side bound for `byre run --timeout`**: the chassis enforces
+  the deadline from PID 1, but a process that escapes the run's group can
+  SIGSTOP an external command the chassis runs after the run (the publish
+  step) and the host then waits forever. byre on the host is outside the
+  agent's reach: wait the timeout plus a grace, then stop the box and
+  report a host-authority timeout. Needs a --data/outcome decision (exit
+  12 is the chassis's verdict; a host stop is a different authority).
+  Seen 2026-11-03 (three reviewers, one end-to-end repro).
+
 - [ ] (M) **Site demos: make them look right, then wire them back in**
   (parked 2026-07-18, Pete: "quite far from how I want them to look";
   the rest of the site is done). The pipeline is BUILT and in-tree --

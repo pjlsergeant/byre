@@ -415,6 +415,11 @@ The limitations, each recorded in
 - **Exit numbers are shared**: a box that exits 1, 2, 3 or 70 reaches
   your script as that number, and `--data` tells them apart.
 - **There is no time limit unless you set one** with `--timeout`.
+- **A process that escapes the run's group can stall the end of the
+  run**: started in its own session, it survives the group kill and can
+  pause a command the chassis runs after the run, so the verdict is never
+  published and `byre run` waits until you stop the box; a bound on the
+  host side is future work.
 
 **Agents hold usable credentials by construction.** Whatever auth story
 you choose, the agent can read its own credential -- it needs it to

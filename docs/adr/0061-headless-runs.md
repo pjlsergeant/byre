@@ -132,7 +132,7 @@ command owns every agent flag.
 command exits one of `0` (success, with a non-empty answer), `10` (the
 agent reported failure), `11` (the agent process failed, `backend_exit`
 written first), `13` (credential preflight failed) and `15` (the backend
-is not in the box). The chassis adds `12` (its own timer fired) and `16`
+is not in the box). The chassis adds `12` (its own deadline passed) and `16`
 (its inputs failed validation), and treats anything else -- a shell death,
 a signal, a raw status passed up by mistake, `0` with an empty answer -- as
 the command breaking the contract: `14`. A raw agent exit of 10 reaches the
@@ -380,10 +380,10 @@ headless command starts, so a wall-clock step during the run cannot move
 it. It checks the deadline between polls of the child at 0.1 s intervals,
 so the timeout acts within 0.1 s of the deadline, and a run that ends on
 its own inside that window keeps its own verdict. TERM goes to the group
-at the deadline, KILL 15 s later. No helper process exists and no signal
-produces exit 12, so an agent in the same PID namespace cannot disable
-the timeout -- PID 1 cannot be killed or stopped from inside the
-namespace. Durations are floored to the centisecond with nine fractional
+at the deadline, KILL 15 s later. The wait between deadline checks is a
+builtin `read -t` on a pipe PID 1 holds, so no child process exists for
+the agent to stop; the deadline is PID 1's own, and no signal produces
+exit 12. Durations are floored to the centisecond with nine fractional
 digits kept, so a value within 1e-10 of a boundary can move one
 centisecond -- accepted.
 
@@ -480,6 +480,14 @@ Each is on the security-model page too.
   route, not the `/proc` one. The exit code and the `--data` document do
   not pass through fd 9.
 
+**Processes that escape the run's group**
+
+- A process that escapes the run's group (its own `setsid`) survives the
+  group KILL and can SIGSTOP an external command the chassis runs after
+  the run (the publish step); the verdict is then never published. The
+  host has no bound of its own and waits. A host-side bound is recorded
+  as future work.
+
 **Executable lookup**
 
 - The interactive login hooks run on the agent PATH, because they run the
@@ -516,7 +524,7 @@ Each is on the security-model page too.
   empty the result dir of a run that already owns a box.
 
 [arm: TestHeadlessExitMap, TestHeadlessHasNoHelperProcesses,
-TestHeadlessRefusesInvalidInputs,
+TestHeadlessTickFloodStillTimesOut, TestHeadlessRefusesInvalidInputs,
 TestHeadlessFIFOsPlantedDuringTheRunNeverBlock,
 TestHeadlessStreamRouting, TestLauncherHeadlessExportsSignalFromArgv,
 TestLauncherNonHeadlessUnsetsSignal, TestLauncherHelpersIgnoreInheritedPath,

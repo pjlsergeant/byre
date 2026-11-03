@@ -508,10 +508,12 @@ sleep 2
 printf done >"$BYRE_RUN_RESULT_FILE"`
 
 // The timeout is enforced by PID 1 from its poll loop, so there is no helper
-// process an agent could kill: with or without a timeout, the chassis's only
-// children while the headless command runs are its tee relays and the sleep
-// of its child-poll loop, and a sleeping command inside its bound is not
-// killed.
+// process an agent could kill or stop: with or without a timeout, the
+// chassis's only children while the headless command runs are its tee
+// relays, and a sleeping command inside its bound is not killed. A `sleep`
+// child of the poll loop is a STOP vector -- a same-uid SIGSTOP leaves bash
+// blocked in waitpid and the deadline is never checked again -- so the rule
+// is every child is a tee, and at least one is, so an empty walk fails.
 func TestHeadlessHasNoHelperProcesses(t *testing.T) {
 	for _, spec := range []string{"", "0", "0s", "0.0m", "60"} {
 		var env []string
@@ -527,11 +529,39 @@ func TestHeadlessHasNoHelperProcesses(t *testing.T) {
 			t.Fatal(err)
 		}
 		names := strings.Fields(string(b))
+		if len(names) == 0 {
+			t.Errorf("BYRE_RUN_TIMEOUT=%q: the probe found no children of the chassis, not even its tee relays", spec)
+		}
 		for _, name := range names {
-			if name != "tee" && name != "sleep" {
-				t.Errorf("BYRE_RUN_TIMEOUT=%q: the chassis has a %q child beside its relays and poll: %v", spec, name, names)
+			if name != "tee" {
+				t.Errorf("BYRE_RUN_TIMEOUT=%q: the chassis has a %q child beside its tee relays: %v", spec, name, names)
 			}
 		}
+	}
+}
+
+// The poll loop waits on fd 10, the tick pipe PID 1 holds both ends of, and
+// a same-uid process can reach it through /proc/<chassis>/fd/10. Flooding it
+// makes every wait return at once; the deadline is still checked on each
+// iteration, so the run times out on schedule.
+func TestHeadlessTickFloodStillTimesOut(t *testing.T) {
+	start := time.Now()
+	r := runHeadless(t, headlessCase{
+		bound: 25 * time.Second,
+		env:   []string{"BYRE_RUN_TIMEOUT=1s"},
+		stub: `[ -p /proc/$PPID/fd/10 ] || { echo "no tick pipe at fd 10" >"$STUB_WS/flood"; exit 3; }
+echo flooding >"$STUB_WS/flood"
+while :; do printf 'x\n'; done >/proc/$PPID/fd/10 &
+sleep 60`,
+	})
+	if b, _ := os.ReadFile(filepath.Join(r.ws, "flood")); strings.TrimSpace(string(b)) != "flooding" {
+		t.Fatalf("the stub did not flood the tick pipe: %q\nstderr:\n%s", b, r.stderr)
+	}
+	if r.code != 12 {
+		t.Fatalf("exit %d, want 12\nstderr:\n%s", r.code, r.stderr)
+	}
+	if d := time.Since(start); d > 15*time.Second {
+		t.Errorf("the flooded run took %v, want the 1 s deadline to fire on schedule", d)
 	}
 }
 
