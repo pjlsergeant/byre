@@ -23,10 +23,12 @@ same four steps, and every step's output is inspectable.
    ones, so projects on one template share the expensive layers in
    Docker's cache, and a short guard at the end re-copies byre's own
    launcher and enforcement files, so a `files` entry aimed at one of
-   those paths can't leave its content there. A raw build line or a
-   runtime mount over the same path is not guarded: byre
+   those paths can't leave its content there. A runtime mount over the
+   same path is not guarded: byre
    [discloses it](/docs/security-model/#the-engine-and-the-host)
-   instead. Block order and the guard:
+   instead. byre never parses a raw build line, so `byre status` flags
+   raw lines as not introspected and `byre status --full` shows them
+   verbatim. Block order and the guard:
    [docs/ARCHITECTURE.md](https://github.com/pjlsergeant/byre/blob/main/docs/ARCHITECTURE.md)
    (Image generation).
 3. **Build.** Plain `docker build`, with no caching layer of byre's own:

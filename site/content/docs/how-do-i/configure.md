@@ -166,18 +166,14 @@ entry replaces an inherited one; "Remove in this project" (or
 `byre context remove <name>`) switches one off, and `byre context list`
 shows what's in effect and whether it's delivered.
 
-**How it reaches the agent.** byre bakes one text -- its own box facts,
-each enabled skill's guidance, then your instructions -- into the image
-at `/etc/byre/agent-context.md`, and the agent's launch command appends
-it to the session through that agent's own channel (Claude's
-`--append-system-prompt-file`, for one; the rest are in
-[docs/ARCHITECTURE.md](https://github.com/pjlsergeant/byre/blob/main/docs/ARCHITECTURE.md),
-under Standing instructions). byre never writes into the agent's own
-files: your `~/.claude/CLAUDE.md` (and every agent's equivalent) is
-yours, and the repo's own `CLAUDE.md`/`AGENTS.md` load as the agent
-normally loads them, on top. An agent without an injection mechanism
-does not receive the text, and `byre status` and `byre context list`
-say so.
+**How it reaches the agent.** byre bakes your instructions, after its
+own box facts and each enabled skill's guidance, into the image at
+`/etc/byre/agent-context.md`, and the agent's launch command appends
+that file to the session through the agent's own channel; byre never
+writes into the agent's own files. The per-agent channels, and what
+happens for an agent without one:
+[docs/ARCHITECTURE.md](https://github.com/pjlsergeant/byre/blob/main/docs/ARCHITECTURE.md)
+(Standing instructions).
 
 Long documents can stay your own file: `byre context add conventions
 --file ~/notes/agent-conventions.md` reads it at each rebuild

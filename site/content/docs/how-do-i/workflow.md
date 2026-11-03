@@ -75,7 +75,7 @@ tldr: `byre grab <box-path>`.
 byre grab out/report.pdf        # copies it here and prints where it landed
 ```
 
-Grab never overwrites your files: a name collision lands uniquified
+Box paths count from `/workspace`. Grab never overwrites your files: a name collision lands uniquified
 (`report-2.pdf`). Destinations, directories, and streaming to stdout:
 [docs/DELIVER.md](https://github.com/pjlsergeant/byre/blob/main/docs/DELIVER.md#getting-files-back-out-byre-grab).
 
@@ -124,11 +124,15 @@ The build output goes to stderr; no volumes are seeded and no container
 starts. Use it to warm a persistent runner's engine cache before a job,
 to read the tag, or to fail a job early on a config that fails to
 build; a hosted runner starts with an empty cache every job, so it
-gains nothing there. It builds with the engine's cache as develop does,
-waits only for another setup of the project (a live session keeps its
-image), takes `--template`/`--agent` on a never-configured checkout and
-`-a` for one build, and checks only what the build needs -- not mount
-paths or credentials.
+gains nothing there.
+
+- It uses the engine's cache, as develop does; `byre rebuild` builds
+  with the cache off and the base pulled again.
+- It waits only for another setup of the project, not for a live
+  session; the running box keeps the image it started from.
+- A never-configured checkout needs `--template` and `--agent`; on a
+  configured one, `-a <agent>` swaps the agent for this build only.
+- It checks only what the build needs, not mount paths or credentials.
 
 ## Run one task headlessly (CI)?
 

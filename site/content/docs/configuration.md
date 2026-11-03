@@ -74,10 +74,13 @@ layout survive every save byte-for-byte. That's a right byre defends, never a re
 it imposes: `byre config` is the interface, every config feature is
 reachable there -- editable, or shown read-only with the flow that
 writes it named (the `[sources]` install hints `byre preset apply`
-records; your stored shared-credentials answer) -- and no recipe or
-error message will ever send you into the files.
+records; your stored shared-credentials answer) -- and no error message
+will ever send you into the files. One recipe does: no flow authors a
+preset's `[sources]` rows, so
+[shipping a preset](/docs/how-do-i/toolkit/#ship-a-recommended-box-config-with-my-project)
+means adding them to `byre.preset` by hand.
 
-One exception, and it only arrives if you went into the files first: a
+The other exception only arrives if you went into the files first: a
 config file hand-edited into something the TOML parser refuses. The
 editor will not reconcile against a document it cannot read -- it would
 have to guess what to preserve, and guess wrong about the rest of your

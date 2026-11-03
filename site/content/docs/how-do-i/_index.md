@@ -9,7 +9,7 @@ description: the cookbook -- every recipe is a question, a tldr, and a shipped f
 - [Save my LLM credentials so I don't need to re-auth for each box?](/docs/how-do-i/configure/#save-my-llm-credentials-so-i-dont-need-to-re-auth-for-each-box)
 - [Enable a skill in this box?](/docs/how-do-i/configure/#enable-a-skill-in-this-box)
 - [Add an MCP server to my agent's session?](/docs/how-do-i/configure/#add-an-mcp-server-to-my-agents-session)
-- [Add a package to this box -- and promote it to my template?](/docs/how-do-i/configure/#add-a-package-to-this-box--and-promote-it-to-my-template)
+- [Add a package to this box -- and promote it to my template?](/docs/how-do-i/configure/#add-a-package-to-this-box----and-promote-it-to-my-template)
 - [Set my defaults so every new box starts right?](/docs/how-do-i/configure/#set-my-defaults-so-every-new-box-starts-right)
 - [Switch agents for one project?](/docs/how-do-i/configure/#switch-agents-for-one-project)
 - [Expose a port to see the box's dev server?](/docs/how-do-i/configure/#expose-a-port-to-see-the-boxs-dev-server)
@@ -50,7 +50,7 @@ description: the cookbook -- every recipe is a question, a tldr, and a shipped f
 
 ### [Lifecycle & recovery](/docs/how-do-i/recovery/)
 
-- [Start over -- and which hammer do I reach for?](/docs/how-do-i/recovery/#start-over--and-which-hammer-do-i-reach-for)
+- [Start over -- and which hammer do I reach for?](/docs/how-do-i/recovery/#start-over----and-which-hammer-do-i-reach-for)
 - [Move or rename a project directory?](/docs/how-do-i/recovery/#move-or-rename-a-project-directory)
 - [Move my box to another machine?](/docs/how-do-i/recovery/#move-my-box-to-another-machine)
 - [Pull fresh tool versions?](/docs/how-do-i/recovery/#pull-fresh-tool-versions)

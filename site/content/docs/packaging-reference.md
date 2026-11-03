@@ -1,7 +1,7 @@
 ---
 title: Packaging reference
 weight: 55
-description: provenance, manifests, digest pinning, the MCP / Claude Skills wiring contract, the headless command, and required skills
+description: user operations on packages -- provenance, inspect, install with --digest, replacement review, uninstall -- plus the headless command and required skills
 params:
   reference: true
 ---

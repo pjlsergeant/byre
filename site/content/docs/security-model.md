@@ -30,10 +30,16 @@ attacker with kernel exploits.
 
 ## The contract
 
-What the box shuts out, what it leaves open by design, and where a
-container stops being enough:
-[What's boxed, what isn't](/docs/whats-boxed/). The rest of this page
-is the residuals.
+- **Boxed:** your host filesystem, your environment, and your
+  credentials stay outside unless you grant them.
+- **Open by design:** the network (until a firewall skill closes it) and
+  the project directory, which the agent can write.
+- **Not a microVM:** a container shares the engine host's kernel.
+- **Locked against the agent, not you:** every protection is one config
+  edit away from off, and `byre status` shows where it is.
+
+The full contract: [What's boxed, what isn't](/docs/whats-boxed/). The
+rest of this page is the residuals.
 
 ## Project credentials
 
@@ -200,13 +206,10 @@ decision about its author, made once, with the consequences legible in
 Dockerfile `ENV` layers, so `docker history` shows them to anyone with
 daemon access, and they stay in the image after you delete them from
 config -- `byre reset` clears volumes, not images -- until it is rebuilt
-or deleted. Changing one re-runs the project block's installs. This is
-a hygiene fact, not a new exposure: byre images never leave your
-machine (there is no push path), and anyone who can read the layer has
-daemon access, which already reaches the running container's env, the
-volumes, and the host. Secrets belong in an agent's own login, a
-shared-auth skill, an `[env_from_host]` passthrough from your host
-environment, or a project credential.
+or deleted. Changing one re-runs the project block's installs. byre
+images never leave your machine (there is no push path). Secrets belong
+in an agent's own login, a shared-auth skill, an `[env_from_host]`
+passthrough from your host environment, or a project credential.
 
 ### Self-edit sessions
 
@@ -331,11 +334,11 @@ your whole writable surface, and byre takes you at your word.
 **Shared (machine-scoped) volumes cross project boundaries.** The
 shared-auth skills
 ([ADR 0017](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0017-shared-agent-identity.md))
-put one agent credential where every one of your projects' boxes can use
-it -- that is their purpose. A misbehaving agent in ANY box can read
-(and so exfiltrate) that credential, exactly as it can its own
-per-project login; the tokens involved are inference-scoped where the
-vendor allows it (Claude's setup-token). `byre status` names shared
+put one agent credential where the box of every project that opted in
+can use it -- that is their purpose. A misbehaving agent in any box that
+opted in can read (and so exfiltrate) that credential, exactly as it can
+its own per-project login; the tokens involved are inference-scoped
+where the vendor allows it (Claude's setup-token). `byre status` names shared
 volumes; `reset` / `forget` never delete them silently.
 
 **A single-writer volume is byre's contract, not the kernel's.** A

@@ -59,9 +59,13 @@ Full semantics:
 
 tldr: commit a `byre.preset`; whoever clones runs `byre preset apply`.
 
-Make it in the editor, copy the saved project config into the repo as
-`byre.preset`, and add a `[sources]` row for each package that is not
-bundled, so `apply` can offer the install.
+Make it in the editor and copy the saved project config into the repo
+as `byre.preset`. Each package that is not bundled needs a `[sources]`
+row so `apply` can offer the install. A config that `byre preset apply`
+wrote already carries the rows its preset had; for any other package,
+add the row to `byre.preset` by hand -- no flow in byre authors
+`[sources]` rows, a gap tracked in
+[TODO.md](https://github.com/pjlsergeant/byre/blob/main/TODO.md).
 [The full flow](/docs/configuration-reference/#presets-byrepreset).
 
 ## Version-control my `~/.byre`?
