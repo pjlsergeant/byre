@@ -1,5 +1,8 @@
 # Headless runs: the agent declares a headless command; `byre run` drives it
 
+> Withdrawn (2026-11-04): byre run left main; the feature is parked on the
+> headless-runs branch, tag pre-run-removal.
+
 Decided 2026-11-02. A byre box can run ONE agent task non-interactively,
 from any script -- a CI job or anything else -- with an exit status the
 script can trust. An agent skill declares a **headless command** in its

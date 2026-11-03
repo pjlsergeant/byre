@@ -13,17 +13,17 @@ here names a route the user can take on purpose; none blocks a deliberate
 choice); P6 (no new config key; `[sources]` stays the existing read-only
 row). Related: ADR 0003 (the sandbox config is read from the host-side store
 only), ADR 0029 (installs are digest-verified), ADR 0057 (project
-credentials; the preset bridge is answered at the consent gate), ADR 0061
-(headless runs, the CI route this completes).
+credentials; the preset bridge is answered at the consent gate).
 
 ## Why
 
-A CI runner has no terminal, and `preset apply` refused without one ("the
-review is the point"). It is the only reviewed bridge from a committed
-`byre.preset` into the project's stored config, so a headless job had no
-config step except `byre run --template <t> --agent <a>` on a
-never-configured checkout -- enough for the minimal case, nowhere near a
-preset's skills, egress and `env_from_host`.
+Scripted setup has no terminal: a bootstrap script on a new machine, or a
+CI job that configures a project and then runs `byre build` or `byre
+develop`. `preset apply` refused without one ("the review is the point").
+It is the only reviewed bridge from a committed `byre.preset` into the
+project's stored config, so an unattended setup had no way to reach a
+preset's skills, egress and `env_from_host` short of a person at a
+terminal.
 
 ## What `--yes` consents to
 
@@ -113,8 +113,8 @@ the repo.
 - A chauffeured install that fails under `--yes` (a digest mismatch, an
   unreachable URL) still completes the apply, as on a terminal: the review
   marks the package not installed, and the box fails loudly at launch with
-  the reinstall remedy. A CI job sees that failure one step later, at
-  `byre run`.
+  the reinstall remedy. A script sees that failure one step later, at
+  `byre build` or `byre develop`.
 
 [arm: TestPresetApplyYesRefusesCredentialRows,
 TestPresetApplyYesRefusesUndigestedHTTPSHint,

@@ -19,7 +19,6 @@ gate), ADR 0033, ADR 0039, ADR 0046 (the baked artifacts).
 
 byre bakes its own machinery into the image and then makes claims that read
 from it: `/usr/local/bin/byre-launch` (the ENTRYPOINT),
-`/usr/local/bin/byre-headless` (the headless-run chassis, ADR 0061),
 `/etc/byre/launch-gate` (the fail-closed wait), the netns enforcement script a
 network-posture skill declares, and the delivery artifacts under `/etc/byre`
 -- `mcp.json`, the agent context, the Claude Skill tree, the credential
@@ -73,8 +72,8 @@ nothing about what covers it. Naming the claims that read from that path is the 
 honestly say, and it is said the same way whichever path was hit.
 
 Detection is mount-centric: a target shadows if it overlaps a *managed root*
--- `/etc/byre` and `/run/byre` as wholes, the launcher, the headless chassis,
-and each declared netns hook. A target on a root, or above it, buries it. For
+-- `/etc/byre` and `/run/byre` as wholes, the launcher, and each declared
+netns hook. A target on a root, or above it, buries it. For
 the two directory roots, a target INSIDE counts too, because each entry there
 is separately replaceable (a bind
 straight onto the launch gate). Under a file root nothing counts: a target

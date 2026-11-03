@@ -1,7 +1,7 @@
 # env.d hooks are pure env-setters; login shells source them
 
-> Amended by ADR 0057 (the credential export steps) and ADR 0061 (why the
-> launcher pins PATH).
+> Amended by ADR 0057 (the credential export steps). Amended 2026-11-02:
+> the launcher pins PATH ("Why the launcher pins PATH", below).
 
 byre skills contribute launch-time environment via `env.d` hooks -- `.sh`
 files sourced by the launcher so their `export`s land in the agent's
@@ -21,9 +21,24 @@ first line, saving the inherited PATH as the agent PATH for the firstrun
 hooks and the agent's exec alone. It sources each env.d hook on that
 system PATH, re-pinned before each hook and again after the last, so a
 hook's helpers are system tools and a PATH a hook sets reaches neither a
-later hook nor the agent (why: ADR 0061). No bundled hook sets PATH.
+later hook nor the agent (why: below). No bundled hook sets PATH.
 Login shells (the profile.d shim below) source env.d on the shell's own
 PATH.
+
+**Why the launcher pins PATH.** The image's PATH puts the dev user's
+`~/.local/bin` ahead of the system directories (agent CLIs install
+there), and that directory is agent-writable -- and so writable by repo
+code, which runs in the launcher (a pending worktree checkout's hooks
+and filters). A helper resolved through it would run planted code inside
+byre's own launch machinery. So the launcher runs its own helpers on the
+system PATH and restores the inherited agent PATH only for the firstrun
+hooks and the agent's exec, whose binaries legitimately live under
+`~/.local/bin`. First-run hooks run under `/bin/bash` by absolute path,
+so a planted `bash` is never the interpreter, and with fd 9 closed, so a
+descriptor the launcher inherited at that number does not pass into a
+hook it did not write. What still resolves on the agent PATH -- the
+agent's command, the interactive login hooks, grok-shared-auth's broker
+-- is listed on the security-model page.
 
 ## The problem
 

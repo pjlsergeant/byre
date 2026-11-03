@@ -20,9 +20,9 @@ written agent key).
 ## Why a typed field
 
 zai, in the published skills repo, drives the codex binary: without codex
-in the box its launcher exits 127 on every start, and its headless command
-has no backend. Nothing in a manifest could say so, so a box with zai and
-no codex built and launched cleanly and failed at the first exec. zai is
+in the box its launcher exits 127 on every start. Nothing in a manifest
+could say so, so a box with zai and no codex built and launched cleanly
+and failed at the first exec. zai is
 the first consumer; the opencode, mimo and vibe wrappers in the same repo
 are candidates. A typed field beats prose in a description because byre
 can check it at resolve, and every surface that lists a skill can show it.

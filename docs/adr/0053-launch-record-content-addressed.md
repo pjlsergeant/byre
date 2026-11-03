@@ -247,7 +247,8 @@ accurately -- it is the record's SOURCE, not a consumer.
   address, so reordering a field changes every address. It
   is pinned byte-exact.
 - This decision introduced `status --data` version 2; the current
-  `StatusDataVersion` is in ADR 0061 and the doctrine index.
+  version is the `StatusDataVersion` constant in
+  `internal/commands/statusdata.go`.
 - Env keys are recorded and rendered (`Box env`) but deliberately do NOT
   participate in the delta: the config side has no runtime env key set without
   re-implementing `runParams`' env union, which is the re-derivation this
