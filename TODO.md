@@ -103,6 +103,15 @@ the rationale lives.
 - [ ] (M) **Readable per-agent progress rendering for `byre run`**: the
   terminal shows the agent's raw event stream; ADR 0061 records a readable
   rendering as future work. Design against real transcripts.
+- [ ] (M) **Nobody reaps orphans in an interactive box**: the launcher execs
+  the agent CLI as the container's PID 1, and a node/rust CLI never reaps
+  reparented children, so every orphaned helper stays a zombie until the
+  container dies (the dev box held 7138 after five days; a test probe that
+  walks /proc went from 1 s to 27 s). The headless chassis reaps, as a bash
+  PID 1 does. Options: engine `--init` (tini) on the run line, or the
+  launcher staying PID 1 as a reaper and exec'ing the CLI as its child
+  (changes who receives the terminal's signals; check the TUI path).
+  Seen 2026-11-03.
 
 - [ ] (M) **Site demos: make them look right, then wire them back in**
   (parked 2026-07-18, Pete: "quite far from how I want them to look";

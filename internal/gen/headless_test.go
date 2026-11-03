@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -480,19 +481,30 @@ func liveInGroup(t *testing.T, pgid int) []int {
 
 // childNamesProbe lists the process names of the chassis's children (the
 // stub's parent) into $STUB_WS/children, then exits 0 with an answer after
-// a sleep that would outlive any accidental default bound.
+// a sleep that would outlive any accidental default bound. It forks nothing
+// per /proc entry, so a /proc crowded with unreaped zombies stays a quick
+// walk. 2>/dev/null precedes the < because redirections apply left to
+// right: an entry gone between the glob and the open is skipped silently.
 const childNamesProbe = `for d in /proc/[0-9]*; do
-  [ "$(awk '/^PPid:/{print $2}' "$d/status" 2>/dev/null)" = "$PPID" ] || continue
   [ "${d#/proc/}" = "$$" ] && continue
-  awk '/^Name:/{print $2}' "$d/status" 2>/dev/null
+  name= ppid=
+  while read -r k v; do
+    case $k in
+      Name:) name=$v ;;
+      PPid:) ppid=$v; break ;;
+    esac
+  done 2>/dev/null <"$d/status"
+  [ "$ppid" = "$PPID" ] && printf '%s\n' "$name"
 done >"$STUB_WS/children"
 sleep 2
 printf done >"$BYRE_RUN_RESULT_FILE"`
 
 // No BYRE_RUN_TIMEOUT means no bound at all: no timer process exists while
-// the headless command runs, and a sleeping one is not killed. The same
-// probe with a timeout set sees the timer -- the control that proves the
-// probe can see one.
+// the headless command runs, and a sleeping one is not killed. The timer is
+// a bash subshell child of the chassis; the chassis's own children -- its
+// tee relays and the sleep of its child-poll loop -- are not timers. The
+// same probe with a timeout set sees a bash child -- the control that
+// proves the probe can see the timer.
 func TestHeadlessNoTimeoutMeansNoTimer(t *testing.T) {
 	children := func(t *testing.T, env ...string) []string {
 		r := runHeadless(t, headlessCase{stub: childNamesProbe, env: env})
@@ -505,22 +517,21 @@ func TestHeadlessNoTimeoutMeansNoTimer(t *testing.T) {
 		}
 		return strings.Fields(string(b))
 	}
-	without := children(t)
-	for _, name := range without {
-		if name != "tee" {
-			t.Errorf("without BYRE_RUN_TIMEOUT the chassis has a %q child beside its relays: %v", name, without)
+	for _, spec := range []string{"", "0", "0s", "0.0m"} {
+		var env []string
+		if spec != "" {
+			env = []string{"BYRE_RUN_TIMEOUT=" + spec}
 		}
-	}
-	for _, zero := range []string{"0", "0s", "0.0m"} {
-		for _, name := range children(t, "BYRE_RUN_TIMEOUT="+zero) {
-			if name != "tee" {
-				t.Errorf("BYRE_RUN_TIMEOUT=%s must mean no timer, but the chassis has a %q child", zero, name)
+		names := children(t, env...)
+		for _, name := range names {
+			if name != "tee" && name != "sleep" {
+				t.Errorf("BYRE_RUN_TIMEOUT=%q must mean no timer, but the chassis has a %q child beside its relays and poll: %v", spec, name, names)
 			}
 		}
 	}
 	with := children(t, "BYRE_RUN_TIMEOUT=60")
-	if len(with) <= len(without) {
-		t.Errorf("control: with BYRE_RUN_TIMEOUT the probe saw no timer (%v vs %v), so it cannot see one", with, without)
+	if !slices.Contains(with, "bash") {
+		t.Errorf("control: with BYRE_RUN_TIMEOUT=60 the probe saw no bash timer child (%v), so it cannot see one", with)
 	}
 }
 
