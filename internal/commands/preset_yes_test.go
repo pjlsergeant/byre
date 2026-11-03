@@ -141,7 +141,7 @@ func TestPresetApplyYesRefusesHTTPSPresetURI(t *testing.T) {
 	p, proj := onboardPaths(t)
 	s, _, _ := testStreams("", false)
 	err := PresetApply(s, proj, "https://example.invalid/team/byre.preset", true)
-	if err == nil || !strings.Contains(err.Error(), remotePresetRule) || !strings.Contains(err.Error(), "byre.preset https://example.invalid/team/byre.preset)") {
+	if err == nil || !strings.Contains(err.Error(), remotePresetRule) || !strings.Contains(err.Error(), "curl -fsSLg -o byre.preset https://example.invalid/team/byre.preset)") {
 		t.Fatalf("an https preset URI must refuse naming the URI in the curl line, got %v", err)
 	}
 	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
@@ -157,7 +157,7 @@ func TestPresetApplyYesQuotesHostilePresetURI(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), remotePresetRule) {
 		t.Fatalf("a hostile https preset URI must refuse, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "byre.preset '"+uri+"')") {
+	if !strings.Contains(err.Error(), "curl -fsSLg -o byre.preset '"+uri+"')") {
 		t.Fatalf("the curl argument must be shell-quoted, got %v", err)
 	}
 	if strings.Contains(err.Error(), "byre.preset "+uri) {
@@ -165,6 +165,24 @@ func TestPresetApplyYesQuotesHostilePresetURI(t *testing.T) {
 	}
 	if n := strings.Count(err.Error(), ";rm -rf $(id)"); n != 1 {
 		t.Fatalf("the URI must appear once, inside the quotes; got %d copies in %v", n, err)
+	}
+	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
+}
+
+// A control byte in an https preset URI is percent-encoded in the curl line,
+// so the pasted URL is the refused one rather than a silently shortened one.
+func TestPresetApplyYesPercentEncodesControlBytes(t *testing.T) {
+	p, proj := onboardPaths(t)
+	s, _, _ := testStreams("", false)
+	err := PresetApply(s, proj, "https://example.invalid/a\x1b[31mb", true)
+	if err == nil || !strings.Contains(err.Error(), remotePresetRule) {
+		t.Fatalf("an https preset URI with a control byte must refuse, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "curl -fsSLg -o byre.preset 'https://example.invalid/a%1B[31mb')") {
+		t.Fatalf("the control byte must be percent-encoded in the curl line, got %q", err)
+	}
+	if strings.ContainsRune(err.Error(), 0x1b) {
+		t.Fatalf("the message must carry no raw ESC byte, got %q", err)
 	}
 	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
 }

@@ -555,10 +555,27 @@ func remotePresetRefusal(arg string) error {
 		return nil
 	}
 	// The curl line is printed to be pasted, so the URI appears only in its
-	// terminal-escaped, shell-quoted form (ADR 0029): a copied line carries
-	// no bare metacharacter.
-	quoted := packages.ShellArg(packages.EscapeTerminal(arg))
-	return fmt.Errorf("%s -- download it first (curl -fsSLo byre.preset %s), review it, and apply the path; or apply on a TTY without --yes", remotePresetRule, quoted)
+	// terminal-escaped, shell-quoted form, as the install hints in pack.go
+	// print a hostile URI: a copied line carries no bare metacharacter. -g
+	// stops curl reading [ ] and { } in the URI as a glob.
+	quoted := packages.ShellArg(packages.EscapeTerminal(percentEncodeControls(arg)))
+	return fmt.Errorf("%s -- download it first (curl -fsSLg -o byre.preset %s), review it, and apply the path; or apply on a TTY without --yes", remotePresetRule, quoted)
+}
+
+// percentEncodeControls rewrites every byte below 0x20 and 0x7f as %XX. The
+// remedy must name the URI that was refused, byte for byte, and a control
+// byte has no printable form other than its percent-encoding.
+func percentEncodeControls(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x20 || c == 0x7f {
+			fmt.Fprintf(&b, "%%%02X", c)
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 // undigestedSourceRule is the stable head of the `apply --yes` source

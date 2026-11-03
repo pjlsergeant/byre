@@ -187,7 +187,7 @@ hosted somewhere is downloaded in a step you control and applied as a
 file:
 
 ```sh
-curl -fsSLo byre.preset https://example.com/path/byre.preset
+curl -fsSLg -o byre.preset https://example.com/path/byre.preset
 byre preset apply --yes
 ```
 
