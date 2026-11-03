@@ -878,7 +878,16 @@ func runLauncherSplitScript(t *testing.T, dir, bin string, body []byte, env []st
 	if err := os.WriteFile(script, body, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	c := exec.Command("bash", append([]string{script}, args...)...)
+	// The launcher tests assert what the launcher does to fd 9, so the launcher
+	// must start with fd 9 closed: a parent that leaks an open fd 9 (the macOS
+	// CI runner does) would otherwise reach the probe through os/exec. The
+	// wrapper re-execs the absolute bash it is handed as $0, so the PATH given
+	// to the launcher never chooses the interpreter that runs it.
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := exec.Command(bash, append([]string{"-c", `exec 9>&-; exec "$0" "$@"`, bash, script}, args...)...)
 	c.Env = launcherEnv(append([]string{
 		"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"),
 		"BYRE_LAUNCH_GATE_FILE=" + filepath.Join(dir, "no-such-gate"),
@@ -888,7 +897,7 @@ func runLauncherSplitScript(t *testing.T, dir, bin string, body []byte, env []st
 	var stdout, stderr strings.Builder
 	c.Stdout = &stdout
 	c.Stderr = &stderr
-	err := c.Run()
+	err = c.Run()
 	if err == nil {
 		return 0, stdout.String(), stderr.String()
 	}
