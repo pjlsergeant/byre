@@ -34,8 +34,8 @@ func Build(s Streams, projectDir string, o BuildOptions) error {
 	}
 	// The non-TTY onboarding arm would build whatever the cascade says
 	// without writing a config, and the picker's questions have no place in
-	// a build a job runs: an unconfigured project is judged here, as run
-	// judges it -- both axis flags configure it, anything less is refused.
+	// a build a job runs: an unconfigured project is judged here -- both
+	// axis flags configure it, anything less is refused.
 	// Judged before Bootstrap, so a refusal enrolls nothing.
 	cfgPath := filepath.Join(paths.Dir, config.ProjectConfigName)
 	configured, perr := hostopen.ExistsNoFollow(cfgPath)
@@ -52,7 +52,7 @@ func Build(s Streams, projectDir string, o BuildOptions) error {
 	if err := builtins.EnsureStoreOut(paths.Home, s.Err); err != nil {
 		return err
 	}
-	developNotices(s.Err, projectDir, paths, nil)
+	developNotices(s.Err, projectDir, paths)
 	// Onboarding writes byre.config, a setup mutation: under the lock, as
 	// develop runs it. On a configured project --agent comes back as the
 	// run-scoped override.

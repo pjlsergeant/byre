@@ -162,9 +162,6 @@ func printSkillContributions(w io.Writer, f skills.File) {
 	fmt.Fprintln(w, "\nContributions:")
 	if f.Agent != nil && f.Agent.Command != "" {
 		dataf(w, "  agent command: %s\n", f.Agent.Command)
-		if f.Agent.Headless != "" {
-			dataf(w, "  agent headless: %s\n", f.Agent.Headless)
-		}
 		if f.Agent.State != "" {
 			dataf(w, "  agent state:   %s\n", f.Agent.State)
 		}

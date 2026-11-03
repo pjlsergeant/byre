@@ -26,9 +26,6 @@ type sessionRunner interface {
 	Stop(container string) error
 	Create(args []string) (string, error)
 	StartAttach(container string) error
-	// StartAttachIO is StartAttach with caller-owned stdin and stdout (see
-	// runner.Runner.StartAttachIO); a nil stdin is no stdin.
-	StartAttachIO(container string, stdin io.Reader, stdout io.Writer) error
 	ContainerRemove(container string) error
 	NetnsInit(image, container, entrypoint string, env map[string]string, joinUserns bool) error
 	// WorktreeAdd runs the one-shot in-box worktree registration container

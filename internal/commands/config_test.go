@@ -41,25 +41,3 @@ func TestEditorInheritedStripsDefaultFavourites(t *testing.T) {
 		t.Errorf("bundled templates load into the inherited view: %v", inh.Templates)
 	}
 }
-
-// The Skills screen's headless suffix reads the manifest through the
-// editor's inherited view; a manifest without the field reads as none.
-func TestEditorInheritedCarriesAgentHeadless(t *testing.T) {
-	home := installHome(t)
-	writeLocalSkill(t, home, "agenty", "[agent]\ncommand = \"agenty --go\"\nheadless = \"agenty-run --json\"\n")
-	writeLocalSkill(t, home, "plainagent", "[agent]\ncommand = \"plain --go\"\n")
-	if err := builtins.EnsureStoreOut(home, nil); err != nil {
-		t.Fatal(err)
-	}
-	cat, err := builtins.LoadCatalogRaw(home)
-	if err != nil {
-		t.Fatal(err)
-	}
-	inh := editorInherited(home, cat, nil, []string{"agenty", "plainagent"}, configui.TargetProject, "")
-	if got := inh.Skills["agenty"].AgentHeadless; got != "agenty-run --json" {
-		t.Errorf("agenty headless = %q", got)
-	}
-	if rt, ok := inh.Skills["plainagent"]; !ok || rt.AgentHeadless != "" {
-		t.Errorf("plainagent must load with no headless command: %+v (loaded %v)", rt, ok)
-	}
-}

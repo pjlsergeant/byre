@@ -28,31 +28,25 @@ type statusInfo struct {
 	// AgentNote qualifies the Agent row when a launch record replaced it
 	// (applyLaunchRecord): a --agent override, or a config edited since the
 	// box launched. "" when config and box agree.
-	AgentNote string
-	// AgentHeadless is the resolved agent's headless-run command ("" = the
-	// agent declares none). AgentHeadlessKnown says whether it describes the
-	// agent the row names: false when skills did not resolve, or when a
-	// launch record swapped in an agent other than the config's.
-	AgentHeadless      string
-	AgentHeadlessKnown bool
-	Template           string
-	Chain              []string // named-layer extends chain, root-first ("" = none)
-	Engine             string
-	ID                 string
-	Canonical          string // the dir bound at /workspace (the worktree, for a worktree)
-	WorktreeOf         string // main-worktree path when this is a linked worktree, else ""
-	Skills             []string
-	Binds              []config.Mount
-	Ports              []config.Port
-	Volumes            []config.Volume
-	Grants             []skills.Grant  // per-skill runtime grants (attribution)
-	HostEnv            []hostEnvResult // resolved host-value passthrough, source AND outcome (ADR 0026)
-	RunArgs            []string
-	BuildRaw           []string             // dockerfile_pre + dockerfile_post (raw, not introspected)
-	NetPosture         string               // a skill's declared network posture ("" = default open)
-	NetPostureSkill    string               // the skill declaring it
-	Egress             []skills.EgressAllow // resolved allowlist (host:port + skill), shown when a posture is declared
-	EgressClosed       []string             // the config's `!host[:port]` closures that survived the cascade
+	AgentNote       string
+	Template        string
+	Chain           []string // named-layer extends chain, root-first ("" = none)
+	Engine          string
+	ID              string
+	Canonical       string // the dir bound at /workspace (the worktree, for a worktree)
+	WorktreeOf      string // main-worktree path when this is a linked worktree, else ""
+	Skills          []string
+	Binds           []config.Mount
+	Ports           []config.Port
+	Volumes         []config.Volume
+	Grants          []skills.Grant  // per-skill runtime grants (attribution)
+	HostEnv         []hostEnvResult // resolved host-value passthrough, source AND outcome (ADR 0026)
+	RunArgs         []string
+	BuildRaw        []string             // dockerfile_pre + dockerfile_post (raw, not introspected)
+	NetPosture      string               // a skill's declared network posture ("" = default open)
+	NetPostureSkill string               // the skill declaring it
+	Egress          []skills.EgressAllow // resolved allowlist (host:port + skill), shown when a posture is declared
+	EgressClosed    []string             // the config's `!host[:port]` closures that survived the cascade
 	// MCPs is the effective declared MCP set — wiring, not grants (its
 	// carried egress rides the Egress rows attributed mcp:<name>); MCPClosed
 	// is the config's `!name` MCP closures; AgentMCP is the selected agent's
@@ -336,8 +330,6 @@ func Status(s Streams, projectDir string, opts StatusOptions) error {
 				info.AgentMCP = res.Agent.MCP
 				info.AgentClaudeSkills = res.Agent.ClaudeSkills
 				info.AgentContext = res.Agent.Context
-				info.AgentHeadless = res.Agent.Headless
-				info.AgentHeadlessKnown = true
 			}
 			for k := range res.Env() {
 				info.EnvProvided[k] = true
@@ -735,9 +727,6 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 	agentRow := orDefault(s.Agent, "(none)")
 	if s.AgentNote != "" {
 		agentRow += " " + s.AgentNote
-	}
-	if h := agentHeadlessLine(s); h != "" {
-		agentRow += ", " + h
 	}
 	row("Agent", agentRow)
 	pkgW := pkgIDWidth(s.Cat, append(s.Skills[:len(s.Skills):len(s.Skills)], s.Template), tier)
@@ -1393,23 +1382,6 @@ func (v deliveryVerdict) ownRow(tier statusTier) bool {
 	return tier.full() || v.Short == ""
 }
 
-// agentHeadlessLine is the Agent row's headless suffix, "" when the row cannot
-// speak for it (no agent, skills unresolved, or a launched agent other than
-// the one the config resolves). The hedge follows the delivery lines: a skill
-// holding a BYRE_RUN_* knob takes the headless claim away. The command is
-// skill-manifest text; writeStatusRows renders the row as data.
-func agentHeadlessLine(s statusInfo) string {
-	if s.Agent == "" || !s.AgentHeadlessKnown {
-		return ""
-	}
-	hedged := s.AgentHeadless != "" && skills.ReservedEnvTouches(s.SkillReservedEnv, skills.ClaimHeadless)
-	line := skills.HeadlessSuffix(s.AgentHeadless, hedged)
-	if hedged {
-		line += " (see Reserved env)"
-	}
-	return line
-}
-
 // mcpDeliveryLine says how (whether) the declared set reaches the agent
 // session. Injection is static truth — deterministic from the image — so it
 // speaks plainly; an adapter-less agent gets the honest degradation: the
@@ -1556,12 +1528,12 @@ func configEgress(entries []string) []skills.EgressAllow {
 }
 
 // guardedPaths returns the image paths byre re-asserts at the Dockerfile tail
-// for this project -- the launcher and the headless chassis always, plus a network-posture skill's launch
+// for this project — the launcher always, plus a network-posture skill's launch
 // gate and netns enforcement script(s). A project `files` entry (or raw build
 // line) targeting one of these is overridden by byre's own copy at build time
 // (gen's security guard); the caller warns so the override isn't silent.
 func guardedPaths(res skills.Resolved) []string {
-	paths := []string{gen.LauncherPath, gen.HeadlessPath}
+	paths := []string{gen.LauncherPath}
 	if len(res.NetnsInits()) > 0 {
 		paths = append(paths, gen.LaunchGatePath)
 		for _, h := range res.NetnsInits() {
@@ -1662,7 +1634,7 @@ func (r managedRoot) shadows(target string) bool {
 // managedRoots are the image paths byre owns for this project: the whole
 // /etc/byre directory -- the launch gate and every baked artifact live under
 // it, so this stays right for artifacts added later -- the launcher, the
-// headless chassis, the credential session tmpfs, and any netns enforcement script a
+// credential session tmpfs, and any netns enforcement script a
 // network-posture skill declares.
 //
 // The credential tmpfs entry is the feature's load-bearing residual: a
@@ -1672,7 +1644,7 @@ func (r managedRoot) shadows(target string) bool {
 // the existing shadow machinery, never gated (the user is not the
 // adversary).
 func managedRoots(res skills.Resolved) []managedRoot {
-	roots := []managedRoot{{Path: gen.ByreDir, Dir: true}, {Path: gen.LauncherPath}, {Path: gen.HeadlessPath}, {Path: credTmpfsTarget, Dir: true}}
+	roots := []managedRoot{{Path: gen.ByreDir, Dir: true}, {Path: gen.LauncherPath}, {Path: credTmpfsTarget, Dir: true}}
 	for _, h := range res.NetnsInits() {
 		// Clean the hook path: skills.Resolve requires it absolute but not
 		// clean, so a target on its CANONICAL form (e.g. /usr/local/../usr/

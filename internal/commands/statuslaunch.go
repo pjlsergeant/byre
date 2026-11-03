@@ -190,11 +190,6 @@ func applyLaunchRecord(s *statusInfo, rec *launchRecord, paths project.Paths) (n
 		case launched != s.Agent:
 			s.AgentNote = fmt.Sprintf("(this box; config now: %s)", orDefault(s.Agent, "none"))
 		}
-		// The headless command was resolved for the config's agent; it says
-		// nothing about a different one the box launched.
-		if launched != s.Agent {
-			s.AgentHeadless, s.AgentHeadlessKnown = "", false
-		}
 		s.Agent = launched
 	}
 	// EnvKeys (config [env]) is deliberately LEFT config-derived: those keys

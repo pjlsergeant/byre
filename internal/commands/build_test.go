@@ -22,7 +22,7 @@ func plainResolved() resolved {
 // no container, no launch record, no engine record.
 func assertNoSession(t *testing.T, f *fakeRunner, p project.Paths) {
 	t.Helper()
-	if len(f.creates) != 0 || len(f.starts) != 0 || len(f.startIOs) != 0 {
+	if len(f.creates) != 0 || len(f.starts) != 0 {
 		t.Errorf("a build creates and starts nothing: creates %v, starts %v", f.creates, f.starts)
 	}
 	if len(f.created) != 0 || len(f.seeded) != 0 || len(f.literals) != 0 || len(f.fileSeed) != 0 || len(f.probes) != 0 {

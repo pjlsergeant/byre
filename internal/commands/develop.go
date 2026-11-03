@@ -60,13 +60,6 @@ func Develop(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAu
 // create/re-enroll the project, while the automatic handoff from `byre
 // worktree` must not undo a forget that won during worktree creation.
 func developCommand(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAuth *bool, selfEdit bool, credMode CredentialMode, mayEnroll bool) error {
-	return developCommandWith(s, projectDir, flagTemplate, flagAgent, flagSharedAuth, selfEdit, credMode, mayEnroll, nil)
-}
-
-// developCommandWith is developCommand with the headless seams (nil is
-// `byre develop`); `byre run` is its caller.
-func developCommandWith(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAuth *bool, selfEdit bool, credMode CredentialMode, mayEnroll bool, h *headlessOptions) error {
-	h.reset()
 	if err := requireNonRootHost(s.Err); err != nil {
 		return err
 	}
@@ -86,7 +79,7 @@ func developCommandWith(s Streams, projectDir, flagTemplate, flagAgent string, f
 	if err := builtins.EnsureStoreOut(paths.Home, s.Err); err != nil {
 		return err
 	}
-	developNotices(s.Err, projectDir, paths, h)
+	developNotices(s.Err, projectDir, paths)
 	// First-run onboarding is a setup mutation too. Hold the setup lock through
 	// its questions and write: reset/forget then refuse as "setup in progress",
 	// and a forget that won before this lock cancels onboarding instead of
@@ -160,11 +153,7 @@ func developCommandWith(s Streams, projectDir, flagTemplate, flagAgent string, f
 		// authors under a box-writable root, which is the shadow precondition.
 		dataf(s.Err, "%s\n", disclosure)
 	}
-	sr := runner.New(eng, engExe)
-	if h != nil && h.StreamStdout != nil {
-		sr = sr.WithStreamStdout(h.StreamStdout)
-	}
-	derr := developWith(sr, s, paths, rv, selfEdit, credMode, h)
+	derr := develop(runner.New(eng, engExe), s, paths, rv, selfEdit, credMode)
 	if derr != nil && !mayEnroll {
 		// The engine-facing core takes the setup lock again after credential
 		// prompts. If forget won during that human wait, replace its generic
@@ -186,15 +175,11 @@ func wrapForgottenWorktreeHandoff(projectDir string, err error) error {
 	return err
 }
 
-// developWith is the engine-facing core of Develop -- the live-session fast
-// path, then build + seed under the setup lock, then the foreground run and
-// its exit-status mapping. Split from Develop (which does the host-side
-// resolution and onboarding) so it can run end-to-end against a fake engine.
-// h carries the headless seams; nil is `byre develop`.
-func developWith(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEdit bool, credMode CredentialMode, h *headlessOptions) error {
-	// Tests enter here directly; developCommandWith resets for its own early returns.
-	h.reset()
-	res := h.result()
+// develop is the engine-facing core of Develop — the live-session fast path,
+// then build + seed under the setup lock, then the foreground run and its
+// exit-status mapping. Split from Develop (which does the host-side resolution
+// and onboarding) so it can run end-to-end against a fake engine.
+func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEdit bool, credMode CredentialMode) error {
 	// Mode-select (ADR 0032): host identity on rootful engines, the generic
 	// keep-id identity under rootless Podman — or the old refusal where the
 	// engine can't do the mapping. Everything identity-shaped below (image
@@ -211,7 +196,7 @@ func developWith(r engineRunner, s Streams, paths project.Paths, rv resolved, se
 	// every session: a branch that
 	// edits a build input would otherwise silently run an image built from
 	// other content.
-	if paths.IsWorktree && !h.quiet() {
+	if paths.IsWorktree {
 		fmt.Fprintf(s.Err, "byre: worktree session — the shared project image builds from the main worktree (%s); `files` sources changed only in this worktree don't reach the image.\n", paths.Canonical)
 	}
 
@@ -255,7 +240,7 @@ func developWith(r engineRunner, s Streams, paths project.Paths, rv resolved, se
 	// front (like the self-edit warning, it frames the session), and say what
 	// it does not do — the config is untouched, the next develop reverts.
 	// dataf: the agent is a package id byre did not author (P4's funnel).
-	if rv.agentOverride != "" && !h.quiet() {
+	if rv.agentOverride != "" {
 		dataf(s.Err, "byre: agent for this run: %s (--agent override; nothing written — the next develop uses byre.config again).\n", config.OrNone(rv.cfg.Agent))
 	}
 	// Credential unlock (launch step 1) is deliberately PRE-lock: a prompt
@@ -287,7 +272,7 @@ func developWith(r engineRunner, s Streams, paths project.Paths, rv resolved, se
 	// re-read under the lock has happened (prep.rv is that re-read). prep's
 	// fields are read-only from here.
 	prep, err := setupLockedProject(s.Err, paths, func() (preparedLaunch, error) {
-		return prepareLaunchLocked(r, s, paths, rv, image, selfEdit, ident, unlocked, credMode == CredentialSkip, h)
+		return prepareLaunchLocked(r, s, paths, rv, image, selfEdit, ident, unlocked, credMode == CredentialSkip)
 	})
 	if err != nil {
 		return err
@@ -311,11 +296,9 @@ func developWith(r engineRunner, s Streams, paths project.Paths, rv resolved, se
 	// warning above is consciously pre-create: it guards a decision, not a
 	// session.) The config UI renders the same tally (config.Exposure owns the
 	// words); `byre status` is the detailed, attributed view.
-	if !h.quiet() {
-		exp := exposureOf(prep.rv, selfEdit, prep.hostEnv)
-		fmt.Fprintf(s.Err, "byre: exposure: %s\n", exp.GrantsLine())
-		fmt.Fprintf(s.Err, "byre: %s\n", exp.NetworkLine())
-	}
+	exp := exposureOf(prep.rv, selfEdit, prep.hostEnv)
+	fmt.Fprintf(s.Err, "byre: exposure: %s\n", exp.GrantsLine())
+	fmt.Fprintf(s.Err, "byre: %s\n", exp.NetworkLine())
 	// Containment holes (e.g. docker-host): loud standing grant, at least
 	// self-edit's 🛑 weight. Skill-owned text; byre frames and attributes.
 	for _, c := range prep.rv.skills.Containments() {
@@ -368,14 +351,7 @@ func developWith(r engineRunner, s Streams, paths project.Paths, rv resolved, se
 		credWait = func() error { close(done); <-finished; return injectErr }
 	}
 
-	var runErr error
-	if h != nil && h.AttachStdout != nil {
-		runErr = r.StartAttachIO(containerName(paths), nil, h.AttachStdout)
-	} else {
-		runErr = r.StartAttach(containerName(paths))
-	}
-	res.Phase = phaseAttached
-	res.ContainerStatus = containerStatus(runErr)
+	runErr := r.StartAttach(containerName(paths))
 	var credErr error
 	if credWait != nil {
 		credErr = credWait()
@@ -401,14 +377,13 @@ func developWith(r engineRunner, s Streams, paths project.Paths, rv resolved, se
 			live = l
 		}
 	}
-	res.Live = len(live) > 0
 	// The session is over (runErr may just be the agent's own exit status):
 	// show what changed before the exit paths below return.
 	if len(live) == 0 && !liveUnknown {
 		if selfEdit {
 			reportSelfEditChanges(s.Err, paths.Dir, store)
 		}
-		res.ExitReport = reportExit(s.Err, watch, snapshotExit(paths, prep.rv.gitExe))
+		reportExit(s.Err, watch, snapshotExit(paths, prep.rv.gitExe))
 	}
 	// A failed delivery is a failed LAUNCH, and its cause outranks the exit
 	// status of an agent byre just stopped out from under.
@@ -459,9 +434,8 @@ type preparedLaunch struct {
 // container Create and record reaping included, because the created container
 // is the session-ownership marker (never hoist them out). The preparedLaunch
 // is built only on the all-success path.
-func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv resolved, image string, selfEdit bool, ident runner.Identity, unlocked unlockedFiles, credSkipped bool, h *headlessOptions) (preparedLaunch, error) {
+func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv resolved, image string, selfEdit bool, ident runner.Identity, unlocked unlockedFiles, credSkipped bool) (preparedLaunch, error) {
 	none := preparedLaunch{}
-	res := h.result()
 	// Re-establish enrollment UNDER the lock before any store/engine mutation.
 	// develop resolved config/skills BEFORE taking the lock, so a concurrent
 	// `byre forget` could have cleared the store (path record included) while
@@ -501,14 +475,6 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	if err != nil {
 		return none, err
 	}
-	// The headless env lands after skill env; raw run_args win (ADR 0006).
-	if h != nil {
-		for k, v := range h.Env {
-			params.Env[k] = v
-		}
-		params.Command = append([]string(nil), h.Command...)
-	}
-	res.RawRunArgs = len(params.RunArgs) > 0
 	if err := refuseMissingMountHosts(r, s.Err, rv.mounts, rv.skills); err != nil {
 		return none, err
 	}
@@ -642,12 +608,7 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	rec := launchRecordOf(paths, rv, params, r.Engine(), imageRecord(r, s.Err, image, rv.cfg.Base))
 	rec.CredentialUnlock = creds.unlock
 	rec.Credentials = creds.record
-	if h != nil {
-		timeout := h.RunTimeout
-		rec.Headless, rec.RunID, rec.TaskSHA256, rec.RunTimeout = true, h.RunID, h.TaskSHA256, &timeout
-	}
 	launchLabel, launchHash := recordLaunch(s.Err, paths, rec)
-	res.LaunchHash = launchHash
 	if launchLabel != "" {
 		params.Labels = append(params.Labels, launchLabel)
 	}
@@ -662,19 +623,6 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 		}
 		return none, fmt.Errorf("creating the session container: %w (if a stale container holds the name: %s rm %s)", cerr, r.Engine(), containerName(paths))
 	}
-	res.Phase = phaseCreated
-	// A successful Create owns the session, so Stage runs here under the lock
-	// (ADR 0004, ADR 0061). A failed Stage removes that launch's container and
-	// record, resets the phase, and returns the callback's error untouched.
-	if h != nil && h.Stage != nil {
-		if serr := h.Stage(paths, rv); serr != nil {
-			_ = r.ContainerRemove(containerName(paths))
-			removeLaunchRecord(paths, launchHash)
-			res.LaunchHash = ""
-			res.Phase = phasePrelaunch
-			return none, serr
-		}
-	}
 	// Records outlive their containers otherwise: this is the only moment
 	// byre holds the lock AND knows which containers of the project exist.
 	// Opportunistic by construction -- nothing here can fail the launch.
@@ -684,20 +632,6 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	// the ADR 0004 check, so this costs no new host probing.
 	reapLaunchRecords(paths, launchHash, append([]sessionRunner{r}, rv.otherEngines...), rv.declinedEngines)
 	return preparedLaunch{rv: rv, hostEnv: hostEnv, hooks: hooks, netnsLabel: netnsLabel, netnsEnv: netnsEnv, containerID: containerID, creds: creds}, nil
-}
-
-// containerStatus is the box's raw exit status from an attach: 0 for a clean
-// one, the engine-reported code for an exit status, -1 when there is none to
-// read (a signal-terminated client, or a failure that never ran the client).
-func containerStatus(runErr error) int {
-	if runErr == nil {
-		return 0
-	}
-	var exitErr *exec.ExitError
-	if errors.As(runErr, &exitErr) {
-		return exitErr.ExitCode()
-	}
-	return -1
 }
 
 // decodeAgentExit distinguishes the agent/container's own exit from a byre
@@ -879,11 +813,8 @@ func warnCompatLegacy(w io.Writer, projectDir string) {
 // is like package.json: cloning gives you a file, not a prompt -- passive
 // visibility only: state 1 (not applied) and state 3 (diverged) get one
 // note; the steady state is silent, and `byre preset apply` is the solicited
-// flow. Both are banner-class, so a quiet headless run drops them.
-func developNotices(w io.Writer, projectDir string, paths project.Paths, h *headlessOptions) {
-	if h.quiet() {
-		return
-	}
+// flow.
+func developNotices(w io.Writer, projectDir string, paths project.Paths) {
 	announceWorktree(w, paths)
 	if note := presetNote(projectDir, paths); note != "" {
 		fmt.Fprintf(w, "byre: %s\n", note)

@@ -15,9 +15,6 @@ import (
 	"github.com/pjlsergeant/byre/internal/runner"
 )
 
-// workspaceTarget is where the box sees the work tree.
-const workspaceTarget = "/workspace"
-
 // runParams assembles the run invocation: workspace bind, the dev identity and
 // the env_from_host passthrough as env, config mounts, and named volumes scoped
 // to this project. The image already bakes the identity's UID/GID (the
@@ -108,7 +105,7 @@ func runParams(paths project.Paths, rv resolved, image string, selfEdit, tty boo
 		Name:            containerName(paths),
 		Labels:          []string{projectLabel(paths), workdirLabel(paths), clientKey + "=" + strconv.Itoa(os.Getpid())},
 		WorkspaceHost:   paths.WorkDir,
-		WorkspaceTarget: workspaceTarget,
+		WorkspaceTarget: "/workspace",
 		Env:             env,
 		Binds:           binds,
 		Volumes:         vols,

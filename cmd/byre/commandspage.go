@@ -41,7 +41,7 @@ var commandsPageAreas = []struct {
 	title string
 	names []string
 }{
-	{"Daily driving", []string{"develop", "run", "shell", "worktree", "deliver", "grab"}},
+	{"Daily driving", []string{"develop", "shell", "worktree", "deliver", "grab"}},
 	{"Inspection", []string{"status", "dockerfile", "dockerrun", "ejectfirewall", "version"}},
 	{"Configuration", []string{"config", "preset", "layer", "mcp", "claude-skill", "context", "credentials"}},
 	{"Skills & templates", []string{"skill", "template"}},
@@ -152,32 +152,7 @@ func exitCodeSection() string {
 		"  there is nothing honest to add.\n",
 		commands.ExitRefused, deliver.ExitPartialPool, exitPanic,
 		commands.ExitRefused, exitPanic, commands.ExitRefused, exitPanic,
-		commands.ExitRefused, exitPanic) + runExitCodeSection()
-}
-
-func runExitCodeSection() string {
-	return fmt.Sprintf("\n### What `byre run` exits with\n\n"+
-		"| Code | Owner | Meaning |\n|---|---|---|\n"+
-		"| `0` | script | Success: the agent left an answer, and it is on stdout. |\n"+
-		"| `1` | byre | byre failed (banner) -- before launch, or after the box was created (credential delivery, a box status past `127`); or byre refused (its report, no banner): the project is not configured here, no agent, the agent has no headless command, `.byre-run` is not a directory, the task is unreadable or over 1 MiB. |\n"+
-		"| `2` | byre | Usage: no task source, `--task -` with `--credentials stdin`, `--timeout 0`, a malformed `--timeout` or one under 1s or over 3650d, a bad `--credentials`. |\n"+
-		"| `%d` | byre | A session is already live -- before the box was created, or the attach failed with the box still running. |\n"+
-		"| `10` | script | The agent reported failure. |\n"+
-		"| `11` | script | The agent process failed; its raw status is `backend_exit_code` in `.byre-run/result.json`. |\n"+
-		"| `12` | chassis | `--timeout` expired (the chassis's own deadline). |\n"+
-		"| `13` | script | No usable credential in the box; the remedy is on stderr. |\n"+
-		"| `14` | chassis | The headless script itself failed, or exited `0` without a result; `script_exit_code` in `result.json`. |\n"+
-		"| `15` | script/chassis | The agent's binary is absent, or no headless command is baked into the image. |\n"+
-		"| `16` | chassis | The result dir, the task hash, or the chassis's own files could not be set up. |\n"+
-		"| `%d` | byre | byre crashed. |\n\n"+
-		"The codes are not unique to their owners. A box that launched and exited\n"+
-		"`1`, `2`, `%d` or `%d` reaches the host as that number too (the `0`-`127`\n"+
-		"passthrough above), and byre itself can exit `1` or `%d` after the box was\n"+
-		"created. `--data`'s `outcome` and `phase` fields are what tell these\n"+
-		"apart, so a script that needs certainty runs with `--data` -- and reads\n"+
-		"its `authority`, which says `unverified: raw run_args` when raw\n"+
-		"`run_args` were in force. `10`-`16` ride the same passthrough.\n",
-		commands.ExitRefused, exitPanic, commands.ExitRefused, exitPanic, commands.ExitRefused)
+		commands.ExitRefused, exitPanic)
 }
 
 func writeCommandRows(b *strings.Builder, cmds []*cobra.Command) {

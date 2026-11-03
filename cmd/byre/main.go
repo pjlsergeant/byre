@@ -31,7 +31,6 @@ type app struct {
 	dockerrun     func(s commands.Streams, dir string) error
 	ejectfirewall func(s commands.Streams, dir string) error
 	develop       func(s commands.Streams, dir, tmpl, agent string, sharedAuth *bool, selfEdit bool, credMode commands.CredentialMode) error
-	run           func(s commands.Streams, dir string, o commands.RunOptions) error
 	config        func(s commands.Streams, dir string, global bool, layer string) error
 	status        func(s commands.Streams, dir string, opts commands.StatusOptions) error
 	reset         func(s commands.Streams, dir string, force bool, ignore commands.IgnoreEngines) error
@@ -57,7 +56,6 @@ var realApp = app{
 	dockerrun:        commands.DockerRun,
 	ejectfirewall:    commands.EjectFirewall,
 	develop:          commands.Develop,
-	run:              commands.Run,
 	config:           commands.Config,
 	status:           commands.Status,
 	reset:            commands.Reset,
@@ -197,7 +195,6 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 
 	root.AddCommand(
 		developCmd(a, dir, s),
-		runCmd(a, dir, s),
 		configCmd(a, dir, s),
 		dockerfileCmd(a, dir, s),
 		dockerrunCmd(a, dir, s),
@@ -271,65 +268,6 @@ foreground. First run onboards the project (creates its host-side config).`,
 	c.Flags().BoolVar(&sharedAuth, "shared-auth", false, `opt a NEW project's box into the chosen agent's shared credentials without the question (=false declines it; first run only)`)
 	c.Flags().BoolVar(&selfEdit, "self-edit", false, "mount this project's host-side store read-write so the agent can edit its own byre.config — a deliberate grant, applied on the next develop")
 	c.Flags().StringVar(&creds, "credentials", "", `how this launch gets credential passphrases: ask (default, prompts per config file), skip (launch deliberately without them), stdin (one passphrase per line)`)
-	return c
-}
-
-// runCmd is `byre run`: one task, handed to the project's agent headlessly.
-// The flag-shape refusals live here because only usageError exits 2; every
-// refusal that needs the filesystem or the config is Run's, at 1.
-func runCmd(a app, dir string, s commands.Streams) *cobra.Command {
-	var o commands.RunOptions
-	var creds string
-	c := &cobra.Command{
-		Use:   "run",
-		Short: "Run one task headlessly with the project's agent; exit with byre's verdict.",
-		Long: `Run one task non-interactively: set up the box as develop does, hand the
-task to the agent's headless command, and exit when it does.
-
-The task comes from --task <file>, --task - (stdin, read to EOF -- the run
-waits until the writer closes), or BYRE_TASK in byre's own environment;
---task wins when both are set. Without --data, stdout is the agent's answer
-and nothing else; everything else goes to stderr, ending with one summary
-line. With --data, stdout is one JSON document: byre's outcome. Gate a
-script on the exit code or --data, never on the summary line.
-
-The agent writes into .byre-run/ in the work tree, which byre empties at the
-start of every run: archive it before running again.`,
-		Args: noArgsU,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			mode, err := commands.ParseCredentialMode(creds)
-			if err != nil {
-				return usageError(err.Error())
-			}
-			if cmd.Flags().Changed("task") && strings.TrimSpace(o.TaskFlag) == "" {
-				return usageError("--task: blank value -- name a task file, or - to read stdin")
-			}
-			if !cmd.Flags().Changed("task") && os.Getenv("BYRE_TASK") == "" {
-				return usageError("byre run: no task -- pass --task <file>, --task - (stdin), or set BYRE_TASK")
-			}
-			if o.TaskFlag == "-" && mode == commands.CredentialStdin {
-				return usageError("--task - and --credentials stdin both read stdin -- give the task as a file or in BYRE_TASK")
-			}
-			if cmd.Flags().Changed("timeout") {
-				if err := commands.CheckRunTimeout(o.Timeout); err != nil {
-					return usageError(err.Error())
-				}
-			}
-			if cmd.Flags().Changed("agent") && strings.TrimSpace(o.Agent) == "" {
-				return usageError(`--agent: blank value -- name an agent skill`)
-			}
-			o.CredMode = mode
-			return a.run(s, dir, o)
-		},
-	}
-	c.Flags().StringVar(&o.TaskFlag, "task", "", "the task: a file, or - to read stdin to EOF (default: BYRE_TASK from the environment)")
-	c.Flags().BoolVar(&o.Data, "data", false, "print byre's outcome as one versioned JSON document on stdout, instead of the agent's answer")
-	c.Flags().BoolVar(&o.Quiet, "quiet", false, "keep the agent's live output in .byre-run/ only; errors, refusals, a failed run's stderr tail, the exit report and the summary line still print")
-	c.Flags().StringVarP(&o.Agent, "agent", "a", "", `agent for THIS run: on a configured project, a one-off override (nothing written); on a NEW project, with --template, seeds its config`)
-	c.Flags().StringVar(&o.Template, "template", "", `template for a NEW project's config (first run only; "none" to skip) -- a new project needs both --template and --agent`)
-	c.Flags().StringVar(&o.Model, "model", "", "model for the agent's headless command (default: the agent's own)")
-	c.Flags().StringVar(&o.Timeout, "timeout", "", "stop the agent after this long and exit 12 (coreutils syntax: 600, 30m, 1.5h; 1s to 3650d); no timeout unless given")
-	c.Flags().StringVar(&creds, "credentials", "", `how this launch gets credential passphrases: ask (default; fails without a terminal when rows need one), skip (launch deliberately without them), stdin (one passphrase per line)`)
 	return c
 }
 

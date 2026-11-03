@@ -91,7 +91,7 @@ func TestStatusDataCarriesEnvKeysNeverValues(t *testing.T) {
 func TestStatusDataCoversTheFullPage(t *testing.T) {
 	got := decodeStatusData(t, fullStatusInfo())
 	for _, key := range []string{
-		"project_id", "workdir", "worktree_of", "agent", "agent_headless", "template", "extends",
+		"project_id", "workdir", "worktree_of", "agent", "template", "extends",
 		"preset_note", "self_edit", "engine", "network", "ports", "binds",
 		"volumes", "skills", "skill_grants", "reserved_env", "mcp_servers",
 		"mcp_closed", "mcp_delivery", "claude_skills", "claude_skills_closed",

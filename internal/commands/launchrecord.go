@@ -54,14 +54,7 @@ import (
 // guessing at fields it does not know (the packages index's lenient-decode
 // stance, one version further on: lenient about unknown FIELDS, explicit
 // about an unknown SCHEMA).
-//
-// 1 (2026-07-28): the record as ADR 0053 decided it.
-// 2 (2026-11-02): a headless run's scalars -- `headless`, `run_id`,
-// `task_sha256` (the task's hash, never its text) and `run_timeout` ("" when
-// the run has none) -- between `credential_unlock` and `[image]`. A develop
-// record carries none of the four, so its bytes differ from 1 only in
-// `record`.
-const LaunchRecordVersion = 2
+const LaunchRecordVersion = 1
 
 // launchKey is the container label pointing at this session's record:
 // byre.launch=<sha256 of the record's bytes>. Identity labels answer "whose
@@ -127,21 +120,11 @@ type launchRecord struct {
 	// other outcome stops the launch, so no record is written for it.
 	// Status shows it and claims nothing about live in-box state (the
 	// design does not probe the box).
-	CredentialUnlock string `toml:"credential_unlock,omitempty"`
-	// Headless marks a box launched by `byre run` rather than develop; the
-	// three fields after it say what it was launched to do. TaskSHA256 is the
-	// hash of the task as staged, never the text: the record is keys and
-	// facts, not content. RunTimeout is the --timeout as given, present and
-	// "" on a headless run without one -- a pointer so a develop record
-	// carries none of these keys at all.
-	Headless   bool          `toml:"headless,omitempty"`
-	RunID      string        `toml:"run_id,omitempty"`
-	TaskSHA256 string        `toml:"task_sha256,omitempty"`
-	RunTimeout *string       `toml:"run_timeout,omitempty"`
-	Image      launchImage   `toml:"image"`
-	Network    launchNetwork `toml:"network"`
-	Binds      []launchBind  `toml:"binds"`
-	Ports      []launchPort  `toml:"ports"`
+	CredentialUnlock string        `toml:"credential_unlock,omitempty"`
+	Image            launchImage   `toml:"image"`
+	Network          launchNetwork `toml:"network"`
+	Binds            []launchBind  `toml:"binds"`
+	Ports            []launchPort  `toml:"ports"`
 	// Volumes are the named volumes as mounted. Name is the ENGINE's name (what
 	// byre told the engine); Decl is the declared name status renders, because
 	// a row reading `byre-proj-4f21bc-claude-state` answers a question nobody
@@ -517,19 +500,9 @@ func reapLaunchRecords(paths project.Paths, keep string, engines []sessionRunner
 		if !ok || !launchHashRe.MatchString(name) || live[name] {
 			continue
 		}
-		removeLaunchRecord(paths, name)
+		// Unlink, which acts on the name and never on what a link points at.
+		_ = hostopen.PlainRemove(filepath.Join(dir, e.Name()), hostopen.StoreOwned)
 	}
-}
-
-// removeLaunchRecord unlinks the record at hash, best-effort: a record left
-// behind is litter the next reap collects. A hash that is not one names no
-// record and is never joined into a path.
-func removeLaunchRecord(paths project.Paths, hash string) {
-	if !launchHashRe.MatchString(hash) {
-		return
-	}
-	// Unlink, which acts on the name and never on what a link points at.
-	_ = hostopen.PlainRemove(filepath.Join(launchesDir(paths), hash+".toml"), hostopen.StoreOwned)
 }
 
 // recordLaunch writes the record and hands back the label to stamp on the

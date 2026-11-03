@@ -94,44 +94,6 @@ func TestStartAttachArgv(t *testing.T) {
 	}
 }
 
-// StartAttachIO keeps StartAttach's argv (the attach shape was fixed at
-// create) and hands the caller's stdin and stdout to the seam untouched; a nil
-// stdin reaches it as nil, which is what makes the box's stdin /dev/null.
-func TestStartAttachIOArgvAndStreams(t *testing.T) {
-	var gotArgs []string
-	var gotIn io.Reader
-	var gotOut io.Writer
-	r := &Runner{engine: Podman, streamIO: func(stdin io.Reader, stdout io.Writer, name string, args ...string) error {
-		gotArgs, gotIn, gotOut = append([]string{name}, args...), stdin, stdout
-		return nil
-	}}
-	var out strings.Builder
-	if err := r.StartAttachIO("byre-x", nil, &out); err != nil {
-		t.Fatal(err)
-	}
-	if want := "podman start --attach --interactive byre-x"; strings.Join(gotArgs, " ") != want {
-		t.Fatalf("StartAttachIO argv = %q, want %q", strings.Join(gotArgs, " "), want)
-	}
-	if gotIn != nil {
-		t.Errorf("a nil stdin must reach the seam as nil (no stdin), got %#v", gotIn)
-	}
-	if gotOut != &out {
-		t.Errorf("stdout must be the caller's writer, got %#v", gotOut)
-	}
-}
-
-// The real seam: nil stdin is /dev/null (EOF at once), and the child's stdout
-// lands in the caller's writer, not byre's.
-func TestStreamIOExecNilStdinIsEOF(t *testing.T) {
-	var out strings.Builder
-	if err := streamIOExec(nil, &out, "sh", "-c", "cat; echo done"); err != nil {
-		t.Fatal(err)
-	}
-	if out.String() != "done\n" {
-		t.Errorf("stdout = %q, want only the echo (stdin empty, output captured)", out.String())
-	}
-}
-
 func TestSeedVolumeArgv(t *testing.T) {
 	r, gotArgs := argvRunner(Docker)
 	if err := r.SeedVolume("byre-vol.claude-state", "/home/pete/.claude", "byre-img.v0", Identity{UID: 1234, GID: 5678}, ""); err != nil {

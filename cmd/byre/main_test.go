@@ -76,10 +76,6 @@ func recorderApp(calls map[string]string) app {
 		},
 		rehomeCandidates: func(_ commands.Streams, dir string) error { return note("rehome candidates", dir) },
 		version:          func(_ commands.Streams) error { return note("version", "-") },
-		run: func(_ commands.Streams, dir string, o commands.RunOptions) error {
-			return note("run", strings.Join([]string{dir, o.TaskFlag, boolStr(o.Data), boolStr(o.Quiet),
-				o.Agent, o.Template, o.Model, o.Timeout, string(o.CredMode)}, " "))
-		},
 	}
 }
 
@@ -215,9 +211,6 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"rehome"}, "rehome candidates", "/proj"}, // bare = list likely old ids
 		{[]string{"version"}, "version", "-"},
 		{[]string{"--version"}, "version", "-"}, // alias for the table entry
-		{[]string{"run", "--task", "t.md"}, "run", "/proj t.md false false     ask"},
-		{[]string{"run", "--task", "-", "--data", "--quiet", "-a", "codex", "--model", "o3", "--timeout", "30m", "--credentials", "skip"}, "run", "/proj - true true codex  o3 30m skip"},
-		{[]string{"run", "--task", "t.md", "--template", "go", "--agent", "claude", "--credentials=stdin"}, "run", "/proj t.md false false claude go   stdin"},
 	}
 	for _, tc := range cases {
 		calls := map[string]string{}
@@ -299,8 +292,6 @@ func TestArityUsageErrorsNameTheShape(t *testing.T) {
 // contract there, and pinning its prose would couple the suite to a
 // dependency's wording.
 func TestRunUsageErrors(t *testing.T) {
-	// `byre run`'s no-task-source rule reads byre's own environment.
-	t.Setenv("BYRE_TASK", "")
 	cases := []struct {
 		argv []string
 		want string
@@ -374,21 +365,6 @@ func TestRunUsageErrors(t *testing.T) {
 		{[]string{"restore", "--bogus"}, ""}, // unknown flag
 		{[]string{"version", "extra"}, "unexpected arguments"},
 		{[]string{"--version", "extra"}, "unexpected arguments"},
-		// byre run's flag-shape rules (ADR 0022): exit 2, nothing dispatched.
-		{[]string{"run"}, "byre run: no task"},
-		{[]string{"run", "--data"}, "byre run: no task"},
-		{[]string{"run", "--task="}, "--task: blank value"},
-		{[]string{"run", "--task", "-", "--credentials", "stdin"}, "both read stdin"},
-		{[]string{"run", "--task", "t.md", "--timeout", "0"}, "omit the flag"},
-		{[]string{"run", "--task", "t.md", "--timeout", "0s"}, "omit the flag"},
-		{[]string{"run", "--task", "t.md", "--timeout", "10x"}, "--timeout \"10x\": not a duration"},
-		{[]string{"run", "--task", "t.md", "--timeout", "0.5"}, "the smallest --timeout is 1s"},
-		{[]string{"run", "--task", "t.md", "--timeout", "999999999999999999d"}, "the largest --timeout is 3650d"},
-		{[]string{"run", "--task", "t.md", "--timeout="}, "not a duration"},
-		{[]string{"run", "--task", "t.md", "--credentials", "bogus"}, "want ask|skip|stdin"},
-		{[]string{"run", "--task", "t.md", "-a", " "}, "--agent: blank value"},
-		{[]string{"run", "--task", "t.md", "extra"}, "unexpected arguments"},
-		{[]string{"run", "--bogus"}, ""}, // unknown flag
 		{[]string{"build", "--agent="}, "--agent: blank value"},
 		{[]string{"build", "extra"}, "unexpected arguments"},
 		{[]string{"build", "--fresh"}, ""}, // unknown flag: byre rebuild is the fresh build

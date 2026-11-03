@@ -285,7 +285,7 @@ func TestSelfEditReportEscapesStoreContent(t *testing.T) {
 // (apt, dockerfile lines, the files total), which no manifest can author.
 func skillContributions(payload string) string {
 	var f skills.File
-	f.Agent = &skills.AgentContrib{Command: "run --wild" + payload, Headless: "run --task" + payload, State: "state" + payload}
+	f.Agent = &skills.AgentContrib{Command: "run --wild" + payload, State: "state" + payload}
 	f.CompanionFor = "acme/agent" + payload
 	// companion_for and shared_auth_for are mutually exclusive to the PARSER,
 	// but the renderer prints whichever it is handed -- and this arm is about
@@ -338,7 +338,7 @@ func TestSkillInspectEscapesManifestValues(t *testing.T) {
 
 	assertNoESC(t, "printSkillContributions", out)
 	assertKept(t, "printSkillContributions", out, "files: 2", "payload", "notes", "SYS_PTRACE",
-		"Bearer", "deny-by-default", "sock_groups", "egress_offered", "shared_auth_for", "acme-mcp", "agent headless: run --task", "requires: needed")
+		"Bearer", "deny-by-default", "sock_groups", "egress_offered", "shared_auth_for", "acme-mcp", "requires: needed")
 
 	// Framing: one physical line per contribution, whatever a manifest value
 	// contains. The clean render carries the same fields with a payload that

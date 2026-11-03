@@ -18,7 +18,6 @@ every command and flag.
 | Command | What it does |
 |---|---|
 | `byre develop` | Set up and run the project box in the foreground. |
-| `byre run` | Run one task headlessly with the project's agent; exit with byre's verdict. |
 | `byre shell` | Open a shell (as the dev user) in the running session. |
 | `byre worktree <name>` | Create a git worktree and start a parallel session in it. |
 | `byre deliver [<path>... \| -]` | Deliver files from the host into a running box's /inbox. |
@@ -161,28 +160,3 @@ it claims that status means:
   deliberately with no signal anywhere near it.
 - `128`, and `193` upward, are left undecoded. Outside the signal range
   there is nothing honest to add.
-
-### What `byre run` exits with
-
-| Code | Owner | Meaning |
-|---|---|---|
-| `0` | script | Success: the agent left an answer, and it is on stdout. |
-| `1` | byre | byre failed (banner) -- before launch, or after the box was created (credential delivery, a box status past `127`); or byre refused (its report, no banner): the project is not configured here, no agent, the agent has no headless command, `.byre-run` is not a directory, the task is unreadable or over 1 MiB. |
-| `2` | byre | Usage: no task source, `--task -` with `--credentials stdin`, `--timeout 0`, a malformed `--timeout` or one under 1s or over 3650d, a bad `--credentials`. |
-| `3` | byre | A session is already live -- before the box was created, or the attach failed with the box still running. |
-| `10` | script | The agent reported failure. |
-| `11` | script | The agent process failed; its raw status is `backend_exit_code` in `.byre-run/result.json`. |
-| `12` | chassis | `--timeout` expired (the chassis's own deadline). |
-| `13` | script | No usable credential in the box; the remedy is on stderr. |
-| `14` | chassis | The headless script itself failed, or exited `0` without a result; `script_exit_code` in `result.json`. |
-| `15` | script/chassis | The agent's binary is absent, or no headless command is baked into the image. |
-| `16` | chassis | The result dir, the task hash, or the chassis's own files could not be set up. |
-| `70` | byre | byre crashed. |
-
-The codes are not unique to their owners. A box that launched and exited
-`1`, `2`, `3` or `70` reaches the host as that number too (the `0`-`127`
-passthrough above), and byre itself can exit `1` or `3` after the box was
-created. `--data`'s `outcome` and `phase` fields are what tell these
-apart, so a script that needs certainty runs with `--data` -- and reads
-its `authority`, which says `unverified: raw run_args` when raw
-`run_args` were in force. `10`-`16` ride the same passthrough.
