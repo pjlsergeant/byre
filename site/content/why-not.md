@@ -20,7 +20,7 @@ stop using byre, `byre dockerfile` prints your exit.
 sign in) and paid tiers. Not open source. *(But it gives you kernel-level
 microVM isolation, and we don't.)*
 
-**…your agent's built-in sandbox?** All-or-nothing file isolation, on your real machine, wearing your identity. Env vars and credentials come along by default, so a stray `git push` goes out as *you*. byre's box contains nothing that you didn't put in it.
+**…your agent's built-in sandbox?** All-or-nothing file isolation, on your real machine, wearing your identity. Env vars and credentials come along by default, so a stray `git push` goes out as *you*. byre's box carries nothing from your host that you didn't put in it, beyond the git identity, `TERM` and `TZ` it passes by default -- and `byre status` lists all of it.
 
 **…nothing -- just keep YOLOing on the host?** The host is the incumbent:
 zero setup, and nothing bad has happened yet. But the agent works as you,
@@ -37,8 +37,8 @@ in seconds. *(But it's the mature industry spec, and we're young.)*
 
 **…container-use?** Explicitly experimental, and MCP-shaped: your agent
 manages a fleet of environments; you don't sit inside one. byre does
-parallel the git way -- one boxed session per worktree, sharing the repo's
-image, volumes, and agent login.
+parallel the git way: one boxed session per
+[worktree](/docs/worktrees/).
 
 **…a cloud sandbox (e2b, Daytona, your agent's web offering)?** Account,
 usage billing, your code in their cloud -- and they're repo-shaped, built

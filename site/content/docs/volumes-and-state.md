@@ -6,15 +6,19 @@ description: what survives a rebuild, what's disposable, and which hammer resets
 
 The container is throwaway; your state is not. Every `byre develop`
 runs a fresh container and removes it on exit -- what carries over is
-the project's image and its named volumes:
+the project's image and its named volumes.
 
-- **Cache volumes** (`node_modules`, build caches) are disposable.
+Every volume has a **role** -- cache or state -- and a **scope** --
+project or machine:
+
+- **Cache** volumes (`node_modules`, build caches) are disposable.
   Losing one costs a re-download; templates set up the obvious ones.
-- **State volumes** (`.claude`, `.codex`) are precious: the agent's
+- **State** volumes (`.claude`, `.codex`) are precious: the agent's
   login, history, and scratch. Anything that would delete one names it
-  first and asks.
-- **Machine-wide volumes** hold shared agent logins -- one per user per
-  machine, used by every project that opts in. That's how
+  first and asks (`--force` skips the question on `reset` and `forget`).
+- **Project-scoped** volumes belong to one project. **Machine-scoped**
+  volumes are one per user per machine, used by every project that opts
+  in -- that is how
   [shared auth](/docs/how-do-i/configure/#save-my-llm-credentials-so-i-dont-need-to-re-auth-for-each-box)
   makes one login serve every box.
 
@@ -36,36 +40,28 @@ Five verbs touch built state, from lightest to heaviest:
 
 All five leave your project tree alone -- `forget` removes byre's
 *host-side* state, never files in the project. `reset` and `forget` act
-across every installed engine, name everything they're about to delete,
-and require confirmation (`--force` skips it). Acting across every engine
-means they refuse if one cannot be reached -- "wiped" has to be true of all
-of it -- naming `--ignore-podman` / `--ignore-docker` as the way past; what
-goes unremoved there is then printed. `byre backup` and `byre rehome` take
-the same flags.
+across every installed engine, because a project's volumes can live in
+one the config no longer names, and name everything they're about to
+delete before asking. An engine that cannot be reached stops them, so
+"wiped" is true of all of it; `--ignore-podman` / `--ignore-docker`
+leaves that engine out, and byre prints what went unchecked or
+unremoved there. `byre backup` and `byre rehome` take the same flags.
 
-**Machine volumes are never touched silently.** `reset` and `forget`
-exclude them and say so -- the machine-wide agent login must never die
+**Machine-scoped volumes are never touched silently.** `reset` and
+`forget` exclude them and say so -- the machine-wide agent login must never die
 as a side effect of resetting one project. To delete one deliberately: clear
 it from the **Volume data** section of `byre config` (which refuses while
 any byre session is running).
 
-**Moved or renamed the project directory?** The identity is derived
-from the path, so the old image and volumes would be orphaned --
-`byre rehome <old-id>` migrates them onto the new path. Bare
-`byre rehome` lists likely candidates: stored projects whose recorded
-path no longer exists.
-
-**Moving to another machine?** `byre backup` writes one file holding this
-project's config and these volumes, and `byre restore` makes a fresh project
-from it on the other side -- the recipe is
-[move my box to another machine](/docs/how-do-i/recovery/#move-my-box-to-another-machine).
-Machine-wide volumes never travel: you log in once on the new machine.
+**Moved the project, or moving it to another machine?** `byre rehome`
+and `byre backup` / `byre restore` carry these volumes across:
+[the recipes](/docs/how-do-i/recovery/#move-or-rename-a-project-directory).
+Machine-scoped volumes never travel: you log in once on the new machine.
 
 **Worktree boxes share these volumes, and that is the point** -- two
-sessions on one repo, one agent login, one cache. If a volume holds data
-that cannot take two writers, declare `sharing = "exclusive"` on it and
-`byre develop` will refuse to start the second box rather than corrupt
-it, naming the worktree that is holding it.
+sessions on one repo, one agent login, one cache. A volume that cannot
+take two writers can be declared
+[exclusive](/docs/configuration-reference/#key-reference).
 
 Declaring your own volumes, engine-side naming, one-time seeds, and the
 sharing contract: the

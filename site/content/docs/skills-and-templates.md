@@ -19,17 +19,16 @@ state in. A **template** is shape: base image, packages, egress offers
 **Skills** section of `byre config`; pick a template once, at first
 run.
 
-Agent skills carry the agents themselves. More than one can be enabled
-in a box -- the config's `agent` key decides which one launches, and
-the rest ride along with their own logins (byre's own box runs Claude
-with Codex beside it as an
-[independent reviewer](/docs/how-do-i/workflow/#set-up-two-agents-in-a-review-loop)).
+Agent skills carry the agents themselves; more than one can be enabled
+in a box, and the config's `agent` key decides which one launches
+([a review loop](/docs/how-do-i/workflow/#set-up-two-agents-in-a-review-loop)
+is the common use).
 
 **Enabling a skill is trusting it.** Skills ship raw Dockerfile lines
 and launch hooks; installing one grants nothing, but the moment a box's
 config lists it, it builds that box -- and everything it reaches is
-named by `byre status`. The sharp version:
-[security model](/docs/security-model/).
+named by `byre status`. What that trust covers:
+[security model](/docs/security-model/#skills-and-config).
 
 ## Make your own
 
@@ -40,8 +39,8 @@ byre skill validate my-tools    # strict parse + resolve check
 
 Edit the `skill.toml`, enable it, develop. To start from something that
 works, fork any bundled or installed package into an editable local
-copy: `byre skill fork byre/go my-go`. Templates use the same verbs
-(`byre template init / fork / validate`). Two worked examples in the
+copy (`byre skill fork <id> <new-id>`), or fork a bundled template
+with `byre template fork byre/go my-go`. Two worked examples in the
 cookbook:
 [launch hooks](/docs/how-do-i/configure/#run-project-setup-automatically)
 and [a custom stack](/docs/how-do-i/toolkit/#make-a-template-for-a-stack-byre-doesnt-ship).
@@ -53,14 +52,12 @@ byre skill pack pete/my-tools -o skill.toml   # distribution manifest
 byre skill install https://... --digest sha256:...
 ```
 
-`pack` writes a manifest with every file's hash; `install` verifies
-byte-for-byte and grants nothing until a box enables the result;
-`inspect <uri>` shows what you'd be trusting before anything lands.
-Releasing from another machine's repo checkout is `byre skill adopt
-<dir>` -- it makes the directory the local source for the id it
-declares, shadowing your own installed copy while the link exists.
-Provenance, digest pinning, uninstall semantics, and the full authoring
-contract: the [packaging reference](/docs/packaging-reference/).
+`install` grants nothing until a box enables the result, and
+`byre skill inspect <uri>` shows what you'd be trusting before anything
+lands. Installing, digests and uninstalling:
+[packaging reference](/docs/packaging-reference/). Packing, releasing
+from another machine, and the full authoring contract:
+[docs/SKILLS.md](https://github.com/pjlsergeant/byre/blob/main/docs/SKILLS.md).
 
 Skills can also ship
 [MCP servers and Claude Skills](/docs/mcp-and-claude-skills/) --

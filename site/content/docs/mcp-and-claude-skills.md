@@ -4,28 +4,25 @@ weight: 53
 description: give your agent tools and skills, once, in every session
 ---
 
-Your agent gets better with tools (MCP servers) and packaged expertise
-(Claude Skills). byre's job is to make both **declare-once**: say it a
-single time, and every session of the box -- every rebuild, every
-worktree -- comes up with the tool already wired and attributed.
+MCP servers give your agent tools; Claude Skills give it packaged
+expertise. byre makes both **declare-once**: say it a single time, and
+every session of the box -- every rebuild, every worktree -- comes up
+with it wired and attributed, for every agent that can receive it.
+`byre status` names any declaration the selected agent cannot receive.
 
 ## MCP servers
 
 ```sh
 byre mcp add github -- github-mcp-server stdio
-byre mcp add tracker https://mcp.example.com/ --bearer TRACKER_TOKEN
 ```
 
-A server is a URL (remote) or a command (run in the box). `--global`
-declares it for every project; `--bearer NAME` wires token auth without
-ever writing the token down -- the header names an env var, and the
-value resolves inside the box at launch.
-
-`byre mcp list` shows the effective set: what you declared, what your
-enabled skills contributed, and where each came from. Removing is
-symmetric -- `byre mcp remove <name>` understands the difference
-between deleting your own declaration and switching off one a skill
-ships. A remote server's network reach is attributed in `byre status`.
+A server is a URL (remote) or a command (run in the box); `--global`
+declares it for every project. `byre mcp list` shows the effective set:
+what you declared, what your enabled skills contributed, and where each
+came from. Removing is symmetric -- `byre mcp remove <name>` understands
+the difference between deleting your own declaration and switching off
+one a skill ships. A remote server's network reach is attributed in
+`byre status`.
 
 ### Authenticating a server
 
@@ -38,13 +35,16 @@ byre mcp add tracker https://mcp.example.com/ --bearer TRACKER_TOKEN
 ```
 
 sends `Authorization: Bearer <whatever $TRACKER_TOKEN is in the box>`.
-Getting the token *into* the box is a separate, visible grant --
+Getting the token *into* the box is a separate, visible grant:
 `[env_from_host]` passes it through from your host environment at
 launch
-([recipe](/docs/how-do-i/configure/#use-my-api-key-instead-of-an-agent-login))
--- and command servers work the same way: `--env NAMES` declares what
-the process reads. Interactive OAuth flows aren't wired; static tokens
-are the supported story.
+([recipe](/docs/how-do-i/configure/#use-my-api-key-instead-of-an-agent-login)).
+Command servers work the same way: `--env NAMES` declares what the
+process reads.
+
+byre configures static tokens. A server that needs an OAuth login gets
+it from the agent, and the login is stored in the agent's project state
+volume (for Claude, `claude mcp login --no-browser` works in the box).
 
 ## Claude Skills
 
@@ -66,6 +66,8 @@ Both ride the config cascade, so the right scope is one decision: this
 project, your global defaults, or a shared
 [layer](/docs/how-do-i/toolkit/#share-one-config-baseline-across-many-projects).
 byre skills you enable can ship their own declarations, and you can
-switch any single one off without disabling the skill. The precise wiring
-contract -- field shapes, header templating, closure semantics -- is in
-the [packaging reference](/docs/packaging-reference/#mcp-and-claude-skills-wiring).
+switch any single one off without disabling the skill. Field shapes are
+in the [configuration reference](/docs/configuration-reference/#key-reference);
+how declarations merge, bake and reach each agent is in
+[docs/ARCHITECTURE.md](https://github.com/pjlsergeant/byre/blob/main/docs/ARCHITECTURE.md)
+(MCP provisioning, Claude Skills delivery).

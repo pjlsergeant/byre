@@ -32,8 +32,9 @@ byre develop --template go --agent claude
 
 byre generates a Dockerfile from your config, builds it (only on a
 cache-miss -- relaunches are fast), and drops you into the agent in the
-foreground. Exit the agent and the session ends; run `byre develop` again
-and `/resume` to pick up where you left off.
+foreground ([how it works](/docs/how-it-works/)). Exit the agent and the
+session ends; run `byre develop` again and `/resume` to pick up where
+you left off.
 
 Ask the box what it can touch, any time:
 

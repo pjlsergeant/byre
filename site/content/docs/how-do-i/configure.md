@@ -10,23 +10,17 @@ tldr: say **y** when the first-run picker offers shared auth for your
 agent -- or enable the relevant _x-shared-auth_ skill(s) in
 `byre config`.
 
-By default agents log in once per project, inside the box. The shared-auth
-skills (claude-shared-auth, codex-shared-auth, gemini-shared-auth,
-opencode-shared-auth) move that to once per machine. For claude, codex,
-and opencode every project's first run asks: "Use machine-wide credentials
-to log in to &lt;agent&gt;?" -- yes enables the skill for that project
-(its `byre.config`), and only for it. Saying yes to "Save these as your
-default?" remembers your answer like the template/agent favourites: the
-next box's question just defaults to it, one Enter to accept. (Enabling the
-skill in `byre config --global` is the machine-wide route -- then the
-question stops.) The login lives in a shared volume that
-reset/forget deliberately never touch. See the
-[security model](/docs/security-model/) for the implications of this.
-(Gemini's skill exists but is hand-enabled, not offered, until its
-two-box verification gate passes. Grok's shared auth works differently -- its token rotation can't be
-file-shared, so a broker mediates instead, and until its field gate passes
-the skill is hand-enabled rather than offered --
-[ADR 0036](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0036-grok-shared-auth-v2-broker.md).)
+The picker asks "Use machine-wide credentials to log in to
+&lt;agent&gt;?" for Claude, Codex and OpenCode. Yes enables the
+companion skill for that project only; saying yes to "Save these as
+your default?" pre-selects the answer for the next box. Enabling the
+skill in `byre config --global` makes it machine-wide, and the question
+stops. The Gemini and Grok companions are enabled by hand, not offered
+(Grok's works through a broker:
+[ADR 0036](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0036-grok-shared-auth-v2-broker.md)).
+The login lives in a machine-scoped volume that `reset` and `forget`
+never delete; what that shares across projects is in the
+[security model](/docs/security-model/#shared-state).
 
 ## Enable a skill in this box?
 
@@ -42,14 +36,12 @@ they exist on the machine. Everything a skill grants shows up in
 tldr: `byre mcp add <name> <url>` -- or `byre mcp add <name> --
 <command...>` for a local server; `--global` for every project.
 
-`--bearer TOKEN_NAME` wires static-token auth (the header carries
-`${TOKEN_NAME}`, expanded from the box env at launch -- names travel,
-values don't). `byre mcp list` shows the effective set with every entry
-attributed to the layer or skill that declared it; `byre mcp remove` is
-closure-smart, so removing a skill-declared server writes a `!name`
-entry instead of failing. Declarations bake into the image and inject
-into the agent session; a remote server's host is attributed egress in
-`byre status`. The full story:
+```sh
+byre mcp add tracker https://mcp.example.com/ --bearer TRACKER_TOKEN
+```
+
+The config carries the token's name, never its value. Listing,
+removing, and getting the token into the box:
 [MCP & Claude Skills](/docs/mcp-and-claude-skills/).
 
 ## Add a package to this box -- and promote it to my template?
@@ -58,12 +50,10 @@ tldr: add it under **Packages** in `byre config`; when it belongs
 everywhere, move it into your template (fork the bundled one first:
 `byre template fork byre/node my-node`).
 
-The first time you want a postgres client, it's one entry under
-**Packages** in that project's `byre config`. When it belongs everywhere you write node, fork the
-bundled template into an editable local one, add the package there, and
-set `template = "my-node"` -- every project on that template gets it on
-its next develop. For literally-everywhere, `byre config --global` puts
-it in your personal baseline.
+After the fork, add the package to `my-node` and set
+`template = "my-node"` in the project: every project on that template
+gets it at its next develop. A package every project needs, whatever
+the stack, goes in `byre config --global`.
 
 ## Set my defaults so every new box starts right?
 
@@ -79,24 +69,19 @@ answers become the pre-selected defaults.
 
 tldr: the **Agent** section of `byre config`, then relaunch.
 
-The `agent` key decides which enabled agent skill's command launches in
-the foreground. Each agent keeps its login in its own state volume, so
-switching to codex for a week and back to claude costs no re-auth.
+Each agent keeps its login in its own state volume, so switching to
+codex for a week and back to claude costs no re-auth.
 
 ## Run a different agent just this once?
 
 tldr: `byre develop -a codex` -- one run, nothing written.
 
-The flag overrides the `agent` key for that session exactly as if the
-config said so: the agent's skill is enabled for the run (its CLI, state
-volume, and egress ride the normal path), and the next plain
-`byre develop` is back on your config. Shared-auth companions never ride
-an override -- they enter via the written config only. `byre status`
-shows the running box's agent and names the override. Works for a fresh
-worktree too: `byre worktree fix-thing -a codex` forwards it to the new
-session -- of an already-configured project; a repo that has never been
-developed refuses the flag rather than silently configuring itself from
-it.
+The next plain `byre develop` is back on your config, and `byre status`
+names the override while the box runs. A new worktree takes the flag
+too -- `byre worktree fix-thing -a codex` -- on a project that is
+already configured; a repo that has never been developed refuses it.
+What the override enables, and what it leaves out:
+[`agent`](/docs/configuration-reference/#key-reference).
 
 ## Expose a port to see the box's dev server?
 
@@ -112,26 +97,15 @@ tldr: the **Env vars** section of `byre config` -- `[env]` for plain
 config values, never secrets, and `[env_from_host]` to pass host values
 at runtime.
 
-`[env]` literals are **baked into the image**: `docker history` shows
-them and they outlive `byre reset`, so they're for configuration, not
-credentials. `[env_from_host]` is the runtime channel and a legible
-grant: `KEY = "env:HOST_VAR"` passes a host env var at launch,
-`"git:user.email"` reads git config, `"tz:"` passes your timezone, and
-`"cwd:"` passes the host directory your `/workspace` comes from -- values
-resolve at launch and never land in a layer. Git identity, `TERM`, and
-`TZ` already pass through by default.
-
-A row can also carry the value itself, encrypted: that is a **project
-credential**, written by `byre credentials set KEY` or by the same Env
-screen, opened at launch with a passphrase. Use it when the value
-should live with the project rather than in your host environment.
-
-Both live on one screen, because they answer one question -- where does
-this variable's value come from. The **Source** picker on a row switches
-between them, moving the entry rather than leaving a twin behind. One
-namespace is refused in both: `BYRE_`, which parameterizes byre's own
-launch machinery; to set one deliberately use
-`run_args = ["-e", "BYRE_X=..."]`.
+Each row's **Source** picker says where the value comes from: a literal
+(baked into the image, so `docker history` shows it), a host source
+read at launch (`OPENAI_API_KEY = "env:OPENAI_API_KEY"`), or an
+encrypted **project credential** that lives in the config and unlocks
+with a passphrase at launch (`byre credentials set KEY` writes one from
+the command line). Switching the source moves the entry rather than
+leaving a twin behind. Every source, the default passthroughs and the
+reserved `BYRE_` names:
+[`[env_from_host]`](/docs/configuration-reference/#key-reference).
 
 ## Use my API key instead of an agent login?
 
@@ -141,32 +115,31 @@ it into the image.
 
 The agents' own login flows are still the better default: the
 credential lands in the agent's state volume, per project, and the
-shared-auth skills make one login serve every box. But where an API key
-is the workflow, `env_from_host` keeps it out of the image, resolves it
-fresh at every launch, and shows as a named grant in `byre status`.
-
-If the key should belong to the project rather than to your host
-environment, `byre credentials set OPENAI_API_KEY` stores it encrypted
-in the config itself and asks for the passphrase at launch -- same
-table, same screen, no host env var to keep in sync.
+shared-auth skills make one login serve every box. Where an API key is
+the workflow, the passthrough keeps it out of the image, resolves it at
+every launch, and shows as a named grant in `byre status`. For a key
+that belongs to the project rather than your host environment, use a
+project credential instead (`byre credentials set OPENAI_API_KEY`; see
+[env vars](#pass-env-vars-into-the-box)).
 
 ## Use Podman instead of Docker?
 
 tldr: nothing -- `engine = "auto"` (the default) picks docker if
 present, else podman.
 
-Force it with `engine = "podman"` per project or globally. Rootful and
-rootless both work; rootless Podman 4.3+ runs under `--userns=keep-id`
-so files still land correctly owned. Everything else -- volumes,
-images, status -- reads identically across engines.
+To force it, set **Engine** to podman in `byre config` (or
+`byre config --global` for every project). Rootful and rootless Podman
+both work -- the [platform notes](/docs/install/#platform) have the
+details -- and volumes, images and status read identically across
+engines.
 
 ## Mount other folders from the host?
 
 tldr: the **Mounts** section of the TUI (`byre config`).
 
-Each mount is a host path, an in-box path, and a read-only/read-write
-choice (read-only is the default); every mount shows up in `byre
-status` under "Host mounts".
+Read-only is the default; every mount shows up in `byre status` under
+"Host mounts". Fields:
+[`[[mounts]]`](/docs/configuration-reference/#key-reference).
 
 ## Bring my dotfiles and shell setup into every box?
 
@@ -176,11 +149,10 @@ A home-relative host path (`~/.config/starship.toml`) suggests the
 matching `/home/dev/...` target automatically. Symlinks into a dotfiles
 repo work -- byre reads through them.
 
-Mounting is the whole answer here: `[files]` cannot do this. Its sources
-are project-relative and `planFiles` refuses an absolute path, a `..`
-escape, and a symlink out of the tree, so a config can never name a file
-in your home directory. To bake a dotfile in rather than mount it, the
-file has to live in the project.
+Mounting is the whole answer here: `[files]` sources are
+project-relative, so a config can never name a file in your home
+directory. To bake a dotfile in rather than mount it, the file has to
+live in the project.
 
 ## Give my agent standing instructions in every box?
 
@@ -190,48 +162,31 @@ Write the prose, save, quit -- the git-commit shape. The scope is the
 layer you write: `--global` reaches every box on the machine, a named
 layer (`byre config --layer <name>`, **Instructions**) reaches its
 stack, the project config just that project. A later layer's same-name
-entry replaces an inherited one, and the **Instructions** screen's
-"Remove in this project" (or `byre context remove <name>`) switches one
-off; `byre context list` shows what's in effect and whether it's
-delivered.
+entry replaces an inherited one; "Remove in this project" (or
+`byre context remove <name>`) switches one off, and `byre context list`
+shows what's in effect and whether it's delivered.
 
-**How it reaches the agent.** At build time byre composes one text --
-byre's own box facts, each enabled skill's guidance, then your
-instructions -- and bakes it into the image at
-`/etc/byre/agent-context.md`. At launch, the agent's own command
-*injects* that text into the session through the agent's native
-mechanism:
-
-| Agent | Mechanism |
-|---|---|
-| Claude | `--append-system-prompt-file` (appended to the system prompt) |
-| Codex | `developer_instructions` config (a developer-role message) |
-| Grok | `--append-system-prompt` (session rules) |
-| Gemini | a byre-owned context directory in its memory discovery |
-| OpenCode | an `instructions` entry in its injected config |
-
-Every mechanism *appends* -- the agent's built-in behavior and anything
-the project or you set up natively stay intact. byre never writes into
-the agent's own files: your `~/.claude/CLAUDE.md` (and every agent's
-equivalent) is yours, inside the box as outside, and the repo's own
-`CLAUDE.md`/`AGENTS.md` load exactly as the agent normally loads them,
-on top. An agent without an injection mechanism simply doesn't receive
-the text -- `byre status` and `byre context list` say so plainly rather
-than pretending.
+**How it reaches the agent.** byre bakes one text -- its own box facts,
+each enabled skill's guidance, then your instructions -- into the image
+at `/etc/byre/agent-context.md`, and the agent's launch command appends
+it to the session through that agent's own channel (Claude's
+`--append-system-prompt-file`, for one; the rest are in
+[docs/ARCHITECTURE.md](https://github.com/pjlsergeant/byre/blob/main/docs/ARCHITECTURE.md),
+under Standing instructions). byre never writes into the agent's own
+files: your `~/.claude/CLAUDE.md` (and every agent's equivalent) is
+yours, and the repo's own `CLAUDE.md`/`AGENTS.md` load as the agent
+normally loads them, on top. An agent without an injection mechanism
+does not receive the text, and `byre status` and `byre context list`
+say so.
 
 Long documents can stay your own file: `byre context add conventions
 --file ~/notes/agent-conventions.md` reads it at each rebuild
 (machine-local -- inline text is what travels in a preset). Because the
 config lives host-side, the boxed agent can't rewrite its own standing
-orders -- unlike a repo's in-tree `CLAUDE.md`, which is the project's
-(agent-writable) voice. (The one exception is deliberate: `byre develop
---self-edit` hands the box its own project config, project-layer
-declarations included.)
-
-A skill can still carry opinions via its own `[context]` table --
-that's the right home when the prose should travel with a tool (it's
-how byre's own dev box enforces its diary and review habits). The
-stored form (`[[context]]` blocks) is in the
+orders, unlike a repo's in-tree `CLAUDE.md`; the deliberate exception
+is a `--self-edit` session, which hands the box its own project config.
+Prose that should travel with a tool belongs in that skill's own
+`[context]` table. The stored form (`[[context]]` blocks) is in the
 [configuration reference](/docs/configuration-reference/).
 
 ## Stop re-downloading dependencies on every rebuild?
@@ -240,8 +195,7 @@ tldr: a `[[volumes]]` entry with `role = "cache"` on the dependency
 directory.
 
 Templates ship the obvious ones (`node_modules` for node); add your own
-for anything regenerable that's slow to fetch. Cache volumes survive
-rebuilds and relaunches, and losing one only costs a re-download.
+for anything regenerable that's slow to fetch.
 [Volumes & state](/docs/volumes-and-state/) has the model.
 
 ## Run project setup automatically?
@@ -250,23 +204,23 @@ tldr: build-time setup goes in `dockerfile_post`; per-launch setup is a
 small skill's hook script.
 
 `dockerfile_post` lines run at image build and cache like any Dockerfile
-step -- the right home for installs and fetches that shouldn't repeat
-every session. For something that must run at every launch (or once per
-fresh box), a skill's `[build] files` can place a script into
-`/etc/byre/firstrun.d/` (first run) or `/etc/byre/env.d/` (sourced at
-every launch, just before the agent starts). There's deliberately no
-config-level launch hook -- launch behavior is a skill's job, so it's
-attributable.
+step -- the home for installs and fetches that shouldn't repeat every
+session. For a command that runs at launch, a skill's `[build] files`
+places a script in `/etc/byre/firstrun.d/`: those hooks run at every
+launch, so a hook guards its own once-only work. `/etc/byre/env.d/` is
+for environment only -- its hooks are sourced, and may set variables
+but do nothing else
+([ADR 0028](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0028-env-d-hooks-are-pure.md)).
+There's deliberately no config-level launch hook -- launch behavior is
+a skill's job, so it's attributable.
 
 ## Cap the box's CPU or RAM?
 
 tldr: `run_args = ["--cpus=2", "--memory=4g"]`.
 
-`run_args` is raw `docker run` passthrough, appended after byre's own
-flags so yours win. byre never parses inside it; `byre status` degrades
-its posture claims honestly when it's present. (Identity-changing flags
--- `--user`, `--userns` -- are the one documented footgun: they break
-the baked-UID ownership model.)
+`run_args` is raw `docker run` passthrough; what that does to
+`byre status`'s claims, and the flags it must not carry:
+[`run_args`](/docs/configuration-reference/#key-reference).
 
 ## Restrict network access?
 
@@ -275,21 +229,15 @@ open under **Egress**.
 
 <!-- demo-placeholder: firewall-enable -->
 
-By default byre doesn't restrict network access. The _firewall_ skill flips
-that to deny-by-default: your box starts but runs nothing while a
-privileged one-shot helper joins its network namespace, installs the
-allowlist rules, and verifies them. Only then does the agent launch behind
-the wall -- and if any of that fails, the box dies closed rather than
-running open.
+By default byre doesn't restrict network access. The _firewall_ skill
+makes it deny-by-default, and if the walls can't be set up the box dies
+closed rather than running open.
 
 Under "Egress" you choose what to open. The ports your selected agent
 needs open automatically, and your other skills may suggest more (eg
-GitHub) -- those you open by hand, then relaunch.
-
-One honest limit worth knowing: hostname grants are pinned to the IPs they
-resolved to at launch, so on DNS that rotates (CDNs, some cloud resolvers)
-a granted host can start failing -- closed, never open -- until a relaunch
-re-resolves it. Details in the [security model](/docs/security-model/).
+GitHub) -- those you open by hand, then relaunch. A granted host that
+starts failing mid-session is usually DNS rotation:
+[the allowlist is an IP snapshot](/docs/security-model/#the-network).
 
 Just want to block telemetry, not the internet? The _firewall-open_ skill
 keeps the network open and drops only the hosts you block:
@@ -301,10 +249,9 @@ from the full firewall's allowlist too, skill-declared endpoints included.
 tldr: enable the _docker-host_ skill in `byre config`.
 
 The skill installs the Docker CLI (plus compose and buildx) in the box and
-mounts the host daemon's socket. It's worth being clear-eyed about what
-you're granting: anything that can run Docker on the host also has
-effective root on the host, and `byre status` disclaims that hole for as
-long as the skill is enabled.
+mounts the host daemon's socket. Anything that can run Docker on the host
+has effective root on the host, and `byre status` disclaims that hole for
+as long as the skill is enabled.
 [docs/DOCKER-HOST.md](https://github.com/pjlsergeant/byre/blob/main/docs/DOCKER-HOST.md)
 covers what the grant really means and when to prefer something narrower.
 Nested Podman (a daemon inside the box, granting nothing on the host)
@@ -315,8 +262,11 @@ is unsupported.
 tldr: `byre develop --self-edit` -- the box gets its own config mounted,
 and changes are shown on exit.
 
-`byre develop --self-edit` will mount the box's configuration directory on
-`/home/dev/.byre-self` and will also ship contextual documentation to your
-box telling your agent how to make edits. There are (of course!) some
-security implications to this, so it's probably best not to always run in
-this mode. Changes to the configuration will be shown on exit.
+The box's configuration directory is mounted at `/home/dev/.byre-self`,
+with documentation telling the agent how to make edits. The agent then
+writes the next launch's mounts, run arguments and build -- the config
+that decides what it can reach -- so a self-edit session trusts the
+agent with your host. Use it for a session you mean, not as your
+default;
+[the security model](/docs/security-model/#self-edit-sessions) has the
+rest.

@@ -4,10 +4,6 @@ weight: 90
 description: the cookbook -- every recipe is a question, a tldr, and a shipped feature
 ---
 
-Every recipe is a question a real user has, a tldr, and a shipped
-feature behind it, grouped by where you are: setting up the box, using
-it daily, building your toolkit, or getting out of trouble.
-
 ### [Configuring the box](/docs/how-do-i/configure/)
 
 - [Save my LLM credentials so I don't need to re-auth for each box?](/docs/how-do-i/configure/#save-my-llm-credentials-so-i-dont-need-to-re-auth-for-each-box)
@@ -37,8 +33,10 @@ it daily, building your toolkit, or getting out of trouble.
 - [Get a second shell in the box?](/docs/how-do-i/workflow/#get-a-second-shell-in-the-box)
 - [Resume my session after a config change?](/docs/how-do-i/workflow/#resume-my-session-after-a-config-change)
 - [Paste or drag-and-drop images and files into my agent?](/docs/how-do-i/workflow/#paste-or-drag-and-drop-images-and-files-into-my-agent)
+- [Get files back out of the box?](/docs/how-do-i/workflow/#get-files-back-out-of-the-box)
 - [Use byre on a remote machine over SSH?](/docs/how-do-i/workflow/#use-byre-on-a-remote-machine-over-ssh)
 - [Get tab completion for byre commands?](/docs/how-do-i/workflow/#get-tab-completion-for-byre-commands)
+- [Build the box without starting a session?](/docs/how-do-i/workflow/#build-the-box-without-starting-a-session)
 - [Run one task headlessly (CI)?](/docs/how-do-i/workflow/#run-one-task-headlessly-ci)
 
 ### [Skills & templates](/docs/how-do-i/toolkit/)
@@ -54,6 +52,7 @@ it daily, building your toolkit, or getting out of trouble.
 
 - [Start over -- and which hammer do I reach for?](/docs/how-do-i/recovery/#start-over--and-which-hammer-do-i-reach-for)
 - [Move or rename a project directory?](/docs/how-do-i/recovery/#move-or-rename-a-project-directory)
+- [Move my box to another machine?](/docs/how-do-i/recovery/#move-my-box-to-another-machine)
 - [Pull fresh tool versions?](/docs/how-do-i/recovery/#pull-fresh-tool-versions)
 - [Stop using byre?](/docs/how-do-i/recovery/#stop-using-byre)
 - [Uninstall byre completely?](/docs/how-do-i/recovery/#uninstall-byre-completely)

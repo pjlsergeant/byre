@@ -18,24 +18,21 @@ same four steps, and every step's output is inspectable.
    setting to the layer or skill that contributed it.
 2. **Generate a Dockerfile.** Deterministically: the same config always
    produces byte-identical output, written to
-   `~/.byre/projects/<id>/context/Dockerfile.generated` and printed any time by
-   `byre dockerfile`. Blocks emit in a stable, cache-friendly order --
-   base, template, byre's core, each enabled skill, your project's tail,
-   then a short security guard where byre re-copies its own launcher and
-   enforcement files after your block (in Docker the last write to a path
-   wins, so a `files` entry aimed at one of those paths can't leave its
-   content there) -- so ten projects on one template share the expensive
-   layers in Docker's own cache. That guard is narrow on purpose: it
-   covers `files` entries, inside the image. A raw build line or a
-   runtime mount over the same path is answered by
-   [byre withdrawing the claim](/docs/security-model/#the-contract) and
-   saying so, not by a guard that would have to out-guess your own
-   `RUN` line.
-3. **Build.** Plain `docker build`. byre owns no caching layer of its
-   own: an unchanged config is a full cache hit; a change rebuilds
-   only from the changed instruction onward. `byre rebuild` (`--no-cache
-   --pull=true`) is the deliberate valve for pulling a republished base image and
-   fresh upstream versions.
+   `~/.byre/projects/<id>/context/Dockerfile.generated` and printed any
+   time by `byre dockerfile`. Shared blocks come before project-specific
+   ones, so projects on one template share the expensive layers in
+   Docker's cache, and a short guard at the end re-copies byre's own
+   launcher and enforcement files, so a `files` entry aimed at one of
+   those paths can't leave its content there. A raw build line or a
+   runtime mount over the same path is not guarded: byre
+   [discloses it](/docs/security-model/#the-engine-and-the-host)
+   instead. Block order and the guard:
+   [docs/ARCHITECTURE.md](https://github.com/pjlsergeant/byre/blob/main/docs/ARCHITECTURE.md)
+   (Image generation).
+3. **Build.** Plain `docker build`, with no caching layer of byre's own:
+   an unchanged config is a cache hit, and `byre rebuild` is the
+   deliberate valve for a republished base image and fresh upstream
+   versions.
 4. **Run.** `docker run --rm -it`, in the foreground -- see the exact
    command with `byre dockerrun`. The container is throwaway; what
    persists is the image and the [named volumes](/docs/volumes-and-state/).
@@ -55,13 +52,14 @@ Podman gets the same result through a generic id plus a userns
 mapping.) The build uses root only where builds must; the session drops
 to `dev` before anything runs.
 
-## Nothing is hidden
+## Inspection commands
 
 - `byre status` -- what the box can reach, attributed.
-- `byre dockerfile` -- the exact image definition.
-- `byre dockerrun` -- the exact run command.
-- `byre ejectfirewall` -- the firewall's outside-the-box step, as a
-  standalone script.
+- `byre dockerfile` -- the image definition.
+- `byre dockerrun` -- the run command.
+- `byre ejectfirewall` -- the firewall's outside-the-box step.
+
+The [commands page](/docs/commands/#inspection) lists them with the rest.
 
 Those commands are also the exit: byre either generates the build
 or isn't involved, so the day you stop wanting it, the files are yours

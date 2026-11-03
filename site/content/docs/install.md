@@ -49,18 +49,19 @@ curl -fsSL https://raw.githubusercontent.com/pjlsergeant/byre/main/install.sh | 
 curl -fsSL https://raw.githubusercontent.com/pjlsergeant/byre/main/install.sh | BYRE_INSTALL_DIR=~/bin sh
 ```
 
-`BYRE_VERSION` is the way back if an upgrade breaks you. byre is 1.x
-and a minor release may retire a config key -- always with a `CHANGES`
-entry and an error message carrying the migration, never silently --
-so if a new version refuses something your config relies on, pin the
-last version that worked while you migrate. `byre version` prints what
-you are running.
+`BYRE_VERSION` is the way back if an upgrade breaks you. byre is 1.x,
+and a minor release may retire a config key -- never silently: the
+`CHANGES` entry and the error message both carry the migration. If a
+new version refuses something your config relies on, pin the last
+version that worked while you migrate. `byre version` prints what you
+are running.
 
 ## Platform
 
 Linux and macOS, over Docker or Podman -- rootful, plus rootless **Podman**
 4.3+, which byre detects and runs under `--userns=keep-id`. Rootless
 *Docker* is not detected as rootless: byre gives it the rootful treatment,
-so that is the identity story you get there. byre bakes a dev identity into
-the image so the agent runs unprivileged as you and files land correctly
-owned. Debian-derived base images only.
+so that is the identity story you get there. byre bakes a
+[dev identity](/docs/how-it-works/#the-dev-identity) into the image so
+the agent runs unprivileged as you and files land correctly owned.
+Debian-derived base images only.
