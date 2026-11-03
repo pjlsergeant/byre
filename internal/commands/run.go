@@ -87,9 +87,8 @@ type RunOptions struct {
 	CredMode CredentialMode
 }
 
-// runTimeoutRE is coreutils timeout(1)'s duration: an integer or decimal with
-// an optional s/m/h/d suffix -- the grammar byre-codereview validates, a
-// subset of what the chassis accepts.
+// runTimeoutRE is the coreutils duration grammar, a subset of the chassis
+// grammar (`1.` and `.5` are chassis-only).
 var runTimeoutRE = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?[smhd]?$`)
 var runTimeoutZeroRE = regexp.MustCompile(`^0+(\.0+)?[smhd]?$`)
 
@@ -97,17 +96,15 @@ var runTimeoutZeroRE = regexp.MustCompile(`^0+(\.0+)?[smhd]?$`)
 // the same cap, so its 64-bit seconds product never wraps.
 const runTimeoutMaxSecs = 3650 * 86400
 
-// CheckRunTimeout validates --timeout. A zero duration is no timeout at all,
-// and a run has none unless asked, so 0 is refused with the remedy rather
-// than read as "no timer". The chassis bounds the range in whole seconds,
-// rounded down (its deadline itself is monotonic to the centisecond), so a
-// duration under 1s is refused here as it is there, as is one over 3650d.
+// CheckRunTimeout validates --timeout: whole seconds, floored, matching
+// headless.sh; 1s..3650d. 0 is refused with the remedy, never read as no
+// timer.
 func CheckRunTimeout(v string) error {
 	if !runTimeoutRE.MatchString(v) {
 		return fmt.Errorf("--timeout %q: not a duration -- use a number with an optional s/m/h/d suffix, e.g. 600, 30m, 1.5h", packages.EscapeTerminal(v))
 	}
 	if runTimeoutZeroRE.MatchString(v) {
-		return fmt.Errorf("--timeout %s: a zero timeout is no timeout -- omit the flag (a run has no timeout unless you give one)", v)
+		return fmt.Errorf("--timeout %s is no timeout: omit the flag", v)
 	}
 	secs, ok := runTimeoutSecs(v)
 	if !ok || secs > runTimeoutMaxSecs {
@@ -119,13 +116,9 @@ func CheckRunTimeout(v string) error {
 	return nil
 }
 
-// runTimeoutSecs is a grammar-valid duration in whole seconds, rounded down
-// the way the chassis rounds it: nine fractional digits, multiplied by the
-// unit before dividing; digits past the ninth are dropped (under 1e-10 d for
-// the day suffix), an accepted step at a boundary that no timeout is meant
-// to.
-// ok is false when the integer part has more than 9 digits, which is over the
-// cap whatever the suffix.
+// runTimeoutSecs is a grammar-valid duration in whole seconds, floored as
+// headless.sh floors it. ok is false when the integer part has more than 9
+// digits, which is over the cap whatever the suffix.
 func runTimeoutSecs(v string) (secs int64, ok bool) {
 	mult := int64(1)
 	switch v[len(v)-1] {
@@ -237,8 +230,7 @@ func (st *runState) refuse(format string, args ...any) error {
 
 func (st *runState) run(projectDir string, launch runLaunch) error {
 	s, o := st.s, st.o
-	// The task source first: the flag beats byre's own environment, and
-	// says so once when both were set.
+	// The flag beats BYRE_TASK, and says so once when both are set.
 	envTask, envSet := os.LookupEnv("BYRE_TASK")
 	envSet = envSet && envTask != ""
 	var task []byte
@@ -261,8 +253,6 @@ func (st *runState) run(projectDir string, launch runLaunch) error {
 			if err != nil {
 				return st.refuse("--task %s: %v", o.TaskFlag, err)
 			}
-			// Relative to the directory byre was run in, like every path a
-			// command line names.
 			if taskPath, err = filepath.Abs(p); err != nil {
 				return st.refuse("--task %s: %v", o.TaskFlag, err)
 			}
@@ -279,22 +269,17 @@ func (st *runState) run(projectDir string, launch runLaunch) error {
 	}
 	st.workDir = paths.WorkDir
 
-	// The non-TTY onboarding arms' remedy ("run on a TTY") can never be
-	// followed inside run, so an unconfigured project is judged here: both
-	// axis flags configure it on the way in, anything less is refused with
-	// run's own remedy.
+	// Onboarding cannot prompt inside run: both axis flags, or a refusal.
 	cfgPath := filepath.Join(paths.Dir, config.ProjectConfigName)
 	configured, perr := hostopen.ExistsNoFollow(cfgPath)
 	if perr != nil {
-		return fmt.Errorf("cannot tell whether %s exists (%v) — fix the store's permissions, or run 'byre forget' to clear it", cfgPath, perr)
+		return fmt.Errorf("cannot tell whether %s exists (%v) -- fix the store's permissions, or run 'byre forget' to clear it", cfgPath, perr)
 	}
 	if !configured && (o.Template == "" || o.Agent == "") {
 		return st.refuse(`this project is not configured here: pass --template <t> and --agent <a> (use "none" for no template), or configure it first with byre develop / byre preset apply`)
 	}
 
-	// The pre-lock read: which agent, and which roots the box can write (the
-	// task file's route is judged against them). develop reads again under
-	// the lock and Stage re-checks against that read.
+	// The pre-lock read; Stage re-checks under the lock.
 	rv, err := resolveWithAgent(paths, projectDir, s.Err, o.Agent)
 	if err != nil {
 		return err
@@ -330,10 +315,7 @@ func (st *runState) run(projectDir string, launch runLaunch) error {
 		"BYRE_RUN_MODEL":       o.Model,
 		"BYRE_RUN_AGENT":       st.agent,
 		"BYRE_RUN_ID":          st.runID,
-		// Always present, empty when the flag is absent: develop re-asserts
-		// only the keys this map holds, and the chassis treats empty as
-		// unset, so a skill's [runtime].env cannot time out or silence a
-		// run that never asked for either.
+		// Always present (empty = unset), so skill env cannot set either.
 		"BYRE_RUN_TIMEOUT": o.Timeout,
 		"BYRE_RUN_QUIET":   "",
 	}
@@ -341,9 +323,8 @@ func (st *runState) run(projectDir string, launch runLaunch) error {
 		env["BYRE_RUN_QUIET"] = "1"
 	}
 
-	// The box's stdout is the answer: discarded under --data (the document is
-	// the only thing stdout ever carries then), escaped per line on a
-	// terminal, byte for byte into a file or a pipe.
+	// The box's stdout is the answer: discarded under --data, escaped per
+	// line on a terminal, byte for byte otherwise.
 	var boxOut io.Writer = io.Discard
 	sw := &stickyWriter{w: s.Out}
 	var esc *lineEscaper
@@ -367,12 +348,9 @@ func (st *runState) run(projectDir string, launch runLaunch) error {
 		Quiet:        o.Quiet,
 		Result:       &st.res,
 	}
+	// Stage runs under the setup lock after Create: the under-lock agent,
+	// task route and task bytes must match what was hashed (ADR 0061).
 	h.Stage = func(sp project.Paths, lrv resolved) error {
-		// The under-lock read is the box that was created: its agent must be
-		// the one the run was told about, its writable roots must not have
-		// made the task's route one the pre-lock read did not judge, and the
-		// task file must still hold the bytes that were hashed -- a file
-		// that changed while byre waited is a run the caller did not mean.
 		if lrv.cfg.Agent != st.agent {
 			return st.refuse("the agent changed to %s while byre waited for the setup lock (this run resolved %s); nothing ran -- re-run", config.OrNone(lrv.cfg.Agent), config.OrNone(st.agent))
 		}
@@ -573,14 +551,8 @@ func readTask(abs string, plan taskPlan) ([]byte, error) {
 	return b, nil
 }
 
-// stageRunDir makes <workDir>/.byre-run an empty directory holding byre's two
-// files: a self-ignoring .gitignore and the task. It runs under the setup
-// lock after Create, so no other launch of this worktree can reach it; the
-// agent's own earlier output is what it clears. Every touch is anchored: the
-// work tree without following its final component, the result dir the same
-// way (ADR 0040's ancestor residual accepted), each entry removed through
-// that root (a symlink is unlinked, never followed), each file published
-// exclusively.
+// stageRunDir empties <workDir>/.byre-run and publishes a self-ignoring
+// .gitignore and the task; every touch is anchored (ADR 0040, ADR 0061).
 func stageRunDir(workDir string, task []byte) error {
 	ws, err := hostopen.OpenDirRootNoFollow(workDir)
 	if err != nil {
@@ -597,9 +569,9 @@ func stageRunDir(workDir string, task []byte) error {
 	case err != nil:
 		return fmt.Errorf("staging %s: %w", dir, err)
 	case li.Mode()&os.ModeSymlink != 0:
-		return fmt.Errorf("%s is a symlink, not a directory -- move it aside; byre stages the run's files there", dir)
+		return fmt.Errorf("%s is a symlink, not a directory -- move it aside", dir)
 	case !li.IsDir():
-		return fmt.Errorf("%s is not a directory -- move it aside; byre stages the run's files there", dir)
+		return fmt.Errorf("%s is not a directory -- move it aside", dir)
 	}
 	rd, err := hostopen.OpenDirRootNoFollow(dir)
 	if err != nil {
@@ -636,7 +608,6 @@ func stageRunDir(workDir string, task []byte) error {
 	return nil
 }
 
-// runOutcome is byre's verdict, before it is rendered.
 type runOutcome struct {
 	class     string
 	exitCode  int
@@ -658,11 +629,8 @@ func knownStatus(res developResult) *int {
 	return intPtr(res.ContainerStatus)
 }
 
-// chassisCodes are the statuses the headless contract owns: success and the
-// chassis's 10-16 band.
 func chassisCode(c int) bool { return c == 0 || (c >= 10 && c <= 16) }
 
-// chassisMeaning is the contract's one-line reading of a chassis status.
 var chassisMeaning = map[int]string{
 	0:  "the agent ran and left an answer",
 	10: "the agent reported failure",
@@ -704,7 +672,7 @@ func classifyRun(err error, res developResult, refusal string) runOutcome {
 		case chassisCode(c):
 			return outcomeOf(outcomeRan, c, intPtr(c), chassisMeaning[c])
 		default:
-			return outcomeOf(outcomeBoxExited, c, intPtr(c), fmt.Sprintf("the box exited %d, outside the headless contract (0, 10-16): it never reached the chassis, or what ran it died", c))
+			return outcomeOf(outcomeBoxExited, c, intPtr(c), fmt.Sprintf("the box exited %d, outside the headless contract (0, 10-16)", c))
 		}
 	}
 	var agentExit *int
@@ -784,7 +752,7 @@ func (st *runState) writeInTreeCopy(doc []byte) {
 		_, werr := w.Write(doc)
 		return werr
 	}, nil); err != nil {
-		dataf(st.s.Err, "byre: run: outcome.json not written to the result dir (%v); the exit code and --data are the outcome\n", err)
+		dataf(st.s.Err, "byre: run: outcome.json not written to the result dir (%v)\n", err)
 	}
 }
 

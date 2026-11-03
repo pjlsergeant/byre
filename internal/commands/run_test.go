@@ -1010,13 +1010,8 @@ func TestCheckRunTimeout(t *testing.T) {
 	}
 }
 
-// The host's --timeout check and the chassis's BYRE_RUN_TIMEOUT parse are
-// two implementations of one range: each spelling is accepted by both or
-// refused by both, with the same whole seconds. The chassis's centisecond
-// deadline is pinned too: the fraction is scaled by the unit before it is
-// floored, so 0.0000249d (2.15136 s) is 215 cs, not the 207 a fraction cut
-// to six digits before scaling gives. The spellings are the host's grammar:
-// the chassis's also takes a bare point (1., .5), which the host refuses.
+// Host grammar is the chassis grammar minus a bare point (`1.`, `.5`).
+// Whole seconds match; the chassis's centisecond deadline is pinned too.
 func TestRunTimeoutMatchesTheChassis(t *testing.T) {
 	testtools.NeedTool(t, "bash")
 	src := string(gen.HeadlessScript())

@@ -277,39 +277,19 @@ func assertLaunchesFromAPipeWithoutCredential(t *testing.T, pl pipeLaunch) {
 	}
 }
 
-// TestAgentContractCodexLaunchesFromAPipeWithoutCredential: the codex box's
-// login hook stands down from a pipe (assertLaunchesFromAPipeWithoutCredential).
-func TestAgentContractCodexLaunchesFromAPipeWithoutCredential(t *testing.T) {
-	assertLaunchesFromAPipeWithoutCredential(t, pipeLaunch{
-		agent:    "codex",
-		credEnv:  []string{"OPENAI_API_KEY", "CODEX_API_KEY"},
-		remedy:   codexNoTerminalRemedy,
-		hookDesc: "device login",
-	})
-}
-
-// TestAgentContractGrokLaunchesFromAPipeWithoutCredential: the grok box's
-// login hook stands down from a pipe. GROK_AUTH_PROVIDER_COMMAND counts as a
-// credential: with it set the hook defers to the shared-auth broker and
-// never reaches the guard under test.
-func TestAgentContractGrokLaunchesFromAPipeWithoutCredential(t *testing.T) {
-	assertLaunchesFromAPipeWithoutCredential(t, pipeLaunch{
-		agent:    "grok",
-		credEnv:  []string{"XAI_API_KEY", "GROK_AUTH_PROVIDER_COMMAND"},
-		remedy:   grokNoTerminalRemedy,
-		hookDesc: "device login",
-	})
-}
-
-// TestAgentContractOpencodeLaunchesFromAPipeWithoutCredential: the opencode
-// box's login hook stands down from a pipe.
-func TestAgentContractOpencodeLaunchesFromAPipeWithoutCredential(t *testing.T) {
-	assertLaunchesFromAPipeWithoutCredential(t, pipeLaunch{
-		agent:    "opencode",
-		credEnv:  []string{"ANTHROPIC_API_KEY", "OPENCODE_API_KEY"},
-		remedy:   opencodeNoTerminalRemedy,
-		hookDesc: "login picker",
-	})
+// TestAgentContractLaunchesFromAPipeWithoutCredential: each agent box's login
+// hook stands down from a pipe (assertLaunchesFromAPipeWithoutCredential).
+// grok's GROK_AUTH_PROVIDER_COMMAND counts as a credential: with it set the
+// hook defers to the shared-auth broker and never reaches the guard under
+// test.
+func TestAgentContractLaunchesFromAPipeWithoutCredential(t *testing.T) {
+	for _, pl := range []pipeLaunch{
+		{agent: "codex", credEnv: []string{"OPENAI_API_KEY", "CODEX_API_KEY"}, remedy: codexNoTerminalRemedy, hookDesc: "device login"},
+		{agent: "grok", credEnv: []string{"XAI_API_KEY", "GROK_AUTH_PROVIDER_COMMAND"}, remedy: grokNoTerminalRemedy, hookDesc: "device login"},
+		{agent: "opencode", credEnv: []string{"ANTHROPIC_API_KEY", "OPENCODE_API_KEY"}, remedy: opencodeNoTerminalRemedy, hookDesc: "login picker"},
+	} {
+		t.Run(pl.agent, func(t *testing.T) { assertLaunchesFromAPipeWithoutCredential(t, pl) })
+	}
 }
 
 // TestAgentContractGemini: the assumptions the gemini + gemini-shared-auth

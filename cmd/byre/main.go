@@ -291,8 +291,7 @@ waits until the writer closes), or BYRE_TASK in byre's own environment;
 --task wins when both are set. Without --data, stdout is the agent's answer
 and nothing else; everything else goes to stderr, ending with one summary
 line. With --data, stdout is one JSON document: byre's outcome. Gate a
-script on the exit code or --data, never on the summary line -- the agent
-shares stderr and could print the same line.
+script on the exit code or --data, never on the summary line.
 
 The agent writes into .byre-run/ in the work tree, which byre empties at the
 start of every run: archive it before running again.`,
@@ -303,13 +302,13 @@ start of every run: archive it before running again.`,
 				return usageError(err.Error())
 			}
 			if cmd.Flags().Changed("task") && strings.TrimSpace(o.TaskFlag) == "" {
-				return usageError("--task: blank value — name a task file, or - to read stdin")
+				return usageError("--task: blank value -- name a task file, or - to read stdin")
 			}
 			if !cmd.Flags().Changed("task") && os.Getenv("BYRE_TASK") == "" {
-				return usageError("byre run: no task — pass --task <file>, --task - (stdin), or set BYRE_TASK")
+				return usageError("byre run: no task -- pass --task <file>, --task - (stdin), or set BYRE_TASK")
 			}
 			if o.TaskFlag == "-" && mode == commands.CredentialStdin {
-				return usageError("--task - and --credentials stdin both read stdin — give the task as a file or in BYRE_TASK")
+				return usageError("--task - and --credentials stdin both read stdin -- give the task as a file or in BYRE_TASK")
 			}
 			if cmd.Flags().Changed("timeout") {
 				if err := commands.CheckRunTimeout(o.Timeout); err != nil {
@@ -317,7 +316,7 @@ start of every run: archive it before running again.`,
 				}
 			}
 			if cmd.Flags().Changed("agent") && strings.TrimSpace(o.Agent) == "" {
-				return usageError(`--agent: blank value — name an agent skill`)
+				return usageError(`--agent: blank value -- name an agent skill`)
 			}
 			o.CredMode = mode
 			return a.run(s, dir, o)
@@ -325,7 +324,7 @@ start of every run: archive it before running again.`,
 	}
 	c.Flags().StringVar(&o.TaskFlag, "task", "", "the task: a file, or - to read stdin to EOF (default: BYRE_TASK from the environment)")
 	c.Flags().BoolVar(&o.Data, "data", false, "print byre's outcome as one versioned JSON document on stdout, instead of the agent's answer")
-	c.Flags().BoolVar(&o.Quiet, "quiet", false, "keep the agent's live output in .byre-run/ only, and drop byre's notices; errors, refusals, a failed run's last agent stderr lines, the exit report and the summary line still print")
+	c.Flags().BoolVar(&o.Quiet, "quiet", false, "keep the agent's live output in .byre-run/ only; errors, the exit report and the summary line still print")
 	c.Flags().StringVarP(&o.Agent, "agent", "a", "", `agent for THIS run: on a configured project, a one-off override (nothing written); on a NEW project, with --template, seeds its config`)
 	c.Flags().StringVar(&o.Template, "template", "", `template for a NEW project's config (first run only; "none" to skip) -- a new project needs both --template and --agent`)
 	c.Flags().StringVar(&o.Model, "model", "", "model for the agent's headless command (default: the agent's own)")
@@ -1086,7 +1085,7 @@ func presetCmd(dir string, s commands.Streams) *cobra.Command {
 			return commands.PresetApply(s, dir, optArg(args), applyYes)
 		},
 	}
-	apply.Flags().BoolVar(&applyYes, "yes", false, "apply unattended: the review still prints, the confirm and the chauffeured installs' confirms are skipped (required in a pipe; refuses an https preset URI, credential rows and digest-less https sources)")
+	apply.Flags().BoolVar(&applyYes, "yes", false, "apply unattended: the review still prints, no confirm; refuses what needs a human (ADR 0063: an https preset address, a digest-less https source, a credential row)")
 	preset.AddCommand(
 		apply,
 		&cobra.Command{
@@ -1204,13 +1203,8 @@ func buildCmd(a app, dir string, s commands.Streams) *cobra.Command {
 		Short: "Build the project's image without starting a session; print its tag.",
 		Long: `Generate and build this project's image exactly as 'byre develop' would,
 then stop: no volumes seeded, no container created. stdout is the image tag
-and nothing else; the engine's build output goes to stderr.
-
-The build uses the engine's own cache, as develop's does. That makes it
-useful on a machine that keeps its engine between jobs: warm the cache before
-a run, check that a config still builds, or read the tag. It does not speed
-up a hosted CI runner that starts empty each job -- every job there rebuilds.
-For a build with the cache off and the base pulled, use 'byre rebuild'.
+and nothing else; the engine's build output goes to stderr. For a build
+with the cache off and the base pulled, use 'byre rebuild'.
 
 A live session does not stop a build; it waits only for another setup of
 this project to finish. The running box keeps the image it started from.`,

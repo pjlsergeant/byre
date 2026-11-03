@@ -155,8 +155,6 @@ func exitCodeSection() string {
 		commands.ExitRefused, exitPanic) + runExitCodeSection()
 }
 
-// runExitCodeSection is `byre run`'s table: the same process-status
-// passthrough as develop, with the headless chassis's 10-16 band on top.
 func runExitCodeSection() string {
 	return fmt.Sprintf("\n### What `byre run` exits with\n\n"+
 		"| Code | Owner | Meaning |\n|---|---|---|\n"+

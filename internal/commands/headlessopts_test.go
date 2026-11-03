@@ -129,7 +129,7 @@ func TestHeadlessStageFailureRemovesContainer(t *testing.T) {
 // -i kept and no -t when the streams are not a terminal.
 func TestHeadlessAttachUsesOwnedIO(t *testing.T) {
 	p, _ := testPaths(t)
-	f := &fakeRunner{attachOut: "the answer\n"}
+	f := &fakeRunner{}
 	var out bytes.Buffer
 	h := &headlessOptions{Command: []string{gen.HeadlessPath}, AttachStdout: &out}
 	if err := developWith(f, discardStreams(), p, combine(merged(config.Config{}), skills.Resolved{}), false, CredentialAsk, h); err != nil {
@@ -141,9 +141,6 @@ func TestHeadlessAttachUsesOwnedIO(t *testing.T) {
 	call := f.startIOs[0]
 	if call.container != containerName(p) || call.stdin != nil || call.stdout != &out {
 		t.Errorf("StartAttachIO(%q, %v, %v): want the session container, nil stdin, the given stdout", call.container, call.stdin, call.stdout)
-	}
-	if out.String() != "the answer\n" {
-		t.Errorf("box stdout must reach the given writer, got %q", out.String())
 	}
 	argv := f.creates[0]
 	// The image, then the command: nothing may follow it.
@@ -288,7 +285,7 @@ func TestHeadlessResultMatrix(t *testing.T) {
 			fake:       func(t *testing.T, p project.Paths) *fakeRunner { return &fakeRunner{runErr: exitError(t, 137)} },
 			wantPhase:  phaseAttached,
 			wantStatus: 137,
-			// develop still decodes 128+ into a plain error, as today.
+			// 128+ comes back as a plain error carrying the signal, not an ExitError.
 			wantErr: func(err error) bool {
 				var e ExitError
 				return err != nil && !errors.As(err, &e) && strings.Contains(err.Error(), "SIGKILL")

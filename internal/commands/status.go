@@ -1556,7 +1556,7 @@ func configEgress(entries []string) []skills.EgressAllow {
 }
 
 // guardedPaths returns the image paths byre re-asserts at the Dockerfile tail
-// for this project — the launcher and the headless chassis always, plus a network-posture skill's launch
+// for this project -- the launcher and the headless chassis always, plus a network-posture skill's launch
 // gate and netns enforcement script(s). A project `files` entry (or raw build
 // line) targeting one of these is overridden by byre's own copy at build time
 // (gen's security guard); the caller warns so the override isn't silent.

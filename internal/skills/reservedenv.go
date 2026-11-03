@@ -110,13 +110,8 @@ var reservedEnvKnobs = map[string][]string{
 	// step rides (its retry count); a chassis knob all the same.
 	"BYRE_FETCH_RUN_RETRIES": {ClaimLaunch},
 
-	// The headless-run contract: the signal hooks read, and the variables
-	// byre run hands the chassis (and the chassis hands the headless
-	// command). The launcher re-derives BYRE_HEADLESS from argv and the host
-	// re-asserts its BYRE_RUN_* set after skill env, but raw run_args still
-	// win, so a skill setting one is aiming at a run's inputs: the
-	// headless-run claim stops asserting, and the launch claim with it, since
-	// the chassis is what the launcher execs.
+	// Headless-run knobs: a skill that sets one degrades the headless claim
+	// (ADR 0050, ADR 0061).
 	"BYRE_HEADLESS":        {ClaimHeadless, ClaimLaunch},
 	"BYRE_RUN_TASK_FILE":   {ClaimHeadless, ClaimLaunch},
 	"BYRE_RUN_TASK_SHA256": {ClaimHeadless, ClaimLaunch},

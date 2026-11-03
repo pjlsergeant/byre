@@ -543,11 +543,11 @@ func TestPresetApplyYesFlagReachesTheCommand(t *testing.T) {
 	proj := t.TempDir()
 	s, _ := testStreams()
 	err := run(realApp, []string{"preset", "apply"}, proj, s)
-	if err == nil || !strings.Contains(err.Error(), "the review is the point") {
+	if err == nil || !strings.Contains(err.Error(), "preset apply is interactive") {
 		t.Fatalf("without --yes a pipe must refuse as interactive, got %v", err)
 	}
 	err = run(realApp, []string{"preset", "apply", "--yes"}, proj, s)
-	if err == nil || strings.Contains(err.Error(), "the review is the point") || !strings.Contains(err.Error(), "no byre.preset here") {
+	if err == nil || strings.Contains(err.Error(), "preset apply is interactive") || !strings.Contains(err.Error(), "no byre.preset here") {
 		t.Fatalf("--yes must get past the TTY rule to preset discovery, got %v", err)
 	}
 }

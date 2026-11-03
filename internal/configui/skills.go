@@ -27,9 +27,8 @@ type skillEntry struct {
 	provLabel string
 	disabled  string // non-empty => disabled-with-reason
 	// unmet lists the row's requires entries (ADR 0062) that no ON row
-	// satisfies -- an annotation, never a disabled reason: the row stays
-	// toggleable, so a user who turned the requirement off can still turn
-	// this skill off too.
+	// satisfies. Requirement and headless annotations render beside the
+	// state, never in the disabled slot, so the row stays switchable.
 	unmet []string
 }
 
@@ -370,15 +369,10 @@ func (m model) viewSkills() string {
 		case e.removedHere:
 			line += dimStyle.Render("  (removes an inherited skill)")
 		}
-		// An unmet requirement rides beside the state, never in the disabled
-		// slot: that slot blocks the toggle, and this row must stay
-		// switchable off. The names are manifest text.
+		// Annotations (see skillEntry.unmet); names are manifest text.
 		for _, r := range e.unmet {
 			line += dimStyle.Render("  (requires " + packages.EscapeTerminal(r) + " -- not enabled)")
 		}
-		// An agent's headless mode is a fact about the skill, not one of the
-		// row's states: it rides beside whichever state the switch above
-		// chose, never in the disabled slot, so the row stays toggleable.
 		// Only an agent skill whose manifest loaded can say it has none (a
 		// nested companion is not an agent).
 		if rt, ok := m.inh.Skills[e.name]; ok && e.agent && !e.child {

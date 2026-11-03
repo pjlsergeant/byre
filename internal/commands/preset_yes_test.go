@@ -11,7 +11,8 @@ import (
 )
 
 // presetApplyYesRefusedNothingWritten asserts the shared aftermath of every
-// `apply --yes` refusal: no config, no marker, nothing installed.
+// `apply --yes` refusal: no config, no marker, nothing installed, and no store
+// maintenance (no AGENTS.md, no bundled mirror) in BYRE_HOME.
 func presetApplyYesRefusedNothingWritten(t *testing.T, dir, home, store string) {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join(dir, "byre.config"))
@@ -26,6 +27,11 @@ func presetApplyYesRefusedNothingWritten(t *testing.T, dir, home, store string) 
 	}
 	if idx, _ := packages.ReadIndex(home); len(idx) != 0 {
 		t.Errorf("a refused apply must install nothing, index has %v", idx)
+	}
+	for _, f := range []string{"AGENTS.md", "bundled"} {
+		if _, err := os.Stat(filepath.Join(home, f)); !os.IsNotExist(err) {
+			t.Errorf("a refused --yes apply must not write %s into BYRE_HOME (err=%v)", f, err)
+		}
 	}
 }
 
@@ -90,8 +96,8 @@ func TestPresetApplyYesOnTTYSkipsTheConfirm(t *testing.T) {
 }
 
 // A digest-less https hint refuses under --yes, naming the row, before any
-// fetch: unattended, nobody inspects what the URL serves. The URL is
-// unroutable, so a fetch attempt would surface as a different error.
+// fetch. The URL is unroutable, so a fetch attempt would surface as a
+// different error.
 func TestPresetApplyYesRefusesUndigestedHTTPSHint(t *testing.T) {
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, `agent = "none"
@@ -108,9 +114,10 @@ skills = ["pete/linter"]
 	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
 }
 
-// Every --yes refusal happens before byre's own store maintenance: a
-// refused apply against a fresh BYRE_HOME leaves no AGENTS.md and no bundled
-// mirror, so "before anything is written" holds as ADR 0063 states it.
+// Every --yes refusal happens before byre's own store maintenance, so a
+// refused apply against a fresh BYRE_HOME writes nothing there (ADR 0063).
+// The other refusal tests share this check through
+// presetApplyYesRefusedNothingWritten; this one covers both refusal stages.
 func TestPresetApplyYesRefusesBeforeStoreMaintenance(t *testing.T) {
 	for name, preset := range map[string]string{
 		"credential row":        "agent = \"none\"\n[env_from_host]\nSTRIPE_KEY = \"" + credRow("Zm9vYmFy") + "\"\n",
@@ -123,17 +130,12 @@ func TestPresetApplyYesRefusesBeforeStoreMaintenance(t *testing.T) {
 			if err := PresetApply(s, proj, "", true); err == nil {
 				t.Fatal("the apply must refuse")
 			}
-			for _, f := range []string{"AGENTS.md", "bundled"} {
-				if _, err := os.Stat(filepath.Join(p.Home, f)); !os.IsNotExist(err) {
-					t.Errorf("a refused --yes apply must not write %s into BYRE_HOME (err=%v)", f, err)
-				}
-			}
+			presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
 		})
 	}
 }
 
-// An https preset URI refuses under --yes before any fetch: unattended,
-// nobody inspects what it serves, and nothing committed pins it. The URL is
+// An https preset URI refuses under --yes before any fetch. The URL is
 // unroutable, so a fetch attempt would surface as a different error.
 func TestPresetApplyYesRefusesHTTPSPresetURI(t *testing.T) {
 	p, proj := onboardPaths(t)
@@ -178,43 +180,59 @@ skills = ["pete/linter"]
 	}
 }
 
+// presetCredentialRefusalCase is one `apply --yes` credential refusal: the
+// preset, the stored config ("" for none), and the fragment naming what refused.
+type presetCredentialRefusalCase struct {
+	name, preset, store, names string
+}
+
+// assertPresetApplyYesCredentialRefusal runs one case off a TTY and on one:
+// the rule is about the human's confirm (ADR 0057), not the terminal. A "y"
+// waiting on stdin proves the refusal never falls back to asking.
+func assertPresetApplyYesCredentialRefusal(t *testing.T, tc presetCredentialRefusalCase) {
+	t.Helper()
+	for _, tty := range []bool{false, true} {
+		t.Run(fmt.Sprintf("%s tty=%v", tc.name, tty), func(t *testing.T) {
+			p, proj := onboardPaths(t)
+			shipPreset(t, proj, PresetName, tc.preset)
+			if tc.store != "" {
+				mustWriteFile(t, filepath.Join(p.Dir, "byre.config"), []byte(tc.store), 0o644)
+			}
+			s, _, _ := testStreams("y\n", tty)
+			err := PresetApply(s, proj, "", true)
+			if err == nil || !strings.Contains(err.Error(), unattendedCredentialsRule) || !strings.Contains(err.Error(), tc.names) || !strings.Contains(err.Error(), "env_from_host") {
+				t.Fatalf("tty=%v: --yes must refuse naming %q and env_from_host, got %v", tty, tc.names, err)
+			}
+			presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, tc.store)
+		})
+	}
+}
+
 // Credential rows on EITHER side of the replacement refuse --yes, naming the
-// row and pointing at env_from_host -- on a TTY too: the rule is about the
-// human's confirm (ADR 0057), not the terminal.
+// row and pointing at env_from_host.
 func TestPresetApplyYesRefusesCredentialRows(t *testing.T) {
 	row := credRow("Zm9vYmFy")
-	cases := []struct {
-		name, preset, store, side string
-	}{
+	for _, tc := range []presetCredentialRefusalCase{
 		{"preset carries a row", "agent = \"none\"\n[env_from_host]\nSTRIPE_KEY = \"" + row + "\"\n", "", "the preset sets STRIPE_KEY"},
 		{"stored config carries a row", "agent = \"none\"\n", "agent = \"none\"\n[env_from_host]\nSTRIPE_KEY = \"" + row + "\"\n", "your current byre.config sets STRIPE_KEY"},
 		{"file row in the preset", "agent = \"none\"\n[env_from_host]\nGCP_JSON = \"" + "encrypted-file:Zm9v" + "\"\n", "", "the preset sets GCP_JSON"},
+	} {
+		assertPresetApplyYesCredentialRefusal(t, tc)
 	}
-	for _, tc := range cases {
-		for _, tty := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s tty=%v", tc.name, tty), func(t *testing.T) {
-				p, proj := onboardPaths(t)
-				shipPreset(t, proj, PresetName, tc.preset)
-				if tc.store != "" {
-					mustWriteFile(t, filepath.Join(p.Dir, "byre.config"), []byte(tc.store), 0o644)
-				}
-				// A "y" waiting on stdin proves the refusal does not fall back
-				// to asking: --yes never reaches the confirm with rows present.
-				s, _, _ := testStreams("y\n", tty)
-				err := PresetApply(s, proj, "", true)
-				if err == nil || !strings.Contains(err.Error(), unattendedCredentialsRule) || !strings.Contains(err.Error(), tc.side) || !strings.Contains(err.Error(), "env_from_host") {
-					t.Fatalf("tty=%v: credential rows must refuse --yes naming %q and env_from_host, got %v", tty, tc.side, err)
-				}
-				presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, tc.store)
-			})
-		}
-	}
+}
+
+// A [credentials] identity arriving with no rows is a credential review line
+// only a human can answer, so --yes refuses it too.
+func TestPresetApplyYesRefusesAnIdentityArriving(t *testing.T) {
+	assertPresetApplyYesCredentialRefusal(t, presetCredentialRefusalCase{
+		"identity arriving", "agent = \"none\"\n" + credBlock(credIdentityA, credRecipientA), "", "brings its own credentials identity",
+	})
 }
 
 // A ciphertext shadowed by an [env] literal on BOTH sides, with identical
 // [credentials] blocks, draws no credential review line -- the literal owns
-// the key on each side -- but the file still stores the row, so --yes still
-// refuses naming it.
+// the key on each side -- but the file stores the row, so --yes refuses
+// naming it.
 func TestPresetApplyYesRefusesARowShadowedOnBothSides(t *testing.T) {
 	doc := "agent = \"none\"\n[env]\nSTRIPE_KEY = \"literal\"\n[env_from_host]\nSTRIPE_KEY = \"" + credRow("Zm9vYmFy") + "\"\n" + credBlock(credIdentityA, credRecipientA)
 	if lines := credentialReviewLines(presetSubject, []byte(doc), []byte(doc)); len(lines) != 0 {
@@ -231,22 +249,8 @@ func TestPresetApplyYesRefusesARowShadowedOnBothSides(t *testing.T) {
 	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, doc)
 }
 
-// A [credentials] identity arriving with no rows is still a credential review
-// line only a human can answer, so --yes refuses it too.
-func TestPresetApplyYesRefusesAnIdentityArriving(t *testing.T) {
-	p, proj := onboardPaths(t)
-	shipPreset(t, proj, PresetName, "agent = \"none\"\n"+credBlock(credIdentityA, credRecipientA))
-	s, _, _ := testStreams("", false)
-	err := PresetApply(s, proj, "", true)
-	if err == nil || !strings.Contains(err.Error(), unattendedCredentialsRule) || !strings.Contains(err.Error(), "brings its own credentials identity") {
-		t.Fatalf("an arriving identity must refuse --yes, got %v", err)
-	}
-	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
-}
-
-// Without --yes, the TTY path is unchanged by the credential rule: rows are
-// shown and the human's confirm decides.
-func TestPresetApplyWithoutYesStillConfirmsCredentialRows(t *testing.T) {
+// Without --yes, credential rows are shown and the human's confirm decides.
+func TestPresetApplyInteractiveConfirmsCredentialRows(t *testing.T) {
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, PresetName, "agent = \"none\"\n[env_from_host]\nSTRIPE_KEY = \""+credRow("Zm9vYmFy")+"\"\n")
 	s, _, stderr := testStreams("y\n", true)

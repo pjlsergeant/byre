@@ -10,41 +10,27 @@ import (
 // on the other end. nil is `byre develop` exactly: every field below is read
 // only through a non-nil *headlessOptions.
 type headlessOptions struct {
-	// Command is the container command, placed last on the create argv
-	// (RunParams.Command); `byre run` passes the baked headless chassis.
+	// Command is the container command (RunParams.Command): the chassis.
 	Command []string
-	// Env is the BYRE_RUN_* set, applied AFTER the skill runtime env, the
-	// env_from_host passthrough and BYRE_EGRESS, so no skill's [runtime].env
-	// can skew what the run was told. Raw run_args still follow it on the argv
-	// and win (ADR 0006): byre does not parse that block.
+	// Env is the BYRE_RUN_* set, applied after skill env; raw run_args win
+	// (ADR 0006).
 	Env map[string]string
-	// Stage runs under the setup lock immediately after Create succeeds and
-	// before the lock is released -- the created container is the session's
-	// ownership token (ADR 0004), so nothing else can reach the workspace
-	// staging step for this worktree while Stage runs. rv is the under-lock
-	// re-read, the resolution the created box was built from. A Stage error
-	// removes the just-created container and comes back from develop as-is:
-	// develop prints nothing for it, so the callback reports its own refusal.
+	// Stage runs under the setup lock right after Create, with the under-lock
+	// resolution; its error comes back as-is, so it reports its own refusal.
 	Stage func(paths project.Paths, rv resolved) error
-	// AttachStdout, when set, is where the box's stdout goes, through
-	// StartAttachIO with NO stdin (the box sees EOF at once). Unset, the
-	// attach hands the box byre's own stdin/stdout as develop does.
+	// AttachStdout, when set, takes the box's stdout, attached with no stdin;
+	// unset, the attach is develop's.
 	AttachStdout io.Writer
-	// RunID, TaskSHA256 and RunTimeout are written into the launch record so
-	// status can say what this box was launched to do -- the task's hash,
-	// never its text. RunTimeout is "" when the run has none.
+	// RunID, TaskSHA256 and RunTimeout go into the launch record (the task's
+	// hash, never its text); RunTimeout is "" for none.
 	RunID      string
 	TaskSHA256 string
 	RunTimeout string
-	// Quiet drops develop's banner-class notices -- the worktree and preset
-	// notes, the run-scoped agent line, the exposure/network summary. It
-	// never drops an error, a refusal, a warning, or the exit report: those
-	// are what a quiet run's reader still needs.
+	// Quiet drops develop's banner-class notices; never an error, a refusal,
+	// a warning, or the exit report.
 	Quiet bool
-	// StreamStdout is where the engine calls develop streams before the
-	// attach (the build, the volume seeds) send their stdout. Unset, they
-	// write to byre's own stdout as develop always has; a headless run's
-	// stdout is the answer and nothing else, so it routes them to stderr.
+	// StreamStdout takes the stdout of the pre-attach engine calls (build,
+	// seeds); a headless run routes them to stderr, off the answer.
 	StreamStdout io.Writer
 	// Result, when set, is filled as develop goes (see developResult).
 	Result *developResult

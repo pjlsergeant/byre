@@ -15,6 +15,12 @@ import (
 	"github.com/pjlsergeant/byre/internal/runner"
 )
 
+// develop is developWith without the headless seams, the plain-develop
+// entry the fake-engine tests drive.
+func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEdit bool, credMode CredentialMode) error {
+	return developWith(r, s, paths, rv, selfEdit, credMode, nil)
+}
+
 // fakeRunner is the one configurable engineRunner fake for commands tests. The
 // zero value is a quiet docker engine: nothing live, no volumes, no images,
 // every operation succeeds. Tests set the state fields and read the recorded

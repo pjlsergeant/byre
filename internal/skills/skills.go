@@ -143,14 +143,10 @@ type File struct {
 	// pairing (ADR 0034); mutually exclusive with it — declaring both is a
 	// parse error.
 	SharedAuthFor string `toml:"shared_auth_for"`
-	// Requires names skills this one does not work without (ADR 0062): zai
-	// drives the codex binary, so it requires codex. Each name must be in
-	// the ENABLED set when the cascade resolves, or Resolve refuses naming
-	// the missing skill and the remedy. byre never enables a required skill
-	// itself: enabling one is the user's act at the scope they answer for
-	// (P5). Names expand through the catalog like every other skill name;
-	// an unknown one is not a validate error, because whether it exists is
-	// a fact about the catalog and the config, not this manifest.
+	// Requires lists skills this one does not work without (ADR 0062):
+	// Resolve refuses unless each is enabled; never auto-enabled. Grammar and
+	// self-reference are validated here; existence and aliases resolve
+	// against the catalog.
 	Requires []string `toml:"requires"`
 	Build    struct {
 		Apt        []string          `toml:"apt"`
@@ -576,8 +572,7 @@ func (r Resolved) AgentCommand() string {
 }
 
 // HeadlessHedge qualifies a rendered headless command when a skill's runtime
-// env holds a ClaimHeadless knob: the command is still what the chassis
-// execs, but the run's inputs are no longer byre's alone to state.
+// env holds a ClaimHeadless knob (ADR 0061).
 const HeadlessHedge = "not warranted: a skill sets BYRE_RUN_*"
 
 // HeadlessSuffix is an agent's headless mode in one line, the register every
@@ -1051,11 +1046,10 @@ func validateValues(f File) error {
 		}
 	}
 
-	// requires names skills, so each entry is held to the skill-name grammar
-	// a config's skills list is (an alias or an owner/name id, never a `!`
-	// removal marker or the "none" sentinel), and a name listed twice is a
-	// typo. Whether a name EXISTS, and whether it is the skill itself, need a
-	// catalog and the skill's id: loadEntry and Resolve judge those.
+	// requires entries follow the skills-list grammar (no `!`, no "none"),
+	// each once. An exact self-reference is refused at the manifest-bytes
+	// boundary and at load; existence and alias self-references need the
+	// catalog, so Resolve judges them.
 	seenReq := map[string]bool{}
 	for _, r := range f.Requires {
 		if err := packages.ValidateID(r, true); err != nil {
@@ -1088,16 +1082,15 @@ func validateValues(f File) error {
 		default:
 			return fmt.Errorf("[agent] context %q invalid (want \"inject\", or omit it: no adapter)", f.Agent.Context)
 		}
-		// A headless command is exec'd by the chassis as a whole run: a
-		// blank one can never work, and one equal to the interactive command
-		// would start a session that waits on a terminal nobody holds.
+		// A blank headless command never works; one equal to the interactive
+		// command waits on a terminal nobody holds.
 		if f.Agent.Headless != "" {
 			h := strings.TrimSpace(f.Agent.Headless)
 			if h == "" {
 				return fmt.Errorf("[agent] headless must not be blank (omit it: the agent has no headless mode)")
 			}
 			if h == strings.TrimSpace(f.Agent.Command) {
-				return fmt.Errorf("[agent] headless %q must not equal [agent] command (headless runs a task to completion; command is the interactive session)", f.Agent.Headless)
+				return fmt.Errorf("[agent] headless %q must not equal [agent] command", f.Agent.Headless)
 			}
 		}
 		// A declared state volume the skill does not contribute means

@@ -63,8 +63,8 @@ func developCommand(s Streams, projectDir, flagTemplate, flagAgent string, flagS
 	return developCommandWith(s, projectDir, flagTemplate, flagAgent, flagSharedAuth, selfEdit, credMode, mayEnroll, nil)
 }
 
-// developCommandWith is developCommand with the headless seams (nil = develop
-// unchanged); `byre run` is its caller.
+// developCommandWith is developCommand with the headless seams (nil is
+// `byre develop`); `byre run` is its caller.
 func developCommandWith(s Streams, projectDir, flagTemplate, flagAgent string, flagSharedAuth *bool, selfEdit bool, credMode CredentialMode, mayEnroll bool, h *headlessOptions) error {
 	h.reset()
 	if err := requireNonRootHost(s.Err); err != nil {
@@ -186,16 +186,13 @@ func wrapForgottenWorktreeHandoff(projectDir string, err error) error {
 	return err
 }
 
-// develop is the engine-facing core of Develop — the live-session fast path,
-// then build + seed under the setup lock, then the foreground run and its
-// exit-status mapping. Split from Develop (which does the host-side resolution
-// and onboarding) so it can run end-to-end against a fake engine.
-func develop(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEdit bool, credMode CredentialMode) error {
-	return developWith(r, s, paths, rv, selfEdit, credMode, nil)
-}
-
-// developWith is develop with the headless seams; h == nil is develop.
+// developWith is the engine-facing core of Develop -- the live-session fast
+// path, then build + seed under the setup lock, then the foreground run and
+// its exit-status mapping. Split from Develop (which does the host-side
+// resolution and onboarding) so it can run end-to-end against a fake engine.
+// h carries the headless seams; nil is `byre develop`.
 func developWith(r engineRunner, s Streams, paths project.Paths, rv resolved, selfEdit bool, credMode CredentialMode, h *headlessOptions) error {
+	// Tests enter here directly; developCommandWith resets for its own early returns.
 	h.reset()
 	res := h.result()
 	// Mode-select (ADR 0032): host identity on rootful engines, the generic
@@ -504,9 +501,7 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 	if err != nil {
 		return none, err
 	}
-	// A headless run's own env lands after everything runParams merged -- the
-	// BYRE_EGRESS precedent: no skill's [runtime].env can skew what the run is
-	// told. Raw run_args still follow on the argv and win (ADR 0006).
+	// The headless env lands after skill env; raw run_args win (ADR 0006).
 	if h != nil {
 		for k, v := range h.Env {
 			params.Env[k] = v
@@ -668,16 +663,9 @@ func prepareLaunchLocked(r engineRunner, s Streams, paths project.Paths, rv reso
 		return none, fmt.Errorf("creating the session container: %w (if a stale container holds the name: %s rm %s)", cerr, r.Engine(), containerName(paths))
 	}
 	res.Phase = phaseCreated
-	// Headless staging rides here, under the lock and after Create, because
-	// the created container is what makes this launch the worktree's one
-	// session: a second launch loses the name at Create before it can reach
-	// this step. A Stage failure is a launch that never starts -- remove the
-	// container (forceless and best-effort, as after a start that never ran)
-	// and hand the callback's error back untouched; the phase returns to
-	// prelaunch because no box of this launch is left to have run. Its
-	// launch record goes too, and the result names none: a record describes
-	// a box, and this one never ran. The record is this launch's alone -- a
-	// headless record carries its run id, so no other box shares its hash.
+	// A successful Create owns the session, so Stage runs here under the lock
+	// (ADR 0004, ADR 0061). A failed Stage removes that launch's container and
+	// record, resets the phase, and returns the callback's error untouched.
 	if h != nil && h.Stage != nil {
 		if serr := h.Stage(paths, rv); serr != nil {
 			_ = r.ContainerRemove(containerName(paths))
@@ -888,11 +876,10 @@ func warnCompatLegacy(w io.Writer, projectDir string) {
 // developNotices prints the session's opening notes. The worktree
 // announcement goes first, so any onboarding prompts are understood as
 // configuring the whole project (all its worktrees). A repo-shipped preset
-// is like package.json: cloning gives you a file, not a prompt (the adoption
-// offer is retired) -- passive visibility only: state 1 (not applied) and
-// state 3 (diverged) get one note; the steady state is silent, and `byre
-// preset apply` is the solicited flow. Both are banner-class, so a quiet
-// headless run drops them.
+// is like package.json: cloning gives you a file, not a prompt -- passive
+// visibility only: state 1 (not applied) and state 3 (diverged) get one
+// note; the steady state is silent, and `byre preset apply` is the solicited
+// flow. Both are banner-class, so a quiet headless run drops them.
 func developNotices(w io.Writer, projectDir string, paths project.Paths, h *headlessOptions) {
 	if h.quiet() {
 		return

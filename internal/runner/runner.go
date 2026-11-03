@@ -333,8 +333,7 @@ func (r *Runner) StartAttach(container string) error {
 // StartAttachIO is StartAttach with the session's stdin and stdout supplied
 // by the caller instead of byre's own; stderr stays byre's. A nil stdin is NO
 // stdin: the engine client reads /dev/null, so the box sees EOF at once.
-// --interactive stays on the argv because the attach shape was fixed at
-// create (-i is always on the create argv).
+// create always passes -i, so the attach does too.
 func (r *Runner) StartAttachIO(container string, stdin io.Reader, stdout io.Writer) error {
 	return r.streamIO(stdin, stdout, r.bin(), "start", "--attach", "--interactive", container)
 }

@@ -22,15 +22,8 @@ type BuildOptions struct {
 	Template string
 }
 
-// Build implements `byre build`: develop's resolve + assemble + build, with
-// no session -- no seed, no launch record, no container. The image tag is
-// the one line on stdout; the engine's build output goes to stderr, so a
-// script can capture the tag with $(byre build).
-//
-// A live session does not stop it: the build shares the context dir and the
-// tag with any develop of this project, and the setup lock is what
-// serializes those, so it waits for the lock and nothing else. A running box
-// keeps the image it was created from.
+// Build builds under the setup lock and prints the image tag on stdout; the
+// engine's build stream goes to stderr; no session.
 func Build(s Streams, projectDir string, o BuildOptions) error {
 	if err := requireNonRootHost(s.Err); err != nil {
 		return err
@@ -76,8 +69,6 @@ func Build(s Streams, projectDir string, o BuildOptions) error {
 	if wasConfigured && o.Agent != "" {
 		agentOverride = o.Agent
 	}
-	// The pre-lock read names the engine; what is built is read again under
-	// the lock.
 	rv, err := resolveWithAgent(paths, projectDir, s.Err, agentOverride)
 	if err != nil {
 		return err
@@ -86,8 +77,6 @@ func Build(s Streams, projectDir string, o BuildOptions) error {
 	if err != nil {
 		return err
 	}
-	// stdout is the tag and nothing else: the engine's build stream goes to
-	// stderr.
 	r := runner.New(eng, engExe).WithStreamStdout(s.Err)
 	return buildImage(r, s, paths, rv)
 }
@@ -105,7 +94,7 @@ func buildImage(r engineRunner, s Streams, paths project.Paths, rv resolved) err
 		fmt.Fprintf(s.Err, "byre: worktree -- the shared project image builds from the main worktree (%s); `files` sources changed only in this worktree don't reach the image.\n", paths.Canonical)
 	}
 	if rv.agentOverride != "" {
-		dataf(s.Err, "byre: agent for this build: %s (--agent override; nothing written -- the next develop builds byre.config's agent again).\n", config.OrNone(rv.cfg.Agent))
+		dataf(s.Err, "byre: agent for this build: %s (--agent override; nothing written).\n", config.OrNone(rv.cfg.Agent))
 	}
 	image := imageTag(paths.ID, ident.UID, ident.GID)
 	if err := withSetupLockProject(s.Err, paths, func() error {
