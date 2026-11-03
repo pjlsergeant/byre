@@ -1784,21 +1784,6 @@ func runCodexLoginHook(t *testing.T, hook string, env []string) string {
 	return string(out)
 }
 
-// A headless launch has nobody to authorize a device login, so the hook stands
-// down before its first credential probe: no codex invocation at all, not
-// even `login status`, whatever the terminal seam says.
-func TestCodexLoginHookStandsDownWhenHeadless(t *testing.T) {
-	_, cat := testCat(t)
-	hook := filepath.Join(skillDir(t, cat, "codex"), "codex-login.sh")
-	bin, home := t.TempDir(), physTempDir(t)
-	log := argvLogStub(t, bin, "codex")
-	runCodexLoginHook(t, hook, codexLoginHookEnv(t, cat, "PATH="+bin+":/usr/bin:/bin",
-		"CODEX_HOME="+home, "BYRE_HEADLESS=1", "BYRE_ASSUME_TTY=1"))
-	if calls := stubCalls(t, log); calls != "" {
-		t.Fatalf("headless launch must not invoke codex at all: %q", calls)
-	}
-}
-
 // `codex login status` runs before anything else can bound the hook, so it
 // carries its own 30 s bound, with a KILL follow-up for a probe that ignores
 // TERM: a status probe that hangs is cut off, reads as

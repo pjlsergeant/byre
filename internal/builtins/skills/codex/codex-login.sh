@@ -40,8 +40,6 @@ if [ ! -r "$BYRE_SA_LIB" ]; then
   exit 0
 fi
 . "$BYRE_SA_LIB"
-# A headless run (BYRE_HEADLESS) has nobody to answer a login: stand down (ADR 0061).
-[ -n "${BYRE_HEADLESS:-}" ] && exit 0
 
 cleanup_snapshot() {
   [ -z "${snapshot:-}" ] || rm -f -- "$snapshot"
@@ -278,7 +276,7 @@ fi
 # Anything else that is not a regular file (a FIFO, socket, directory) is
 # not a credential codex wrote. Stop BEFORE `codex login status`, jq or the
 # live probe open it: opening a FIFO blocks, and with no tty guard on this
-# path a headless launch would sit there until the timeout. Never delete an
+# path a launch with no terminal would sit there until the timeout. Never delete an
 # unknown object -- say so. Same guard as opencode-login.sh.
 if [ -e "$cred" ] && [ ! -L "$cred" ] && [ ! -f "$cred" ]; then
   diag_event credential_not_regular
@@ -395,7 +393,7 @@ fi
 # claude-shared-auth hook's precedent).
 if [ ! -t 0 ] && [ -z "${BYRE_ASSUME_TTY:-}" ]; then
   restore_shared_link || echo "byre: the shared Codex credential link could not be restored; it will retry next launch." >&2
-  echo "byre: codex is not logged in and there is no terminal for the device login -- set OPENAI_API_KEY for a headless run (env_from_host, or byre credentials set), or log in from byre shell" >&2
+  echo "byre: codex is not logged in and there is no terminal for the device login -- set OPENAI_API_KEY to launch without a terminal (env_from_host, or byre credentials set), or log in from byre shell" >&2
   diag_event device_login_skipped_no_terminal
   exit 0
 fi

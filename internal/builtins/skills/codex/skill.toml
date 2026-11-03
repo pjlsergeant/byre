@@ -49,8 +49,7 @@
 description = "The Codex CLI agent; also the reviewer behind byre-codereview."
 
 [build]
-# jq: the MCP launch wrapper below parses /etc/byre/mcp.json with it, and the
-# headless command reads codex's event stream with it.
+# jq: the MCP launch wrapper below parses /etc/byre/mcp.json with it.
 # util-linux: setsid gives the cold-start auth probe a private process group so
 # app-server's plugin/git children cannot survive probe cleanup.
 apt = ["curl", "ca-certificates", "gawk", "jq", "util-linux"]
@@ -63,7 +62,7 @@ apt = ["curl", "ca-certificates", "gawk", "jq", "util-linux"]
 # planted credential with. Five skills ship it to the same path,
 # byte-identical, so this skill works with or without codex-shared-auth
 # (ADR 0056).
-files = { "codex-login.sh" = "/etc/byre/firstrun.d/codex-login", "codex-mcp-launch.sh" = "/usr/local/bin/byre-codex-mcp-launch", "byre-shared-auth-lib.sh" = "/usr/local/lib/byre-shared-auth-lib.sh", "codex-headless.sh" = "/usr/local/bin/byre-codex-headless" }
+files = { "codex-login.sh" = "/etc/byre/firstrun.d/codex-login", "codex-mcp-launch.sh" = "/usr/local/bin/byre-codex-mcp-launch", "byre-shared-auth-lib.sh" = "/usr/local/lib/byre-shared-auth-lib.sh" }
 dockerfile = [
   # This comment line is emitted into the generated Dockerfile so the awk swap
   # isn't a mystery to anyone inspecting it.
@@ -76,7 +75,7 @@ dockerfile = [
   # volume mounts at CODEX_HOME (/home/dev/.codex-home) instead — so the binary
   # stays in this image dir, always present, never masked or wiped.
   "RUN test -x /home/dev/.local/bin/codex && ln -sf /home/dev/.local/bin/codex /usr/local/bin/codex",
-  "RUN chmod +x /usr/local/bin/byre-codex-mcp-launch /usr/local/bin/byre-codex-headless",
+  "RUN chmod +x /usr/local/bin/byre-codex-mcp-launch",
 ]
 
 [runtime]
@@ -103,7 +102,6 @@ egress = ["api.openai.com", "auth.openai.com", "chatgpt.com"]
 # Bypass flag per moarcode's `codex exec --dangerously-bypass-approvals-and-sandbox`;
 # verify it applies to the interactive `codex` launch.
 command = "byre-codex-mcp-launch --dangerously-bypass-approvals-and-sandbox"
-headless = "byre-codex-headless"
 # The author's vouch that the command consumes the baked file (ADR 0033).
 mcp = "inject"
 # context = "inject" (ADR 0046): the wrapper injects the baked agent context

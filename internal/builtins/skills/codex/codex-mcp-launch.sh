@@ -29,8 +29,9 @@
 # colon object syntax is NOT valid TOML.
 set -eu
 
-# Helpers on the system PATH; the agent PATH is restored for the final exec
-# only (ADR 0061). jq here writes the MCP server commands codex runs.
+# Helpers on the system PATH, because the inherited one leads with the
+# agent-writable ~/.local/bin; the agent PATH is restored for the final exec
+# only. jq here writes the MCP server commands codex runs.
 agent_path=${PATH-}
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH

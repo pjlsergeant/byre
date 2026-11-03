@@ -12,9 +12,6 @@
 # no-browser sandbox). NOTE: grok access tokens last ~6h and refresh silently;
 # --device-auth is only needed again when the chain can no longer renew (or
 # after a logout).
-#
-# A headless run (BYRE_HEADLESS) has nobody to answer a login: stand down (ADR 0061).
-[ -n "${BYRE_HEADLESS:-}" ] && exit 0
 command -v grok >/dev/null 2>&1 || exit 0
 export GROK_HOME="${GROK_HOME:-/home/dev/.grok-home}"
 cred="$GROK_HOME/auth.json"
@@ -54,10 +51,10 @@ fi
 # (headless grok HANGS on a device prompt then; field-observed 2026-07-10),
 # where the fix is the same command: `grok login --device-auth`.
 [ -s "$cred" ] && grep -q '"key"' "$cred" 2>/dev/null && exit 0
-# Never prompt when nobody can answer: no terminal on stdin (a headless
-# launch stood down at the top). The login would otherwise sit out its whole
-# bound and the box would launch unauthenticated anyway. BYRE_ASSUME_TTY is a
-# test seam (the claude-shared-auth hook's precedent).
+# Never prompt when nobody can answer: no terminal on stdin. The login would
+# otherwise sit out its whole bound and the box would launch unauthenticated
+# anyway. BYRE_ASSUME_TTY is a test seam (the claude-shared-auth hook's
+# precedent).
 if [ ! -t 0 ] && [ -z "${BYRE_ASSUME_TTY:-}" ]; then
   echo "byre: grok is not logged in and this launch cannot prompt for the device login (no terminal) -- set XAI_API_KEY (env_from_host, or byre credentials set), or log in from byre shell with 'grok login --device-auth'" >&2
   exit 0

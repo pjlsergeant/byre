@@ -20,16 +20,15 @@
 description = "The Claude Code agent; login persists per project."
 
 [build]
-# jq: the headless command reads claude's result event with it.
-apt = ["curl", "ca-certificates", "jq"]
+apt = ["curl", "ca-certificates"]
 # claude-firstrun.sh seeds the onboarding marker on a fresh config dir when a
 # credential arrives by env, so such a launch never stops in the first-run
 # wizard.
-files = { "claude-launch.sh" = "/usr/local/bin/byre-claude-launch", "claude-firstrun.sh" = "/etc/byre/firstrun.d/claude-onboarding", "claude-headless.sh" = "/usr/local/bin/byre-claude-headless" }
+files = { "claude-launch.sh" = "/usr/local/bin/byre-claude-launch", "claude-firstrun.sh" = "/etc/byre/firstrun.d/claude-onboarding" }
 dockerfile = [
-  # The launch wrapper and the headless command must be executable: bundled
-  # extraction writes 0644 (the grok/codex/opencode wrappers carry the same line).
-  "RUN chmod +x /usr/local/bin/byre-claude-launch /usr/local/bin/byre-claude-headless",
+  # The launch wrapper must be executable: bundled extraction writes 0644
+  # (the grok/codex/opencode wrappers carry the same line).
+  "RUN chmod +x /usr/local/bin/byre-claude-launch",
   # byre-fetch-run (core block): fetch, check it is a script, then run -- never a curl|sh pipe.
   "RUN HOME=/home/dev gosu dev byre-fetch-run https://claude.ai/install.sh bash",
   "RUN test -x /home/dev/.local/bin/claude && ln -sf /home/dev/.local/bin/claude /usr/local/bin/claude",
@@ -86,7 +85,6 @@ egress = ["api.anthropic.com", "console.anthropic.com", "claude.ai", "statsig.an
 # into ~/.claude/skills (personal scope) shadows the delivered one — box state
 # wins, byre doesn't clobber it; attach shells don't carry the flag.
 command = "byre-claude-launch --dangerously-skip-permissions --mcp-config /etc/byre/mcp.json --add-dir /etc/byre/claude-skills"
-headless = "byre-claude-headless"
 # mcp = "inject" is the author's vouch that the command above consumes the
 # baked file; status keys delivery reporting off it.
 mcp = "inject"

@@ -63,10 +63,6 @@ type SkillRuntime struct {
 	// where the skill is enabled, since the effect lands on projects that do
 	// not exist yet.
 	SharedAuthFor string
-	// AgentHeadless is the skill's [agent] headless command ("" = none, or
-	// not an agent skill). The skills screen appends it to the skill's agent
-	// row, read-only: it is manifest text, not a key this editor writes.
-	AgentHeadless string
 	// Requires is the skill's requires list (ADR 0062): skills it does not
 	// work without. The skills screen annotates an enabled row whose
 	// requirement is not enabled; it never enables the requirement.

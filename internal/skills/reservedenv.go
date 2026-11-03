@@ -30,7 +30,6 @@ const (
 	ClaimMCPDelivery     = "MCP delivery"
 	ClaimContextDelivery = "context delivery"
 	ClaimLaunch          = "launch"
-	ClaimHeadless        = "headless run"
 )
 
 // reservedPrefix is byre's protocol vocabulary. Reserved, never a reserved
@@ -109,20 +108,6 @@ var reservedEnvKnobs = map[string][]string{
 	// Read at build time by the installer helper every agent skill's install
 	// step rides (its retry count); a chassis knob all the same.
 	"BYRE_FETCH_RUN_RETRIES": {ClaimLaunch},
-
-	// Headless-run knobs: a skill that sets one degrades the headless claim
-	// (ADR 0050, ADR 0061).
-	"BYRE_HEADLESS":        {ClaimHeadless, ClaimLaunch},
-	"BYRE_RUN_TASK_FILE":   {ClaimHeadless, ClaimLaunch},
-	"BYRE_RUN_TASK_SHA256": {ClaimHeadless, ClaimLaunch},
-	"BYRE_RUN_RESULT_FILE": {ClaimHeadless, ClaimLaunch},
-	"BYRE_RUN_STATUS_FILE": {ClaimHeadless, ClaimLaunch},
-	"BYRE_RUN_MODEL":       {ClaimHeadless, ClaimLaunch},
-	"BYRE_RUN_DIR":         {ClaimHeadless, ClaimLaunch},
-	"BYRE_RUN_AGENT":       {ClaimHeadless, ClaimLaunch},
-	"BYRE_RUN_ID":          {ClaimHeadless, ClaimLaunch},
-	"BYRE_RUN_TIMEOUT":     {ClaimHeadless, ClaimLaunch},
-	"BYRE_RUN_QUIET":       {ClaimHeadless, ClaimLaunch},
 }
 
 // ReservedEnvClaims names the claims one reserved BYRE_ variable can skew.

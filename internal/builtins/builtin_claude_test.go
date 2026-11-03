@@ -278,7 +278,7 @@ func TestClaudeSharedAuthFirstrunRemediatesStaleLogin(t *testing.T) {
 	run := func(base, cfg string, stdin *string) string {
 		t.Helper()
 		cmd := exec.Command("bash", hook)
-		cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CLAUDE_CONFIG_DIR="+cfg, "BYRE_HEADLESS=")
+		cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CLAUDE_CONFIG_DIR="+cfg)
 		if stdin != nil {
 			cmd.Env = append(cmd.Env, "BYRE_ASSUME_TTY=1")
 			cmd.Stdin = strings.NewReader(*stdin)
@@ -361,62 +361,6 @@ func TestClaudeSharedAuthFirstrunRemediatesStaleLogin(t *testing.T) {
 	if _, err := os.Stat(both + ".bak"); err != nil {
 		t.Fatalf("accepted both-keys offer must still move the file: %v", err)
 	}
-}
-
-// Neither of claude-shared-auth's prompts runs in a headless launch, and the
-// headless test comes ahead of the terminal tests: the stale-login offer
-// stands down even with the BYRE_ASSUME_TTY seam set, and the token paste
-// prompt stands down even on a real terminal. The real-terminal control
-// shows the same fixture does reach the paste prompt.
-func TestClaudeSharedAuthFirstrunNeverPromptsWhenHeadless(t *testing.T) {
-	_, cat := testCat(t)
-	hook := filepath.Join(skillDir(t, cat, "claude-shared-auth"), "firstrun.sh")
-
-	t.Run("stale-login offer", func(t *testing.T) {
-		base, cfg := t.TempDir(), t.TempDir()
-		if err := os.MkdirAll(filepath.Join(base, "claude"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(base, "claude", "token"), []byte("sk-ant-oat01-x\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		creds := filepath.Join(cfg, ".credentials.json")
-		if err := os.WriteFile(creds, []byte(`{"claudeAiOauth":{}}`), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		cmd := exec.Command("bash", hook)
-		cmd.Env = append(os.Environ(), "BYRE_IDENTITY_BASE="+base, "CLAUDE_CONFIG_DIR="+cfg,
-			"BYRE_HEADLESS=1", "BYRE_ASSUME_TTY=1")
-		cmd.Stdin = strings.NewReader("\n") // the default-yes answer, were it asked
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("hook failed: %v (%s)", err, out)
-		}
-		if strings.Contains(string(out), "move it aside") {
-			t.Fatalf("headless launch must not offer the move: %s", out)
-		}
-		isRegularWith(t, creds, `{"claudeAiOauth":{}}`)
-	})
-
-	t.Run("token paste prompt", func(t *testing.T) {
-		paste := func(t *testing.T, headless string) (out, base string) {
-			t.Helper()
-			base = t.TempDir()
-			out = runHookOnPTY(t, "bash", hook, "\n", "BYRE_IDENTITY_BASE="+base,
-				"CLAUDE_CONFIG_DIR="+t.TempDir(), "BYRE_HEADLESS="+headless)
-			return out, base
-		}
-		out, base := paste(t, "1")
-		if strings.Contains(out, "setup-token") {
-			t.Fatalf("headless launch must not show the paste prompt: %s", out)
-		}
-		if _, err := os.Lstat(filepath.Join(base, "claude", "token")); !os.IsNotExist(err) {
-			t.Fatalf("headless launch must not write a token: %v", err)
-		}
-		if out, _ := paste(t, ""); !strings.Contains(out, "setup-token") {
-			t.Fatalf("control: a real terminal must still get the paste prompt: %s", out)
-		}
-	})
 }
 
 // The claude skill's onboarding hook seeds the same onboarding-complete

@@ -26,9 +26,10 @@
 # already reads; the baked mcp.json stays free of byre-placed secrets.
 set -eu
 
-# Helpers on the system PATH; the agent PATH is restored for the final exec
-# only (ADR 0061). jq here writes the MCP server
-# commands opencode runs; opencode is the skill's root-owned link.
+# Helpers on the system PATH, because the inherited one leads with the
+# agent-writable ~/.local/bin; the agent PATH is restored for the final exec
+# only. jq here writes the MCP server commands opencode runs; opencode is the
+# skill's root-owned link.
 agent_path=${PATH-}
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH

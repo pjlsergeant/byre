@@ -10,8 +10,9 @@
 # immediately after a Byre-managed login. It never logs credential contents.
 set -u
 
-# Helpers on the system PATH (ADR 0061); the reconciler runs no agent CLI, so
-# it needs no agent PATH.
+# Helpers on the system PATH, because the inherited one leads with the
+# agent-writable ~/.local/bin; the reconciler runs no agent CLI, so it needs
+# no agent PATH.
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 

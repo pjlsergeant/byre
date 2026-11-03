@@ -10,7 +10,6 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/config"
 	"github.com/pjlsergeant/byre/internal/packages"
-	"github.com/pjlsergeant/byre/internal/skills"
 )
 
 // skillEntry is one row of the skills multi-select.
@@ -27,8 +26,8 @@ type skillEntry struct {
 	provLabel string
 	disabled  string // non-empty => disabled-with-reason
 	// unmet lists the row's requires entries (ADR 0062) that no ON row
-	// satisfies. Requirement and headless annotations render beside the
-	// state, never in the disabled slot, so the row stays switchable.
+	// satisfies. The annotation renders beside the state, never in the
+	// disabled slot, so the row stays switchable.
 	unmet []string
 }
 
@@ -326,7 +325,6 @@ func (m model) viewSkills() string {
 		b.WriteString(dimStyle.Render("  (no skills discovered)") + "\n")
 	}
 	prevAgent := false
-	headlessHedged := skills.ReservedEnvTouches(m.reservedEnvNow(), skills.ClaimHeadless)
 	for i, e := range entries {
 		if i == 0 || e.agent != prevAgent {
 			header := "Skills"
@@ -372,12 +370,6 @@ func (m model) viewSkills() string {
 		// Annotations (see skillEntry.unmet); names are manifest text.
 		for _, r := range e.unmet {
 			line += dimStyle.Render("  (requires " + packages.EscapeTerminal(r) + " -- not enabled)")
-		}
-		// Only an agent skill whose manifest loaded can say it has none (a
-		// nested companion is not an agent).
-		if rt, ok := m.inh.Skills[e.name]; ok && e.agent && !e.child {
-			h := skills.HeadlessSuffix(rt.AgentHeadless, headlessHedged && rt.AgentHeadless != "")
-			line += dimStyle.Render("  · " + packages.EscapeTerminal(h))
 		}
 		if d := m.skillDescs[e.name]; d != "" {
 			// A description is manifest text -- local and installed skills

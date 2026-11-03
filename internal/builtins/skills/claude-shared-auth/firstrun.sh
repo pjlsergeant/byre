@@ -8,8 +8,6 @@
 # The base override is a test seam (the launcher's gate-file precedent).
 IDENTITY_DIR="${BYRE_IDENTITY_BASE:-/home/dev/.byre-identity}/claude"
 TOKEN_FILE="$IDENTITY_DIR/token"
-# A headless run (BYRE_HEADLESS) has nobody to answer a login: stand down (ADR 0061).
-[ -n "${BYRE_HEADLESS:-}" ] && exit 0
 
 # The env token authenticates inference but does NOT satisfy interactive
 # Claude's first-run wizard: a fresh CLAUDE_CONFIG_DIR has no .claude.json, so

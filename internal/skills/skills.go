@@ -54,11 +54,6 @@ func parseEgress(entry string) (host string, port int, err error) {
 // AgentContrib is the agent-skill launch contribution.
 type AgentContrib struct {
 	Command string `toml:"command"` // what the launcher execs (e.g. "claude --dangerously-skip-permissions")
-	// Headless is the agent's headless-run command: a shell command string
-	// like Command, baked to /etc/byre/agent-headless and exec'd by the
-	// byre-headless chassis for `byre run`. Absent means the agent has no
-	// headless mode.
-	Headless string `toml:"headless"`
 	// State names the skill's state volume. Load-bearing, not informational:
 	// Resolve requires the skill to contribute it (credentials must persist),
 	// and seed_prefs seeds into it.
@@ -571,33 +566,6 @@ func (r Resolved) AgentCommand() string {
 	return r.Agent.Command
 }
 
-// HeadlessHedge qualifies a rendered headless command when a skill's runtime
-// env holds a ClaimHeadless knob (ADR 0061).
-const HeadlessHedge = "not warranted: a skill sets BYRE_RUN_*"
-
-// HeadlessSuffix is an agent's headless mode in one line, the register every
-// surface listing an agent appends: "headless: <cmd>" (hedged when asked) or
-// "no headless command". cmd is skill-manifest text and is returned as
-// given; the caller renders the line as data.
-func HeadlessSuffix(cmd string, hedged bool) string {
-	if cmd == "" {
-		return "no headless command"
-	}
-	if hedged {
-		return "headless: " + cmd + " -- " + HeadlessHedge
-	}
-	return "headless: " + cmd
-}
-
-// AgentHeadless is the selected agent's headless-run command ("" if no agent,
-// or the agent declares none).
-func (r Resolved) AgentHeadless() string {
-	if r.Agent == nil {
-		return ""
-	}
-	return r.Agent.Headless
-}
-
 // AgentState is the selected agent's state volume name ("" if none).
 func (r Resolved) AgentState() string {
 	if r.Agent == nil {
@@ -1081,17 +1049,6 @@ func validateValues(f File) error {
 		case "", "inject":
 		default:
 			return fmt.Errorf("[agent] context %q invalid (want \"inject\", or omit it: no adapter)", f.Agent.Context)
-		}
-		// A blank headless command never works; one equal to the interactive
-		// command waits on a terminal nobody holds.
-		if f.Agent.Headless != "" {
-			h := strings.TrimSpace(f.Agent.Headless)
-			if h == "" {
-				return fmt.Errorf("[agent] headless must not be blank (omit it: the agent has no headless mode)")
-			}
-			if h == strings.TrimSpace(f.Agent.Command) {
-				return fmt.Errorf("[agent] headless %q must not equal [agent] command", f.Agent.Headless)
-			}
 		}
 		// A declared state volume the skill does not contribute means
 		// credentials silently fail to persist. The rule reads the skill's OWN

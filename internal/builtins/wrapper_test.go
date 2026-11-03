@@ -745,9 +745,9 @@ func TestClaudeLaunchWrapperMergesContextIntoOneFlag(t *testing.T) {
 	}
 }
 
-// Each launch adapter serves the interactive session and every headless run,
-// and the inherited PATH it is started with leads with the agent-writable
-// ~/.local/bin, which repository code can write before the adapter runs.
+// Each launch adapter starts the interactive session, and the inherited PATH
+// it is started with leads with the agent-writable ~/.local/bin, which
+// repository code can write before the adapter runs.
 // Decoys of the adapter's helpers -- and of grok and opencode, which their
 // adapters name by root-owned link -- planted first on that PATH never run:
 // the jq that writes codex's and opencode's MCP commands and the

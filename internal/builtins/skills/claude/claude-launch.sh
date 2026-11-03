@@ -12,8 +12,9 @@
 # file is a launch-owned temp file, never the user's memory (ADR 0046).
 set -eu
 
-# Helpers on the system PATH; the agent PATH is restored for the final exec
-# only (ADR 0061).
+# Helpers on the system PATH, because the inherited one leads with the
+# agent-writable ~/.local/bin; the agent PATH is restored for the final exec
+# only.
 agent_path=${PATH-}
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH

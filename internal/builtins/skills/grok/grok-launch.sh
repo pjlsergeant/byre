@@ -13,9 +13,10 @@
 # disclosure pointing at the baked file, which the agent can read in-box.
 set -eu
 
-# Helpers on the system PATH; the agent PATH is restored for the final exec
-# only (ADR 0061). grok is the skill's root-owned
-# link, so a grok planted in ~/.local/bin cannot stand in for it.
+# Helpers on the system PATH, because the inherited one leads with the
+# agent-writable ~/.local/bin; the agent PATH is restored for the final exec
+# only. grok is the skill's root-owned link, so a grok planted in
+# ~/.local/bin cannot stand in for it.
 agent_path=${PATH-}
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH

@@ -13,8 +13,6 @@
 # with no copying and no translation. The provider command is unset for that
 # one call so the login can't recurse into the broker. The base override is a
 # test seam (the launcher's gate-file precedent).
-# A headless run (BYRE_HEADLESS) has nobody to answer a login: stand down (ADR 0061).
-[ -n "${BYRE_HEADLESS:-}" ] && exit 0
 BASE="${BYRE_IDENTITY_BASE:-/home/dev/.byre-identity}/grok"
 STORE="$BASE/auth.json"
 EPCACHE="$BASE/token_endpoint"
@@ -95,10 +93,10 @@ fi
 # The lock is deliberately NOT held here: an interactive login can take
 # minutes, and a held broker lock would stall every other box's refresh.
 [ -n "$XAI_API_KEY" ] && exit 0
-# Never prompt when nobody can answer: no terminal on stdin (a headless
-# launch stood down at the top). The login would otherwise sit out its whole
-# bound and the box would launch unauthenticated anyway. BYRE_ASSUME_TTY is a
-# test seam (the claude-shared-auth hook's precedent).
+# Never prompt when nobody can answer: no terminal on stdin. The login would
+# otherwise sit out its whole bound and the box would launch unauthenticated
+# anyway. BYRE_ASSUME_TTY is a test seam (the claude-shared-auth hook's
+# precedent).
 if [ ! -t 0 ] && [ -z "${BYRE_ASSUME_TTY:-}" ]; then
   echo "byre: the shared Grok credential is not seeded and this launch cannot prompt for the device login (no terminal) -- set XAI_API_KEY (env_from_host, or byre credentials set), or run 'grok login --device-auth' from byre shell and relaunch to adopt it" >&2
   exit 0

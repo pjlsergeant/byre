@@ -9,6 +9,18 @@ import (
 
 const unmetCodex = "(requires codex -- not enabled)"
 
+// skillLine returns the rendered skills-screen line naming skill.
+func skillLine(t *testing.T, view, skill string) string {
+	t.Helper()
+	for _, l := range strings.Split(view, "\n") {
+		if strings.Contains(l, "] "+skill+" ") || strings.HasSuffix(l, "] "+skill) {
+			return l
+		}
+	}
+	t.Fatalf("no row for %q:\n%s", skill, view)
+	return ""
+}
+
 // toggle presses space on the named row.
 func toggle(t *testing.T, m model, name string) model {
 	t.Helper()
@@ -30,7 +42,7 @@ func toggle(t *testing.T, m model, name string) model {
 // itself off still works -- the annotation never takes the disabled slot.
 func TestSkillsScreenAnnotatesUnmetRequires(t *testing.T) {
 	inh := Inherited{Skills: map[string]SkillRuntime{
-		"claude": {AgentHeadless: "claude-headless"},
+		"claude": {},
 		"codex":  {},
 		"zai":    {Requires: []string{"codex"}},
 	}}
