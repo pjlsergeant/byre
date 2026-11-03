@@ -89,7 +89,8 @@ the rationale lives.
   treats a live sibling as a prospective holder (ADR 0054 reads records,
   never config -- that is the line to weigh).
 
-- [ ] (M) **`--build-cache` for hosted runners** (E1 measured 2026-11-03,
+- [ ] (M) **`--build-cache` for hosted runners** (PARKED with `byre run`,
+  tag `pre-run-removal`; E1 measured 2026-11-03, write-up at that tag in
   `wip/headless-e1-build-cache.md`): importing a saved layer cache cuts a
   fresh runner's build from ~75 s to 17-23 s on both engines, against a
   ~210 MB download. Deferred until real CI runs show the pain; adopting
@@ -100,20 +101,22 @@ the rationale lives.
   --yes` (ADR 0063) leans on them. Shape: the Skills screen plus the
   digest-fetch flow.
 
-- [ ] (M) **Readable per-agent progress rendering for `byre run`**: the
+- [ ] (M) **Readable per-agent progress rendering for `byre run`** (PARKED
+  with `byre run`, tag `pre-run-removal`): the
   terminal shows the agent's raw event stream; ADR 0061 records a readable
   rendering as future work. Design against real transcripts.
 - [ ] (M) **Nobody reaps orphans in an interactive box**: the launcher execs
   the agent CLI as the container's PID 1, and a node/rust CLI never reaps
   reparented children, so every orphaned helper stays a zombie until the
   container dies (the dev box held 7138 after five days; a test probe that
-  walks /proc went from 1 s to 27 s). The headless chassis reaps, as a bash
-  PID 1 does. Options: engine `--init` (tini) on the run line, or the
+  walks /proc went from 1 s to 27 s). A bash PID 1 reaps them. Options:
+  engine `--init` (tini) on the run line, or the
   launcher staying PID 1 as a reaper and exec'ing the CLI as its child
   (changes who receives the terminal's signals; check the TUI path).
   Seen 2026-11-03.
 
-- [ ] (M) **Host-side bound for `byre run --timeout`**: the chassis enforces
+- [ ] (M) **Host-side bound for `byre run --timeout`** (PARKED with `byre
+  run`, tag `pre-run-removal`): the chassis enforces
   the deadline from PID 1, but a process that escapes the run's group can
   SIGSTOP an external command the chassis runs after the run (the publish
   step) and the host then waits forever. byre on the host is outside the
