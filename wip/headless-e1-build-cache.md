@@ -5,9 +5,8 @@ sacrificial inttest VM; raw logs and scripts in ~/scratch/headless-e1/ on the
 planning box. Lifecycle: absorbed into ADR 0065 if adopted, otherwise into a
 sentence in ADR 0061, then deleted.
 
-# E1 -- engine build-cache import/export for hosted runners
-
-Investigation for wip/headless-runs.md section 8 / ruling R9. Measured
+Investigation for hosted-runner builds under `byre run` (ADR 0061; TODO.md
+"`--build-cache` for hosted runners"). Measured
 2026-11-03 on the inttest Lima VM (Debian 13, kernel 6.12, 4 vCPU, 3 GB,
 host 172.17.0.1:60022). Nothing in /workspace was changed.
 

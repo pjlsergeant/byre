@@ -18,12 +18,8 @@
 > its first line, saving the inherited PATH as the agent PATH for the
 > first-run hooks and the agent's exec alone. It sources the env.d hooks
 > on that system PATH, re-pinned before each hook and again after the
-> last. The inherited PATH starts with the agent-writable `~/.local/bin`,
-> which repository code could write before env.d runs, and a hook's
-> helper (`claude-shared-auth`'s `tr`) decides what it exports.
-> Consequences for hooks: helpers resolve on the system PATH, and a PATH
-> a hook sets is discarded -- it reaches neither a later hook nor the
-> agent. No bundled hook sets PATH. Login shells (the profile.d shim)
+> last (why: ADR 0061; what it means for hooks: For skill authors, below).
+> No bundled hook sets PATH. Login shells (the profile.d shim)
 > source env.d on the shell's own PATH, unchanged.
 
 byre skills contribute launch-time environment via `env.d` hooks — `.sh`
@@ -109,10 +105,12 @@ If your hook needs to *do* something at launch — a login, a check, a
 migration, a prompt, writing a file, anything with an effect beyond the
 environment — it goes in `firstrun.d`, not `env.d`. Shell builtins and
 helpers used to COMPUTE an export are fine; effects that outlive the
-`source` are not. Helpers are system tools: the launcher sources env.d on
-the system PATH, re-pinned before each hook, and passes a hook's PATH
-change neither to a later hook nor to the agent. A reviewer finding an impure effect in an `env.d` hook
+`source` are not. A reviewer finding an impure effect in an `env.d` hook
 should move it, per this ADR.
+
+env.d hooks are sourced on the system PATH, re-pinned before each one, so
+their helpers are system tools, and a PATH a hook sets reaches neither a
+later hook nor the agent. Why byre pins PATH this way is ADR 0061.
 
 The purity tests (the per-hook behavioral arms and the inventory check)
 are partial arms — they exercise the shipped hooks' known branches and do

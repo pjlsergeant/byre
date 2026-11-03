@@ -43,14 +43,12 @@ requiring it refuses rather than running without it.
 
 **Validate judges what one manifest can say.** Each entry is held to the
 skill-name grammar (no `!` marker, not the `none` sentinel, at most one
-`/`), a name listed twice is refused, and a skill may not require its own
-id (refused at the manifest-bytes check install and catalog ingest run,
-wherever a `[package]` table states the id, and at load, which validate
-and develop run and where a package-less local skill's directory supplies
-it; an alias spelling of itself is refused at resolve, where the catalog
-can expand it). An unknown name is NOT a validate error: whether it exists is a fact
-about the catalog and the config, which only resolve has -- the same
-split `docs/SKILLS.md` records for the `agent` scalar.
+`/`), and a name listed twice is refused. An exact self-reference is
+refused wherever the skill's id is known: the manifest-bytes check
+(install, catalog ingest) and load (validate, develop). Aliases and
+existence resolve against the catalog, so an alias spelling of the skill
+itself refuses at resolve, and an unknown name is NOT a validate error --
+the same split `docs/SKILLS.md` records for the `agent` scalar.
 
 **Surfaces.** `skill inspect` and the install grant summary print one
 `requires: <name>` line per entry, beside `companion_for` -- a dependency,
@@ -69,8 +67,8 @@ party's text; it may say what it needs, never grant it (P5).
 **The Skills screen's `disabled` slot.** That slot is how the editor marks
 a row it cannot toggle (an INVALID package, a conflict): it renders `[-]`
 and the toggle reports the reason instead of acting. Putting an unmet
-requirement there would mean a user who turned codex off could no longer
-turn zai off either -- an editor that cannot express an off-switch, which
+requirement there would mean a user who turned codex off could not then
+turn zai off -- an editor that cannot express an off-switch, which
 P0 ranks with an engine bug. The annotation rides beside the state
 instead.
 

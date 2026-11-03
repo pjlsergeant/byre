@@ -2,70 +2,44 @@
 
 ## Unreleased
 
-- **`byre run`: one task, headless, with byre's verdict as the exit
-  code.** `byre run --task task.md` sets up the box as `byre develop`
-  does, hands the task to the agent's headless mode with no terminal and
-  no stdin, and exits when the agent does -- from CI or any script. The
-  task can also come from `--task -` (stdin, read until the writer
-  closes) or `BYRE_TASK` in byre's own environment, up to 1 MiB. stdout is
-  the agent's answer and nothing else (escaped on a terminal, byte for
-  byte into a file); with `--data` it is instead one JSON document, byre's
-  outcome (`RunDataVersion` 1). Everything else -- the agent's live
-  output, the build, byre's notes -- goes to stderr, ending with a summary
-  line that is for humans only: the agent shares stderr and could print
-  the same line, so gate a script on the exit code or `--data`. Exit
-  codes 10-16 are the headless machinery's closed set (13: no usable
-  credential; 12: `--timeout` expired -- there is no time limit unless you
-  set one); the commands page has the table. The agent's files land in
-  `.byre-run/` in the work tree, which byre empties at the start of every
-  run and never reads back. `--quiet` sends the agent's live output and
-  stderr to that dir only; a failed run (any exit but 0 and 10) still
-  prints the last lines of the agent's stderr before the summary, so a
-  refusal's remedy is never hidden. A never-configured checkout needs
-  `--template` and `--agent`; the CI recipe is in the cookbook ("Run one
-  task headlessly (CI)?"). ADR 0061.
-- **`byre preset apply --yes`: apply a committed preset in CI.** Runs
-  without a terminal, prints the full review to stderr all the same,
-  skips the confirm and passes `--yes` to the package installs it walks
-  through. Before installing or writing anything it refuses a preset
-  named by an https URL (commit it and apply the path), an https
-  `[sources]` row with no digest, and any encrypted credential row in
-  the preset or in the config it would replace -- on a terminal too,
-  since only your own confirm vouches for a credential value; pass
-  credentials through from the runner's environment with
-  `env_from_host` instead. Without `--yes`, a pipe still refuses, now
-  naming `--yes`. The CI cookbook entry configures the box through it.
-  ADR 0063.
+- **`byre run`: one agent task, headless, with byre's verdict as the
+  exit code.** `byre run --task task.md` (or `--task -`, or `BYRE_TASK`)
+  sets up the box as `byre develop` does, runs the agent's headless mode
+  with no terminal, and exits when it does -- from CI or any script.
+  stdout is the agent's answer; `--data` prints one JSON document, byre's
+  outcome, instead. Gate on the exit code or that document: they are the
+  only authorities, and everything on stderr and in `.byre-run/` is the
+  agent's. `--timeout` bounds a run; there is no limit by default. The
+  commands page has the exit table; the cookbook's "Run one task
+  headlessly (CI)?" has the CI recipe. ADR 0061.
+- **Agent skills declare a headless command.** `[agent] headless =
+  "<command>"` in a skill.toml is what `byre run` executes; an agent
+  without one is refused by name. The bundled claude, codex and grok
+  skills ship one. `byre status`, the config editor's Skills screen and
+  `byre skill inspect` show it. `docs/SKILLS.md` has the author contract.
+- **Skills can declare what they require.** `requires = ["codex"]` in a
+  skill.toml names skills it does not work without; develop and `byre
+  run` refuse a box where one is not enabled, and byre never enables it
+  for you. Older byre releases refuse a manifest carrying the key. ADR
+  0062.
+- **`byre preset apply --yes`: apply a committed preset in CI.** No
+  terminal needed; the full review still prints to stderr and the
+  confirm is skipped. It refuses an https preset URL, a digest-less
+  https `[sources]` row, and any credential row -- pass credentials with
+  `env_from_host` instead. ADR 0063.
 - **`byre build`: the image without a session.** It builds what `byre
   develop` would, with the engine cache, and prints the image tag as the one
   line on stdout (the build output goes to stderr) -- no volumes seeded, no
   container. For warming a persistent runner, reading the tag, or failing a
   job early on a config that no longer builds; a hosted runner still rebuilds
   every job. Cookbook: "Build the box without starting a session?".
-- **Agent skills can declare a headless command.** `[agent] headless =
-  "<command>"` in a skill.toml is what `byre run` executes; an agent
-  without one is refused by name. The bundled claude, codex and grok
-  skills declare one. `byre status`'s Agent row, the config editor's Skills
-  screen and `byre skill inspect` show each agent's headless command (or
-  `no headless command`). `docs/SKILLS.md` has the contract for authors.
 - **codex never saves an env key in a headless run.** Given
   `OPENAI_API_KEY` or `CODEX_ACCESS_TOKEN`, codex's headless command logs
   the key into a codex home made for that one run and deletes it after,
   never into the project's codex state: with codex-shared-auth enabled, a
   saved key would be shared to every project on the machine at the next
   launch. A key in the environment wins over a codex login the box
-  already has, for that run. It matters on a laptop or self-hosted runner,
-  never on a discarded hosted runner; docs/AGENT-CREDENTIAL-MECHANICS.md
-  explains.
-- **Skills can declare what they require.** `requires = ["codex"]` at
-  the top level of a skill.toml names skills it does not work without;
-  develop and `byre run` refuse a box where one is not enabled, naming
-  both and the remedy (`add it to skills = [...]`). byre never enables
-  the requirement itself. `byre skill inspect` and the install summary
-  print `requires: <name>`, and the config editor's Skills screen marks
-  an enabled skill whose requirement is off, `(requires codex -- not
-  enabled)`, without stopping you switching it off. A manifest carrying
-  the key is refused by older byre releases. ADR 0062.
+  already has, for that run. docs/AGENT-CREDENTIAL-MECHANICS.md explains.
 - **grok runs headless.** `byre run -a grok` gives grok the task as one
   `--prompt-file` turn and reads its json output: the answer, or grok's
   own error message with exit 10. The credential is `XAI_API_KEY`, the
@@ -75,15 +49,10 @@
   hang -- pass `--timeout`. The grok skill now installs `jq`.
 - **The claude skill installs `jq`.** Its headless command reads
   claude's result event with it.
-- **`status --data` carries `agent_headless`** (StatusDataVersion 4 → 5):
-  the agent's headless command, `""` when it declares none or status
-  cannot say.
-- **Launch records are version 2.** A `byre run` box's record carries
-  `headless`, `run_id`, `task_sha256` (the hash, never the task) and
-  `run_timeout`; a develop record differs from version 1 only in its
-  `record` number. An older byre reads any version-2 record as one from
-  a newer byre, so its `byre status` on a box this byre launched shows
-  the box running and describes the config rather than the box.
+- **`status --data` is StatusDataVersion 5:** it adds `agent_headless`.
+- **Launch records are LaunchRecordVersion 2, develop's included:** an
+  older byre's `byre status` on a box this byre launched shows the box
+  running and describes the config, not the box.
 - **A box with no terminal no longer stalls ten minutes on a login.** With
   the credential absent, the codex, grok and opencode login hooks (and
   grok-shared-auth's shared-store login) ran an interactive login whenever

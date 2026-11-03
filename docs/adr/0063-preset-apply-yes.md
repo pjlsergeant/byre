@@ -5,8 +5,9 @@ terminal: the full review still prints to stderr, the confirm is skipped,
 and the chauffeured installs run with `--yes`. It refuses, before anything
 is fetched or written, in three cases: the preset is named by an https
 URI, an https `[sources]` hint it would install from carries no digest, or
-the preset or the stored config it would replace carries credential rows. Without `--yes`, a pipe still refuses, and
-the refusal now names `--yes`.
+a credential is in play: a credential row on either side (the preset or
+the stored config it would replace), or anything the credential review
+would show. Without `--yes`, a pipe refuses and the message names `--yes`.
 
 Principles: P5 (consent to applied content is consent to its RENDERED
 grants -- `--yes` keeps the rendering, into the CI log); P1 (every refusal
@@ -72,17 +73,15 @@ appeared or vanished credential row and any change to the file-local
 diff. The lines do not gate. The human's confirm against them does, and
 `--yes` is not that human.
 
-So when the preset OR the stored config it would replace carries an
-`encrypted:` or `encrypted-file:` row -- read from the raw `env_from_host`
-table, so a row an `[env]` literal shadows counts though the review's
-diff is silent about it -- or the credential review has any
-line to show, such as an identity arriving, leaving or being replaced, or a
-side it could not read -- `--yes` refuses, naming the rows. Either side:
-replacing a config that holds rows with one that drops or changes them is
-the same unvouched move as bringing new ones. Unchanged rows refuse too:
-the rule is about who vouches for the value, and the review's silence over
-an unchanged row is not a human having looked at it. It refuses on a
-terminal as well; the ruling is about the confirm, not the terminal.
+So `--yes` refuses, naming the rows, whenever either side carries an
+`encrypted:` or `encrypted-file:` row or the credential review has any line
+to show (an identity arriving, leaving or replaced; a side it could not
+read). Either side, and unchanged rows too: the rule is about who vouches
+for the value, and the review's silence over an unchanged row is not a
+human having looked at it. Rows are read from the raw `env_from_host`
+table, so a row an `[env]` literal shadows counts though the review's diff
+is silent about it. The refusal holds on a terminal too; it is about the
+confirm, not the terminal.
 
 The remedy names both routes: apply on a terminal without `--yes`, or keep
 credentials out of the preset and deliver them with `env_from_host` from
@@ -91,10 +90,6 @@ The second is the natural CI route anyway: the secret already lives in
 the CI secret store, and `env_from_host` hands it to the box without a
 passphrase to feed in (`--credentials stdin`) or a ciphertext to keep in
 the repo.
-
-This is the residual ADR 0057 leaves for the unattended path: a `--yes`
-apply is consent to the rendered grants and never to a credential swap. It
-is restated on the security-model page.
 
 ## Rejected
 
@@ -123,15 +118,11 @@ is restated on the security-model page.
   the reinstall remedy. A CI job sees that failure one step later, at
   `byre run`.
 
-## Tests
-
-`TestPresetApplyYesRefusesCredentialRows` (either side, env and file rows,
-on a terminal and off one, nothing written or installed);
-`TestPresetApplyYesRefusesARowShadowedOnBothSides`;
-`TestPresetApplyYesRefusesBeforeStoreMaintenance`;
-`TestPresetApplyYesRefusesUndigestedHTTPSHint`;
-`TestPresetApplyYesRefusesHTTPSPresetURI`;
-`TestPresetApplyYesOffTTYAppliesAndChauffeurs`;
-`TestPresetApplyYesOnTTYSkipsTheConfirm`;
-`TestPresetApplyYesRefusesAnIdentityArriving`;
-`TestPresetApplyRefusesNonTTY`.
+[arm: TestPresetApplyYesRefusesCredentialRows,
+TestPresetApplyYesRefusesUndigestedHTTPSHint,
+TestPresetApplyYesRefusesHTTPSPresetURI,
+TestPresetApplyYesRefusesAnIdentityArriving,
+TestPresetApplyYesRefusesARowShadowedOnBothSides,
+TestPresetApplyYesRefusesBeforeStoreMaintenance,
+TestPresetApplyYesOffTTYAppliesAndChauffeurs,
+TestPresetApplyYesOnTTYSkipsTheConfirm, TestPresetApplyRefusesNonTTY]

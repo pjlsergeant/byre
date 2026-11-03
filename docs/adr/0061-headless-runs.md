@@ -85,71 +85,66 @@ The chassis runs the headless command with:
 - `BYRE_RUN_DIR` -- the result dir, for files the command keeps for humans.
 - `BYRE_RUN_AGENT`, `BYRE_RUN_ID` -- informational.
 
-The two files are DESCRIPTORS, not paths. The chassis creates them
-exclusively, once, and holds them open; a command that needs a real path
-writes its own temp file and copies it to the descriptor. The descriptors
-are the command's OWN: it unsets the `BYRE_RUN_RESULT_FILE` /
-`BYRE_RUN_STATUS_FILE` variables before starting anything, and no child
-it starts -- the agent, a credential or version probe, or a helper such
-as `jq` or `tee` -- ever inherits either descriptor: the scripts close fds
-5 and 6 for every command they exec, and every subshell and command
-substitution they open closes them as its first act, so no exec'd child ever holds
-them. A child that outlived
-the script while holding one could rewrite the answer or the status lines
-after the script exited and before the chassis reads them. The command
-also keeps its own helpers on the image's system PATH
-(`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`) and
-invokes the agent by its launch adapter's absolute path with the
-inherited agent PATH restored for that invocation alone, for the reason
-the next section gives for the chassis. The launch adapters it invokes
-(`byre-claude-launch`, `byre-codex-mcp-launch`, `byre-grok-launch`), the
-interactive-only `byre-opencode-mcp-launch`, and the codex-shared-auth
-reconciler follow the same rule: their own helpers
-(`cat`, `jq`, `head`, `wc`, `iconv`, `cp`, `flock`, `mktemp`) run on the
-system PATH, and only the final exec of the agent CLI gets the inherited
-agent PATH. byre's launcher, which runs before all of them, does the same
-from its first line: it saves the inherited PATH as the agent PATH and
-runs its own helpers (`tr`, `sleep`, `git`, `sed`, `head`, `ls`, `grep`,
-`rm`, `cat`) on the system PATH -- the worktree populate's checkout, the
-egress and self-edit lines of the session context, the credential wait
--- and sources the env.d hooks there, re-pinned before each one. Only the
-first-run hooks (they run the agent CLIs for device login) and the final
-exec of the agent command, the chassis included, get the agent PATH back.
-A helper planted in `~/.local/bin` by repo code therefore
-never runs inside byre's launch or credential machinery; the interactive
-login hooks are the remaining exception (Accepted residuals). This is a convention of the contract, not a
-containment: the answer and the status lines are agent-trust either way
-(below), so an agent that writes a different answer through its own
-script changes only what it could have written anyway.
+The step-by-step rules a command author follows are in the headless-command
+section of [`docs/SKILLS.md`](../SKILLS.md); this section records why each
+one exists.
+
+**Descriptors.** The two files are descriptors, not paths: the chassis
+creates them exclusively, once, and holds them open, and the command keeps
+fds 5 and 6, and the variables naming them, to its own writes. A child that
+outlived the script while holding one could rewrite the answer or the
+status lines after the script exited and before the chassis reads them.
+This is a convention of the contract, not a containment: the answer and the
+status lines are agent-trust either way, so an agent that writes a
+different answer through its own script changes only what it could have
+written anyway.
+
+**PATH.** The image's PATH puts the dev user's `~/.local/bin` ahead of the
+system directories (agent CLIs install there), and that directory is
+agent-writable -- and so writable by repo code, which runs in the launcher
+before any headless machinery (a pending worktree checkout's hooks and
+filters). A helper resolved through it would run planted code inside the
+verdict's or the credentials' own machinery. So byre's own code -- the
+launcher from its first line, the chassis, the headless commands, the
+launch adapters and the codex-shared-auth reconciler -- runs its helpers on
+the system PATH (`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`),
+and restores the inherited agent PATH only for the exec of the agent CLI,
+whose binaries legitimately live under `~/.local/bin`. The launcher sources
+the env.d hooks on the system PATH, re-pinned before each one (ADR 0028).
+The components that keep the agent PATH are listed under Accepted
+residuals.
 
 The command's stdout is the agent's live event stream and its stderr the
 agent's diagnostics. The chassis records each to the result dir
-(`transcript.jsonl`, `stderr.log`) and relays both to the box's stderr. The
-command never reaches the box's real stdout.
+(`transcript.jsonl`, `stderr.log`) and relays both to the box's stderr;
+the box's real stdout is not among the command's descriptors.
 
-**The exit status is a CLOSED set, never the agent's raw status.** The
-command exits exactly one of: `0` (success, and fd 5 is non-empty), `10`
-(the agent REPORTED failure), `11` (the agent process failed --
-`backend_exit` written first), `13` (credential preflight failed, with the
-remedy on stderr), `15` (the backend is not in the box). The chassis
-treats anything else as the command breaking the contract and exits 14: a
-shell death, a signal, a raw status passed up by mistake, or `0` with an
-empty answer. A raw agent exit of 10 can only reach the host as 11 with
-`backend_exit=10`. Passing raw statuses through would make every number
-ambiguous -- an agent that happens to exit 13 would read as "no
-credential" -- and a script gating on the code could not tell byre's
-verdict from the agent's.
-
-The command must not read a terminal, must give the agent `/dev/null` or
-the task file on stdin (an agent handed an open pipe waits on it forever),
-and must bound every credential probe; a probe that times out is a 13.
-The bound is `timeout -k`, so a probe that ignores TERM is still cut off
--- the bundled headless commands and the codex login hook bound every
-credential and version probe that way.
+Credential probes are bounded with `timeout -k`, so a probe that ignores
+TERM is still cut off and reads as a 13 rather than a hung run. The agent
+gets `/dev/null` or the task file on stdin because an agent handed an open
+pipe waits on it forever.
 
 The chassis owns its descriptors, `result.json`, the timeout when one was
 asked for, the exit map, signal forwarding and the stream routing. The
 command owns every agent flag.
+
+**The exit status is a CLOSED set, never the agent's raw status.** The
+command exits one of `0` (success, with a non-empty answer), `10` (the
+agent reported failure), `11` (the agent process failed, `backend_exit`
+written first), `13` (credential preflight failed) and `15` (the backend
+is not in the box). The chassis adds `12` (its own timer fired) and `16`
+(its inputs failed validation), and treats anything else -- a shell death,
+a signal, a raw status passed up by mistake, `0` with an empty answer -- as
+the command breaking the contract: `14`. A raw agent exit of 10 reaches the
+host only as 11 with `backend_exit=10`. Passing raw statuses through would
+make every number ambiguous -- an agent that happens to exit 13 would read
+as "no credential" -- and a script gating on the code could not tell
+byre's verdict from the agent's. The numbers are not unique across owners:
+byre's own codes are 1, 2, 3 and 70, a box that launched and exited one of
+those reaches the host as that number too (develop's 0-127 passthrough),
+and byre itself can exit 1 or 3 after the box was created. `--data`'s
+`outcome` and `phase` tell these apart. The host's full table is the
+generated commands page.
 
 **The inventory.** `BYRE_HEADLESS` and every `BYRE_RUN_*` name join the
 reserved-env inventory under two claims, `headless run` and `launch` (a
@@ -158,10 +153,10 @@ launcher execs). The host re-asserts its `BYRE_RUN_*` set after every
 skill's runtime env, the `BYRE_EGRESS` precedent, so no skill's
 `[runtime].env` can skew what a run is told; a knob the run was not asked
 for (`BYRE_RUN_TIMEOUT`, `BYRE_RUN_QUIET`) is re-asserted empty, which the
-chassis reads as unset. Raw `run_args` still follow
-on the argv and win (ADR 0006 is not reopened). A test pins that every
-`BYRE_*` name any chassis script reads is in the inventory, which also
-brought in `BYRE_FETCH_RUN_RETRIES`.
+chassis reads as unset. Raw `run_args` still follow on the argv and win
+(ADR 0006 is not reopened). A test pins that every `BYRE_*` name any
+chassis script reads is in the inventory, `BYRE_FETCH_RUN_RETRIES`
+included.
 
 ## The mode is keyed on argv; `BYRE_HEADLESS`
 
@@ -183,18 +178,9 @@ never prompts. A raw `run_args = ["-e", "BYRE_RUN_TASK_FILE="]` can still
 blank a contract variable; its effect is a chassis that cannot find its
 task and exits 16, because the MODE does not depend on the env.
 
-Why the absolute path, not the bare name: the image's PATH puts the dev
-user's `~/.local/bin` ahead of the system directories (agent CLIs install
-there), and that directory is agent-writable -- and so writable by repo
-code, which runs in the launcher before the chassis (a pending worktree
-checkout's hooks and filters). A bare `byre-headless` would resolve
-through PATH to whatever such code planted there under that name. The
-absolute path names the copy the Dockerfile tail guards (below), so a
-planted same-named binary is never what runs. The chassis applies the same
-reasoning to itself: it runs with PATH pinned to the system directories
-for every helper it calls (`sha256sum`, `tee`, `setsid` and the rest), and
-restores the inherited PATH only for the headless command, whose agent
-binaries legitimately live under `~/.local/bin`.
+The container command is `gen.HeadlessPath`, the copy the Dockerfile tail
+guards (below), never the bare name the agent-writable first PATH entry
+could answer; the chassis pins PATH the same way (above).
 
 The chassis has no env seam for which command it runs: it execs
 `/etc/byre/agent-headless` unless handed a positional argument, which
@@ -204,10 +190,13 @@ production never passes.
 
 `byre run` forces a non-interactive launch whatever the caller's terminal:
 no `-t`, and the box's stdin is `/dev/null`. The box's stdout and stderr
-are therefore two pipes, and the launcher and chassis have moved
-everything except the answer off stdout. The chassis writes the answer to
-the saved fd 9 once, at the end, from its held descriptor -- whatever the
-exit code, since a reported failure still carries a message worth reading.
+are therefore two pipes, and the launcher and chassis move everything
+except the answer off stdout. The chassis writes the answer to the saved
+fd 9 once, at the end, from its held descriptor -- whatever the exit code,
+since a reported failure still carries a message worth reading. fd 9 keeps
+ordinary output off stdout; it is not a wall. Any process running as the
+box's user can reach it through `/proc`, so the answer on stdout stays
+agent-trust content whoever wrote it (Accepted residuals).
 
 - **stdout, without `--data`:** the answer and nothing else. On a terminal
   each line is escaped (external text is data, P4); redirected to a file or
@@ -219,8 +208,7 @@ exit code, since a reported failure still carries a message worth reading.
   `message`, `exit_report`. byre prints it on the host after the box has
   exited, so nothing in the box can write into it.
 - **stderr:** everything else -- the agent's live stream and diagnostics
-  (kept in the result dir only under `--quiet`, except that a failed run
-  prints the last lines of the command's stderr), hook output, the build,
+  (in the result dir only under `--quiet`, below), hook output, the build,
   byre's banners, the exit report, and last, one **summary line**:
   `byre: run <run id>: <outcome>, exit <n> (<authority>)`.
 
@@ -269,16 +257,9 @@ the claim rather than refusing the launch is P1's never-refuse-the-raw-tier
 and P4's degrade-never-assert.
 
 Usage errors (no task source, `--task -` with `--credentials stdin`, a zero,
-malformed, or out-of-range `--timeout`, a bad `--credentials`) are the command line's and
-exit 2 before anything runs; they print no document and no summary line.
-
-**The exit-code table carries a caveat.** byre's own codes are 1, 2, 3 and
-70; the chassis's are 10-16. A box that launched and exited 1, 2, 3 or 70
-reaches the host as that number too (develop's 0-127 passthrough), and byre
-itself can exit 1 or 3 after the box was created. `--data`'s `outcome` and
-`phase` tell these apart, so a script that needs certainty runs with
-`--data` and reads `authority`. The table is on the generated commands
-page.
+malformed, or out-of-range `--timeout`, a bad `--credentials`) are the
+command line's and exit 2 before anything runs; they print no document
+and no summary line.
 
 ## The task
 
@@ -353,30 +334,31 @@ fork the cache-shared core block). As PID 1 of a headless run it:
    `result.json` written as `started`. Each name is refused when ANY node
    is already there (`[ -e ] || [ -L ]`), then opened under `set -C`:
    noclobber is O_EXCL only for a name that does not exist, and opens a
-   pre-existing FIFO or a symlink to one without O_EXCL. After this step
-   the chassis never opens a pathname inside the dir again -- every write
-   goes to a held descriptor and every read is a bounded read of one -- so
-   a FIFO or symlink the agent plants in place of an unlinked name cannot
-   block or redirect PID 1.
+   pre-existing FIFO or a symlink to one without O_EXCL. From here the
+   streams, the answer and the status lines go through held descriptors,
+   and every read is a bounded read of one, so a FIFO or symlink the agent
+   plants in place of an unlinked name cannot block or redirect PID 1. The
+   final `result.json` publish (step 4) is the one separate path
+   operation, best-effort.
 3. Runs the headless command in its own process group with stdin
-   `/dev/null` and its inherited PATH (the chassis's own helpers run on a
-   PATH pinned to the system directories), relaying its streams as above.
-   When `BYRE_RUN_TIMEOUT` is set, the chassis's own timer sends TERM to
-   the group on expiry and KILL 15 s later. TERM and INT to the chassis are forwarded to the group.
+   `/dev/null` and the inherited PATH, relaying its streams as above. When
+   `BYRE_RUN_TIMEOUT` is set, the chassis's own timer sends TERM to the
+   group on expiry and KILL 15 s later. TERM and INT to the chassis are
+   forwarded to the group.
 4. Maps the result (timeout -> 12 first, then the closed set), publishes
-   the final `result.json` best-effort by temp and rename (rename replaces
-   a planted symlink rather than following it; a planted directory is
-   probed for and reported), writes the answer to fd 9, prints its own
-   line on stderr, and exits with the code.
+   the final `result.json` by temp and rename (rename replaces a planted
+   symlink rather than following it; a planted directory is probed for and
+   reported), writes the answer to fd 9, prints its own line on stderr,
+   and exits with the code.
 
 `result.json` (schema 1) is a printf JSON writer with a strict escaper;
 the core block carries no jq.
 
 **The chassis is guarded at the Dockerfile tail, unconditionally.** The
-launcher (the ENTRYPOINT's content) was already re-copied after the project
-block so a `files` clobber cannot stub it; `byre-headless` is the same
-thing one hop on -- the launcher execs it as PID 1 of a headless run, and
-it produces that run's verdict -- so it is re-copied too, and status's
+launcher (the ENTRYPOINT's content) is re-copied after the project block
+so a `files` clobber cannot stub it; `byre-headless` is the same thing one
+hop on -- the launcher execs it as PID 1 of a headless run, and it
+produces that run's verdict -- so it is re-copied too, and status's
 guarded-path note and managed-root shadow disclosure (ADR 0052) cover it.
 `/etc/byre/agent-headless` is deliberately NOT guarded, exactly like
 `agent-cmd`: both are a skill-declared command the user enabled, so a
@@ -386,37 +368,32 @@ config.
 ## Timeout: opt-in, with no default
 
 A run has no time limit unless `--timeout` is given, and there is no
-default, ever. How long a task may take is the caller's call; a default
-would kill legitimate long runs that nothing in the config asked to bound.
+default. How long a task may take is the caller's call; a default would
+kill legitimate long runs that nothing in the config asked to bound.
 `--timeout 0` is a usage error that says to omit the flag, and so is a
-duration under 1s or over 3650d: the cap keeps the chassis's
-centisecond deadline (31,536,000,000 at most) well inside 64 bits. The
-chassis compares that deadline on the monotonic clock in `/proc/uptime`,
-to the centisecond and rounded down, so a wall-clock step during the run
-cannot disable the timer, the real timer's signal always passes the
-deadline, and a forged `USR1` is ignored until under 20 ms remain (the
-duration and the arming time are each floored to the centisecond; the
-duration's fraction is kept to nine digits and digits past that are
-dropped, under 1e-10 d for the day suffix, which can move a value sitting
-within that much of a boundary by one centisecond, or refuse one that
-much over the 1 s minimum -- accepted, since no timeout is meant to that
-precision). The
-chassis refuses the same range in a
-`BYRE_RUN_TIMEOUT` a raw `run_args` sets (exit 16). When set, the
-timer is the chassis's own, so exit 12 means byre's timer fired -- never
-an agent that exited 124 or 137 on its own, which `timeout(1)` would make
-indistinguishable. The timer starts with the chassis; stalls before it are
-bounded on their own paths (the launch gate, the bounded and
+duration under 1s or over 3650d: the cap keeps the chassis's centisecond
+deadline well inside 64 bits. The chassis refuses the same range in a
+`BYRE_RUN_TIMEOUT` a raw `run_args` sets (exit 16). It holds the deadline
+on the monotonic clock in `/proc/uptime`, so a wall-clock step during the
+run cannot disable the timer. Durations are floored to the centisecond
+with nine fractional digits kept, so a value within 1e-10 of a boundary
+can move one centisecond -- accepted.
+
+The timer is the chassis's own, so exit 12 means byre's timer fired --
+never an agent that exited 124 or 137 on its own, which `timeout(1)`
+would make indistinguishable. The chassis arms it after it starts the
+headless command; the build, the launcher, the hooks and the chassis's
+input checks run before that and do not count against it. Stalls there
+are bounded on their own paths (the launch gate, the bounded and
 headless-aware login hooks).
 
 The documented case for the flag is an agent that hangs rather than fails.
 grok is the known one: with a dead login refresh chain it hangs at use
-time, inside the agent, where no login hook can see it. (The bundled grok
-skill's headless command, `byre-grok-headless`, is where the flag is
-owed: without a key it runs on the stored login, and its preflight can
-only check that a credential is present, not that its refresh chain
-still works. With `XAI_API_KEY` set the stored login is out of the
-picture -- next section.)
+time, inside the agent, where no login hook can see it, and the bundled
+`byre-grok-headless` preflight can check only that a stored credential is
+present, not that its refresh chain still works. A present `XAI_API_KEY`
+takes the stored login out of the picture (the per-run `GROK_HOME`,
+below).
 
 ## No persistent codex key
 
@@ -450,104 +427,72 @@ whose refresh chain has died -- would shadow a key the job supplied. So
 grok's headless command, like codex's, isolates a present key: with
 `XAI_API_KEY` set it runs grok with a `GROK_HOME` made for that one
 invocation (a temp dir, removed on exit), where no stored login exists to
-win. Without a key it uses the stored login after its presence check, and the documented `--timeout` is the remedy for a refresh chain
-that has died.
+win. Without a key it uses the stored login after its presence check, and
+`--timeout` is the remedy for a refresh chain that has died.
 
-## Version bumps
+## Record and schema versions
 
-- `RunDataVersion` = 1, the `--data` document's own version, beside
-  `StatusDataVersion` with the same comment convention: bumped when a
-  consumer would have to change, noted in CHANGES.
-- `StatusDataVersion` 4 -> 5: `agent_headless`, always written.
-- `LaunchRecordVersion` 1 -> 2: a headless run's record carries `headless
-  = true`, `run_id`, `task_sha256` (the hash, never the text) and
-  `run_timeout` (empty when none), as scalars before `[image]`. A develop
-  record carries none of the four, so its bytes differ from version 1
-  only in `record`. The cost: a record's version is the whole schema, and
-  a byre reading a record from a newer one renders liveness only -- so an
-  older byre's `status` on any box this byre launched, develop's included,
-  shows the box running and describes the config, not the box.
+`--data` carries its own `RunDataVersion` (1); status's `agent_headless`
+field arrives with `StatusDataVersion` 5. A headless run's launch record
+adds the run id, the task's hash (never its text) and the timeout. A
+record's version is the whole schema, so every record this byre writes is
+`LaunchRecordVersion` 2, develop's included, and a byre reading a record
+from a newer one renders liveness only: an older byre's `status` on any box
+this byre launched shows the box running and describes the config, not the
+box.
 
 ## Accepted residuals
 
 Each is on the security-model page too.
 
-- **Nothing untrusted runs concurrently with the first-run hooks or the
-  chassis's pre-checks, and two windows rely on it.** The onboarding seeds'
-  `mktemp`-then-reopen, and the chassis's `[ -e ] || [ -L ]` check before
-  each `set -C` open, are not atomic. Repo code (a pending checkout's hooks
-  and filters) runs earlier in the launcher and has finished by then; the
-  agent has not started.
-- **ADR 0040's ancestor-symlink residual applies to the result dir.** The
-  work tree's and `.byre-run`'s final components are guarded; an
+**Filesystem assumptions**
+
+- Nothing untrusted runs concurrently with the first-run hooks or the
+  chassis's pre-checks. The onboarding seeds' `mktemp`-then-reopen and the
+  chassis's `[ -e ] || [ -L ]` check before each `set -C` open are not
+  atomic; repo code has finished by then and the agent has not started.
+- ADR 0040's ancestor-symlink residual applies to the result dir: the work
+  tree's and `.byre-run`'s final components are guarded, and an
   agent-swapped symlink in an ANCESTOR of the work tree is followed, as for
   every anchored host write.
-- **Repo code runs before the chassis.** A pending worktree checkout runs
-  the repository's hooks and filters in the launcher, before `byre-headless`
-  starts; that code can rewrite `.byre-run/task.md`. The chassis verifies
-  the task's hash before exec, so the result is a loud exit 16, never a
-  silent swap -- but the code has run.
-- **fd 9 is reachable by any process in the box.** First-run hooks run
-  under `/bin/bash` by path with fd 9 closed, which removes the accidental
-  route (a hook inheriting the box's real stdout) and the planted-
-  interpreter route (a `bash` on the agent-writable PATH running in place
-  of every hook while holding it). It is not containment: any process
-  running as the box's user can open a descriptor another one holds
-  through `/proc` (`/proc/<pid>/fd/9` of the launcher, or of the chassis
-  as PID 1) and write the box's stdout. Launch env hooks (`env.d`) are
-  SOURCED into the launcher's own shell (ADR 0028) and hold fd 9 outright.
-  So the stdout answer is agent-trust content whoever wrote it (the next
-  entry); the exit code and the `--data` document are what a script gates
-  on, and neither passes through fd 9.
-- **Everything the box can write is agent-trust.** The contents of
-  `.byre-run/` (`result.md`, `result.json`, the transcript, the copy of
-  `outcome.json`), the answer on stdout, and everything on stderr --
-  the summary line included -- can be shaped by the agent. byre reads
-  none of it back; a script gates on the exit code or the `--data`
-  document. That is also why the descriptor convention above is a
-  convention: an agent that writes a different answer or status line
-  through its own script changes only what it could have written anyway.
-- **The interactive login hooks run on the agent PATH.** The launcher
-  hands every first-run hook the inherited PATH, so the codex-login,
-  grok-login, opencode-login, claude-shared-auth and grok-shared-auth
-  first-run hooks still run the agent CLIs and their own helpers through
-  it, and a helper planted in `~/.local/bin` runs there. They are
-  interactive-login code that stands down under a headless launch before
-  any credential probe or store write, so a headless run executes none of
-  their helpers, and in an interactive session a plant there gains only
-  what the agent, which can already write that directory, already has.
-  The standing-down covers grok-shared-auth's
-  first-run hook only, not its broker (next-but-one entry).
-- **The agent's command resolves on the agent PATH.** The chassis execs
-  `/etc/byre/agent-headless`, which is `exec <the skill's headless
-  command>`, with the inherited PATH restored so the agent's own
-  subprocesses see the image PATH -- exactly as the launcher execs
-  `/etc/byre/agent-cmd` for an interactive session. A same-named script
-  planted in `~/.local/bin` by repo code therefore replaces the user's
-  agent with repo code's for that session, headless or interactive. It
-  gains agent-tier trust only: exits 0, 10, 11, 13 and 15 are what the
-  agent's own script reports and are agent-trust already, while the
-  chassis-owned 12, 14 and 16 and the host's outcome are not forgeable
-  this way. It is the same acceptance this ADR makes for the unguarded
-  `agent-headless`. Closing it would mean byre resolving the command on
-  the system PATH while handing the agent its PATH through a separate
-  variable, a contract change deferred to its own decision.
-- **The grok-shared-auth broker runs on grok's PATH, headless runs
-  included.** The broker (ADR 0036) is `GROK_AUTH_PROVIDER_COMMAND`,
-  which grok runs on every credential request it makes -- in a headless
-  run as in an interactive one -- with grok's PATH, the inherited agent
-  PATH. The command's `bash` and the broker's helpers (`jq`, `curl`,
-  `flock`, `date`, `mv`) resolve there, so a plant in `~/.local/bin` runs
-  inside the code that refreshes the machine-wide grok login, and reaches
-  that login. It gains nothing the agent lacks: the shared store sits in
-  the identity volume mounted in the box, which the agent can already
-  read and write, as it can that directory.
-- **Exit codes are not unique to their owners.** A box that exits 1, 2, 3
-  or 70 reaches the host as that number; `--data` tells them apart.
+
+**Code that runs before the chassis**
+
+- A pending worktree checkout runs the repository's hooks and filters in
+  the launcher before `byre-headless` starts. The task hash turns a
+  rewritten `task.md` into a loud exit 16, but that code has run.
+
+**Output authority**
+
+- fd 9 reaches any process running as the box's user: through `/proc`
+  (`/proc/<pid>/fd/9` of the launcher, or of the chassis as PID 1), and
+  outright in the env.d hooks, which are SOURCED into the launcher's own
+  shell (ADR 0028). First-run hooks run under `/bin/bash` by path with fd 9
+  closed, which removes the accidental route and the planted-interpreter
+  route, not the `/proc` one. The exit code and the `--data` document do
+  not pass through fd 9.
+
+**Executable lookup**
+
+- The interactive login hooks run on the agent PATH, because they run the
+  agent CLIs for device login, so a helper planted in `~/.local/bin` runs
+  there. They stand down under a headless launch before any credential
+  probe or store write; in an interactive session a plant gains only what
+  the agent, which can already write that directory, already has.
+- The agent's command resolves on the agent PATH, by design. It is the
+  user's choice, and user-installed tools legitimately live on that PATH
+  (`~/.local/bin`, project bins), so the chassis execs
+  `/etc/byre/agent-headless` with the inherited PATH restored, exactly as
+  the launcher execs `/etc/byre/agent-cmd`. The system-PATH pin protects
+  byre's own helpers only; the chassis-owned exits 12, 14 and 16 and the
+  host's outcome stay out of the agent command's reach.
+- The grok-shared-auth broker (ADR 0036) runs on grok's PATH on every
+  credential request, headless runs included, so a plant in `~/.local/bin`
+  reaches the shared grok login -- which the agent can already read and
+  write through the identity volume.
 
 ## Rejected
 
-- **A wrapper agent skill** -- above.
 - **The agent's raw exit status as byre's.** Ambiguous against byre's own
   codes and the chassis's; the closed set plus `backend_exit_code` keeps
   the raw number without letting it impersonate a verdict.
@@ -558,8 +503,6 @@ Each is on the security-model page too.
 - **An in-tree outcome file as the gate.** The result dir is the agent's;
   a file there is a claim the agent can squat or forge. The authoritative
   outcome is printed by the host, on stdout, after the box exits.
-- **A default timeout.** Above.
-- **Persisting an env key into the codex state volume.** Above.
 - **An implicit task file in the repo.** The tree would choose the prompt.
 - **Staging before `Create`, or before the lock.** A second run could
   empty the result dir of a run that already owns a box.
@@ -568,7 +511,9 @@ Each is on the security-model page too.
 TestHeadlessRefusesInvalidInputs,
 TestHeadlessFIFOsPlantedDuringTheRunNeverBlock,
 TestHeadlessStreamRouting, TestLauncherHeadlessExportsSignalFromArgv,
-TestLauncherNonHeadlessUnsetsSignal,
+TestLauncherNonHeadlessUnsetsSignal, TestLauncherHelpersIgnoreInheritedPath,
+TestLauncherFirstrunHookIgnoresBashOnPath,
+TestLauncherFirstrunHookDoesNotInheritAnswerFd,
 TestReservedEnvKnobsCoverChassisReads,
 TestDockerfileGuardReassertsAfterProjectFiles, TestAgentHeadlessValidation,
 TestHeadlessStageRunsAfterCreateUnderLock,
@@ -576,6 +521,4 @@ TestHeadlessEnvBeatsSkillEnvAndLosesToRunArgs, TestRunUsageErrors,
 TestRunTaskPrecedence, TestRunTaskFileContained, TestRunStagesAfterCreate,
 TestRunForcesNonInteractive, TestRunOutcomeClassification,
 TestRunStdoutIsTheAnswer, TestRunDataDocument,
-TestLaunchRecordHeadlessScalarsContract,
-TestLauncherFirstrunHookIgnoresBashOnPath,
-TestLauncherFirstrunHookDoesNotInheritAnswerFd]
+TestLaunchRecordHeadlessScalarsContract]

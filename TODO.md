@@ -89,6 +89,21 @@ the rationale lives.
   treats a live sibling as a prospective holder (ADR 0054 reads records,
   never config -- that is the line to weigh).
 
+- [ ] (M) **`--build-cache` for hosted runners** (E1 measured 2026-11-03,
+  `wip/headless-e1-build-cache.md`): importing a saved layer cache cuts a
+  fresh runner's build from ~75 s to 17-23 s on both engines, against a
+  ~210 MB download. Deferred until real CI runs show the pain; adopting
+  means ADR 0065 plus a flag on `byre build`/`byre run`.
+
+- [ ] (M) **`[sources]` has no editor row (P0 hole)**: nothing in byre
+  authors a preset's `[sources]` rows or bumps a digest, and `preset apply
+  --yes` (ADR 0063) leans on them. Shape: the Skills screen plus the
+  digest-fetch flow.
+
+- [ ] (M) **Readable per-agent progress rendering for `byre run`**: the
+  terminal shows the agent's raw event stream; ADR 0061 records a readable
+  rendering as future work. Design against real transcripts.
+
 - [ ] (M) **Site demos: make them look right, then wire them back in**
   (parked 2026-07-18, Pete: "quite far from how I want them to look";
   the rest of the site is done). The pipeline is BUILT and in-tree --
