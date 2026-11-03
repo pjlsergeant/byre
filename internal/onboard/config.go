@@ -161,13 +161,13 @@ func SharedAuthPick(home, agent string) string {
 // SaveSharedAuthDefaultPick records the shared-auth answer as agent's saved
 // preference (ADR 0025). yes with a non-empty companion writes the
 // table-shape pick; yes with empty companion records nothing —
-// yes-without-pick is parse-only legacy state since the 2026-08-23 ADR 0049
-// amendment, so there is nothing true to write. no removes the agent's
-// entry. companion is ignored when yes is false. Every write persists the
-// Saveable projection, so a save also drops any legacy yes-only entries the
-// file still carried (presence-triggered cleanup, same rule as the
-// top-level-spelling migration below). Surgical, idempotent, and refused
-// when the file can't be parsed.
+// yes-without-pick is parse-only legacy state since 2026-08-23 (the
+// array-shaped shared_auth compat path, ADR 0049), so there is nothing true
+// to write. no removes the agent's entry. companion is ignored when yes is
+// false. Every write persists the Saveable projection, so a save also drops
+// any legacy yes-only entries the file still carried (presence-triggered
+// cleanup, same rule as the top-level-spelling migration below). Surgical,
+// idempotent, and refused when the file can't be parsed.
 func SaveSharedAuthDefaultPick(home, agent, companion string, yes bool) error {
 	// Same as SaveDefault: home is not a store; creating it enrolls nothing.
 	if err := hostopen.PlainMkdirAll(home, 0o755, hostopen.StoreOwned); err != nil {

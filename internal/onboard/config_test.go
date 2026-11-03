@@ -35,10 +35,10 @@ func parsedDefault(t *testing.T, home string) config.Config {
 	return cfg
 }
 
-// A yes with a companion creates the file and stores the pick. A yes
-// WITHOUT a companion records nothing: yes-without-pick is parse-only
-// legacy state (ADR 0049 amendment 2026-08-23), so there is nothing true
-// to write and the offer re-asks.
+// A yes with a companion creates the file and stores the pick. A yes WITHOUT
+// a companion records nothing: yes-without-pick is parse-only legacy state
+// (the array-shaped shared_auth compat path, ADR 0049), so there is nothing
+// true to write and the offer re-asks.
 func TestSaveSharedAuthDefaultYesCreatesFileAndPick(t *testing.T) {
 	home := t.TempDir()
 	if err := SaveSharedAuthDefaultPick(home, "claude", "claude-shared-auth", true); err != nil {
@@ -231,9 +231,9 @@ func TestSaveSharedAuthDefaultRefusesUnparsableFile(t *testing.T) {
 // whole construct is rewritten canonically because the edit targets it, and
 // surrounding content survives. The rewrite also MIGRATES a top-level
 // spelling under [defaults], taking any comment glued to it (that is what
-// glued means) — and since the 2026-08-23 ADR 0049 amendment the legacy
-// yes-only entries themselves are DROPPED, so what lands is the new pick
-// alone.
+// glued means) — and since 2026-08-23 (the array-shaped shared_auth compat
+// path, ADR 0049) the legacy yes-only entries themselves are DROPPED, so what
+// lands is the new pick alone.
 func TestSaveSharedAuthDefaultHandlesMultilineList(t *testing.T) {
 	home := t.TempDir()
 	writeDefault(t, home, "# keep me\nbase = \"node:22\"\n\nshared_auth = [\n  \"codex\",\n]\n")

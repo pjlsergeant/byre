@@ -79,8 +79,9 @@ func TestSharedAuthRowFlagsAStalePick(t *testing.T) {
 
 // Legacy yes-inclinations name no companion, so there is nothing to check and
 // nothing that gets applied unasked -- the row says which it is, and since
-// the 2026-08-23 ADR 0049 amendment carries the compat warning (drop on
-// save, re-answer to re-record) the other surfaces print.
+// 2026-08-23 (the array-shaped shared_auth compat path, ADR 0049) carries the
+// compat warning (drop on save, re-answer to re-record) the other surfaces
+// print.
 func TestSharedAuthRowDistinguishesALegacyYes(t *testing.T) {
 	m := sharedAuthModel(t, config.SharedAuthPref{Yes: []string{"claude"}})
 	got := m.renderValue(fSharedAuth, false)

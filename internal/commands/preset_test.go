@@ -162,10 +162,11 @@ func TestPresetDriftStates(t *testing.T) {
 	}
 }
 
-// The retired preset name (ADR 0049 #3, removed 2026-08-23): a repo
-// byre.config is still DETECTED — the passive note names the retired name
-// and the rename remedy, and apply refuses by name with the same remedy,
-// writing nothing. An old repo fails loudly, never silently.
+// The retired preset name (the repo-root byre.config preset name, ADR 0049,
+// removed 2026-08-23): a repo byre.config is still DETECTED — the passive
+// note names the retired name and the rename remedy, and apply refuses by
+// name with the same remedy, writing nothing. An old repo fails loudly, never
+// silently.
 func TestPresetRetiredNameRefused(t *testing.T) {
 	p, proj := onboardPaths(t)
 	shipPreset(t, proj, "byre.config", "agent = \"none\"\n")

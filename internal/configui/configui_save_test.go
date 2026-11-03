@@ -247,10 +247,10 @@ func TestEditorRoundTripMarksSavedOnlyOnWrite(t *testing.T) {
 // A structured save of a config carrying a shared-auth preference must
 // produce a file byre can load again. The old whole-file encoder reflected
 // the struct into [shared_auth.Pick] -- a shape the dual-shape decoder
-// refuses, bricking default.config on a normal global save (reproduced)
-// -- so reconcile's canonical emission is
-// pinned for every reachable stored state; yes-without-pick is parse-only
-// since the 2026-08-23 ADR 0049 amendment, so a save persists the Saveable
+// refuses, bricking default.config on a normal global save (reproduced) -- so
+// reconcile's canonical emission is pinned for every reachable stored state;
+// yes-without-pick is parse-only since 2026-08-23 (the array-shaped
+// shared_auth compat path, ADR 0049), so a save persists the Saveable
 // (picks-only) projection and yes-only entries are dropped, not written.
 func TestSaveRoundTripsSharedAuth(t *testing.T) {
 	cases := []struct {

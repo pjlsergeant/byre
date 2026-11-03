@@ -25,10 +25,10 @@ const stampName = "bundled/.byre-version"
 //
 // Unlike the deleted Materialize path, this NEVER copies bundled packages
 // into skills/ or templates/. The loader reads bundled bytes from embed only.
-// A local dir wearing a protected (bundled or retired) name is the
-// catalog's business: it ingests as an INVALID row with the rename remedy
-// and is never loaded (the archive-legacy machinery retired 2026-08-23,
-// ADR 0049 #4).
+// A local dir wearing a protected (bundled or retired) name is the catalog's
+// business: it ingests as an INVALID row with the rename remedy and is never
+// loaded (the legacy materialized-package machinery, archive-legacy included,
+// retired 2026-08-23 -- ADR 0049).
 //
 // bundled is the embed.FS (skills/ + templates/ tops). byreVer is the stamp
 // and the version written into generated [package] headers in the mirror.

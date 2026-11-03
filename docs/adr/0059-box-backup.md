@@ -58,7 +58,9 @@ the user says otherwise. The listing is `projectVolumes`', the same one
 names dropped, and any name a longer known project id claims excluded. That
 deliberately includes a volume no skill in the resolved set declares -- the
 state a one-off `develop --agent grok` left behind is the project's state and
-the user expects it back.
+the user expects it back. The volume an ADR 0058 `--agent` override run
+created travels like any other project state volume; the override itself
+writes nothing else for a backup to find.
 
 Four reasons a volume stays behind, each named on the preview and in the
 summary. The lists name physical volumes, each row with its scope and engine,
@@ -105,7 +107,10 @@ tomldoc removes any table; a table the user left empty themselves is
 untouched. The source file is never touched. Host paths,
 `engine`, `worktree_base`, `extends`, seeds: all carried as they are, and
 restore lists what this machine must satisfy, each with the verb that reads
-it and how it fails.
+it and how it fails. The file's own ADR 0030 egress closures travel byte for
+byte like every other key; effective egress at the destination also composes
+that machine's defaults, layers and skill manifests, so the claim is only
+that the file travelled.
 
 **Credentials travel encrypted under the config file's own passphrase.**
 Backup decrypts nothing -- the ciphertext already lives inline in the config

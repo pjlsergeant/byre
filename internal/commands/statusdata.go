@@ -130,9 +130,9 @@ type statusData struct {
 	// Absent when nothing differs.
 	Changes []string `json:"changes_on_next_launch,omitempty"`
 
-	// Warnings are the compat-path warnings the page prints (ADR 0049
-	// amended): legacy spellings that still work, each naming the carrying
-	// file and the fix. Absent when the cascade is clean.
+	// Warnings are the compat-path warnings the page prints (ADR 0049's
+	// warn-and-keep-working policy): legacy spellings that still work, each
+	// naming the carrying file and the fix. Absent when the cascade is clean.
 	Warnings []config.Warning `json:"warnings,omitempty"`
 }
 

@@ -7,7 +7,8 @@ import (
 
 // The saveable projection: complete picks survive; yes-inclinations and
 // empty-valued picks — the same yes-without-companion half-answer in two
-// spellings — are both dropped (ADR 0049 amendment 2026-08-23).
+// spellings — are both dropped (the array-shaped shared_auth compat path,
+// ADR 0049).
 func TestSaveableDropsBothHalfAnswerSpellings(t *testing.T) {
 	got := SharedAuthPref{
 		Yes:  []string{"grok"},

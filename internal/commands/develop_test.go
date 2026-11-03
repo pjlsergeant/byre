@@ -326,8 +326,8 @@ func TestDevelopBuildsSeedsThenRuns(t *testing.T) {
 	}
 }
 
-// A cascade file carrying a legacy spelling warns at develop (ADR 0049
-// amended: warn-and-keep-working) — the finding, the fix, and the carrying
+// A cascade file carrying a legacy spelling warns at develop (ADR 0049's
+// warn-and-keep-working policy) — the finding, the fix, and the carrying
 // file, on stderr, and the launch proceeds. A clean cascade prints none.
 func TestDevelopWarnsOnLegacySharedAuthSpelling(t *testing.T) {
 	p, _ := testPaths(t)

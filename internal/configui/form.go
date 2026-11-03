@@ -1667,7 +1667,8 @@ func (m model) sharedAuthLine() string {
 	parts := make([]string, 0, len(agents)+1)
 	// The pre-2026-07-28 top-level spelling: parseable, retired, migrated by
 	// the next save — the same warning develop/status print lands here, on
-	// the row that owns the key (P0/P6; ADR 0049 amended).
+	// the row that owns the key (P0/P6; the retired top-level shared_auth
+	// spelling, ADR 0049).
 	if !m.base.SharedAuthLegacy.Empty() {
 		parts = append(parts,
 			warnStyle.Render("⚠ legacy top-level shared_auth — the next save moves it under [defaults]"))
@@ -1676,9 +1677,10 @@ func (m model) sharedAuthLine() string {
 		pick := pref.CompanionPick(a)
 		if pick == "" {
 			// A legacy yes-inclination: an answer with no companion named, so
-			// there is nothing to check and nothing to apply unasked. Parse-only
-			// state since the 2026-08-23 ADR 0049 amendment — the warning the
-			// other surfaces print lands here too, on the row that owns the key.
+			// there is nothing to check and nothing to apply unasked.
+			// Parse-only state since 2026-08-23 (the array-shaped shared_auth
+			// compat path, ADR 0049) — the warning the other surfaces print
+			// lands here too, on the row that owns the key.
 			parts = append(parts, packages.EscapeTerminal(a)+" → yes"+
 				warnStyle.Render("  ⚠ legacy entry (no companion recorded) — the next save drops it; "+config.SharedAuthReRecordRemedy))
 			continue

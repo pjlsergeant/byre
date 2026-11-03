@@ -239,3 +239,17 @@ the docs cited and in git history.
   what-it-is sentence under it and the security-model page carry the
   contract. Reviewers WILL re-find the "promise exceeds threat model" class
   -- don't re-raise, don't hedge the line.
+- **Full Layer/Resolved type split** -- RULED OUT 2026-08-24 (Pete): the
+  staged move (merge bookkeeping in `config.Closures` beside the merged
+  Config) closed the only bug class with recorded instances; distinct types
+  would buy compile-time enforcement against a mistake class with no
+  recorded instance, at the cost of a second ~40-file migration and a
+  permanent two-type API. Revive trigger: the first real bug where a raw
+  Config is consumed as resolved (or a `Merged` re-enters a fold as a layer).
+- **Full catalog signature-threading** -- declined by the same 2026-08-24
+  ruling; the loud nil-loader error closed the actual defect. Revive
+  triggers: a second binary/entrypoint, or resolve latency showing up in use
+  (threading also kills the known double catalog-load in `commands.resolve`).
+- **Carving `internal/commands`** -- extraction on the second real
+  consumer, never by decree; reconcile CLAUDE/ARCHITECTURE wording when the
+  first extraction lands. No open work until a consumer shows.

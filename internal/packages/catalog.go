@@ -397,10 +397,11 @@ func (c *Catalog) ingestLocal(id, dir string, kind Kind, prim string) error {
 		return nil
 	}
 
-	// A bare dir name matching a protected (bundled or retired) name is
-	// never loaded — that protection is permanent. The dedicated LEGACY
-	// provenance and its archive machinery retired 2026-08-23 (ADR 0049
-	// #4); the dir is now an ordinary INVALID row with the rename remedy.
+	// A bare dir name matching a protected (bundled or retired) name is never
+	// loaded — that protection is permanent. The dedicated LEGACY provenance
+	// and its archive machinery retired 2026-08-23 (the legacy
+	// materialized-package machinery, ADR 0049); the dir is now an ordinary
+	// INVALID row with the rename remedy.
 	if IsBare(id) && c.IsProtected(id) {
 		reason := c.protected[id]
 		c.addProblemAgent(id, kind, ProvInvalid,

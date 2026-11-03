@@ -74,7 +74,7 @@ type statusInfo struct {
 	// the claims each can skew degraded -- see skills.ReservedEnvClaims.
 	SkillReservedEnv []skills.ReservedEnvSet
 	// CompatWarnings are legacy-spelling warnings the cascade files carry
-	// (ADR 0049 amended): warn-and-keep-working, file and fix named.
+	// (ADR 0049's warn-and-keep-working policy): file and fix named.
 	CompatWarnings []config.Warning
 	// ArtifactShadows marks byre-baked artifact paths (mcp.json, the agent
 	// context file, the claude-skills dir) that a project `files` entry
@@ -767,9 +767,9 @@ func statusRowsOf(s statusInfo, tier statusTier) []statusRow {
 		}
 		row("Preset", note)
 	}
-	// Legacy-spelling warnings (ADR 0049 amended): the config still works
-	// as written, so these are rows beside it, not a refusal. Escaping is
-	// writeStatusRows's business like every other row.
+	// Legacy-spelling warnings (ADR 0049's warn-and-keep-working policy): the
+	// config still works as written, so these are rows beside it, not a
+	// refusal. Escaping is writeStatusRows's business like every other row.
 	for _, wn := range s.CompatWarnings {
 		row("Warning", "⚠ "+wn.Text+"  ["+wn.Attribution()+"]")
 	}

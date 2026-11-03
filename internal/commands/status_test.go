@@ -69,9 +69,9 @@ func TestRenderStatusFull(t *testing.T) {
 	assertRow(t, out, "Container", "running (abcdef012345)") // short id
 }
 
-// A compat warning (ADR 0049 amended) renders as its own row: the finding,
-// the fix, and the carrying file — beside the config it describes, never a
-// refusal. A clean cascade renders no Warning row.
+// A compat warning (ADR 0049's warn-and-keep-working policy) renders as its
+// own row: the finding, the fix, and the carrying file — beside the config it
+// describes, never a refusal. A clean cascade renders no Warning row.
 func TestRenderStatusCompatWarningRow(t *testing.T) {
 	var b bytes.Buffer
 	renderStatusTest(&b, statusInfo{

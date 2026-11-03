@@ -153,10 +153,10 @@ func TestCatalogAliasExpansion(t *testing.T) {
 	}
 }
 
-// A local dir wearing a protected (bundled or retired) name is never
-// loaded -- permanent name protection. Since the archive-legacy machinery
-// retired (2026-08-23, ADR 0049 #4) it ingests as an ordinary INVALID row
-// carrying the rename remedy.
+// A local dir wearing a protected (bundled or retired) name is never loaded
+// -- permanent name protection. Since the archive-legacy machinery retired
+// (2026-08-23; the legacy materialized-package machinery, ADR 0049) it
+// ingests as an ordinary INVALID row carrying the rename remedy.
 func TestCatalogProtectedNameDir(t *testing.T) {
 	home := t.TempDir()
 	// Legacy materialized claude dir.

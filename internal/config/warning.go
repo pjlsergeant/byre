@@ -1,12 +1,12 @@
 package config
 
-// warning.go is the parse-time compat-warning channel (ADR 0049, amended
-// 2026-08-23): legacy spellings warn and keep working, and removal is a
-// per-path operator call once a path's warnings go quiet. Warnings are
-// computed per cascade LAYER — resolution strips the picker-owned state
-// they describe (ADR 0025), so the resolved Config cannot carry them —
-// and they are legibility only, never a gate (P1): a broken cascade
-// degrades to no warnings and fails wherever it already fails.
+// warning.go is the parse-time compat-warning channel (ADR 0049's
+// warn-and-keep-working policy): legacy spellings warn and keep working, and
+// removal is a per-path operator call once a path's warnings go quiet.
+// Warnings are computed per cascade LAYER — resolution strips the
+// picker-owned state they describe (ADR 0025), so the resolved Config cannot
+// carry them — and they are legibility only, never a gate (P1): a broken
+// cascade degrades to no warnings and fails wherever it already fails.
 
 import "fmt"
 

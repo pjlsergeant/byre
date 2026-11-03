@@ -109,11 +109,11 @@ func (d Defaults) Empty() bool { return d.SharedAuth.Empty() && !d.SkipQuestions
 //
 // A legacy array entry is a yes-inclination with no companion pick: it
 // prefills [Y/n] in the single-claimant case and does nothing in a picker.
-// Since the 2026-08-23 ADR 0049 amendment that state is PARSE-ONLY: byre
-// still reads it (and the prefill still works) but never writes it — the
-// saveable projection is picks-only (Saveable), migration never invents a
-// pick, and any save of the carrying file drops yes-only entries (the
-// offer re-asks).
+// Since 2026-08-23 that state is PARSE-ONLY (the array-shaped shared_auth
+// compat path, ADR 0049): byre still reads it (and the prefill still works)
+// but never writes it — the saveable projection is picks-only (Saveable),
+// migration never invents a pick, and any save of the carrying file drops
+// yes-only entries (the offer re-asks).
 type SharedAuthPref struct {
 	// Yes lists agents with a legacy yes-inclination and no pick.
 	Yes []string
@@ -232,12 +232,12 @@ func (s *SharedAuthPref) UnmarshalTOML(data []byte) error {
 	}
 }
 
-// Saveable is the projection a writer may persist: complete picks only.
-// A yes-inclination is parse-only legacy state (ADR 0049 amendment
-// 2026-08-23), and a hand-edited EMPTY pick ({ claude = "" }) is the same
-// yes-without-companion half-answer in table spelling — every writer
-// strips both through this one owner, so a save of the carrying file is
-// also what cleans the unrepresentable state out of it.
+// Saveable is the projection a writer may persist: complete picks only. A
+// yes-inclination is parse-only legacy state (the array-shaped shared_auth
+// compat path, ADR 0049), and a hand-edited EMPTY pick ({ claude = "" }) is
+// the same yes-without-companion half-answer in table spelling — every writer
+// strips both through this one owner, so a save of the carrying file is also
+// what cleans the unrepresentable state out of it.
 func (s SharedAuthPref) Saveable() SharedAuthPref {
 	out := s.Clone()
 	out.Yes = nil

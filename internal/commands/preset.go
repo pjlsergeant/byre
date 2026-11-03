@@ -17,18 +17,18 @@ import (
 	"github.com/pjlsergeant/byre/internal/project"
 )
 
-// PresetName is the conventional in-repo preset filename. byre.config
-// is reserved for the box's live consent document and nothing else wears
-// its name: a repo file wearing it was accepted as a preset until
-// 2026-08-23 (ADR 0049 #3) and is now refused by name with the rename
-// remedy — detection is permanent so an old repo fails loudly, never
-// silently.
+// PresetName is the conventional in-repo preset filename. byre.config is
+// reserved for the box's live consent document and nothing else wears its
+// name: a repo file wearing it was accepted as a preset until 2026-08-23 (the
+// retired repo-root byre.config preset name, ADR 0049) and is now refused by
+// name with the rename remedy — detection is permanent so an old repo fails
+// loudly, never silently.
 const PresetName = "byre.preset"
 
-// retiredPresetName renders the refusal for a repo preset wearing the
-// retired byre.config name (ADR 0049 #3): the rule, the offender, and the
-// remedy. One owner — the discovery refusal, the explicit-argument
-// refusal, and the passive status note all speak it.
+// retiredPresetName renders the refusal for a repo preset wearing the retired
+// byre.config name (the retired repo-root preset name, ADR 0049): the rule,
+// the offender, and the remedy. One owner — the discovery refusal, the
+// explicit-argument refusal, and the passive status note all speak it.
 func retiredPresetName(path string) string {
 	return fmt.Sprintf("%s wears the retired preset name %s — rename it to %s and re-run (byre no longer applies the old name)",
 		path, config.ProjectConfigName, PresetName)
@@ -271,10 +271,10 @@ func PresetInspect(s Streams, projectDir, arg string) error {
 	return nil
 }
 
-// readPreset locates and fetches preset bytes: an explicit path/URI
-// argument, or the conventional ./byre.preset. A source wearing the retired
-// byre.config name is refused with the rename remedy (ADR 0049 #3). https
-// fetches ride the hardened package fetcher and its bounds.
+// readPreset locates and fetches preset bytes: an explicit path/URI argument,
+// or the conventional ./byre.preset. A source wearing the retired byre.config
+// name is refused with the rename remedy (the retired repo-root preset name,
+// ADR 0049). https fetches ride the hardened package fetcher and its bounds.
 func readPreset(projectDir, arg string) (content []byte, source string, err error) {
 	if arg == "" {
 		// Conventional discovery: byre DERIVED this path from the cwd, so
@@ -767,9 +767,10 @@ func presetNote(projectDir string, paths project.Paths) string {
 func presetNotes(projectDir string, paths project.Paths) (full, short string) {
 	state, legacyName := presetState(projectDir, paths)
 	if legacyName && state != "" {
-		// The retired name (ADR 0049 #3): apply refuses it, so the note must
-		// not advertise a command that refuses — the remedy IS the rename,
-		// for either drift state.
+		// The retired name (the retired repo-root byre.config preset name,
+		// ADR 0049): apply refuses it, so the note must not advertise a
+		// command that refuses — the remedy IS the rename, for either drift
+		// state.
 		return fmt.Sprintf("this repo ships its preset as %s — the retired name; rename it to %s (byre no longer applies the old name)",
 				config.ProjectConfigName, PresetName),
 			fmt.Sprintf("%s: retired preset name  (rename to %s)", config.ProjectConfigName, PresetName)

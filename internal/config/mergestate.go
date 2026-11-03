@@ -1,12 +1,13 @@
 package config
 
 // mergestate.go is the cascade's merge bookkeeping, produced BESIDE the
-// merged Config rather than on it (the 2026-08-23 lifecycle-split stage,
-// ADR 0049 "staged work"). A raw layer expresses a closure as a `!name`
-// marker INSIDE its own lists; the fold extracts the markers into a
-// Closures accumulator that threads through the cascade. Config therefore
-// never carries merge output — a raw layer is bookkeeping-free by TYPE,
-// and MergeStep never has to tolerate its own merged Config as input.
+// merged Config rather than on it (the 2026-08-23 lifecycle-split stage; the
+// full Layer/Resolved type split is parked in TODO.md). A raw layer expresses
+// a closure as a `!name` marker INSIDE its own lists; the fold extracts the
+// markers into a Closures accumulator that threads through the cascade.
+// Config therefore never carries merge output — a raw layer is
+// bookkeeping-free by TYPE, and MergeStep never has to tolerate its own
+// merged Config as input.
 
 // Closures is the `!name` closure bookkeeping one cascade fold produces:
 // the closures that survived, per genus, stored as stripped names (no
