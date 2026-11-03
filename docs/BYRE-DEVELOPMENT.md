@@ -20,9 +20,8 @@ The preset composes, besides the base/agent:
 - **codex** (bundled) -- the independent review binary, ride-along.
 - **pjlsergeant/codereview**, **pjlsergeant/devlog** -- the review-loop and
   dev-workflow skills, installed from
-  [pjlsergeant-byre-skills](https://github.com/pjlsergeant/pjlsergeant-byre-skills)
-  (moved out of the binary 2026-07-13), pinned by URL + digest in the
-  preset's `[sources]`.
+  [pjlsergeant-byre-skills](https://github.com/pjlsergeant/pjlsergeant-byre-skills),
+  pinned by URL + digest in the preset's `[sources]`.
 - **grok** (bundled) -- ride-along second-opinion CLI.
 - **pjlsergeant/inttest** -- the gated suite on the sacrificial VM; lives IN
   this repo (below).
@@ -37,9 +36,8 @@ resolved against the cwd of the apply.
 ## `skills/` -- dev-harness skills that live in this repo
 
 Skill packages that are byre-repo dev tooling, not product. They are not
-builtins (users should not carry byre's own dev harness in the binary -- the
-same reasoning that moved codereview/devlog out to the external skills
-repo), and they don't live in that external repo either: they co-evolve with
+builtins (users should not carry byre's own dev harness in the binary), and
+they don't live in the external skills repo either: they co-evolve with
 this repo (a wrapper and the test suite it drives, a VM template and the
 tests that run on the VM), so they version here. `byre.preset` references
 them by qualified id with a **path source** (`[sources]` uri relative to the
@@ -66,8 +64,8 @@ binary, but there is Go and the source. Only `skill install` is genuinely
 host-side (it writes the real `~/.byre/skills`).
 
 It packs via a throwaway `BYRE_HOME`, because `pack` operates on a *local*
-package and a copy under the real `~/.byre/skills` would contest the
-installed id. It also writes to a temp file and moves it into place only on
+package and a local copy under the real `~/.byre/skills` would shadow the
+installed one (ADR 0055), changing what every box on the machine runs. It also writes to a temp file and moves it into place only on
 success: redirecting pack's stdout straight at the manifest
 (`... > skills/inttest/skill.toml`) truncates that file BEFORE pack reads
 it, so pack copies an empty primary and the original is destroyed. Recover
@@ -155,12 +153,10 @@ per-worktree directory on the VM, so concurrent sessions don't collide.
 Unset, the VM address falls back across `host.docker.internal` (Docker
 Desktop) and `host.containers.internal` (podman), both egress-granted by
 the skill; native-Linux docker provides neither name, so set
-`INTTEST_VM = "172.17.0.1"` in `[env]` -- the names are prefix-free
-since the rename (the old BYRE_ spellings hard-fail at load in [env];
-the wrapper still reads them from the environment with a note) -- the
-docker bridge gateway, which
-the Lima template binds via the guest sshd's second port (the host's own
-address cannot work: Lima's builtin forward is loopback-only). Assumes
+`INTTEST_VM = "172.17.0.1"` in `[env]` -- the docker bridge gateway,
+which the Lima template binds via the guest sshd's second port (the
+host's own address cannot work: Lima's builtin forward is
+loopback-only). Assumes
 docker's default bridge; a custom `bip` moves the gateway, so adjust both
 the template's `hostIP` and `INTTEST_VM`. Grant that egress yourself
 on a firewalled box.
@@ -178,7 +174,7 @@ of ci.yml or the release gate). Run it ad hoc with
 `BYRE_AGENT_TESTS=1 byre-inttest ./internal/commands/ -run AgentContract -v`
 -- noting an ad-hoc run rides the VM's warm layer cache (it re-checks the
 agent version already built there; only cold builds, like the ephemeral CI
-runners', pull today's release).
+runners', pull the current release).
 
 **Lifecycle** (host-side): `limactl stop byre-inttest` pauses;
 `limactl stop byre-inttest && limactl delete byre-inttest` + a fresh start
@@ -199,8 +195,7 @@ carrying docker, podman, go, tmux, jq and git -- so the wrapper's TRANSPORT is
 unchanged.
 
 Its **configuration** is not: address, port and egress all differ from the
-Lima defaults, and the image needs a build-arg naming the ssh user. Those
-are the parts to get right; see the worked example below.
+Lima defaults, and the image needs a build-arg naming the ssh user.
 
 Its package list mirrors the Lima template's `provision:` block -- **keep
 the two in step** when either changes.
@@ -302,16 +297,15 @@ tmux -L <sock> set-buffer -- 'x'; tmux -L <sock> paste-buffer -p -t main
 tmux -L <sock> capture-pane -p -t main           # the screen, plain text
 ```
 
-Exit status: run the command through a wrapper that records it —
-`'<cmd>; echo $? > /tmp/status'` — and treat a non-empty status file as
-"exited". Do NOT read tmux's `#{pane_dead_status}`: it proved
-version-sensitive (ubuntu's tmux 3.4 reported 0 where 3.5a reported the
-real status; caught by CI on this harness's first push).
+Exit status: run the command through a wrapper that records it --
+`'<cmd>; echo $? > /tmp/status'` -- and treat a non-empty status file as
+"exited". Do NOT read tmux's `#{pane_dead_status}`: it is
+version-sensitive (ubuntu's tmux 3.4 reports 0 where 3.5a reports the
+real status).
 
-Never send two `Escape`s in one `send-keys` — they arrive as `\x1b\x1b`
-and bubbletea reads that as a single alt-modified key, so both vanish
-(found live by the screen-walker test). One Escape per send, waiting
-for each screen in between.
+Never send two `Escape`s in one `send-keys` -- they arrive as `\x1b\x1b`
+and bubbletea reads that as a single alt-modified key, so both vanish.
+One Escape per send, waiting for each screen in between.
 
 `WaitFor` is a poll loop over `capture-pane` that also fails fast when
 the process dies; `WaitForAfter` additionally rejects a match that was
@@ -324,12 +318,12 @@ never broad fragments; ENFORCE headlessness where the test needs it
 store with `BYRE_HOME`, never a `HOME` swap; a test that flakes twice
 gets rewritten or deleted.
 
-## The demo-recording tier (site casts) — PARKED
+## The demo-recording tier (site casts) -- PARKED
 
-**Status (2026-07-18): built, not publishing.** The tier below works end
-to end, but the site ships no casts and CI runs no recording until the
-demos are presentation-quality (TODO.md's Site item is the revival
-checklist; site.yml/ci.yml history has the working wiring).
+**Built, not publishing.** The tier below works end to end, but the site
+ships no casts and no workflow runs it: `site.yml` has no record step
+until the demos are presentation-quality (TODO.md's Site item is the
+revival checklist; site.yml/ci.yml history has the working wiring).
 
 The site's terminal demos are recorded BY TESTS
 (`internal/tuitest/demos_test.go`, gate `BYRE_DEMO_REC=1`): each
@@ -337,13 +331,15 @@ scenario drives the built binary under the TUI harness with an
 asciinema spectator attached (`Opts.RecordTo`), asserts its WaitFors,
 and installs `site/static/casts/<slug>.cast` + `<slug>.json`
 (duration/geometry for the player shortcode). A layout change fails the
-recording test, which fails the site deploy — the assertions are why
-this exists instead of a `.tape` file. Design and placement:
+recording test -- the assertions are why this exists instead of a
+`.tape` file -- and, once the site workflow records again, that failure
+blocks the deploy. Design and placement:
 `docs/marketing/positioning.md` "Publish-time asciinema demos".
 
 Running it needs tmux, bash-completion (the completion scenario), and
-**asciinema v3** — the rust CLI, NOT distro asciinema (python v2, wrong
-cast format); CI installs a pinned release binary (see site.yml). Then:
+**asciinema v3** -- the rust CLI, NOT distro asciinema (python v2, wrong
+cast format; site.yml's history has the pinned-release install step).
+Then:
 
 ```sh
 BYRE_DEMO_REC=1 go test ./internal/tuitest -run TestDemo -v
@@ -352,23 +348,23 @@ BYRE_DEMO_REC=1 go test ./internal/tuitest -run TestDemo -v
 House rules where they DIVERGE from the assertion tier above:
 
 - Demos swap `$HOME` (the one place that's allowed): recorded frames
-  paint real paths, so the scenario owns a fake home entirely —
-  `BYRE_DEMO_HOME=/home/pete` in the deploy workflow keeps runner paths
-  out of published frames; locally a tempdir shows and that's fine
-  (local runs are for iterating, CI records what ships).
+  paint real paths, so the scenario owns a fake home entirely --
+  `BYRE_DEMO_HOME=/home/pete` keeps runner paths out of published frames
+  (the recording workflow sets it); locally a tempdir shows, which is
+  fine for iterating.
 - Scenarios run on a curated PATH (a symlink farm + per-scenario stubs
   for host capabilities: engine, clipboard), so CI's real docker records
   the same frames as a dev box. The deliver demo's `docker` is a stub
-  answering deliver's discovery/exec argv exactly — a transport change
+  answering deliver's discovery/exec argv exactly -- a transport change
   breaks it loudly.
 - `EndCast(sentinel)` cuts the cast at the sentinel's FIRST paint, at
   that line's end within the event: pick a string whose first appearance
   IS the intended final frame, painted in ONE write (styling splits text
-  across events), or the trim fails loudly. First, not last — after the
+  across events), or the trim fails loudly. First, not last -- after the
   intended frame the terminal may keep moving (an error line, a
   full-screen repaint that paints the sentinel again), and that footage
   is what the trim drops. Never ship a cast ending on tmux's
-  server-exited frame (the poster IS the final frame — PLACEMENT.md P11).
+  server-exited frame (the poster IS the final frame, PLACEMENT.md P11).
 - A scene that must end at an off-camera boundary (develop stopping at
   the engine boundary) records as its own cast; `WriteDemo` concatenates
   scenes with a clear-screen break. The cut is a visible scene change,

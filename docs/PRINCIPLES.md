@@ -31,7 +31,7 @@ Implications:
   it would otherwise be. P6 is this principle applied to config
   vocabulary; this is the reason behind it.
 - **A flow-owned key shows read-only -- never hidden.** Two keys are in
-  that class today: `[sources]`, which `byre preset apply` records as it
+  that class: `[sources]`, which `byre preset apply` records as it
   chauffeurs an install, and `defaults.shared_auth`, which the first-run
   question answers with its machine-wide credential consequence stated
   (P5). A widget there would author the value away from the flow that
@@ -39,8 +39,8 @@ Implications:
   instead -- the read-only "Skill files" screen is the shape.
 - **The only key that may have NO row is one no byre still writes.** The
   exemption class is exactly the retired and migration-only spellings a
-  current byre reads but never authors -- today the pre-2026-07-28
-  top-level `shared_auth`, which every save canonicalizes into
+  current byre reads but never authors -- the pre-2026-07-28 top-level
+  `shared_auth`, which every save canonicalizes into
   `[defaults]` (ADR 0049's live inventory). Giving those a row would
   offer to edit a key byre is in the middle of removing. **A live key
   never qualifies**, and the exemption is not a place to put one: each
@@ -81,7 +81,7 @@ Implications:
   prevent an accident does not belong in byre.
 
 **A refusal that protects a claim hands over the switch.** Where byre declines
-to act in order to keep a claim of its own true -- "completely removed", "the
+to act to keep a claim of its own true -- "completely removed", "the
 project is completely still", "every installed engine checked" -- the refusal
 names an explicit command-line switch that takes the risk on the user's behalf,
 and the run then says exactly what went unchecked. byre may decline to CLAIM; it
@@ -136,9 +136,10 @@ Implications:
 - byre never parses inside a raw block -- it shows raw blocks verbatim,
   flagged as not-introspected, and degrades any posture claim they could
   undermine (per the footgun doctrine).
-- `run_args` is last-wins over byre's own flags; the sole exception is the
-  `byre.project`/`byre.workdir` identity label pair, re-asserted so
-  lifecycle and status always work.
+- `run_args` is last-wins over byre's own flags; the sole exception is
+  byre's own label set (session identity, the netns-helper ownership
+  proof, the launch record's address), re-asserted after it so lifecycle
+  and status always find the session (ADR 0006).
 - byre stays small *because* the raw tier exists; a primitive has to earn
   its place by covering a common case well.
 
@@ -171,21 +172,24 @@ Implications:
 
 ## 5. Consent is scoped to the box
 
-**No box gains a capability without its own question.** A grant's consent
-lives at the scope of its effect: a per-project capability is answered per
-project (a config entry in that project's byre.config, a question at that
-box's onboarding or preset apply); machine-wide grants are hand-made only
-(default.config, `byre config --global`) and never manufactured from one
-project's answer. The 2026-07-12 shared-auth episode (ADR 0024 -> 0025)
-is the type specimen: one box's "y" became every future box's silent
-default -- twice, the second time behind an extra question, because a
+**No box gains a capability its user did not consent to at the scope of
+its effect.** A per-project capability is answered per project (a config
+entry in that project's byre.config, a question at that box's onboarding
+or preset apply), or by a standing instruction the user sets by hand at
+machine scope to answer it unasked (`defaults.skip_questions`, which
+develop states out loud when it acts on it, ADR 0025); machine-wide
+grants are hand-made only (default.config, `byre config --global`) and
+never manufactured from one project's answer. The 2026-07-12 shared-auth
+episode (ADR 0024 -> 0025) is the type specimen: one box's "y" became
+every future box's silent default -- twice, the second time behind an extra question, because a
 question in front of a default grant is still a default grant.
 
 Implications:
 
 - Preferences and grants are different kinds: picker-owned preference
-  keys (favourites, `shared_auth`) are cascade-inert and only change what
-  the next question pre-selects; keys with teeth (`skills`, `egress`,
+  keys (favourites, `shared_auth`) are cascade-inert and only supply the
+  next onboarding's answers -- pre-selected in its questions, or taken
+  unasked under `skip_questions`; keys with teeth (`skills`, `egress`,
   `mounts`) are never written by a picker on a scope the user didn't
   answer for.
 - Wording equals write: every consent prompt states the actual scope and
@@ -202,13 +206,12 @@ Implications:
 ## 6. The editor is the interface
 
 **`byre config` is how configuration is edited -- for every config
-feature, always: every LIVE key is either editable there or shown
-read-only with its owning flow named (P0). The TOML files are byre's storage
-format, not its user interface.** (P0 is why: the TUI is what byre has
-that a plain sandbox does not.) No recipe, prompt, error remedy, or doc
-may require or expect a user to open a config file in a text editor; a
-config vocabulary that can only be reached by hand-editing is not done,
-the same way a grant `byre status` can't name is not done (P4).
+feature, always. The TOML files are byre's storage format, not its user
+interface.** P0 is why, and P0 says which row each live key gets. No
+recipe, prompt, error remedy, or doc may require or expect a user to
+open a config file in a text editor; a config vocabulary that can only
+be reached by hand-editing is not done, the same way a grant `byre
+status` can't name is not done (P4).
 Hand-editing remains a defended *right* (P1: plain files, no lock-in,
 the editor and `vim` write the same file, held to the same validation)
 -- a right is not an interface.
@@ -244,9 +247,8 @@ Implications:
 
 - A new config key ships with its editor story, in the same unit of
   work: a structured section or screen (plus CLI verbs where scripting
-  matters), not "edit the file" -- and where the writer is a flow
-  rather than the editor, that story is a read-only row naming the
-  owner (P0), not an absence.
+  matters), or for a flow-owned key the read-only owner row P0
+  requires -- not "edit the file".
 - User docs speak editor-first. Raw TOML appears in the configuration
   *reference* (the format spec, needed for presets, layer sharing, and
   review) -- never as the instruction in a how-do-i recipe.
@@ -337,8 +339,8 @@ Boundary statements, kept here so they don't get re-argued feature by
 feature. byre is not: an agent (it runs one); a Docker replacement; a
 devcontainer implementation; a policy engine; a secret manager in the
 rotation/IAM sense (project credentials are stored encrypted and
-delivered per launch — ADR 0057 — never rotated, leased, brokered, or
-shared across machines — a backup carries the config file as it is,
+delivered per launch, ADR 0057, and never rotated, leased, brokered, or
+shared across machines: a backup carries the config file as it is,
 ciphertext included, which is the user moving their own file and not byre
 brokering one, ADR 0059); a cloud sandbox
 service (no hosted runtime, no sign-in, no fleet, no telemetry); a

@@ -26,8 +26,7 @@ release obsoletes: for each entry, does README / ARCHITECTURE / GLOSSARY
 / the site (`site/content/` -- the canonical operational docs) still
 describe the pre-change behavior in the present tense? Shipped
 features leave stale "today this is manual" / "planned" prose behind
-them -- that drift is the docs' main rot vector (the 2026-07-16 audit
-found seven such claims, all left by ship waves days earlier).
+them -- that drift is the docs' main rot vector.
 
 Before tagging, run the engine-side gate: the WHOLE suite on the inttest
 runner, every gated tier the wrapper sets (Docker, ssh-loop, TUI). The
@@ -44,9 +43,8 @@ byre-inttest ./... -count=1 -v > ~/scratch/release-gate.log 2>&1; echo "exit $?"
 Then read the log: zero `--- FAIL`, no package reporting
 `[no tests to run]`, and every `--- SKIP` reviewed -- a skip is a test that
 did not run, so zero is the target and each one left needs a reason. The
-filter is banned because the v1.12.0 gate ran with `-run Integration`: every
-unit package reported `[no tests to run]`, and "0 SKIP" could not see tests
-that never ran -- 12 runner-only failures hid behind it (fixed in de900284).
+filter is banned because a test it excludes is not a skip: its package
+reports `[no tests to run]`, and a failure in it never shows.
 
 Also before tagging: run the field-QA playbook against the release
 candidate -- the journey recipes in `docs/QA-PLAYBOOK.md`, driven on the
@@ -54,7 +52,7 @@ sacrificial inttest VM. Report-only, NEVER a gate: findings go to TODO.md
 (never fixed mid-pass) and harden into deterministic tuitest regression
 tests afterwards.
 
-That's it. The workflow runs the tests, then goreleaser cross-compiles
+The workflow runs the tests, then goreleaser cross-compiles
 linux/darwin × amd64/arm64, writes checksummed `tar.gz` archives, and
 publishes a GitHub Release with a changelog from the commit messages.
 
@@ -108,23 +106,18 @@ site's install page). Anything that removes a live key is one
 
 ## Install paths
 
-All three are live; the README's Install section blesses Homebrew and
-links the full set on the site's install page
-(`site/content/docs/install.md`):
+The user-facing install routes (go install, `install.sh`, Homebrew) are
+documented on the site's install page, `site/content/docs/install.md`;
+the README blesses Homebrew and links there.
 
-- **`go install github.com/pjlsergeant/byre/cmd/byre@latest`** — builds
-  from the module proxy, no release involved.
-- **`install.sh`** (`curl -fsSL https://raw.githubusercontent.com/pjlsergeant/byre/main/install.sh | sh`)
-  — checksum-verified download of the latest release binary; no Go
-  toolchain needed.
-- **Homebrew** — goreleaser publishes a cask on every release
-  (`brew install --cask pjlsergeant/tap/byre`; cask, not formula —
-  goreleaser deprecated `brews` for pre-built binaries, and the cask
-  strips the quarantine bit for the unsigned binary). Publishing rides
-  the `HOMEBREW_TAP_GITHUB_TOKEN` Actions secret on `pjlsergeant/byre`
-  (a fine-grained PAT, **Contents: read/write** on
-  `pjlsergeant/homebrew-tap`); if the secret is ever absent the publish
-  step is skipped rather than failing the release -- and the release run
-  ends with a warning annotation and a run-summary note saying so, since
-  the blessed install command would otherwise keep serving the previous
-  version from a release that reported success.
+The Homebrew cask is the one route a release publishes to another repo.
+goreleaser pushes it to `pjlsergeant/homebrew-tap` on every release
+(why a cask, and why it strips the quarantine bit: ADR 0016, ADR 0051).
+The push rides the `HOMEBREW_TAP_GITHUB_TOKEN` Actions secret on
+`pjlsergeant/byre`, a fine-grained PAT with **Contents: read/write** on
+`pjlsergeant/homebrew-tap`.
+
+If that secret is absent, the cask push is skipped and the release still
+succeeds. The release run then ends with a warning annotation and a
+run-summary note. Both exist because `brew install` would otherwise keep
+serving the previous version from a release that reported success.

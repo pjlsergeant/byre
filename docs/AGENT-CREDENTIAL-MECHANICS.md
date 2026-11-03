@@ -217,24 +217,17 @@ the Claude Code credentials stored in ~/.claude"
 >   symlink-safe. `codex-shared-auth` therefore reconciles valid local/shared
 >   conflicts by `last_refresh` (mtime fallback) under `flock`, atomically
 >   publishes the winner, and restores the link. It never treats link absence
->   alone as authority to delete shared auth. Its link step was hardened
->   2026-10-03 with the opencode/gemini hooks (OpenCode §2 note): a temp
->   symlink renamed over the local path with `mv -f`, then checked to be the
->   link to the shared file (no GNU-only `-T`: the macOS CI leg runs these
->   hooks with BSD tools), every step checked, so a failed link keeps the local
->   login (the old `rm -f` then `ln -s` lost it); a newline-safe target read;
->   and a symlinked or non-regular shared path refused. The reconciler now also
->   refuses a symlinked identity dir or ancestor (physical path vs spelling,
->   checked on the nearest existing ancestor before `mkdir -p` and on the dir
->   after -- the order the opencode and gemini link hooks now follow too), so
->   neither the lock nor a publish lands on the far side of a planted link. The
->   flock'd publish keeps its shape -- the lock already serializes promotion --
->   but its two renames (`auth.json`, `auth.json.prev`) are now `mv -f` with
->   each destination vetted first and checked after the rename to be a regular
->   non-symlink file (`.prev` also by type; `auth.json` also holding the bytes
->   just staged), so a symlink or directory raced in is a refusal, never
->   written through. The codex login hook's trust check gained the same
->   absent-or-regular target requirement as opencode's.
+>   alone as authority to delete shared auth. Its link step rides the shared
+>   hook library (OpenCode §2 note): a failed link keeps the local login, a
+>   symlinked or non-regular shared path is refused, and a symlinked identity
+>   dir or ancestor is refused, so neither the lock nor a publish lands on the
+>   far side of a planted link. The flock'd publish's two renames
+>   (`auth.json`, `auth.json.prev`) are `mv -f` with each destination vetted
+>   first and checked after the rename to be a regular non-symlink file
+>   (`.prev` also by type; `auth.json` also holding the bytes just staged), so
+>   a symlink or directory raced in is a refusal, never written through. The
+>   codex login hook's trust check requires the target to be absent or a
+>   regular non-symlink file, as opencode's does.
 > - **Cold-start validation is expiry-gated and fail-open**: the Codex firstrun
 >   hook deliberately narrows Codex's proactive policy: a decodable JWT probes
 >   only within five minutes of expiry, while non-JWT tokens fall back to the
@@ -465,18 +458,14 @@ no rename
 whenever the library refreshes. An env-selected encrypted-keystore mode
 bypasses the file entirely.
 
-**byre's link hook hardened 2026-10-03**, with `opencode-shared-auth` (see the
-OpenCode §2 note for the findings): `gemini-shared-auth`'s per-file loop had
-the same `mv || true; rm -f; ln -s || true` shape for all four identity files.
-Each file now gets the exclusive-create promotion, the checked temp-link + `mv
--f` assert (then checked to be the link to the shared file; no GNU-only `-T`),
-the symlinked/non-regular shared-path refusal and the newline-safe target read;
-the identity dir's physical-path check runs once, on the nearest existing
-ancestor before `mkdir -p` and on the dir after. A refusal or failure skips
-only that file and keeps its local copy. The `settings.json` seed now writes
-only into a regular file or an absent path: a symlink (dangling or not) or any
-other non-regular object there -- a planted FIFO used to block the launch -- is
-left alone and named on stderr, and `selectedType` goes unseeded that launch.
+**byre's link hook.** `gemini-shared-auth` links each of the four identity
+files through the shared hook library (OpenCode §2 note); the identity dir's
+physical-path check runs once, on the nearest existing ancestor before `mkdir
+-p` and on the dir after, and a refusal or failure skips only that file and
+keeps its local copy. The `settings.json` seed writes only into a regular file
+or an absent path: a symlink (dangling or not) or any other non-regular object
+there -- a planted FIFO would block the launch -- is left alone and named on
+stderr, and `selectedType` goes unseeded that launch.
 The merge seed writes a fresh `mktemp` file (never a fixed temp name a planted
 symlink could sit at), renames it over `settings.json` with `mv -f`, and checks
 the result is a regular non-symlink file; any failure drops the temp and skips
@@ -527,7 +516,7 @@ was closed source and nothing here could be source-verified. **UPGRADED
 auth subsystem (local tree `~/dev/grok-build`; the tree carries all three
 log strings the 0.2.93 field failure produced, and the in-box binary is
 0.2.101) confirmed, corrected, and extended the record below. Source-derived
-claims are marked; the empirical history is kept verbatim — it is what the
+claims are marked; the empirical history is kept verbatim -- it is what the
 gates were run against.
 
 ### 1. State-dir inventory
@@ -592,7 +581,7 @@ file-watcher DOES hot-swap a changed `auth.json` into running sessions
 a proactive background refresh fires ~300s+jitter before expiry. Either
 way rotation does not kill in-flight access tokens, which is why
 concurrent sessions on ONE real file coexist. Cross-PROCESS refresh on one
-file is properly serialized (flock held across the IdP call + adopt-from-
+file is serialized (flock held across the IdP call + adopt-from-
 disk-before-spending); cross-CONTAINER it can never be -- see §6's lock
 finding.
 
@@ -790,8 +779,8 @@ writes `{}` plus the one entry -- **destroying every OTHER provider's
 credentials in the shared file**, not just racing the one. This is a whole-
 store-loss shape, not per-entry. Notably upstream ships the CORRECT pattern
 one module over -- `packages/opencode/src/mcp/auth.ts` guards `mcp-auth.json`
-with `flock.withLock` around its read-modify-write -- and simply never applied
-it to `auth.json`. byre's `opencode-shared-auth` DEFERS this (2026-07-16) as
+with `flock.withLock` around its read-modify-write -- and does not apply it to
+`auth.json`. byre's `opencode-shared-auth` DEFERS this (2026-07-16) as
 an accepted upstream residual rather than wrapping opencode's writes: the
 skill supports API-key logins only (written once at login, not on a refresh
 cycle), so the only collision window is two boxes running `opencode auth
@@ -811,8 +800,8 @@ promotes by exclusive create (temp copy + hard `ln`, which counts only once the
 shared name is checked to be that same inode, so two boxes promoting at once
 cannot overwrite each other, and a cross-volume `mv` is no longer copy+unlink);
 keeps the per-project file on any failed promotion or link (temp symlink + `mv
--f`, then checked to be the link to the shared file — no GNU-only `-T`, since
-the macOS CI leg runs these hooks with BSD tools — every step checked); reads
+-f`, then checked to be the link to the shared file -- no GNU-only `-T`, since
+the macOS CI leg runs these hooks with BSD tools -- every step checked); reads
 the target newline-safe; and prints each message only after its outcome. The
 `opencode` login hook's trust check additionally requires the trusted target to
 be absent or a regular non-symlink file, and stops (never reads, never logs in)
@@ -951,9 +940,12 @@ section; rotation is SAFE and the default store is plaintext)
   the seam is per-file symlinks inside `~/.gemini`.
 
 **Grok CLI**
-- Shared identity: **none, currently** -- the symlinked `auth.json` failed
-  both its gates in the field and the skill is retired (§6, ADR 0023);
-  per-box logins are the supported shape, rebuild designs parked.
+- Shared identity: the v2 auth broker (`grok-shared-auth`, ADR 0036) -- a
+  shared store in the machine identity volume, every refresh serialized by
+  one flock, served to grok through `GROK_AUTH_PROVIDER_COMMAND` (§6). The
+  v1 symlinked `auth.json` failed both its gates in the field and is
+  retired (ADR 0023). The skill ships `companion_for`; the
+  `shared_auth_for` vouch waits on the live rollover field gate.
 - Per-project: `sessions/`, `memory/<project-slug>-<hash8>/`, `config.toml`
   (holds per-project-ish UI prefs plus `[custom_endpoints]` API keys -- the
   secret-capable field is also why grok has no prefs seeding),
@@ -993,12 +985,14 @@ section; rotation is SAFE and the default store is plaintext)
    one-path-per-project model, since `/workspace`-style paths collide
    meaningfully); per-project side -> login-adjacent state (`oauthAccount`,
    onboarding flags) fragments and Claude may re-onboard per project.
-2. **Rename-over-symlink hazard is Claude-specific.** Codex and Gemini write
+2. **Rename-over-symlink hazard: Claude and Grok.** Codex and Gemini write
    credentials in place (source-verified), so a file-level symlink from the
    per-project volume into the shared volume survives writes. Claude Code
    demonstrably replaces symlinked config files via temp+rename (#40857) --
    file-level symlinks for `.credentials.json` / `.claude.json` must be
-   assumed to break on first write, silently forking the credential.
+   assumed to break on first write, silently forking the credential. Grok's
+   `write_auth_json` does the same to `auth.json` (SOURCE-CONFIRMED
+   2026-07-16, Grok §2).
    Directory-level splits (bind mounts, or a symlinked parent dir) are the
    safe shape: rename happens within the same directory and lands on the
    mounted volume.
@@ -1008,7 +1002,8 @@ section; rotation is SAFE and the default store is plaintext)
    forked copies are worse. Mitigations: shared single inode (never copies);
    or sidestep files entirely with `CLAUDE_CODE_OAUTH_TOKEN` from
    `claude setup-token` (one-year, static, inference-only, Pro/Max/Team/
-   Enterprise) -- the most robust multi-container answer for Claude.
+   Enterprise), which takes the shared file and its refresh race out of
+   the picture entirely.
 4. **Codex is the easy case.** Vendor-endorsed auth.json copying, in-place
    writes, `CODEX_HOME` relocation, infrequent refresh (5-min-to-expiry or
    8-day interval), reload-before-write. Shared volume + `CODEX_HOME` works;

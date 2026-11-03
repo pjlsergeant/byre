@@ -11,7 +11,7 @@ reports and dispatched findings live in git history and TODO.md.
 
 Recipes assume the sacrificial inttest VM, a fresh
 `BYRE_HOME=$HOME/<qa>/home`, and the tmux vocabulary from
-BYRE-DEVELOPMENT.md (`tmux -L <sock>`, capture with `grep -a` — TUI box
+BYRE-DEVELOPMENT.md (`tmux -L <sock>`, capture with `grep -a` -- TUI box
 glyphs otherwise trip grep's binary heuristic).
 
 ## Conventions
@@ -33,7 +33,7 @@ The full first-contact flow, wizard to working agent.
 2. Enter (none) → `Agent — claude codex gemini grok opencode none [none]:`
    → type `opencode`, Enter.
    Expect: `Use machine-wide credentials to log in to opencode?
-   [y/N, i for info]:` — bare line, NO provenance parenthetical (bundled
+   [y/N, i for info]:` -- bare line, NO provenance parenthetical (bundled
    claimant), no note line above.
 3. `i`, Enter. Expect: the skill named with "(bundled with byre)", the
    machine-wide volume named, y/n write scopes, save-as-default's
@@ -61,7 +61,7 @@ The full first-contact flow, wizard to working agent.
 2. `byre develop` (rebuild picks up the config).
    Expect in-box: `/etc/byre/mcp.json` carries qa-probe; the agent's
    PID 1 env carries `OPENCODE_CONFIG_CONTENT={"mcp":{"qa-probe":…}}`.
-   (opencode's status line says "0 MCP" — that counts CONNECTED servers;
+   (opencode's status line says "0 MCP" -- that counts CONNECTED servers;
    an echo stub can't handshake. Not a failure.)
 3. `byre status` from the project dir.
    Expect: `qa-probe — local: echo hi  (config)  — delivered`; with
@@ -121,7 +121,7 @@ No engine needed until step 5.
 3. `add notes --file <missing>` → accepted WITH the ⚠ does-not-exist
    warning; the next develop fails loudly naming context + file.
 4. Size tiers (develop-time, both forms): ≥100 KiB note, ≥500 KiB ⚠,
-   ≥1 MiB 🛑 suggesting a skill — develop PROCEEDS through all three; a
+   ≥1 MiB 🛑 suggesting a skill -- develop PROCEEDS through all three; a
    >16 MiB file refuses with "not agent-memory-sized" (fstat-judged; a
    sparse file stages it cheaply). `byre dockerfile` does NOT exercise
    the tiers; a non-tty `byre develop </dev/null` prints them before it
@@ -143,8 +143,7 @@ loud one.
 
 PREREQ: the box image must carry git (`apt = ["git"]` in the STORE
 config) -- the `none` template has none, and a git-less box makes every
-leg vacuous rather than failing (observed: a whole leg passed for the
-wrong reason). Fresh git repo with a commit and a `.env`.
+leg vacuous rather than failing. Fresh git repo with a commit and a `.env`.
 
 1. **Quiet leg (the one that matters).** In-box: commit some work,
    `git config remote.origin.url …`, `git config branch.main.remote …`,
@@ -188,45 +187,45 @@ wrong reason). Fresh git repo with a commit and a `.env`.
    confirm; after discard the file on disk is byte-identical.
 4. TEARDOWN: none (nothing saved).
 
-## Journey: agent cold flows — claude / codex / grok
+## Journey: agent cold flows -- claude / codex / grok
 
 Per agent, fresh dir + wizard (`template` Enter, agent name, decline
 save-default).
 1. Vouched agents (claude, codex, opencode): expect the sharing question
    `Use machine-wide credentials to log in to <agent>? [y/N, i for info]:`
-   — bare line. `i` → info text names the skill "(bundled with byre)",
+   -- bare line. `i` → info text names the skill "(bundled with byre)",
    the volume, y/n write scopes, save-default's prefill-only effect.
    `y` → exactly `skills = ["<agent>-shared-auth"]` in the project config.
-2. Unvouched companions (gemini, grok): expect NO sharing question —
+2. Unvouched companions (gemini, grok): expect NO sharing question --
    straight from Agent to save-default. (Flips when their skill gains
    `shared_auth_for`; update this recipe then.)
 3. In-box firstrun: claude prompts for a setup-token paste, Enter skips
-   ("byre: skipped — using this project's own login") — the paste prompt
+   ("byre: skipped — using this project's own login") -- the paste prompt
    belongs to claude-shared-auth, so it appears ONLY with the skill
    enabled (sharing answered y, or the skill added to the store config);
    with sharing declined claude goes straight to its own onboarding.
    codex/grok run a device login, Ctrl-C skips (trap prints the
-   byre-shell-later line — the agent's own alt-screen may repaint over
+   byre-shell-later line -- the agent's own alt-screen may repaint over
    it immediately; scrollback still shows it).
-4. After any skip the agent shows its OWN onboarding/login — a skip gets
+4. After any skip the agent shows its OWN onboarding/login -- a skip gets
    a box, not a ready agent (informational, all agents).
 5. Exits: gemini Ctrl-C at its login → exits 0, develop propagates; grok
-   ctrl+q; claude's tmux-driven theme picker can wedge — if keys stop
+   ctrl+q; claude's tmux-driven theme picker can wedge -- if keys stop
    landing, `docker rm -f` the box (develop then reports the decoded
    `byre: exit status 137 (SIGKILL — the box was killed out from under
-   the session: …)`, rc 1 — deliberate, ≥128 = the signal range byre
+   the session: …)`, rc 1 -- deliberate, ≥128 = the signal range byre
    decodes; everything below it is the agent's own status).
 6. TEARDOWN: rm boxes + per-project volumes.
 
-## Journey: seeded gemini — chooser must not appear
+## Journey: seeded gemini -- chooser must not appear
 
-The 2026-07-16 field-failure regression check.
 1. gemini-shared-auth is companion_for → not offered; hand-enable:
    `skills = ["gemini-shared-auth"]` in the STORE config
-   (`$BYRE_HOME/projects/<slug>/byre.config`) — NOT a file at the project
-   root (that's a preset and prints "not applied").
+   (`$BYRE_HOME/projects/<slug>/byre.config`) -- NOT a `byre.config` at
+   the project root, which byre flags as the retired preset name with a
+   rename-to-`byre.preset` remedy and never applies.
 2. `byre develop`. Expect: jq + firstrun layers in the build; box up.
-3. PASS = gemini goes STRAIGHT to the oauth-personal URL/code prompt — no
+3. PASS = gemini goes STRAIGHT to the oauth-personal URL/code prompt -- no
    auth-method chooser anywhere in `capture-pane -S` scrollback (contrast:
    a plain gemini box shows the chooser).
 4. In-box: all four identity files in ~/.gemini are symlinks into
@@ -244,7 +243,7 @@ The 2026-07-16 field-failure regression check.
   written answer; the next develop re-runs the wizard.
 - Ctrl-C mid-build: buildx prints CANCELED/context canceled; develop
   exits 130; no stray containers; next develop skips onboarding and
-  rebuilds clean. (Window is short on cached bases — use a fresh
+  rebuilds clean. (Window is short on cached bases -- use a fresh
   python/node project for an uncached pull.)
 - Garbage at any y/N prompt (sharing question, save-default, reset/
   forget Proceed): reprompts with "unrecognized — y, n, …"; y/Y/n/N and
@@ -255,14 +254,12 @@ The 2026-07-16 field-failure regression check.
 ## Journey: reset / forget / develop-while-running
 
 1. Second `byre develop` while one runs: decline + how-to-reach text,
-   rc=3 (ExitRefused — develop only; its exit code otherwise carries the
-   agent's own status; reset/forget's decline-while-running stays rc=1,
-   a deliberate asymmetry).
+   rc=3 (byre's refused-launch code, which `byre run` shares; develop's
+   exit code otherwise carries the agent's own status; reset/forget's
+   decline-while-running stays rc=1, a deliberate asymmetry).
 2. `byre reset` while a session runs: "a session is running … exit it
-   before reset", rc=1. NEVER measure through a pipe — `cmd | tail`
-   makes $? tail's; echo rc in a separate send (Ctrl-C also aborts the
-   whole `cmd; echo rc=$?` line, so a compound never prints after an
-   interrupt).
+   before reset", rc=1 (measure it per "Capturing an exit status"
+   below).
 3. reset with the session down (on a project that HAS volumes -- an
    agent project; an agentless one prints `no volumes to reset` and
    proves nothing here): kill-list enumerated with engine suffix
@@ -273,7 +270,7 @@ The 2026-07-16 field-failure regression check.
    both gone; next develop re-onboards from the wizard. rc=0.
 5. Orphaned box: develop in a private tmux server, wait for the in-box
    prompt, kill the whole tmux server. The container SURVIVES
-   (deliberate — a crashed terminal must not kill the agent). Expect:
+   (deliberate -- a crashed terminal must not kill the agent). Expect:
    `byre status` shows "running (…) — orphaned: the byre that started it
    is gone" naming `byre shell` and `<engine> stop <id>`; `byre reset`
    refuses with the same stop command appended. `docker stop <id>` then
@@ -319,21 +316,21 @@ Needs a real engine; the split only shows against a live container.
    match its own address" and the rows describe the CURRENT CONFIG.
    Restore it, then `chmod 000` it (or replace it with a directory):
    the qualifier must now say "present but unreadable", NOT "no longer
-   in the store" — byre could not look, which is not the same as gone.
+   in the store" -- byre could not look, which is not the same as gone.
 7. Exit the box, `byre develop` again, then check
    `~/.byre/projects/<id>/launches/`: the old record is gone (reaped) and
    exactly one new one is there.
 8. Sibling-engine reap (needs both engines): with a worktree box live
    under one engine, `byre develop` the main tree under the other.
-   The worktree's record must SURVIVE — reaping from one engine's view
+   The worktree's record must SURVIVE -- reaping from one engine's view
    would make the live worktree box's status say "missing".
 9. TEARDOWN: rm box; restore the config.
 
 ## Journey: worktrees
 
 Needs a git repo with a commit; main project already developed, and the
-box image must CARRY git (`apt = ["git"]` or a template that ships it) —
-creation now runs `git worktree add` in a one-shot container on the
+box image must CARRY git (`apt = ["git"]` or a template that ships it) --
+creation runs `git worktree add` in a one-shot container on the
 project image. A git-less image refuses loudly, naming the `byre config`
 remedy, and creates nothing.
 1. `byre worktree wt1 --path ../got-wt1` from the main tree.
@@ -346,13 +343,11 @@ remedy, and creates nothing.
    (worktree-metadata mount path).
 2b. Stale-registration remedy: exit the wt session, `rm -rf` the worktree
    dir (registration stays), re-run the same `byre worktree`. Expect the
-   targeted remedy naming `git -C <main> worktree prune` — never the
-   engine-gate message and never a raw git error. (Pinned unit-side after
-   the v1.1.0 macOS CI catch: recognition must compare git's RESOLVED
-   path spelling even when the dir is gone.)
-   The no-engine refusal itself can't be staged on the VM by stripping
-   PATH — /bin is usr-merged into /usr/bin, so docker stays findable;
-   macOS CI (engine-less runner) exercises that message instead.
+   targeted remedy naming `git -C <main> worktree prune` -- never the
+   engine-gate message and never a raw git error. (Pinned unit-side:
+   recognition must compare git's RESOLVED path spelling even when the
+   dir is gone.) The no-engine refusal itself is not stageable on the VM
+   (see "Setup" below).
 3. Concurrent main-tree develop in another window: both boxes up.
 4. `byre status` in the project: "Worktrees: 1 other session(s) live:
    <id> (share these volumes)".
@@ -361,26 +356,24 @@ remedy, and creates nothing.
    worktree box's /inbox (verify bytes), labeled by the box's own
    workdir id ("delivering to <proj>-wt1-…"). status shows siblings the
    same way: "workdir-id (short-id)".
-5a. Single-writer: with the worktree box still up, add
-   `[[volumes]] name = "ledger" role = "state" target = "/var/lib/ledger"
-   sharing = "exclusive"` and develop from the main tree. It must REFUSE
+5a. Single-writer: exit both boxes, add `[[volumes]] name = "ledger"
+   role = "state" target = "/var/lib/ledger" sharing = "exclusive"`, start
+   the worktree box, then develop from the main tree. It must REFUSE
    (exit 3) naming `ledger`, the worktree holding it, and `docker stop
    <id>`; nothing built, nothing created. Stop the worktree box and the
    same develop succeeds. status then marks `ledger (exclusive)` on its
    State vols row, and the Worktrees row (with a sibling up again) names
    it rather than saying only "share these volumes". Only the gated
    integration suite can stage two live boxes -- this is the journey that
-   proves the refusal against a real engine. Known divergence (TODO.md,
-   seen in the 2026-09-05 and 2026-10-03 passes): a worktree box started
-   BEFORE `ledger` was declared does not mount it, so the main develop
-   builds and starts instead of refusing. To see the refusal itself, stop
-   and restart the worktree box after adding the volume, then develop the
-   main tree.
+   proves the refusal against a real engine.
+5b. A worktree box started BEFORE `ledger` was declared has a launch
+   record listing other volumes only, so the main develop proceeds (ADR
+   0054's "other volumes only" row).
 6. TEARDOWN: exit both; `git worktree remove` on the host if re-running.
 
 ## Journey: config UI, pickers follow an Extends flip
 
-New in v1.10.0. The scalar pickers' inherit rows are rebuilt when the
+The scalar pickers' inherit rows are rebuilt when the
 Extends (or Template) picker moves; a none chosen against the freshly
 inherited agent is what develop gets.
 
@@ -399,7 +392,7 @@ inherited agent is what develop gets.
 ## Journey: config UI ^e round-trip
 
 1. `byre config` → `^e` → $EDITOR (vi) on the REAL store config.
-2. Write an INVALID key (`packages = […]` — the Packages row's key is
+2. Write an INVALID key (`packages = […]` -- the Packages row's key is
    `apt`), :wq. Expect: UI keeps last-good values + red banner
    "✗ file has an error after editing (fix it and ctrl+e again): …
    unknown key(s): [packages]"; the file on disk DOES carry the bad edit.
@@ -409,7 +402,7 @@ inherited agent is what develop gets.
 
 ## Journey: firewall egress
 
-Run on `template = "none"` — the bare base is the regression-sensitive
+Run on `template = "none"` -- the bare base is the regression-sensitive
 case (language templates ship CA certs transitively and would mask it).
 
 1. `skills = ["firewall"]`, no egress key → banner flips to
@@ -417,7 +410,7 @@ case (language templates ship CA certs transitively and would mask it).
    (gate opened = rules verified). curl anything → timeout, 000.
 2. Add `egress = ["example.com"]` → banner "egress 1 host";
    `curl https://example.com` = 200 EVEN ON the none template (the
-   skill ships ca-certificates with its diagnostic curl — a 77
+   skill ships ca-certificates with its diagnostic curl -- a 77
    cert-verify error here is the trust-store regression, distinct from
    a block's timeout/000); everything else still times out.
 3. TEARDOWN: rm box.
@@ -425,12 +418,12 @@ case (language templates ship CA certs transitively and would mask it).
 ## Journey: templates + named layers
 
 1. go/node/python templates: wizard-onboard each, box up. Toolchain on
-   PATH in the box's LOGIN shell — `go version`, `node --version`,
+   PATH in the box's LOGIN shell -- `go version`, `node --version`,
    `python3 --version` in the agent=none foreground shell and via
-   `byre shell`. (The login-shell leg matters: /etc/profile once
-   clobbered the image ENV PATH; byre-env.sh restores it from the baked
-   /etc/byre/image-path. If go vanishes again, compare with
-   `docker exec <box> go version` — ENV intact there — to distinguish
+   `byre shell`. (The login-shell leg matters: /etc/profile resets PATH,
+   and byre-env.sh restores the image ENV PATH from the baked
+   /etc/byre/image-path. If go vanishes, compare with
+   `docker exec <box> go version` -- ENV intact there -- to distinguish
    shim regression from a broken image.)
 2. Layers: `byre layer new qa2base` → scaffold under $BYRE_HOME/layers
    (self-documenting comments; vocabulary = full config minus template).
@@ -442,8 +435,7 @@ case (language templates ship CA certs transitively and would mask it).
 
 ## Journey: firstrun failure disclosure
 
-New in v1.5.0; the disclosure line is the assert, the surviving box is
-the contract.
+The disclosure line is the assert, the surviving box is the contract.
 
 1. Local skill shipping a failing hook: `skill.toml` with `[package]`
    (id/kind) and `[build]` `files = { "hook.sh" =
@@ -460,18 +452,18 @@ the contract.
 
 ## Journey: manifest spellings + fork refusal
 
-No engine needed. New in v1.5.0 (the scanner-family kill).
+No engine needed.
 
 1. Fork any bundled skill, then rewrite its primary's `[package]` header
    to `["package"] # comment` (keep the fields). `skill validate` must
    ACCEPT (rc 0) -- the quoted spelling and trailing comment are valid
-   TOML and no longer misread.
+   TOML.
 2. Corrupt the fork's primary (`[package` unclosed) and fork FROM it:
    the refusal is loud at the catalog layer ("invalid: parse
    [package]: ..."), rc 1 -- and if a corruption ever slips past
    resolve, the fork-time strip guard refuses before publishing rather
    than shipping a double `[package]`.
-3. Body key under `[package]` (new in v1.10.0): a local `skill.toml` with
+3. Body key under `[package]`: a local `skill.toml` with
    a top-level key such as `companion_for = "gemini"` written BELOW the
    `[package]` header -> `skill validate` refuses, rc 1, naming the key
    and the move (`[package] carries key(s) it does not define:
@@ -483,7 +475,7 @@ No engine needed. New in v1.5.0 (the scanner-family kill).
    A template (`template.config`) with `base` below `[package]` refuses the
    same way. Installed and bundled packages are NOT checked (stage 1 stays
    lenient).
-4. byre's own writers place the header correctly (v1.10.0): `template
+4. byre's own writers place the header correctly: `template
    fork go qa/tgo` keeps `base`/`egress_offered` ABOVE the fork's
    `[package]` and validates; `skill fork gemini-shared-auth qa/gsa`
    keeps `companion_for` above it; `template init` / `skill init`
@@ -493,8 +485,7 @@ No engine needed. New in v1.5.0 (the scanner-family kill).
 
 ## Journey: skill authoring round trip (adopt / pack / shadow)
 
-Steps 1-4 need no engine; step 5 needs a develop. New in v1.6.0
-(ADR 0055 + 0056).
+Steps 1-4 need no engine; step 5 needs a develop (ADR 0055 + 0056).
 
 1. Make a checkout dir with a `[package]`-only skill.toml (qualified id,
    `version`, `requires_byre`) and one payload file. `byre skill adopt <dir>` →
@@ -536,12 +527,12 @@ On a project with a netns skill enabled (`skills = ["firewall"]`):
    HEALTHCHECK/USER/ENTRYPOINT.
 2. `byre develop` prints the same note; in the built box
    `/usr/local/bin/byre-launch` is byre's launcher (shebang + header),
-   not the planted file — and the deny-by-default banner still holds.
+   not the planted file -- and the deny-by-default banner still holds.
 3. The runtime half, which no guard covers: add `[[volumes]]` `name =
    "gate"` `role = "state"` `target = "/etc/byre"`. `byre develop` prints
    the 🛑 line naming `/etc/byre (config)`; `byre status` carries it as a
    Containment row, and the Network row still reads `deny-by-default
-   (skill: firewall)` — the claim describes what byre built, the
+   (skill: firewall)` -- the claim describes what byre built, the
    Containment line disclaims what the box has. In the box, `/etc/byre` is
    the volume (`mount | grep /etc/byre`), populated from the image on
    first use.
@@ -565,19 +556,17 @@ On a project with a netns skill enabled (`skills = ["firewall"]`):
    ←/→ land nowhere, so prove each move with `capture-pane -e`.
 4. Scheme `value` on a key that is also a passthrough → an `[env]` literal
    row PLUS the passthrough row annotated `(… — overridden by [env], not
-   passed)`; the counts must not move (one key, one grant — the field
+   passed)`; the counts must not move (one key, one grant -- the field
    summary counts distinct keys, and must equal the exposure line).
 5. Add a NEW key with scheme `env:` → the row appears and both counts rise
-   BEFORE any save. (2026-07-27: it did neither; the entry was written to
-   disk invisibly and a second add answered `✗ duplicate key`.)
+   BEFORE any save.
 6. Set an inherited key to `disabled` → the row reads `KEY <- disabled`,
    drops out of both counts; save, quit, reopen → the key is still visible
-   and re-enableable from the screen. (2026-07-27: the row vanished
-   entirely, TUI-unreachable.)
-7. Rude keys — `BAD KEY`, `1STARTS_WITH_DIGIT`, `ünïcödé`, `K=EQUALS`,
-   `BYRE_EGRESS` — each rejected naming the rule that fired; `git:` with
+   and re-enableable from the screen.
+7. Rude keys -- `BAD KEY`, `1STARTS_WITH_DIGIT`, `ünïcödé`, `K=EQUALS`,
+   `BYRE_EGRESS` -- each rejected naming the rule that fired; `git:` with
    `user name with spaces` rejected as an invalid git config key.
-8. `cwd:` (new in v1.12.0), on a git project whose image carries git
+8. `cwd:`, on a git project whose image carries git
    (`apt = ["git"]`): add `HOST_CWD` with source `[cwd:]` → the row reads
    `HOST_CWD <- host cwd:  (set here)` and the exposure count rises before
    any save. `byre status` counts it among "keys from host"; `--full`
@@ -598,8 +587,7 @@ On a project with a netns skill enabled (`skills = ["firewall"]`):
 2. Refusals, each naming its rule: absolute source; relative destination;
    empty source; empty destination; whitespace-only source; a duplicate
    source already listed; `../../../etc/shadow` → "escapes the project dir"
-   (2026-07-27: the editor accepted it and the build refused later — editor
-   and `byre dockerfile` must agree).
+   (editor and `byre dockerfile` must agree).
 3. A source that does not exist: live note `⚠ source not in the project —
    build will fail (accepted anyway…)`, the Claude Skills affordance. Row
    accepted; `byre dockerfile` then refuses naming the entry and the remedy
@@ -619,23 +607,21 @@ Load a config whose values carry TOML `\r` and `\u001b` escapes in `[env]`,
 form is the live path), then read every config-UI screen with
 `capture-pane | cat -v` and `capture-pane -e`. No value may move the
 cursor, overwrite a row, or emit SGR that outlives its own row; the
-printable payload text must survive, stripped, on its own row. (2026-07-27:
-`\r` forged a row and hid the real one; an SGR escape ended byre's styling
-mid-row. `byre status` was unaffected — key names only, grammar-refused.)
+printable payload text must survive, stripped, on its own row.
 Residual, deliberate: the item editor's prefill and the raw-block textarea
-render through bubbletea widgets and do not strip — editing surfaces show
+render through bubbletea widgets and do not strip -- editing surfaces show
 the raw truth.
 
 ## Journey: Volumes screen scope grouping
 
 With at least one project volume and one machine identity volume
-existing: `byre config` → Volume data. Expect two groups — "Project
-volumes" and "Machine volumes — shared by all your projects" — engine
+existing: `byre config` → Volume data. Expect two groups -- "Project
+volumes" and "Machine volumes — shared by all your projects" -- engine
 suffix per row, and the state-volume explainer line at the bottom.
 
 ## Journey: backup → restore round trip
 
-New in v1.12.0 (ADR 0059). `byre restore` is terminal-only: drive it in
+ADR 0059. `byre restore` is terminal-only: drive it in
 tmux or a python pty (the runner's script(1) dies on stdin EOF). Needs a
 git project with a commit, an agent (claude is cheapest), and passphrase
 prompts answered in tmux.
@@ -733,15 +719,11 @@ coarse. Record `docker events --filter label=byre.helper` alongside.
   removed` unless `docker ps -a --filter label=byre.helper` still lists
   it. A cancel after `y` but before the first pour leaves the DIR and the
   store, names both paths, and ends `restore cancelled; no config written
-  and no volume created`, never `nothing written`. (Seen 2026-10-03: at
-  ~0.3 s byre printed `helper container <id> could not be removed ...
-  remove it by hand` for a helper its own `--rm` had already taken; and a
-  cancel just after `y` left the new empty DIR plus an enrolment stub while
-  saying only `nothing written`.)
+  and no volume created`, never `nothing written`.
 
 ## Journey: --ignore-docker / --ignore-podman (backup, reset, forget, rehome)
 
-New in v1.12.0. Make an engine unreachable for ONE command without
+Make an engine unreachable for ONE command without
 touching the daemon: `CONTAINER_HOST=unix:///tmp/dead.sock` (podman
 answers `Cannot connect to Podman`, rc 125) or `DOCKER_HOST=unix:///tmp/
 dead.sock`. A DECLINED engine (ADR 0047) is an executable `podman` script
@@ -773,8 +755,7 @@ inside the project dir, put first on PATH.
 
 ## Journey: develop names every missing mount host
 
-New in v1.12.0. Agentless project with an image already built; record
-its image ID.
+Agentless project with an image already built; record its image ID.
 
 1. Config with mounts whose hosts are: missing (`~/...`), a missing deep
    absolute path (`mode = "rw"`), a dangling symlink, a missing file path,
@@ -790,16 +771,16 @@ its image ID.
 
 ## Journey: credentials reach first-run hooks
 
-New in v1.12.0. A local skill whose `[build]` `files` installs a bash
+A local skill whose `[build]` `files` installs a bash
 hook at `/etc/byre/firstrun.d/50-qa-credhook.sh` that prints
 `${!k}` for each name below plus `cat "$QA_FILE"` and a count of
 `env | grep '^BYRE_cred'`.
 
 1. `byre credentials set QA_ENV` in tmux (passphrase twice, value), then
    piped sets: `--file QA_FILE`, and `cred_lineno`, `hook`, `BASHFUL_KEY`,
-   `FIRSTRUN_DIR`, `CMD`, `cred_key` — all rc 0.
+   `FIRSTRUN_DIR`, `CMD`, `cred_key` -- all rc 0.
 2. `byre develop` → passphrase, then `byre: credentials: delivered.`
-   BEFORE the first hook line (the hook's first line may share that row —
+   BEFORE the first hook line (the hook's first line may share that row --
    disclosed residual); every value intact, QA_FILE a path whose file
    holds both lines, zero BYRE_cred* vars. The session shell sees the
    same values.
@@ -813,7 +794,7 @@ hook at `/etc/byre/firstrun.d/50-qa-credhook.sh` that prints
    `byre credentials unset SECONDS` removes it.
 5. `byre config` → Env vars → `a` → ↑ to Source, → to `[credential]`,
    ↓ Key `SECONDS`, Tab, value, `^s` (Enter never saves; pressing it puts
-   the value field into a newline-error state — Esc and redo) → the same
+   the value field into a newline-error state -- Esc and redo) → the same
    `✗ ... bash owns this name` rule; `PROMPT_COMMAND` likewise; `IFS` is
    written. A develop with IFS delivered launches; `/proc/1/environ`
    carries it.
@@ -821,7 +802,7 @@ hook at `/etc/byre/firstrun.d/50-qa-credhook.sh` that prints
 
 ## Journey: shared-auth hooks with dummy logins
 
-New in v1.12.0 (opencode-, gemini-, codex-shared-auth). Loginless: plant
+opencode-, gemini-, codex-shared-auth. Loginless: plant
 dummy files straight into the volumes with `docker run --rm -u 1000:1000
 -v <vol>:/d debian:bookworm ...`. Start with NO `byre-machine-u<uid>-*`
 volumes (they are shared by every project on the engine). opencode's TUI
@@ -848,7 +829,7 @@ clears the scrollback: record the raw pane with `tmux pipe-pane -o 'cat
 4. TEARDOWN: rm boxes, project volumes, and the three machine identity
    volumes.
 
-## Journey: shared-auth field gates — gemini + grok (PARKED — live logins + maintainer)
+## Journey: shared-auth field gates -- gemini + grok (PARKED -- live logins + maintainer)
 
 Not part of a normal pass: two live checks, each needing the maintainer
 and a real login host-side (an exception to the dummy-creds convention).
@@ -858,132 +839,137 @@ skill's composition pin test). A vouch follows its field gate, never
 source alone (the grok-v1 lesson). Tracked in TODO.md ("Maybe someday").
 
 1. **gemini two-box OAuth:** two boxes with gemini + gemini-shared-auth.
-   Box A: real "Login with Google" paste-code flow — the seeded
+   Box A: real "Login with Google" paste-code flow -- the seeded
    `selectedType` means NO auth-method picker appears (if it does,
    that's a finding); after login, `~/.gemini/oauth_creds.json` must
    still be a SYMLINK into `~/.byre-identity/gemini/` (a regular file =
    the login-fork came back). Box B, launched after: `gemini -p 'say ok'`
    with no login prompt. GOTCHA: do not open gemini's `/auth` dialog
-   after login — it rm's the symlink and re-forks. Rotation is already
+   after login -- it rm's the symlink and re-forks. Rotation is already
    proven safe (Google installed-app refresh tokens don't rotate;
-   AGENT-CREDENTIAL-MECHANICS, Gemini §3), and the seed plumbing was
-   field-proven credential-less in QA pass #2 — only the live cross-box
-   login remains.
+   AGENT-CREDENTIAL-MECHANICS, Gemini §3), and the seed plumbing is
+   field-proven credential-less -- only the live cross-box login
+   remains.
 2. **grok ~6h broker rollover (ADR 0036):** watch a real box refresh
-   through the broker across the access-token lifetime — or force it
+   through the broker across the access-token lifetime -- or force it
    (the broker honors `GROK_AUTH_EXPIRED=1`; see
-   `grok-shared-auth/grok-auth-broker.sh`) — and confirm the backend
+   `grok-shared-auth/grok-auth-broker.sh`) -- and confirm the backend
    accepts the refreshed pair end to end.
 
-## Harness lessons (carry between passes)
+## Harness conventions (carry between passes)
 
-- `/workspace` in the box IS the project dir, bind-mounted: a file
-  planted there with `docker exec` appears on the host, and a host-side
-  `rm` of it before `grab` makes grab report "no such path" (2026-09-05,
-  a whole grab leg failed for that). Plant grab fixtures under `/tmp` in
-  the box.
-- A blanket `docker rm -f $(docker ps -q --filter label=byre.project)`
-  in one journey's teardown kills every OTHER journey's box on the VM;
-  byre reports it faithfully (`exit status 137 (SIGKILL -- the box was
-  killed out from under the session ...)`), which is how the collision
-  was found. Filter by the journey's own project id.
-- Seeding a config by appending `agent = "none"` AFTER a `[[context]]`
-  table writes `context.agent` -- the TOML-scoping footgun byre now
-  refuses in packages -- and `byre config` refuses the file. Put bare
-  keys first, or write the whole file.
-- A wait pattern that names the agent (`grok`, `codex`) matches the
-  BUILD log long before the firstrun prompt; one such wait sent a Ctrl-C
-  into a build. Wait for login-specific text (`one-time code`, `Open
-  this link`), and use `grep -E` when the pattern alternates.
+### Setup
 
-- Never pipe the measured command when capturing an exit code, and never
-  chain `; echo rc=$?` on a line you might Ctrl-C — send the echo as its
-  own keystroke afterwards ($? survives until the next command).
-- tmux `respawn-pane -k` RERUNS the window's original command — a window
-  created with an inline `develop` relaunches the session. Create QA
-  windows as bare shells and send commands with send-keys.
-- Two Ctrl-Cs in ONE send-keys can arrive as one; send them as separate
-  calls with a beat between, or expect TUIs (claude) to swallow them.
-- Wizard answers race the prompts at fixed sleeps; capture the pane after
-  each answer when a journey depends on WHICH question consumed a key.
-- A cold Claude install is too slow for short automated passes; use an
-  agent-less or pre-warmed box when the journey isn't about install.
-- Non-TTY `develop` hangs at attach (expected) — always drive it under
-  tmux/a real pty.
-- Don't match a banner alone to conclude "box up" — wait-loop races have
-  matched banner text before the `dev@` prompt and misreported hangs;
-  wait for the prompt.
-- Driving over ssh adds a THIRD shell layer: a `$?` or a quoted TOML
-  string inside an ssh+send-keys wrapper gets expanded/stripped by the
-  REMOTE shell before the keys land (observed: a cancel measured rc=0
-  because the wrapper's own last status was echoed; a layer file landed
-  quoteless and byre rightly refused it). Send `echo rc=$?`
-  single-quoted end to end, and write config/layer files via ssh
-  heredoc, never typed keys.
 - ONE driver per VM at a time. The gated suite assumes an exclusive
   engine: a concurrent QA pass's boxes walk into the deliver pool-scan
   tests ("want exactly this box") and fail them. Before starting a suite
   run or a pass, check for a live driver: `tmux ls` on every socket you
   know (`tmux -L <sock> ls`), and `docker ps --filter
   label=byre.project` for boxes you don't own.
-- /bin is usr-merged on the VM, so PATH-stripping cannot hide docker for
-  a no-engine leg; an engine-less environment (e.g. macOS CI) exercises
-  those messages instead.
-- gemini's oauth code prompt times out after 5 minutes of inactivity
-  (its own limit, exit 41) — drive it promptly.
-- gemini's auth chooser and code prompt each swallow a lone Ctrl-C
-  (2026-07-22: a "seeded box still shows the chooser" scare was the OLD
-  plain box still alive because its Ctrl-C never landed). Send Ctrl-C
-  twice as separate calls, then VERIFY the session died (docker ps)
-  before treating later screens as the new box's.
-- Stale pane frames satisfy wait-loops: a "dev@"/banner match can hit
-  the PREVIOUS session's scrollback and misreport the new one as up.
-  `clear` + `tmux clear-history` before a relaunch you intend to wait
-  on, or match against `tail -1` of the pane, not the whole capture.
-- The opencode shared-auth firstrun gate re-runs on EVERY launch until a
-  login exists, so a loginless box must be skipped past the gate before
-  probing agent env.
+- Build the candidate from `git archive <sha>`, never the working tree
+  (docs are embedded in the binary, and another session may be editing
+  them). The archive carries no VCS stamp, so `byre version` says
+  `(devel)` -- expected.
 - A bare `byre-inttest` can report a green gate it did not run: go test
   replays CACHED package results, including the docker-touching ones
   (`internal/runner (cached)` on a suite that builds boxes). For a release
   gate always pass `-count=1`, and prove the tier fired at least once per
-  pass with `-v`: count `=== RUN` and require zero `SKIP` (a missing
+  pass with `-v`: count `=== RUN` and account for every `SKIP` (a missing
   `BYRE_DOCKER_TESTS`/`BYRE_TUI_TESTS` skips silently and still prints
-  `ok`).
+  `ok`; the agent-contract tests are the expected skips, per RELEASING.md).
+- Memory: the runner has ~4 GB and may host the owner's other stacks.
+  Check `free -m` before agent legs. An agent TUI killed with `exit status
+  137` right after its login gate is the kernel OOM killer (`docker
+  events` shows `oom`; `dmesg` names the process), not byre -- redo any
+  leg that died that way.
+- A cold Claude install is too slow for short automated passes; use an
+  agent-less or pre-warmed box when the journey isn't about install.
+- /bin is usr-merged on the VM, so PATH-stripping cannot hide docker for
+  a no-engine leg; an engine-less environment (e.g. macOS CI) exercises
+  those messages instead.
+- `/workspace` in the box IS the project dir, bind-mounted: a file
+  planted there with `docker exec` appears on the host, and a host-side
+  `rm` of it before `grab` makes grab report "no such path". Plant grab
+  fixtures under `/tmp` in the box.
+- Seeding a config by appending `agent = "none"` AFTER a `[[context]]`
+  table writes `context.agent` -- the TOML-scoping footgun byre refuses
+  in packages -- and `byre config` refuses the file. Put bare keys first,
+  or write the whole file.
+- Write config and layer files via an ssh heredoc, never typed keys: a
+  quoted TOML string inside an ssh+send-keys wrapper gets stripped by the
+  REMOTE shell before the keys land, and byre rightly refuses the
+  quoteless result.
+- Name a python pty driver anything but `pty.py`: it shadows the stdlib
+  `pty` module and every run dies with an AttributeError.
+
+### Process control
+
+- Create QA windows as bare shells and send commands with send-keys:
+  tmux `respawn-pane -k` RERUNS the window's original command, so a
+  window created with an inline `develop` relaunches the session.
+- Non-TTY `develop` hangs at attach (expected) -- always drive it under
+  tmux/a real pty.
+- Send each Ctrl-C (and each Escape) as its own send-keys call with a
+  beat between: two in ONE send-keys can arrive as one, and TUIs (claude)
+  swallow them.
+- gemini's auth chooser, code prompt and folder-trust dialog each
+  swallow a lone Ctrl-C. Send Ctrl-C twice as separate calls, then VERIFY
+  the session died (`docker ps`) before treating later screens as the new
+  box's or planting into its volumes. Its oauth code prompt also times out
+  after 5 minutes of inactivity (its own limit, exit 41) -- drive it
+  promptly.
 - Driving `vi` through `^e`: `o` on a COMMENT line inherits vim's comment
   leader, so an intended invalid-key edit lands as `# packages = [...]` --
   valid config, and the UI correctly says "Reloaded from file". A journey
   step expecting the error banner then passes for the wrong reason.
   Position on a non-comment line first (`:N`, then `o`), and always `cat`
   the file to confirm the edit you think you made.
+
+### Capturing an exit status
+
+- Never pipe the measured command (`cmd | tail` makes `$?` tail's), and
+  never chain `; echo rc=$?` on a line you might Ctrl-C -- an interrupt
+  aborts the whole line. Send the echo as its own keystroke afterwards
+  (`$?` survives until the next command).
+- Over ssh there is a THIRD shell layer: an unquoted `$?` in an
+  ssh+send-keys wrapper is expanded by the REMOTE shell, so it reports the
+  wrapper's own last status. Send `echo rc=$?` single-quoted end to end.
+- A passphrase prompt swallows whatever is typed next, masked: an `echo
+  rc=$?` sent while develop waits at `passphrase for ...` becomes a wrong
+  passphrase. Wait for the prompt to be answered before measuring.
+- After a Ctrl-C the tmux wrapper's `; echo $? > file` never runs, so an
+  empty status file proves nothing about whether the process died. Judge
+  death by `tmux list-panes -F '#{pane_dead}'` and a `pgrep`, and re-test
+  a "the first Ctrl-C was ignored" impression before reporting it.
+
+### Observation
+
+- Wait for meaning, never for names that also appear in the build log: a
+  pattern naming the agent (`grok`, `codex`) or a skill
+  (`opencode-shared-auth`) matches the build's COPY lines long before the
+  firstrun prompt, and a Ctrl-C sent on that match lands in the build.
+  Wait for login- or hook-specific text (`one-time code`, `Open this
+  link`, `promoted`, `refusing`), with `grep -E` when the pattern
+  alternates.
+- "Box up" means the `dev@` prompt, never a banner alone, and never a
+  match from the PREVIOUS session's scrollback: `clear` + `tmux
+  clear-history` before a relaunch you intend to wait on, or match against
+  `tail -1` of the pane, not the whole capture.
+- Wizard answers race the prompts at fixed sleeps; capture the pane after
+  each answer when a journey depends on WHICH question consumed a key.
+- The opencode shared-auth firstrun gate re-runs on EVERY launch until a
+  login exists, so a loginless box must be skipped past the gate before
+  probing agent env.
 - `byre: wrote <path>` on `^q` after a `^e` edit is NOT a spurious save:
   reportSaved compares open-time and quit-time BYTES, so a lasting external
   edit reports written and a net-identical round trip reports unchanged.
   The "config unchanged" step in the `^e` journey holds only because its
   round-trip is net-identical -- don't file the other case as a bug.
-- After a Ctrl-C the tmux wrapper's `; echo $? > file` never runs, so "rc
-  file still empty" proves nothing about whether the process died. Judge
-  death by `tmux list-panes -F '#{pane_dead}'` and a `pgrep`, not by the
-  status file -- and re-test a "the first Ctrl-C was ignored" impression
-  before reporting it (one did not reproduce, 2026-07-27).
-- Build the candidate from `git archive <sha>`, never the working tree
-  (docs are embedded in the binary, and another session may be editing
-  them). The archive carries no VCS stamp, so `byre version` says
-  `(devel)` -- expected.
-- A passphrase prompt swallows whatever is typed next, masked: an `echo
-  rc=$?` sent while develop waits at `passphrase for ...` becomes a wrong
-  passphrase (2026-10-03). Wait for the prompt to be answered before
-  measuring.
-- Name a python pty driver anything but `pty.py`: it shadows the stdlib
-  `pty` module and every run dies with an AttributeError.
-- Memory: the runner has ~4 GB and may host the owner's other stacks. An
-  agent TUI killed with `exit status 137` right after its login gate is
-  the kernel OOM killer (`docker events` shows `oom`; `dmesg` names the
-  process), not byre. Check `free -m` before agent legs, and redo any leg
-  that died that way.
-- gemini's folder-trust dialog swallows Ctrl-C as its auth screens do;
-  a "stopped" gemini box may still be up. `docker ps` before planting
-  into its volumes (2026-10-03: a plant landed under a live box).
-- A wait pattern naming a SKILL (`opencode-shared-auth`) matches the
-  build log's COPY lines, like an agent name does. Wait for the hook's
-  own verbs (`promoted`, `refusing`) in a pipe-pane log.
+
+### Teardown
+
+- Filter teardown by the journey's own project id. A blanket `docker rm
+  -f $(docker ps -q --filter label=byre.project)` kills every OTHER
+  journey's box on the VM, which byre then reports faithfully as `exit
+  status 137 (SIGKILL -- the box was killed out from under the session
+  ...)`.

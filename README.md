@@ -117,7 +117,7 @@ Container:    running (0d95f3a2c1b4)
               4c1e8a7b2d90). Other rows describe the current config.
 ```
 
-(you can use `byre status --full` for more comprehensive output, or `byre status --data` if you need machine-parseable)
+(`byre status --full` shows every value untruncated; `byre status --data` prints the full view as JSON.)
 
 Everything from here on has a page on the docs site:
 **[getbyre.com/docs](https://getbyre.com/docs/)**.
@@ -247,8 +247,9 @@ checkout.
 ([recipe](https://getbyre.com/docs/how-do-i/recovery/#move-my-box-to-another-machine))
 
 **Stop using byre?**
-tldr: `byre dockerfile` and `byre dockerrun` print the whole exit;
-`byre ejectfirewall` prints the firewall's step.
+tldr: `byre dockerfile` and `byre dockerrun` print the image and run
+command; `byre ejectfirewall` prints the firewall's step; credential
+delivery has no eject.
 ([recipe](https://getbyre.com/docs/how-do-i/recovery/#stop-using-byre))
 
 **…do something not listed here?**

@@ -1,12 +1,10 @@
 # Adding (or source-hardening) an agent CLI
 
-A playbook for the exercise first run on Grok (2026-07-16, ADR 0036):
-take an agent CLI whose source we have, answer the credential-mechanics
-gates from that source, and build or repair its skills on the evidence.
-This doc is METHOD
-and accumulated hints; current per-agent facts and gate status live in
-`docs/AGENT-CREDENTIAL-MECHANICS.md` and `TODO.md` -- don't duplicate
-status here, it rots.
+A playbook: take an agent CLI whose source we have, answer the
+credential-mechanics gates from that source, and build or repair its
+skills on the evidence. This doc is METHOD; per-agent facts, worked
+answers and gate status live in `docs/AGENT-CREDENTIAL-MECHANICS.md`
+and `TODO.md` -- don't duplicate status here, it rots.
 
 The one-sentence version: **read the source before building, distrust
 every "evidently" in the existing record, and let the vendor's own
@@ -44,55 +42,51 @@ its exact contract, (2) credential file write/lock/reload mechanics,
 first round surfaces (grok's `GROK_AUTH_PATH` was a one-line mention
 that changed the seeding design).
 
-The gate checklist -- what to answer for ANY agent CLI:
+The gate checklist -- what to answer for ANY agent CLI. The Grok section
+of AGENT-CREDENTIAL-MECHANICS answers every item from source and is the
+worked example:
 
 - **Write pattern**: temp+rename or in-place? (Decides whether a
   symlink survives a credential write.) Check for divergent fallback
-  paths -- grok's ENOSPC fallback writes in place and follows symlinks
-  while the normal path replaces them.
+  paths -- one error path can write in place and follow symlinks while
+  the normal path replaces them.
 - **Rotation semantics**: token lifetimes; is the refresh token
-  single-use; what does reuse cost (grok: family revocation, stated
-  outright in vendor comments -- an "experiment needed" became a fact
-  lookup); which error codes are terminal vs transient (grok:
-  `invalid_grant`/`invalid_client` only, and `invalid_grant` verdicts
-  are sticky).
+  single-use; what does reuse cost (vendor comments may state it
+  outright, turning an "experiment needed" into a lookup); which error
+  codes are terminal vs transient, and whether a terminal verdict is
+  sticky.
 - **Locking**: real kernel flock or PID-file theater? Held across the
   IdP call or only the file write? And the trap that killed two designs:
   **any staleness/steal probe built on `kill(pid, 0)` is
   cross-container-broken** -- a live holder in another PID namespace
-  reads as ESRCH and gets its lock stolen near-instantly. A single
-  kernel's flocks DO work across boxes on a shared volume; it's the
-  vendor's own steal logic that breaks them. Only a lock the vendor
-  binary doesn't interpret can serialize boxes.
+  reads as ESRCH and gets its lock stolen. A single kernel's flocks DO
+  work across boxes on a shared volume; it's the vendor's own steal
+  logic that breaks them. Only a lock the vendor binary doesn't
+  interpret can serialize boxes.
 - **Env overrides**: anything that relocates the credential file or
-  delegates auth. For each one, trace EVERY consumer -- grok's
-  `GROK_AUTH_PATH` moved the whole auth manager (reads, writes, login
-  persistence, lock) but NOT the file watcher or hot-reloader. "Honored
-  by the login flow" was exactly what seeding needed; "ignored by the
-  watcher" is exactly why it can't be the sharing mechanism.
+  delegates auth. For each one, trace EVERY consumer: an override the
+  login flow honors and the file watcher ignores is fit for seeding and
+  unfit as the sharing mechanism.
 - **Headless failure shape**: hang vs fail-closed, per entrypoint --
   print mode, agent mode, `--no-browser` variants can differ within one
   binary. Cheap live probe: point the state-dir env at an empty temp
   dir and run the headless mode under `timeout` (never gamble the box's
   live credential).
 - **Precedence**: stored login vs env API key vs external provider, at
-  selection time AND at refresh time. Grok's surprise: with the
-  provider command set, the external command becomes the refresh
-  authority for every token type -- including a stored OAuth login --
-  because `build_refresher` branches on the command, not the token.
-- **Invocation contracts** for any seam you'll ride: timeouts (grok
-  kills refresh-path provider calls at 5s and gives login-path calls
-  300s), stderr visibility (swallowed on grok's refresh path, surfaced
-  on login), stdout parsing (bare token vs JSON), and default lifetimes
-  when no expiry is provided (grok assumes 30 DAYS for a bare token --
-  always emit JSON with `expires_in`).
+  selection time AND at refresh time. An external provider can become
+  the refresh authority for every token type, a stored OAuth login
+  included.
+- **Invocation contracts** for any seam you'll ride: timeouts per call
+  path, stderr visibility, stdout parsing (bare token vs JSON), and the
+  default lifetime when no expiry is provided -- always emit an explicit
+  expiry.
 
-## Design lessons (paid for once already)
+## Design rules
 
 - **Prefer the vendor's sanctioned seam to fighting its file handling.**
-  v1 fought temp+rename with symlinks and lost; v2 rides the documented
-  provider-command seam and the whole race disappears. If the CLI has an
-  "enterprise SSO" style delegation hook, that's probably your
+  Symlinks against a temp+rename writer lose (grok-shared-auth v1); a
+  documented provider-command seam removes the race (v2). If the CLI has
+  an "enterprise SSO" style delegation hook, that's probably your
   mechanism.
 - **Seed through the vendor binary itself** when an override lets you
   (grok: `GROK_AUTH_PATH=<store> <agent> login`). The store stays in
@@ -125,7 +119,7 @@ The gate checklist -- what to answer for ANY agent CLI:
   exception: never hold that lock across an interactive login; document
   the accepted residual instead.
 
-## byre-side mechanics (the boring hour-savers)
+## byre-side mechanics
 
 - **Skill shape** for a shared-auth companion: `companion_for` pairing,
   machine-scoped identity volume, `[runtime] env` carrying the seam,
@@ -145,7 +139,7 @@ The gate checklist -- what to answer for ANY agent CLI:
   observed through a full token rollover. Source-verification is
   necessary, not sufficient; the vouch follows the field gate (the v1
   lesson, and both keys at once is a parse error, ADR 0034).
-- **Tests that will bite you if forgotten**: the per-skill shape test,
+- **Tests to update**: the per-skill shape test,
   `TestBuiltinCompanionDeclarations` (companion map), the stub
   classification list, and self-host composition pins. Script behavior
   is testable from Go: run the hook/broker via `bash` with the
@@ -163,17 +157,8 @@ The gate checklist -- what to answer for ANY agent CLI:
   give any superseded ADR a superseded-in-part header.
 - **Review loop**: after codex is clean, get a second opinion from a
   DIFFERENT reviewer -- and if the change concerns an agent CLI we ship,
-  use that CLI as the reviewer. Grok reviewing the grok broker
-  live-probed it with fake stores and caught two Highs codex missed
-  (the 401-loop and the expiry-buffer thrash), exactly as it once
-  caught the bundled-packs bug in its own packaging. Expect and welcome
-  reviewer probes; keep green YOUR job.
+  use that CLI as the reviewer: it can live-probe the integration with
+  fake stores. Expect and welcome reviewer probes; keep green YOUR job.
 - **Ops**: the gated engine-side suite must actually run before
   handoff (`byre-inttest`); verify the tests RAN rather than
   skipped (count RUN/PASS lines, don't trust a fast `ok`).
-
-## What's next
-
-Which agents still need a pass, and what each pass should target, lives in
-TODO.md and docs/AGENT-CREDENTIAL-MECHANICS.md (the rule at the top of this
-file: method here, status there).

@@ -4,49 +4,50 @@
 
 - **`byre run`: one agent task, headless, with byre's verdict as the
   exit code.** `byre run --task task.md` (or `--task -`, or `BYRE_TASK`)
-  sets up the box as `byre develop` does, runs the agent's headless mode
-  with no terminal, and exits when it does -- from CI or any script.
-  stdout is the agent's answer; `--data` prints one JSON document, byre's
-  outcome, instead. Gate on the exit code or that document: they are the
-  only authorities, and everything on stderr and in `.byre-run/` is the
-  agent's. `--timeout` bounds a run; there is no limit by default. The
-  commands page has the exit table; the cookbook's "Run one task
-  headlessly (CI)?" has the CI recipe. ADR 0061.
-- **Agent skills declare a headless command.** `[agent] headless =
-  "<command>"` in a skill.toml is what `byre run` executes; an agent
-  without one is refused by name. The bundled claude, codex and grok
-  skills ship one. `byre status`, the config editor's Skills screen and
-  `byre skill inspect` show it. `docs/SKILLS.md` has the author contract.
+  sets up the box as `byre develop` does and runs the agent's headless
+  mode with no terminal, from CI or any script. stdout is the agent's
+  answer; `--data` prints byre's outcome as one JSON document instead.
+  Gate on the exit code or that document; stderr and `.byre-run/` are the
+  agent's. `--timeout` bounds a run (no limit by default). Exit codes:
+  the commands page. CI recipe: the cookbook's "Run one task headlessly
+  (CI)?". ADR 0061.
+- **Agent skills declare a headless command.** `[agent] headless` in a
+  skill.toml is what `byre run` executes; an agent without one is refused
+  by name. The bundled claude, codex and grok skills ship one, and `byre
+  status`, the config editor's Skills screen and `byre skill inspect`
+  show it. Author contract: `docs/SKILLS.md`.
 - **Skills can declare what they require.** `requires = ["codex"]` in a
-  skill.toml names skills it does not work without; develop and `byre
-  run` refuse a box where one is not enabled, and byre never enables it
-  for you. Older byre releases refuse a manifest carrying the key. ADR
-  0062.
+  skill.toml names skills it does not work without. develop and `byre
+  run` refuse a box where one is not enabled; byre never enables it for
+  you. Older byre releases refuse a manifest carrying the key. Author
+  contract: `docs/SKILLS.md`; ADR 0062.
 - **`byre preset apply --yes`: apply a committed preset in CI.** No
   terminal needed; the full review still prints to stderr and the
   confirm is skipped. It refuses an https preset URL, a digest-less
   https `[sources]` row, and any credential row -- pass credentials with
   `env_from_host` instead. ADR 0063.
 - **`byre build`: the image without a session.** It builds what `byre
-  develop` would, with the engine cache, and prints the image tag as the one
-  line on stdout (the build output goes to stderr) -- no volumes seeded, no
-  container. For warming a persistent runner, reading the tag, or failing a
-  job early on a config that no longer builds; a hosted runner still rebuilds
-  every job. Cookbook: "Build the box without starting a session?".
+  develop` would, with the engine cache, and prints the image tag as the
+  one line on stdout; build output goes to stderr. No volumes are seeded
+  and no container is created. Use it to warm a persistent runner, read
+  the tag, or fail a job early on a config that no longer builds (a
+  hosted runner still rebuilds every job). Cookbook: "Build the box
+  without starting a session?".
 - **codex never saves an env key in a headless run.** Given
   `OPENAI_API_KEY` or `CODEX_ACCESS_TOKEN`, codex's headless command logs
-  the key into a codex home made for that one run and deletes it after,
-  never into the project's codex state: with codex-shared-auth enabled, a
-  saved key would be shared to every project on the machine at the next
-  launch. A key in the environment wins over a codex login the box
-  already has, for that run. docs/AGENT-CREDENTIAL-MECHANICS.md explains.
+  in with the key in a codex home made for that one run, then deletes it.
+  The key never reaches the project's codex state, where codex-shared-auth
+  would share it to every project on the machine. For that run, an env
+  key wins over a codex login the box already has. Mechanics:
+  docs/AGENT-CREDENTIAL-MECHANICS.md.
 - **grok runs headless.** `byre run -a grok` gives grok the task as one
   `--prompt-file` turn and reads its json output: the answer, or grok's
-  own error message with exit 10. The credential is `XAI_API_KEY`, the
-  grok-shared-auth broker, or a saved login; with none, exit 13 and the
-  remedy. grok prints its whole output at the end, so nothing streams
-  while it works, and a saved login that can no longer refresh makes grok
-  hang -- pass `--timeout`. The grok skill now installs `jq`.
+  own error message as an agent-reported failure. The credential is
+  `XAI_API_KEY`, the grok-shared-auth broker, or a saved login; with
+  none, the run fails with the remedy. grok prints its whole output at
+  the end, so nothing streams while it works. A saved login that can no
+  longer refresh makes grok hang, so pass `--timeout`. The grok skill now
+  installs `jq`.
 - **The claude skill installs `jq`.** Its headless command reads
   claude's result event with it.
 - **`status --data` is StatusDataVersion 5:** it adds `agent_headless`.
@@ -55,14 +56,13 @@
   running and describes the config, not the box.
 - **A box with no terminal no longer stalls ten minutes on a login.** With
   the credential absent, the codex, grok and opencode login hooks (and
-  grok-shared-auth's shared-store login) ran an interactive login whenever
-  the box started, terminal or not, so a launch from a script or a pipe sat
-  out the 600 s bound and then came up unauthenticated anyway. Each now
-  skips the login when stdin is not a terminal, and prints what to do
-  instead: set the agent's API key (`env_from_host`, or
-  `byre credentials set`), or log in from `byre shell`. codex's own
-  `codex login status` probe is bounded at 30 s too. Hooks also honour
-  byre's own `BYRE_HEADLESS=1` signal, which `byre run` sets.
+  grok-shared-auth's shared-store login) ran an interactive login at every
+  box start. A launch from a script or a pipe sat out the 600 s bound and
+  came up unauthenticated anyway. Each now skips the login when stdin is
+  not a terminal or `BYRE_HEADLESS=1` is set (`byre run` sets it), and
+  prints the remedy: set the agent's API key (`env_from_host`, or `byre
+  credentials set`), or log in from `byre shell`. codex's own `codex login
+  status` probe is bounded at 30 s too.
 - **Claude with an env credential skips its first-run wizard.** A box given
   `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`
   by env still stopped in Claude's setup wizard, login step included, on a
@@ -78,8 +78,8 @@
   go, node and python templates move to `golang:1.27-trixie`,
   `node:26-trixie` and `python:3.13-trixie` -- a new Go, Node and Python
   as well as a new Debian, so project code can notice. To stay where you
-  were, set the base in `byre config` (Base image row), or in the config:
-  a project with no `base` key pins `base = "debian:bookworm"`; a project
+  were, set the base in `byre config` (Base image row) or in the config.
+  A project with no `base` key pins `base = "debian:bookworm"`. A project
   on a template pins that template's previous tag (`golang:1.26-bookworm`,
   `node:22-bookworm`, `python:3.12-bookworm`), or the `-trixie` variant of
   the same language line to take the new Debian and keep the language.

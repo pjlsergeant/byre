@@ -3,9 +3,8 @@
 Where content lives and why: the placement rules for the README, the
 site, and the repo docs. P1-P11 are citable as `PLACEMENT.md Pn`; three
 are test-enforced (P6's tldr pin, P9's inventory in TODO.md, P10's
-commands-page pin). Extracted from `docs/marketing/positioning.md`,
-which keeps the audience, voice, and evidence base that these rules
-serve.
+commands-page pin). `docs/marketing/positioning.md` holds the
+audience, voice, and evidence base these rules serve.
 
 **P1. Conversion copy may be adapted; operational fact has one home.**
 The two converting surfaces face different arrival moments, so each may
@@ -18,10 +17,11 @@ steered by the positioning doc (`docs/marketing/positioning.md`; the
 landing adapts from it). The why-not comparisons:
 `site/content/why-not.md` (a convert page); README and landing carry
 the shared thesis-plus-pointer strip only. Operational docs:
-`site/content/docs/` (this repo). Deep reference (architecture, skill authoring, credential
-mechanics): repo `docs/` -- the site links to these on GitHub, never
-mirrors them. Point-in-time rationale: `docs/adr/`. (The positioning
-doc's header carries the same canonicality rule.)
+`site/content/docs/` (this repo); the boxed/not-boxed contract's one
+home is `site/content/docs/whats-boxed.md`. Deep reference
+(architecture, skill authoring, credential mechanics): repo `docs/` --
+the site links to these on GitHub, never mirrors them. Point-in-time
+rationale: `docs/adr/`.
 
 **P3. The README keeps the whole trial path.** A GitHub visitor must be
 able to evaluate, install, and reach a first `byre develop` without
@@ -38,9 +38,9 @@ makes P3's aggressive trim safe: the README is sized for the human skim.
 when it changes rarely: the H1 pitch, the blessed install command, the
 develop one-liner, the How-do-I tldrs, the hero comfort fact, the
 why-not strip, the config console block, and the landing's TUI scenario
-subset (a per-line-verbatim subset of the README's). Volatile content lives only in its canonical
-home. (The boxed/not-boxed contract left this list when the README's
-copy became a summary-plus-link; whats-boxed.md is its one home.)
+subset (a per-line-verbatim subset of the README's). Volatile content
+lives only in its canonical home, and the README carries a summary plus
+a link (the boxed/not-boxed contract is one).
 
 **P6. A README summary is a different genre, not an excerpt -- and
 shared text is verbatim or absent.** README summaries are written for
@@ -60,9 +60,8 @@ the wrong genre.
 `docs/`. P8 governs serve/depth documentation links; conversion pages
 link laterally between themselves (the convert surfaces' strip points
 at `/why-not/`, per P2). A repo doc earns a site page only when its
-audience flips from contributor to user (first flip: the security model
-to `/docs/security-model/`; repo SECURITY.md keeps the reporting
-policy).
+audience flips from contributor to user (the security model lives at
+`/docs/security-model/`; repo SECURITY.md keeps the reporting policy).
 
 **P9. Pinned artifacts are inventoried.** Every surface showing real
 byre output is a lockstep liability; the status/marketing tripwire in
