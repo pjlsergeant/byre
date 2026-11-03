@@ -21,8 +21,9 @@ picker-owned consent), ADR 0053 (the launch record this extends).
 enabled implicitly for the run, the same mechanism the `agent` key already
 uses (`skills.Resolve` appends the agent to the enabled set). Its CLI bakes
 into the image, its state volume mounts, its egress and injection adapters
-ride the normal paths. Only INSTALLED skills qualify -- a missing package
-keeps its install-hint error; acquisition on byre's initiative stays banned.
+ride the normal paths. The skill must already be in the catalog (bundled, local or installed) --
+a missing package keeps its install-hint error; the override never acquires
+packages, since acquisition on byre's initiative stays banned.
 The explicit flag is the enable-consent, consistent with deny-by-default's
 "a skill's own functional endpoints open when the user enables it".
 
@@ -37,8 +38,9 @@ in resolution consults the picker preferences. An override therefore never
 enables a companion and never asks the question -- ruled, and pinned by
 test rather than by a guard nobody can point at.
 
-**Nothing durable is written, but durable side effects are named.** The
-project image tag temporarily becomes the override variant (the next plain
+**The override edits no config; its image, state volume and launch record
+persist normally, and are named.** The project image tag temporarily
+becomes the override variant (the next plain
 develop rebuilds back, layer-cached); the override agent's state volume
 persists like any agent's. The launch announcement says the config is
 untouched; `byre status` renders the running box's agent from the launch

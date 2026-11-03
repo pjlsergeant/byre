@@ -2,9 +2,9 @@
 
 Decided 2026-07-25, grilled with the maintainer. `seed_prefs` -- the opt-in
 for the one-time copy of an agent's curated non-secret pref files into a
-fresh state volume (ADR 0013) -- now merges like every other scalar: an
+fresh state volume (ADR 0013) -- merges like every other scalar: an
 explicit later value wins, `false` included; unset inherits. A project
-under a machine-wide `seed_prefs = true` can finally say "not this one".
+under a machine-wide `seed_prefs = true` can say "not this one".
 
 Principles: dependencies don't make design decisions (P7) -- this wart was
 the type case of a decode-representation gap leaking into user-facing
@@ -17,18 +17,16 @@ from "explicitly false", and Merge compensated with `base || over` -- a
 monotonic opt-in no later layer could turn off. The code comment admitted
 the cause ("a bool can't distinguish unset from false"); the user docs
 then sold the consequence as design: "one deliberate exception:
-seed_prefs is a monotonic opt-in." The 2026-07-25 audit (absorbed into
+seed_prefs is a monotonic opt-in." The 2026-07-25 TOML audit (the one behind
 ADR 0044) classified this as a limitation laundered into a decision: the
 TOML binding was never even the limiter -- key-presence detection existed
 and was already used elsewhere in the same file.
 
 ## The decision
 
-Represent the tri-state honestly: `SeedPrefs *bool`. The decoder sets the
-pointer only when the key is present, Merge is plain pointer-override
-(`over` non-nil wins), and consumers read `SeedPrefsEnabled()`. The
-config editor's reconcile writes an explicit `true` or `false` and
-removes the key for "inherit".
+Represent the tri-state honestly (`SeedPrefs *bool`, set only when the key
+is present): an explicit value overrides earlier layers. The config editor
+offers inherit, `true` and `false`, removing the key for "inherit".
 
 Behavior change, deliberate: an explicit `seed_prefs = false` in a
 project config was a silent no-op under an inheriting `true`; it now

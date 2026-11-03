@@ -1,28 +1,13 @@
 # The launch record: what byre told the engine, addressed by its own hash
 
-> **Amended by ADR 0057** (2026-08-13): the record gains credential_unlock
-> and per-KEY decrypt outcomes ("scheduled", never "delivered" — the record is
-> immutable and written pre-start). Keys and outcomes only; values never, the
-> standing keys-not-values rule.
+> **Amended by ADR 0057**: the record also carries the credential unlock
+> outcome and per-key decrypt outcomes, keys never values.
 
-> **Amended by ADR 0059** (2026-10-02): "every container" is "every SESSION
-> container". byre's one-shot helpers write no launch record, because they
-> launch no session: backup's capture and restore's pour carry
-> `byre.helper=<project id>` plus a per-invocation run id (the run id is what
-> lets a cancelled verb remove its OWN helpers and no others); the seed helper
-> carries `byre.helper=<project id>` alone; rehome's migrate helper carries
-> `byre.helper=<new id>` and `byre.helper.src=<old id>`, because it mounts both
-> projects' volumes and one label key holds one value; and the worktree
-> helper carries neither label. The record-less part was always true; the ADR
-> never wrote the exception down. The sweeps that must not run beside a helper
-> query `byre.helper=<project id>` and `byre.helper.src=<project id>` directly,
-> since a launch-record scan cannot
-> see one -- which is also why the worktree helper, carrying no label, is not
-> one of the containers those sweeps can find.
+> **Amended by ADR 0059**: byre's one-shot helpers launch no session and write
+> no launch record; their labels and the sweeps that find them are ADR 0059's.
 
 Decided 2026-07-28. Every session container byre creates gets a **launch
-record** -- a
-TOML file in the project store holding the exposure facts byre handed the
+record** -- a TOML file in the project store holding the exposure facts byre handed the
 engine, named by the sha256 of its own bytes, pointed at by a `byre.launch`
 container label. `byre status` reads and VERIFIES it, and while a box is
 running that box is the page's subject: the grant rows describe it, and a
@@ -86,7 +71,8 @@ secret. Hashing the values was considered and rejected -- everything in the
 record is non-sensitive by construction, and a hashed bind row cannot tell you
 `/secrets` is still mounted, which is the entire point.
 
-**The image digest is the quiet win.** `byre rebuild` moves the tag; only the
+**The image digest records what the box was built from.** `byre rebuild` moves
+the tag; only the
 digest pins what the running box was BUILT from. It is an engine inspect after
 the build; a failure records an empty digest WITH the reason, because an honest
 empty beats a plausible hash byre never obtained.
@@ -98,20 +84,18 @@ value only recoverable by asking a LATER byre what its default is now, which is
 precisely the re-derivation this record exists to abolish. Change that default
 in a release and every such record silently starts describing an image its box
 never ran, with no delta to show for it: `""` on both sides compares equal
-while `FROM` really did move. So `imageRecord` resolves it once, where the
-record is assembled. The comparison normalizes too, but for a different
-population -- that is what keeps a record written BEFORE this rule, holding a
-bare `""`, comparable at all. For THOSE records the moved-default delta is
-unrecoverable: their `""` reads as today's default on both sides, so the first
-`DefaultBase` change after an upgrade shows no `~ Base` line for boxes
-launched before the rule. Accepted -- the value was never written down, and
-only records written from here on carry it. The `(default: ...)` spelling
-survives as display only.
+while `FROM` really did move. So `imageRecord` stores the effective base,
+resolved once where the record is assembled; the `(default: ...)` spelling is
+display only. Compatibility: the comparison also normalizes a bare `""`, which
+keeps older records comparable, but for them a moved default is unrecoverable
+-- their `""` reads as the current default on both sides, so the first
+`DefaultBase` change shows no `~ Base` line for boxes launched with such a
+record. Accepted: the value was never written down.
 
 ### Storage: a store file named by its own hash, pointed at by a label
 
 `~/.byre/projects/<id>/launches/<sha256>.toml`, written under the setup lock
-from the post-lock resolution (the re-resolve that landed the same day), with
+from the post-lock resolution, with
 the container created carrying `byre.launch=<sha256>`.
 
 Content-addressing gives integrity for free, and the integrity is not
@@ -122,18 +106,18 @@ mismatch is DISCLOSED, not trusted. The label value is checked against
 `^[0-9a-f]{64}$` before it becomes a path component, because it comes back off
 a container.
 
-This sits inside the existing self-edit trust ruling rather than extending it,
-but it has to be said out loud: **the record only ever INFORMS a human reading
-status. No host action is driven by it.** An edited record is refused rather
-than believed, so the forgeable outcome is not a false page: it is a WITHDRAWN
-one. A self-edit agent can delete its own record or make it unreadable, and
+This sits inside the existing self-edit trust ruling rather than extending it:
+**an edited record is refused rather than believed**, by status and by ADR
+0054's exclusive-volume check alike, so the forgeable outcome is not a false
+page or a wrong mount decision: it is a WITHDRAWN record. Status falls back to
+the current config; the exclusive check refuses (ADR 0054). A self-edit agent can delete its own record or make it unreadable, and
 status then says which and falls back to describing the current config.
 
 **Residual, disclosed** (`site/content/docs/security-model.md`): a `--self-edit`
 box can therefore stop `byre status` describing it. The failure direction is a
 claim withdrawn, never a false one, and it costs an agent nothing it did not
-already have -- a box that authors its own next sandbox can already change
-what the next status page describes by editing the config.
+already have -- a box that authors its own next sandbox can change what the
+next status page describes by editing the config.
 
 Worktrees share one project store (ADR 0009). Each worktree box writes its own
 record there and they are told apart by their addresses, not by their paths --
@@ -186,9 +170,9 @@ identity to keep honest.
 
 ## The status split
 
-**The running box is ALWAYS the subject when one exists.** `statusInfo` is
-resolved from the current config exactly as before; a verified record then
-REPLACES the exposure fields, and the config-derived values are kept for the
+**A running box with a verified record is the subject; otherwise the rows
+describe the next launch.** `statusInfo` is resolved from the current config;
+a verified record then REPLACES the exposure fields, and the config-derived values are kept for the
 diff. Every row rides the funnel it already rode -- no second renderer to
 drift. The `Container` row states the subject (*the grant rows above describe
 THIS box (launch record <addr>); other rows describe the current config*), and
@@ -204,8 +188,7 @@ blank the running box's posture claim; it appears as a next-launch change.
 
 **A delta line must be a real difference.** The section's only value is that
 every line in it is true, so a standing false row is worse than no section: it
-trains the reader to skip the one place byre says what changed. Four rules fall
-out, and each closed a defect a reviewer found:
+trains the reader to skip the one place byre says what changed. Four rules:
 
 - both sides run through the SAME normalization the engine got. Host paths are
   tilde-expanded and cleaned (`~/secrets` and `/home/pete/secrets` are one
@@ -215,7 +198,7 @@ out, and each closed a defect a reviewer found:
   the point of `!host` reaching past the cascade -- diffing that against a
   record reports every closed-but-declared endpoint as arriving next launch,
   forever, on the ordinary claude-minus-statsig config. One function
-  (`egressAfterClosures`) now performs the subtraction for both the resolution
+  (`egressAfterClosures`) performs the subtraction for both the resolution
   that feeds the record and the view that is compared to it.
 - the base is compared by EFFECTIVE value, never by config spelling. `gen`
   substitutes `gen.DefaultBase` for an empty `base`, so writing the default out
@@ -227,9 +210,6 @@ out, and each closed a defect a reviewer found:
   -- reporting no change across an edit that changes what the engine is handed.
   Rendered shell-quoted, so the line is unambiguous too.
 
-**With no box, nothing is relabelled.** The rows ARE the next launch and
-today's semantics stand.
-
 **What the record does not replace**, and why the Container row says so: the
 wiring rows (MCP, Claude Skills, standing instructions), the build rows
 (template, raw build lines, config `[env]`), the host-env passthrough, and the
@@ -238,9 +218,8 @@ rows describe configuration and construction rather than what the engine was
 told.
 
 `--data` follows the same rule `--full` does: whatever the page's subject is,
-the JSON says the same and carries the same qualifiers. It gains `subject`
-(`running_box` / `next_launch`), a `launch` object (the record, or the state
-and note explaining why there isn't one), and `changes_on_next_launch`.
+the JSON says the same and carries the same qualifiers (schema: the `--data`
+reference).
 
 ## The config editor
 
@@ -265,8 +244,8 @@ accurately -- it is the record's SOURCE, not a consumer.
 - Every `byre develop` writes one small file and one extra engine inspect.
 - Boxes already running when byre is upgraded carry no label, so status
   qualifies their rows until they are restarted. That is the honest reading.
-- The record's serialization is a CONTRACT in the strongest sense available:
-  the bytes ARE the address, so reordering a field changes every address. It
+- The record's serialization is a byte-exact contract: the bytes ARE the
+  address, so reordering a field changes every address. It
   is pinned byte-exact.
 - `status --data` moves to version 2.
 - Env keys are recorded and rendered (`Box env`) but deliberately do NOT
@@ -278,12 +257,11 @@ accurately -- it is the record's SOURCE, not a consumer.
   business holding.
 - `byre dockerrun` prints the run command WITHOUT the `byre.launch` label, as
   it already omits the per-invocation nonce and prints its own client pid. It
-  is an ejection aid, not a byte-exact replay; a box started by hand simply
-  has no record, and status degrades honestly for it.
+  is an ejection aid, not a byte-exact replay; a box started by hand has no
+  record, and status degrades honestly for it.
 - `byre rehome` migrates the config and the applied marker, not the records.
   It refuses while a session runs, so no live box's record is lost -- what
   goes is bookkeeping for containers that are already gone.
-- A future consumer arrives with ADR-worthy weight of its own: volume
-  `sharing = "exclusive"` enforcement reads sibling boxes' records to learn
-  which volumes they actually mounted, rather than guessing from their current
-  config.
+- Volume `sharing = "exclusive"` enforcement (ADR 0054) reads sibling boxes'
+  records to learn which volumes they actually mounted, rather than guessing
+  from their current config.

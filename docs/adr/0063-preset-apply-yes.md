@@ -3,11 +3,9 @@
 Decided 2026-11-02. `byre preset apply --yes` applies a preset without a
 terminal: the full review still prints to stderr, the confirm is skipped,
 and the chauffeured installs run with `--yes`. It refuses, before anything
-is fetched or written, in three cases: the preset is named by an https
-URI, an https `[sources]` hint it would install from carries no digest, or
-a credential is in play: a credential row on either side (the preset or
-the stored config it would replace), or anything the credential review
-would show. Without `--yes`, a pipe refuses and the message names `--yes`.
+is fetched or written, wherever the review could not stand in for the
+human (the three cases below). Without `--yes`, a pipe refuses and the
+message names `--yes`.
 
 Principles: P5 (consent to applied content is consent to its RENDERED
 grants -- `--yes` keeps the rendering, into the CI log); P1 (every refusal

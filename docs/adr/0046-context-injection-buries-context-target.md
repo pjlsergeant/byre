@@ -1,22 +1,19 @@
 # Agent context is injected; byre never writes an agent-owned file
 
-> **Amended by ADR 0059** (2026-10-02): "byre no longer writes into any file an
-> agent or its user owns, ever" is about CONTEXT DELIVERY -- byre speaks through
-> its own channel or not at all. It is not a rule about restoring the user's own
-> data: `byre restore` pours the user's own files back into the user's own
-> volume, at the user's instruction, which is the whole purpose of the verb.
+> **Amended by ADR 0059**: `byre restore` returning the user's own files to
+> the user's own volume, at their instruction, is outside this rule.
 
 Decided 2026-07-26, maintainer-diagnosed ("we've made a terrible mistake
 with the design of byre"). The agent context -- chassis facts, skill
-snippets, `[[context]]` standing instructions -- now reaches every agent
-by INJECTION through that agent's own vendor channel, exactly as MCP
-servers (ADR 0033) and Claude Skills (ADR 0039) already did. The
-`context_target` mechanism is retired: byre no longer writes into any
-file an agent or its user owns, ever.
+snippets, `[[context]]` standing instructions -- reaches every agent by
+INJECTION through that agent's own vendor channel, exactly as MCP servers
+(ADR 0033) and Claude Skills (ADR 0039) do. The `context_target`
+mechanism is retired. The rule is about CONTEXT DELIVERY: byre never
+writes into any file an agent or its user owns to deliver context.
 
 Principles: P4 (a delivery claim status can't stand behind is degraded,
 never silently asserted); P7's custody line from ADR 0044, which this
-decision finally applies to the file that needed it most.
+decision applies to the file that needed it most.
 
 ## The mistake
 
@@ -58,8 +55,7 @@ not delivered, and `byre status` / `byre context list` say so
 write.
 
 Per-session dynamic content -- the enforced egress allowlist
-announcement and the `--self-edit` note -- moves from the launcher's
-file write to an exported `BYRE_SESSION_CONTEXT` env var (always set,
+announcement and the `--self-edit` note -- rides an exported `BYRE_SESSION_CONTEXT` env var (always set,
 possibly empty, leading-separated so adapters can concatenate it
 directly onto the baked text).
 
@@ -67,14 +63,12 @@ directly onto the baked text).
 
 - **claude** -- the launch wrapper (`byre-claude-launch`) merges the baked
   `/etc/byre/agent-context.md` with `$BYRE_SESSION_CONTEXT` into one temp
-  file passed as a single `--append-system-prompt-file`. Originally the
-  two flags rode side by side (`--append-system-prompt-file` plus
-  `--append-system-prompt "$BYRE_SESSION_CONTEXT"`, the pair verified
-  against 2.1.220), but later CLIs reject the combination ("Cannot use
-  both", field-hit 2026-07-29) -- and an EMPTY second flag slips that
-  check, so the pair only died on boxes with session additions
-  (`--self-edit`, a firewall) -- hence the merge. System-prompt append is
-  arguably the RIGHT authority level for standing instructions anyway.
+  file passed as a single `--append-system-prompt-file`, because the CLI
+  rejects `--append-system-prompt-file` and `--append-system-prompt`
+  together ("Cannot use both", field-hit 2026-07-29; an EMPTY second flag
+  slips that check, so only boxes with session additions failed).
+  System-prompt append is the RIGHT authority level for standing
+  instructions.
 - **codex** -- the launch wrapper adds
   `-c developer_instructions="<baked>+<session>"`: a stable config key
   emitted as a separate developer-role message, APPENDED
@@ -110,15 +104,15 @@ DevHome containment validation that existed only to bound the
 placement, and every skill's `context_target` declaration. The RETIRED
 key still parses so a pre-0046 installed agent skill loads -- it
 confers nothing (no vouch, no validation, no writes); status reports
-such an agent as not-delivered. The self-edit note now bakes whenever
-any agent launches and rides the session var.
+such an agent as not-delivered. The self-edit note bakes whenever any
+agent launches and rides the session var.
 
 ## Consequences
 
 - Both instruction files in every agent's hierarchy revert to their
   owners: the repo's to the repo, the user's to the user. An in-box
   agent's deliberate writes to its own instruction files survive
-  relaunches for the first time.
+  relaunches.
 - Third-party agent skills upgrade by replacing `context_target` with
   `context = "inject"` plus a consuming command; until then they load
   fine and status tells the truth about delivery.

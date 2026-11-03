@@ -35,7 +35,7 @@ assertions against exact product strings instead).
 
 - **Lifecycle first.** Panes run `remain-on-exit`; exit status comes
   from a shell wrapper recording `$?` to a file (NOT tmux's
-  `pane_dead_status`, which proved version-sensitive — ubuntu's 3.4
+  `pane_dead_status`, which proved version-sensitive -- ubuntu's 3.4
   reported 0 where 3.5a reported the real status; CI caught it on the
   harness's first push); every wait races wanted-output against process
   death, so a crash fails with the final screen and status, never a
@@ -74,21 +74,16 @@ assertions against exact product strings instead).
   template carries it; never a dependency of byre).
 - A pane capture is a post-render cell dump -- exact byte-stream
   assertions don't belong in this tier.
-- All of it runs on Linux: macOS pasteboard integration keeps
-  DELIVER.md's macOS-verified/Linux-reported posture. The live-beat
-  clipboard path is testable later with fake `wl-paste`/`xclip` shims
-  on a controlled PATH (test-environment faking only; the product
-  binary stays untouched).
-
-  **Amended 2026-07-17**: the engine-free tiers (unit suite + this tmux
-  tier) now also run on macOS CI — the harness dropped its one GNU-ism
-  (`Opts.Dir` rode `env -C`; now a `cd` inside the pane's shell wrapper)
-  and the `wl-paste` shim tests skip on darwin, since
-  `hostClipboardReader` rides osascript there and never consults the
-  shim. So the pasteboard sentence above still stands: macOS clipboard
-  integration keeps the macOS-verified posture (a fake-osascript
-  sibling is the route if it ever needs CI teeth). The engine and
-  loopback-ssh tiers stay Linux-hosted.
+- Platforms: the engine-free tiers (unit suite + this tmux tier) run on
+  Linux and macOS CI; the engine and loopback-ssh tiers are
+  Linux-hosted. The live-beat clipboard path is tested with fake
+  `wl-paste`/`xclip` shims on a controlled PATH (test-environment faking
+  only; the product binary stays untouched); those shim tests skip on
+  darwin, where `hostClipboardReader` rides osascript and never consults
+  the shim. macOS pasteboard integration therefore keeps DELIVER.md's
+  macOS-verified posture (a fake-osascript sibling is the route if it
+  ever needs CI teeth). The harness carries no GNU-isms (`Opts.Dir` is a
+  `cd` inside the pane's shell wrapper) so it runs on both.
 
 ## A discovery this tier forced: the picker rides /dev/tty
 

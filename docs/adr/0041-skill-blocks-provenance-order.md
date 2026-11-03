@@ -1,23 +1,20 @@
 # Skill blocks emit in provenance order
 
-> Extended by ADR 0042 (2026-07-20): skill apt installs now hoist out of the
-> blocks into their own section ahead of them (the "hoisting" deferral below
-> was for payload COPYs, which stay deferred).
+> Extended by ADR 0042: skill apt installs hoist out of the blocks into their
+> own section ahead of them.
 
 Decided 2026-07-20. The generated Dockerfile's skill blocks emit ordered by
 catalog provenance -- bundled, then installed, then local -- stable within
-each class, with enable order breaking ties. Before this they emitted in
-enable order alone.
+each class, with enable order breaking ties.
 
 ## Why
 
-Docker invalidates every layer after the first changed one. A skill block was
-then `apt -> COPY files -> raw lines` (apt has since hoisted out; ADR 0042),
-so one skill's payload edit re-runs every
-later skill's raw lines -- and the expensive raw lines are the agent and
+Docker invalidates every layer after the first changed one. A skill block is
+`COPY files -> raw lines`, so in enable order one skill's payload edit re-runs
+every later skill's raw lines -- and the expensive raw lines are the agent and
 reviewer installers, which all live in bundled skills. Bumping an installed
 package (the codereview 1.0.1 release, 2026-07-20) re-ran every installer
-behind it in enable order.
+behind it.
 
 Provenance is a volatility proxy that the catalog already knows: bundled
 content changes only with the byre binary, installed packages only on install
@@ -51,4 +48,4 @@ is unchanged, so installed-to-installed dependencies keep working.
 - **Hoisting unreferenced payload COPYs to a tail section**: sound (move a
   COPY only when its dest appears in no raw line), and would catch churn
   *within* a class -- deferred until a real within-class pain arrives;
-  today's pain was entirely cross-class.
+  the observed pain was entirely cross-class.

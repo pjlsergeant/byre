@@ -29,12 +29,10 @@ can check it at resolve, and every surface that lists a skill can show it.
 
 ## The decisions
 
-**Met only by the enabled set, never enabled.** The check runs in
-`skills.Resolve` after the load loop, over the canonical ids of the skills
-that loaded -- the expanded `skills` list plus the agent. Names in
-`requires` expand through the catalog like every other skill name. An
-unmet requirement refuses the resolve; the remedy names the key, and the
-user writes it at the scope they mean (project, layer, or machine-wide).
+**Met only by the enabled set, never enabled.** Names in `requires`
+expand through the catalog like every other skill name and are compared
+as canonical ids. The remedy names the key, and the user writes it at the
+scope they mean (project, layer, or machine-wide).
 
 **Identical under `develop -a`.** The run-scoped agent override resolves
 through the same `Resolve`, so an override that drops a config's

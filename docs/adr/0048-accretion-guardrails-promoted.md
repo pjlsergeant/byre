@@ -1,30 +1,17 @@
 # The accretion guardrails become standing commitments
 
-Decided 2026-07-27. The 2026-07-18 configuration/feature-complexity
-review ended with four working rules "until the consolidation lands",
-with a stated exit: "if they survive contact with a few features,
-promote the durable ones into `docs/PRINCIPLES.md` via an ADR." They
-survived contact -- the [[context]] family, the exit report, and three
-slop-review rounds all shipped under them -- so this ADR executes that
-promotion. PRINCIPLES.md now carries them as the unnumbered
-"Accretion guardrails" list under principle 7.
+Decided 2026-07-27. The four working rules the 2026-07-18
+configuration/feature-complexity review set "until the consolidation
+lands" are standing commitments: PRINCIPLES.md carries them as the
+unnumbered "Accretion guardrails" list under principle 7, which is their
+one home. They earned promotion by surviving contact -- the [[context]]
+family, the exit report, and three slop-review rounds all shipped under
+them.
 
 Deliberately unnumbered: the tree cites `PRINCIPLES.md §n` for the
 seven numbered principles and `PLACEMENT.md Pn` for placement rules;
-minting §8-§11 would re-create the two-namespace collision the
-PLACEMENT.md extraction just disambiguated.
-
-The guardrails, as promoted:
-
-1. No new top-level config class until it shares the named-declaration
-   rails (the MCP/Claude-Skills genus machinery).
-2. No new removal/absence spelling; new absence semantics reuse an
-   existing one.
-3. No new compatibility path without a stated removal release
-   (ADR 0049 holds the window policy and the live inventory).
-4. A new typed skill field needs a stated justification: a second
-   consumer, a security reason raw fields can't carry, or a legibility
-   reason status must understand it.
+minting §8-§11 would re-create the two-namespace collision PLACEMENT.md
+exists to avoid.
 
 ## Context: what the same review REJECTED
 
@@ -44,7 +31,3 @@ re-derive them:
   features, not accretion.
 - **A line-count target**: rejected as a goal. Reduction is a byproduct,
   never chased as a number.
-
-The maintainer's framing stands: **we keep the features we have** --
-what the review earned was consolidation of duplicated implementation,
-retirement of pre-1.0 compat layers (ADR 0049), and these guardrails.

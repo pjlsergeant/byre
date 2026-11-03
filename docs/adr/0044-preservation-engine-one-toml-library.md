@@ -1,13 +1,7 @@
 # Config files are shared custody: the preservation engine, one TOML library
 
-> **Amended by ADR 0057** (2026-08-13): credential writes ride tomldoc like
-> every other user-config write — there is no machine-authored carve-out,
-> because a credential lives in the shared-custody config file itself. Set,
-> unset, rekey and identity creation are additionally a compare-and-swap on
-> the COMPLETE file under the lock that guards it, which is preservation's
-> concurrency half stated for the one write whose loser is unrecoverable: a
-> value encrypted to a recipient that has since been replaced can never be
-> opened again.
+> **Amended by ADR 0057**: credential writes ride tomldoc too, with the
+> compare-and-swap that ADR states.
 
 Decided 2026-07-25, grilled with the maintainer end-to-end. Three decisions
 that stand together:
@@ -39,25 +33,18 @@ sidecar-file architecture whose preset story then failed).
 
 ## The problem
 
-The audit behind this ADR (wip/toml-limitations-audit.md, reviewed by both
-external reviewers, now absorbed here and deleted) inventoried what
-delegating file emission to a library default had cost:
+Delegating file emission to a library default cost three things:
 
-- Every structured save re-marshaled the whole file: all comments
-  destroyed (with a warning in the TUI, silently via the `byre mcp add`
-  CLI path, and silently for inline comments everywhere), layout and key
-  order imposed by encoder policy.
-- `byre layer new`'s own instructional stub comments tripped the
-  hand-comments warning and were then eaten by the first save.
-- SharedAuthPref had a custom decoder and no encoder, so a global-editor
-  save re-emitted `[shared_auth.Pick]` -- a shape byre's own parser
-  refuses. A normal save bricked default.config (reviewer find,
-  reproduced same day, stop-gap shipped and later absorbed here).
-- Missing multiline string emission (the near-miss above).
-- Compensating apparatus throughout: the destroys-comments warning, the
-  surgical top-level-scalar line writers in onboarding (own-the-seam
-  prior art, but line-anchored and refusing multiline hand-forms), the
-  Undecoded-suppression filter around shared_auth.
+- **Comments and formatting.** Every structured save re-marshaled the
+  whole file: all comments destroyed (warned in the TUI, silent on the
+  CLI paths and for inline comments everywhere), layout and key order
+  imposed by encoder policy -- `byre layer new`'s own instructional stub
+  comments included.
+- **Valid serialization.** SharedAuthPref had a custom decoder and no
+  encoder, so a global-editor save re-emitted `[shared_auth.Pick]` -- a
+  shape byre's own parser refuses. A normal save bricked default.config.
+- **Multiline prose.** The encoder had no multiline string emission (the
+  near-miss above).
 
 Canonical-file doctrine (byre owns the layout, comments byre didn't write
 die, disclosed) was considered and rejected by maintainer ruling: the
@@ -68,13 +55,12 @@ authors.
 
 ## The engine
 
-`internal/tomldoc`: Load -> expression index (tables, array-tables,
-key-values with flattened dotted keys, comments) -> mutations as single
-splices -> re-index after every splice (documents are small; re-parsing
-beats offset bookkeeping). House rendering (render.go) applies to content
-byre writes: new files, appended blocks, edited entries -- including
-multiline literal (`'''`) prose for `[[context]]` text, with an escaped
-fallback pinned to round-trip exactly.
+`internal/tomldoc` splices the original bytes and renders only the
+constructs an edit changes (documents are small, so it re-parses after
+every splice rather than keep offset bookkeeping). House rendering applies
+to content byre writes: new files, appended blocks, edited entries --
+including multiline literal (`'''`) prose for `[[context]]` text, with an
+escaped fallback pinned to round-trip exactly.
 
 Behavioral contract (grilled, each default approved):
 
@@ -119,34 +105,12 @@ the file's parsed content -- an untouched field produces no edit at all.
 `TestReconcileCoversEveryField` (the Merge guard's sibling) forces every
 toml-visible field to reconcile and round-trip. The onboarding writers
 (SaveDefault, SaveSharedAuthDefaultPick) ride the same engine; shared_auth
-emission has one owner (`EncodeTOMLValue`: picks win, yes-without-pick
-re-asks, empty removes the key).
+emission has one owner (`EncodeTOMLValue`), which persists the picks
+only; an empty preference removes the key.
 
-Deleted, per the no-accretion ruling: the whole-file encoder path, the
-handComments/commentWarn warning apparatus (nothing left to warn about),
-the line-based surgical primitives and their residual refusals, the
-Undecoded-suppression filter (the byte-based unmarshaler consumes the
-whole shared_auth subtree), and the same-day SharedAuth stop-gap
-marshaler.
-
-## Recorded accepts (the audit's non-instances, so it can die)
-
-- **The `"none"` sentinel** (template/agent): designed vocabulary, kept.
-  Empty-scalar-means-inherit is byre's merge representation; an explicit
-  `template = "none"` in a file is more legible than invisible
-  present-but-empty semantics. Not a binding limitation (presence
-  detection existed); a design choice made deliberately.
-- **`env` has no unset; `env_from_host` disables via `KEY = ""`**:
-  marker-grammar design (ADR 0018's scope), not a binding gap. ADR
-  0018's "`!KEY` doesn't parse as a key" rationale overstated -- quoted
-  keys admit any string; the refusal is product grammar.
-- **`ports` removal is `remove = true`**: the entry's identity is an
-  integer in the current schema -- schema-shaped, handled legibly.
-- **`omitempty` zero-value collapse**: absent-vs-explicitly-empty erases
-  on re-save for most fields; moot by design, because the cascade's
-  marker grammar means empties never carry "clear" semantics. The one
-  place it wasn't moot -- `seed_prefs` -- is fixed by ADR 0045.
-- **Retired-key tolerance**: migration behavior for byre's own past
-  formats, kept (a filtered lenient re-decode under strict parse).
+The `"none"` sentinel (`template = "none"`, `agent = "none"`) is designed
+vocabulary, not a binding limitation: empty-scalar-means-inherit is
+byre's merge representation, and an explicit `"none"` in a file is more
+legible than present-but-empty semantics.
 
 `seed_prefs` tri-state is its own decision: ADR 0045.

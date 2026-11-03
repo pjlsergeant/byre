@@ -1,16 +1,10 @@
 # The claim surface is classified, and BYRE_ is reserved vocabulary
 
-> **Amended by ADR 0057** (2026-08-13): credential rows are classified
-> rendered (status rows + the exposure tally's credentials segment; ciphertext
-> elides and values render nowhere). BYRE_CRED_EXPECT / BYRE_CRED_DIR /
-> BYRE_CRED_WAIT join the reserved chassis vocabulary as launch-claim knobs
-> with wait/export protocol meaning ONLY — and since the wait is fail-closed,
-> skewing them costs a box that refuses to run its agent, never one running
-> without the credentials it claimed.
+> **Amended by ADR 0057**: credential rows and the `BYRE_CRED_*` knobs join
+> the surface, as the sections below state.
 
 Decided 2026-07-27, absorbing the theme-2 spec from the first outside
-review (four independent reviewers; the spec itself was
-codex-approved before implementation). P4 made `byre status` the
+review. P4 made `byre status` the
 security mechanism -- the thing standing where a gate would otherwise
 stand -- and the review found four independent holes in that claim
 surface with one common cause: nothing ever forced the question "does
@@ -28,8 +22,6 @@ ship without its claim answer appearing in a reviewable diff. The
 guard proves the question was ANSWERED, not that the answer is true;
 truth is the review's job plus the per-claim tests. Same bargain as
 `TestMergeCoversEveryField` and the hostopen conformance allowlist.
-Rejected framing: "completeness invariant" -- the reviewer's own
-correction; an enumeration guard must not wear a proof's name.
 
 ## Render from effect, count effective state
 
@@ -49,11 +41,15 @@ Two subrules, both applied and both citable against new code:
    tallies as a closed door (`listRow.closed`), so WHO closed a door
    cannot change whether it counts.
 
+Credential rows (ADR 0057) are classified rendered: status rows plus the
+exposure tally's credentials segment; ciphertext elides and values
+render nowhere.
+
 ## The reserved namespace: vocabulary, never capability
 
 The chassis scripts are parameterized by `BYRE_*` variables (the
-launch-gate file, the context dir, the announced egress -- 18 knobs at
-count), and config `[env]` bakes straight into their environment: a
+launch-gate file, the context dir, the announced egress, the credential
+wait), and config `[env]` bakes straight into their environment: a
 one-line config key could switch off the launch gate while status
 printed `deny-by-default` unhedged. Ruled three tiers:
 
@@ -71,8 +67,11 @@ printed `deny-by-default` unhedged. Ruled three tiers:
    legible spelling while raw Dockerfile lines stay open. But accept
    is not silent: each reserved key gets an attributed `Reserved env`
    row and every claim it can skew stops asserting (network under the
-   gate/egress knobs, context/MCP delivery under theirs; unknown
-   future knobs degrade conservatively).
+   gate/egress knobs, context/MCP delivery under theirs). A key byre does
+   NOT read still degrades conservatively (network + launch), but its
+   note does not call it "byre runtime control": byre cannot say what a
+   key it has never read does, and a skill's own `BYRE_`-prefixed
+   variable is not a control of byre's.
 3. **Raw tier: unchanged.** Verbatim rows, degraded posture claims --
    the machinery that already existed.
 
@@ -82,6 +81,11 @@ ever reads an unassigned all-caps knob outside the `BYRE_` prefix
 (where `[env]` could reach it around the reservation), and
 `BYRE_EGRESS` stays re-asserted at run time so no env source skews
 what the box is told byre enforces.
+
+`BYRE_CRED_EXPECT`, `BYRE_CRED_DIR` and `BYRE_CRED_WAIT` (ADR 0057) are
+launch-claim knobs with wait/export protocol meaning ONLY. The wait is
+fail-closed, so skewing them costs a box that refuses to run its agent,
+never one running without the credentials it claimed.
 
 ## Consent surface
 

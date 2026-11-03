@@ -7,10 +7,8 @@ ready for `byre develop` once every package the config names is installed. A
 backup is the user's own box coming back to them -- not an export format, not
 a distribution channel, and not a second copy of anything byre can rebuild.
 
-This replaces a box export/import design (v5, deleted from `wip/`; git
-history keeps it) that tried to carry the whole box. The restart cut the
-feature down to what people actually want back: the agent's memory and
-context, the credentials, and the project's config.
+What people want back is the agent's memory and context, the credentials,
+and the project's config; everything rebuildable stays out.
 
 Principles: P1 (the threat model is the agent, never the user -- byre does
 not warn the user about copying their own login, and every refusal here is
@@ -21,21 +19,22 @@ the terminal-data funnel as data); P5 (one y/n at restore names the engine,
 the volumes created and kept, the volumes left to develop, and the
 credentials' state -- consent at the scope of its effect); P7 (the base
 image's tar is the pour tool, and byre proves it runs the pour command before
-using it rather than assuming it). Related, and amended in the same unit:
-ADR 0007 (copy semantics), ADR 0008 (no root at runtime), ADR 0029 (the one
-acquisition flow), ADR 0046 (byre never writes an agent-owned file), ADR 0053
-(every container carries a launch record). Related, unchanged: ADR 0004
+using it rather than assuming it). Amended by this decision, each carrying a
+one-line pointer: ADR 0007 (the seeding ban is on byre-initiated copies), ADR
+0008 (no root at runtime in a session), ADR 0029 (restore is the second entry
+to the one acquisition flow), ADR 0046 (the write ban is about context
+delivery), ADR 0053 (session containers carry launch records; helpers do not).
+Related: ADR 0002/0003 (every engine operation is a runner method), ADR 0004
 (session discovery, whose sweep the stillness check is), ADR 0009
 (worktrees), ADR 0017 (machine-scoped identity), ADR 0035 (layers are plain
-files), ADR 0037 (tar name hygiene), ADR 0040 (anchored host writes),
+files), ADR 0037 (precedent for tar name hygiene only), ADR 0040 (anchored
+host writes),
 ADR 0044 (one TOML library), ADR 0051 (integrity, not authenticity),
 ADR 0054 (the exclusive-volume scan), ADR 0057 (project credentials).
 
-## Scope: the config and the project's state volumes
+## What stays out
 
-The backup carries exactly two things: the project's `byre.config` and the
-project's state volumes. Every exclusion has its own reason, and none of them
-is "later":
+Every exclusion has its own reason, and none of them is "later":
 
 - **The workspace** -- git carries it. A backup of a tree byre never owned
   would make byre a worse `git clone`.
@@ -62,10 +61,9 @@ state a one-off `develop --agent grok` left behind is the project's state and
 the user expects it back.
 
 Four reasons a volume stays behind, each named on the preview and in the
-summary. The lists hold one row per VOLUME, not per logical name: a logical
-name is the part after a prefix, so a machine-scoped `login` and this project's
-`login` on another engine are two volumes and both are named, each row's reason
-saying which scope it speaks of.
+summary. The lists name physical volumes, each row with its scope and engine,
+because logical names can repeat (a machine-scoped `login` and this project's
+`login` on another engine are two rows).
 
 - **`role = "cache"`** in the resolved set. Disposable by declaration; a
   cache volume in a backup is weight with no claim behind it.
@@ -79,7 +77,7 @@ saying which scope it speaks of.
 - **Machine scope.** A machine-scoped volume is never offered, whether a
   skill or the project config declares it, and the judgement is the PHYSICAL
   name (`byre-machine-u<uid>-...`) rather than the declarer -- a volume byre
-  can see is machine-scoped whether or not today's resolution says so. Every
+  can see is machine-scoped whether or not the current resolution says so. Every
   machine-scoped volume byre ships is identity state, a login or a key, and
   the destination logs in once: ADR 0017's intended path, not a gap.
 - **Another engine, or another project.** A project volume found on an
@@ -100,8 +98,11 @@ Backup rewrites nothing in the config, with one exception: `--no-credentials`
 deletes the `[credentials]` block and every credential row (an
 `env_from_host` value with the `encrypted:` or `encrypted-file:` scheme) from
 the COPY that goes in the file, through `internal/tomldoc` so every other
-byte survives (ADR 0044); an `env_from_host` table those deletions leave
-empty goes with them (below). The source file is never touched. Host paths,
+byte survives (ADR 0044). The strip also takes a zero-row `[credentials]`
+block and an `env_from_host` table that held nothing but credential rows (a
+bare header is residue of the strip, not a byte the user wrote), removed as
+tomldoc removes any table; a table the user left empty themselves is
+untouched. The source file is never touched. Host paths,
 `engine`, `worktree_base`, `extends`, seeds: all carried as they are, and
 restore lists what this machine must satisfy, each with the verb that reads
 it and how it fails.
@@ -122,14 +123,8 @@ A config can legally hold encrypted rows with no `[credentials]` identity, or
 an identity with no rows, so the file records which of four states it is
 (`rows`, `rows-no-identity`, `identity-only`, `none`) and the restore review
 says it. That state is DERIVED from the verified config bytes at restore,
-never read off the index: a file whose index misstates it is not refused, it
-is simply described correctly. A zero-row `[credentials]` block goes with the
-rows under `--no-credentials`, and so does an `env_from_host` table that held
-nothing but credential rows: a bare header is residue of the strip, not a
-byte the user wrote. It goes as tomldoc removes any table -- header, body,
-and the comments glued directly above the header; a comment a blank line
-separates from it stays, as do the blank lines around it. A table the user
-left empty themselves is untouched.
+never read off the index: a file whose index misstates it is not refused; the
+review states the derived state.
 
 ## References, not payloads
 
@@ -138,12 +133,9 @@ destination. The backup names them; it carries none of them. A layer is a
 plain file the user sends alongside the backup, which is ADR 0035's
 distribution story and remains it.
 
-Each reference is discovered, and hinted, by the loader that reads it today
-and no other: the template by `config.Load` (hints from `default.config` and
-the project file, which is all that exists before the chain loads), each
-layer by `LoadExtendsChain` (the path to create), the agent and skills by
-`skills.Resolve` (hints from the merged `[sources]`, layers included).
-Restore offers the install at each of those steps where a hint exists, under
+Each reference is discovered, and hinted, by the ordinary loader that reads
+it, with that loader's own missing-reference remedy. Restore offers the
+install where a hint exists (a `[sources]` entry visible at that step), under
 `byre preset apply`'s own digest-verified install consent and nothing else
 (ADR 0029); where no hint exists it stops naming the package and its install
 command. Backup refuses at each with that loader's own message, because the
@@ -165,12 +157,10 @@ omitted (ADR 0050, ADR 0052 preserved by not continuing).
 ## Stillness
 
 **Backup requires a completely still project**: no container labelled for
-this project in any state, on any installed engine, in any worktree. The
-sweep is `reset`'s -- `clearSessionMarkers`' shape, project label, running
-first and then any state, over `lifecycleEngines`' list -- with the removal
-taken out: byre refuses and prints the engine's own remedies rather than
-stopping or removing a session on the user's behalf. The container is still
-there after the refusal.
+this project in any state, on any installed engine, in any worktree. It is
+`reset`'s sweep with the removal taken out: backup refuses while any project
+container exists on any checked engine and prints the engine's own remedies;
+it never stops or removes one.
 
 Backup holds the project setup lock from that check through the end of the
 copy, and under the lock it re-runs the collision fence, re-resolves the
@@ -201,39 +191,36 @@ offered as skippable. `reset`, `forget` and `rehome` take the same flags
 through the same code, each with its own consequence sentence. The sweep
 queries the helper labels too (below).
 
-**One interrupt handler per run, with two behaviours.** It goes on the moment
-the verb makes the first thing of its own -- the staging directory, which holds
-the volume bytes in plaintext (restore stages before the review; backup stages
-under the lock) -- and comes off at the commit point, the file linked or the
-last pour done, so a Ctrl-C during the summary kills byre the ordinary way.
+**One interrupt handler per run, three phases.** It goes on the moment the
+verb makes the first thing of its own -- the staging directory, which holds
+the volume bytes in plaintext (restore stages before the review; backup
+stages under the lock) -- and comes off at the commit point, the file linked
+or the last pour done, so a Ctrl-C during the summary kills byre the ordinary
+way. A second Ctrl-C always kills byre outright: firing restores the default
+disposition before it acts.
 
-Before the critical section an interrupt is handled where it lands: the verb's
-own clearing runs -- staging, this run's helpers, and the project directory
-restore created while it is still empty -- and the process ends, 1, saying
-"byre: <verb> cancelled; nothing written". It cannot merely cancel a context
-there, because the verb is sitting in an install offer, a review prompt or a
-lock wait and none of them watches one: Go holds SIGINT off the process while a
-handler is installed, so a cancel-only handler would swallow the Ctrl-C of a
-verb that is only WAITING and leave byre unkillable. Ending the process straight
-from the handler is safe in that phase and nowhere else: the setup lock is an
-flock the kernel drops with the process, and the clearing above is the whole of
-what the phase made.
-
-Restore's pre-commit stretch has a second phase: after the review's y it
-enrols the project (the store bootstrap) before taking the lock. From then on
-a cancellation leaves the directory and the enrolled store, as every
-post-bootstrap exit does (below), names both by path, and ends "byre: restore
-cancelled; no config written and no volume created". The enrolment and its
-record are one step the handler's action cannot land inside, so a
-cancellation is never told the wrong phase.
-
-From the critical section on -- restore's config write, backup's first capture
--- the SAME handler switches to cancelling the context that stretch watches,
-because a created volume, a written config or a helper mid-archive has to be
-UNDONE, and only the code doing it knows how. A second Ctrl-C always kills byre
-outright: firing restores the default disposition before it acts, and before
-it waits out an enrolment in progress, so a stalled enrolment holds back only
-the first Ctrl-C's clearing.
+1. **Before restore's enrolment** (all of backup's pre-capture stretch): the
+   handler clears what the verb made -- staging, this run's helpers, and the
+   project directory restore created while it is still empty -- and ends the
+   process, 1, saying "byre: <verb> cancelled; nothing written". It ends the
+   process directly because prompts and lock waits do not observe context
+   cancellation: Go holds SIGINT off the process while a handler is
+   installed, so a cancel-only handler would leave a waiting verb unkillable.
+   That is safe here and nowhere else: the setup lock is an flock the kernel
+   drops with the process, and the clearing is the whole of what the phase
+   made.
+2. **After restore's enrolment** (the store bootstrap after the review's y,
+   before the lock): a cancellation leaves the directory and the enrolled
+   store, as every post-bootstrap exit does (below), names both by path, and
+   ends "byre: restore cancelled; no config written and no volume created".
+   The enrolment and its record are one step the handler cannot land inside,
+   so a cancellation is never told the wrong phase. The handler restores the
+   default disposition before it waits an enrolment out, so a stalled
+   enrolment holds back only the first Ctrl-C's clearing.
+3. **The critical section** (restore's config write, backup's first
+   capture, onward): the handler cancels the context that stretch watches,
+   because a created volume, a written config or a helper mid-archive has to
+   be UNDONE, and only the code doing it knows how.
 
 ## The helpers
 
@@ -243,15 +230,19 @@ verb. They are the seeding shape, which has run as root in the box's user
 namespace since ADR 0008, and they are **not sessions**: they carry
 `byre.helper=<project id>` and `byre.helper.run=<random per invocation>`,
 never the project label, and they write no launch record because they launch
-no session (ADR 0053, amended below to say so). The run id is this unit's
-addition and belongs to these two verbs: the existing seed helper carries
+no session (ADR 0053). The run id belongs to these two verbs: the seed helper
+carries
 `byre.helper=<project id>` alone; rehome's migrate helper carries
 `byre.helper=<new id>` AND `byre.helper.src=<old id>`, because it mounts both
 projects' volumes and a label key holds one value, so the old id needs a key of
 its own or a sweep under it could not see the helper at all; and the worktree
 helper carries neither label.
 
-The argv is closed and byre's own -- no `run_args` reach it (ADR 0006):
+Helper mechanics are in `docs/ARCHITECTURE.md` (Backup and restore); the constraints and
+their reasons are here. Both verbs select the identity through
+`resolveIdentity`, so rootless Podman without a keep-id mapping refuses
+exactly where develop refuses (ADR 0032). The argv is closed and byre's own
+-- no `run_args` reach it (ADR 0006):
 
 - `--rm -i`, entrypoint overridden to `sh`, `-u 0:0` in the identity's
   userns (`appendUserns`, exactly as develop and seeding select it),
@@ -292,27 +283,27 @@ tool-availability preflight and nothing more -- byre's Debian-derived support
 boundary stays what it is, a warning at develop and a failure at build
 (ADR 0014).
 
-**Leftover helpers are never silent.** On any failure or cancellation the
-verb force-removes the helpers carrying ITS run id, never another
-invocation's, under a bounded process with a 30-second deadline, so a daemon
-that never answers makes cleanup stop and say what may remain rather than
-hang. EVERY engine call a cleanup path makes rides that deadline, the label
-query and the `rm -f` alongside restore's rollback query and removal of the
-volume it was filling: the path runs holding the setup lock, with a config
-removal, a summary and the lock release still to come, and the failure that
-brought the verb there is often the engine itself. And every path that mounts
-or mutates a project volume runs BOTH helper queries for its id --
-`byre.helper=<project id>` and `byre.helper.src=<project id>` -- and
-refuses on a hit, naming the
-leftover with that line: backup, restore (before the review and again under
-the lock), `develop` (under the setup lock, on the engine it is about to use,
-never on the pre-lock fast path -- so a develop that arrived during a backup
-waits and then runs), `reset`, `forget`, `rehome` (both the old and the new
-id) and the config editor's volume Clear. The existing seed and migrate
-helpers gain these labels in this unit, so a byre killed mid-seed leaves a
-helper the sweeps can see. ADR 0054's exclusive-volume scan reads launch
-records and cannot see a helper at all; these queries are the check that
-covers it.
+**Leftover helpers are never silent.**
+
+- **Cleanup is bounded.** On any failure or cancellation the verb
+  force-removes the helpers carrying ITS run id, never another invocation's.
+  EVERY engine call a cleanup path makes -- the label query, the `rm -f`,
+  restore's rollback query and removal of the volume it was filling -- rides
+  one 30-second deadline, because the path runs holding the setup lock with
+  a config removal, a summary and the lock release still to come, and the
+  failure that brought the verb there is often the engine itself. A daemon
+  that never answers makes cleanup stop and say what may remain.
+- **Detection is two label queries.** `byre.helper=<project id>` and
+  `byre.helper.src=<project id>`; a hit refuses, naming the leftover. Seed
+  and migrate helpers carry these labels too, so a byre killed mid-seed
+  leaves a helper the sweeps can see. ADR 0054's exclusive-volume scan reads
+  launch records and cannot see a helper at all; these queries cover it.
+- **Every path that mounts or mutates a project volume runs both queries**:
+  backup; restore (before the review and again under the lock); `develop`
+  (under the setup lock, on the engine it is about to use, never on the
+  pre-lock fast path -- so a develop that arrived during a backup waits and
+  then runs); `reset`, `forget`, `rehome` (both the old and the new id); and
+  the config editor's volume Clear.
 
 ## The file format
 
@@ -360,15 +351,13 @@ would be ignored once per header, and a stream of zero-length local PAX
 headers would expand without end. So the read is truncated to the remaining
 room and exhaustion is sticky.
 
-4 KiB per entry, not the 1 KiB the design first named, and the figure is
-forced rather than chosen: a 255-byte logical volume name needs a PAX path
-record, which costs the extended header's block, the block its record is
-padded into and the ordinary header block -- 1536 bytes -- plus up to 511
-bytes padding the member's own content. At 1 KiB the WRITER would refuse to
-publish a backup of a couple of hundred long-named volumes, because it
-measures its own decompressed output against this same figure and refuses
-before publishing. One figure, measured at both ends: a backup byre produced
-is one byre reads.
+The 4 KiB per entry covers long-name PAX framing and member padding: a
+255-byte logical volume name needs a PAX path record, which costs the
+extended header's block, the block its record is padded into and the
+ordinary header block -- 1536 bytes -- plus up to 511 bytes padding the
+member's own content. The writer measures its own decompressed output
+against the same figure and refuses before publishing, so a backup byre
+produced is one byre reads.
 
 The other bounds, all refusals: the index and the config member each within
 `config.MaxConfigBytes`; outer entries exactly the index's (duplicate, extra,
@@ -431,9 +420,6 @@ rules:
   content into the following header. So a payload carrying them is accepted,
   with the substituted name and link name judged by exactly the grammar and
   ancestor rules above, and the rebuilt stream spelling them as PAX records.
-  The design doc listed "GNU vendor types" among the refusals; that line is
-  unimplementable without re-implementing tar's framing to see blocks the
-  library hides, and the grammar is the check that matters.
 - **One stated transformation, and nothing else.** The restored tree is the
   source tree with ownership replaced by the box identity (the pour's chown
   is the ownership step, and the pour extracts with `--no-same-owner` so an
@@ -500,8 +486,8 @@ for the first develop.
   checkout**, and anything else refuses before the file is opened: "byre
   restore expects an empty directory or the clean root of a git checkout.
   <DIR> is neither: <reason>". Restore with no DIR takes the current
-  directory, and the field report is what that cost -- run from HOME, it made
-  the home directory the project and created six volumes under its id. Empty
+  directory, and restricting the target prevents enrolling an unrelated
+  nonempty directory (HOME, say) as the project. Empty
   means no entries at all, dotfiles counted (a directory restore itself just
   created is empty by construction). A clean root means DIR IS the top level
   of a working tree (`git -C DIR rev-parse --show-toplevel` resolving to DIR
@@ -526,16 +512,14 @@ for the first develop.
   and the enrolled store, as apply's same window does by design, and says so,
   naming both by path; the next restore of that path proceeds.
 - **One lock hold covers the config write and every pour**, so a develop
-  waiting on the lock sees the config and every poured volume together. Under
-  the lock, in order: `requireRecorded` first (a forget that won the lock
-  meanwhile is cancellation, not permission to write into an emptied store),
-  then the set re-resolved, then **the review text re-rendered and compared
-  byte for byte** -- so a grant-only change in a layer, an egress or network
-  posture edit say, refuses exactly like a volume change -- then the
-  re-checks: still no config, every create-set volume still absent, every
-  keep-set volume still present, the ownership check still passing in both
-  directions, and no `byre.helper` container of this project on the engine.
-  Any difference is the re-run refusal.
+  waiting on the lock sees the config and every poured volume together.
+  Under that hold, restore revalidates before committing: enrolment (a
+  forget that won the lock meanwhile is cancellation, not permission to
+  write into an emptied store), then the review text re-rendered from a
+  fresh resolution and **compared byte for byte** (so a grant-only change
+  in a layer refuses exactly like a volume change), then config absence,
+  volume existence for both the create and keep sets, ownership in both
+  directions, and helper absence. Any difference is the re-run refusal.
 - **A volume that already exists on the engine is kept**, and the summary says
   the backed-up copy was dropped. A carried name THIS machine's resolved set
   declares machine-scoped is not poured -- develop here would mount the
@@ -543,8 +527,8 @@ for the first develop.
   reads -- and the review says so by name while the payload stays in the
   file. A carried name this set declares `cache` is poured anyway, with a
   note. A volume the config declares that the backup does not carry is left
-  to the first develop, which handles it exactly as today: seeded, or started
-  empty (ADR 0013). A RESTORED volume that is empty is populated at the first
+  to the first develop, which handles it as any fresh volume: seeded, or
+  started empty (ADR 0013). A RESTORED volume that is empty is populated at the first
   develop from the box image's directory at its mount point, exactly as a
   fresh volume is -- the pour keeps helper-image bytes out, the session mount
   behaves as it always has, and the review says so for an empty payload.
@@ -556,13 +540,14 @@ for the first develop.
   directory -- on a retry, or after the bootstrap -- the shorter project's
   listing would no longer show the collision, which is why the check takes an
   "ignore this id" parameter.
-- **Restore is terminal-only**, like `byre preset apply`, which it extends.
-  Its screen IS the apply review, plus three sections before the grant
-  summary: "Names this machine must satisfy" (from the destination's resolved
-  set, each with what reads it and how it fails, and each MARKED "(missing on
-  this machine now)" when a degrading probe says the path is not there -- a
-  mark, not a gate: restore still refuses on none of them, and a probe that
-  could not answer marks nothing), "What the source saw" (the
+- **Restore is terminal-only.** Its screen IS the apply review it extends
+  (apply's fresh-store credentials annotation reads "this backup brings" on
+  this path), plus three sections before the grant summary: "Names this
+  machine must satisfy" (from the destination's resolved set, each with what
+  reads it and how it fails, a disabled mount omitted because nothing will
+  bind it, and each MARKED "(missing on this machine now)" when a degrading
+  probe says the path is not there -- a mark, not a gate: restore still
+  refuses on none of them, and a probe that could not answer marks nothing), "What the source saw" (the
   index's references table, printed as such), and "From the backup" (every
   volume in play by logical name, the credential state of the carried file,
   each payload's absolute and traversing symlink targets as agent-authored
@@ -573,11 +558,9 @@ for the first develop.
 ## Partial failure
 
 Restore can still fail part way after the base is proven: Ctrl-C, the engine
-going away, the engine's disk filling, a volume that cannot be created. The
-original ruling was "forget, then restore again", chosen for needing no new
-mechanism; what ships refines the mechanism and keeps the intent, because
-`forget` is a poor first remedy for the common case and one file removal makes
-a plain re-run work.
+going away, the engine's disk filling, a volume that cannot be created. A
+failed restore removes its config and the incomplete volume so the user can
+re-run it; `forget` is the fallback, not the first remedy.
 
 The volume CREATE is watched like the pour is: a daemon stalled there would
 otherwise take the interrupt with nothing to act on it and sit holding the setup
@@ -629,78 +612,10 @@ no claim about them; the file is 0600 and that is the whole of it.
 
 ADR 0022's contract, unchanged: usage errors exit 2 and never dispatch.
 Refusals exit 1, the off-terminal restore refusal included, as `preset
-apply`'s does. Declining the backup preview or the restore review exits 0, as
+apply`'s does without `--yes`. Declining the backup preview or the restore review exits 0, as
 apply's decline does. Declining an offered package install is not a clean end
 -- it is the reason the package is still missing -- so restore then stops as
 for any missing package, exit 1.
-
-## The amendments this ADR makes
-
-Five standing decisions said something this feature contradicts if left
-alone. A note at the top of each would leave the BODY contradicting the
-feature, so in each case the body sentence changes too, and the index line
-changes with it:
-
-- **ADR 0007** scoped its ban to "copy-semantics for rotating tokens"
-  generally. The ban is on byre-INITIATED seeding: restore moves a volume of
-  the user's own box, at the user's instruction, and that volume may hold a
-  login. byre still reads no host credential file and seeds no login.
-- **ADR 0008**'s title and its "nothing runs as root after PID 1" both gain
-  "in a session", and a new sentence names the one-shot helpers -- seeding,
-  backup's capture, restore's pour -- that run as root in the box's userns and
-  exit before any session starts. The capture and the pour take no host bind
-  and no network; seeding mounts its declared host source read-only and runs on
-  the engine's default network, as it always has.
-- **ADR 0029** calls `byre preset apply` "the one flow in which byre
-  initiates acquisition". Restore is the second entry to that same flow, and
-  to no other: it acquires through apply's digest-verified install walk-through
-  and stops on anything still missing.
-- **ADR 0046**'s "byre no longer writes into any file an agent or its user
-  owns, ever" is about context delivery. Restore pours the user's own files
-  back at the user's instruction.
-- **ADR 0053**'s "every container" becomes "every session container": no
-  one-shot helper writes a launch record, as seed, migrate and worktree helpers
-  already did not -- the ADR simply never wrote the exception down. Its note
-  carries the label inventory above, because the four shapes differ.
-
-`PRINCIPLES.md`'s "What byre is not" line (credentials "never rotated,
-leased, brokered, or shared across machines") gains the clause "(a backup
-carries the config file as it is, ciphertext included)", so the boundary
-statement and this feature cannot be read against each other. byre is not a
-secret manager that moves credentials between machines on its own; a backup
-is the user moving their own file.
-
-## Doctrine this rides unchanged
-
-Recorded because a reader checking this feature against the index should find
-each answer here rather than infer it:
-
-- **ADR 0002 / 0003.** Every new engine operation is a runner method shelling
-  out to the CLI -- `ImagePull`, `RunHelper`, `ContainerForceRemove` and a
-  bounded label query -- and the only host-side WRITE either verb makes into a
-  store is restore's config, from the bytes the review showed.
-- **ADR 0006.** The helper's flag list is closed and byre's own. No `run_args`
-  reach it, and nothing in the image's `ENV` can redirect the tar it runs.
-- **ADR 0015.** A disabled mount is inert: it is not listed among the names
-  the destination must satisfy, because nothing will bind it.
-- **ADR 0030.** The project file's own egress closures travel byte-for-byte
-  like every other key. Effective egress at the destination also composes
-  that machine's defaults, layers and skill manifests, which the apply review
-  shows; this feature claims nothing stronger than "the file travelled".
-- **ADR 0032.** Both verbs select the identity through `resolveIdentity`, so
-  rootless Podman without a keep-id mapping refuses exactly where develop
-  refuses, and the helper rides `appendUserns` with the same mapping develop
-  and seeding use.
-- **ADR 0037.** `internal/deliver`'s nested-tar handling is precedent for NAME
-  hygiene only; it strips a leading `/` where this format refuses one, and it
-  materialises no links at all. The contract above is its own.
-- **ADR 0058.** A `develop --agent` override run's volume is carried like any
-  other project volume. The override itself writes nothing and leaves nothing
-  for a backup to find except that volume.
-- **ADR 0057's review wording.** Restore's screen is apply's, so apply's
-  fresh-store credentials annotation reads "this backup brings" rather than
-  "this preset brings" on the restore path -- the same sentence, naming the
-  thing that actually brought the rows.
 
 ## Accepted residuals
 
@@ -744,9 +659,7 @@ The engine-side half has one gated arm, `TestIntegrationBackupRestoreRoundTrip`
 (`BYRE_DOCKER_TESTS=1`, `internal/commands/integration_backup_test.go`): a real
 volume of specials captured on a live engine and poured into a fresh project,
 the two trees compared under the stated transformation, with the Docker<->Podman
-transfer sub-arm skipping aloud when only one engine is installed. It is absent
-from the list below because an index line carries one marker: `go test ./...`
-says nothing about it, and `byre-inttest` is where it fires.
+transfer sub-arm skipping aloud when only one engine is installed.
 
 [arm: TestBackupRoundTripsThroughTheReader,
 TestBackupRefusesUnlessTheProjectIsCompletelyStill,

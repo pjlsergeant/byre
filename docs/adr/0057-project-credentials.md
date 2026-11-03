@@ -1,14 +1,14 @@
 # Project credentials: encrypted values inline in the config files
 
-Handing an agent an API key used to mean `env_from_host` (the host
+Without this, handing an agent an API key means `env_from_host` (the host
 environment must already carry it) or a plaintext `[env]` literal (baked into
-the image; the reference explicitly warns against it). Neither stores a secret
-for the project. This ADR lands the values **inline**: an `encrypted:` or
-`encrypted-file:` row in `env_from_host` carries an age ciphertext, a
-file-local `[credentials]` table holds the identity that opens the rows in
-THAT file (scrypt-wrapped under a passphrase) beside the cleartext recipient
-new values encrypt to, and a passphrase per contributing file unlocks the
-launch. Decided 2026-08-13.
+the image; the reference warns against it); neither stores a secret for the
+project. Decided 2026-08-13: values are encrypted **inline** in
+`env_from_host`, as `encrypted:` or `encrypted-file:` rows carrying an age
+ciphertext. Each physical file owns the identity that opens its rows (in a
+file-local `[credentials]` table, scrypt-wrapped under a passphrase) and the
+cleartext recipient new values encrypt to; launch unlocks each contributing
+file with its passphrase.
 
 ```toml
 [env_from_host]
@@ -20,36 +20,32 @@ identity  = "<scrypt-passphrase-wrapped age X25519 identity, base64>"
 recipient = "age1..."   # the cleartext public half, so `set` never prompts
 ```
 
-Principles: P1 (the footgun doctrine — the threat model is the agent, and the
-config files are the user's own; byre discloses rather than gates), P2
+Principles: P1 (the footgun doctrine -- the threat model is the agent, and the
+config files are the user's own; byre discloses rather than gates), P4
 (legibility: the answer to the one real residual here is a louder consent
-gate, not a storage architecture), P4 (a claim byre cannot stand behind is
+gate, not a storage architecture; a claim byre cannot stand behind is
 qualified), P0 (the editor authors these; "expert vocabulary, hand-edit it" is
-not an answer byre gives). Related: ADR 0026 (env_from_host — the scheme set
+not an answer byre gives). Related: ADR 0026 (env_from_host -- the scheme set
 these two members join), ADR 0031 (the scheme grammar), ADR 0035 (a layer's
 values reach every project extending it, live), ADR 0011 (the fail-closed gate
-whose shape the launcher wait now takes), ADR 0052 (the tmpfs is a managed
+whose shape the launcher wait takes), ADR 0052 (the tmpfs is a managed
 path), ADR 0053 (the record carries outcomes, never values).
 
-## Provenance
+## Rejected: a vault directory
 
-This ADR originally ratified a vault-directory design: named values under
-`~/.byre/projects/<id>/credentials/`, `[[credentials]]` declarations naming
-what may be delivered and where, and a join between the two. The grilling of
-2026-08-13 overturned it. Config can already hold an opaque 256-character
-plaintext API key, so value legibility was never an invariant and "ciphertext
-doesn't belong in config" defended nothing. An encrypted row is a plaintext
-env row plus at-rest protection, minus nothing that matters: blobs change only
-when a human re-sets the value (rekey does not rewrite them), so a plain byte
-compare gives drift the same semantics as any other value. Every argument for
-the separate directory reduced to cosmetics except one real asymmetry (the
-preset bridge, below), which byre answers the way it answers everything —
-legibility at the consent gate, not storage architecture. What the directory
-cost was a join key, two divergence states, an involved-set computation,
-credential-specific resolution with its own orphan-shadowing hazard
-(structurally impossible here), an index, a lifecycle CLI, and an entire
-layer-vault design docket. The vault mechanics are not restated below; git
-history holds them.
+A separate store (named values under `~/.byre/projects/<id>/credentials/`,
+`[[credentials]]` declarations naming what may be delivered and where, and a
+join between the two) was ratified first and overturned in the 2026-08-13
+grilling. Config can already hold an opaque 256-character plaintext API key,
+so value legibility was never an invariant and "ciphertext doesn't belong in
+config" defends nothing. An encrypted row is a plaintext env row plus at-rest
+protection: blobs change only when a human re-sets the value (rekey does not
+rewrite them), so a plain byte compare gives drift the same semantics as any
+other value, and inline values keep the ordinary cascade semantics. The
+vault's one real asymmetry (the preset bridge, below) is answered with
+legibility at the consent gate; everything else it cost -- a join key, two
+divergence states, credential-specific resolution with its own
+orphan-shadowing hazard, an index, a lifecycle CLI -- bought nothing.
 
 ## The threat model IS the decision
 
@@ -61,7 +57,7 @@ it does NOT defend is as binding as the list of what it does:
   the recipient in its own file's `[credentials]` block, whose identity is
   scrypt-wrapped under the passphrase (pinned work factor; `SetMaxWorkFactor`
   bounds the unwrap as a LIVENESS measure, not a defense). The passphrase is
-  the protection — a weak one weakens the claim, and that is the user's
+  the protection -- a weak one weakens the claim, and that is the user's
   residual. The recipient being CLEARTEXT is what makes passphrase-free writes
   possible: `set` encrypts to it without prompting, and rekey rewraps the
   identity alone, leaving every value blob byte-identical.
@@ -71,7 +67,7 @@ it does NOT defend is as binding as the list of what it does:
   consent act. A value never arrives as a command-line argument (argv is shell
   history and the process list).
 - **byre's own plaintext hygiene**: byre writes plaintext filesystem artifacts
-  in exactly ONE place — the session tmpfs at `/run/byre` (`--tmpfs`: no image
+  in exactly ONE place -- the session tmpfs at `/run/byre` (`--tmpfs`: no image
   layer, no writable layer, empties when the box stops). No plaintext host
   file, image layer, engine-visible config value, or volume content. The rows
   ride env_from_host and NOT `[env]` for exactly this reason among others: an
@@ -84,18 +80,18 @@ it does NOT defend is as binding as the list of what it does:
 Explicitly NOT defended:
 
 - **The agent reading or re-persisting its credentials.** It is HANDED them;
-  that is the contract. The maintainer's razor: friction against a live
-  privileged reader is theatre; a copy that outlives the unlock window is a
-  real hole — and the tmpfs dying with the box is what answers it. Verifying
-  the in-box execution environment defends plaintext against the party it was
-  given to, and is not built. Do not restore it.
+  that is the contract. Friction against a live privileged reader is
+  theatre; a copy that outlives the unlock window is a real hole, and the
+  tmpfs dying with the box answers it. Verifying the in-box execution
+  environment would defend plaintext against the party it was given to; it
+  is not built.
 - **The user's own mounts and store edits** (footgun doctrine, P1). The tmpfs
   is an ADR 0052 managed path: a mount over `/run/byre` relocates delivered
-  plaintext onto durable storage — and a durable shadow can re-surface AND
+  plaintext onto durable storage -- and a durable shadow can re-surface AND
   re-export the bytes on a bare `docker restart` without a fresh unlock.
   Disclosed by the shadow machinery, never gated.
 - **Integrity of the config files themselves.** They are shared-custody: the
-  user's editor, byre's own writers, and — for a repo-shipped preset — an
+  user's editor, byre's own writers, and -- for a repo-shipped preset -- an
   agent-writable tree all reach them. The payload's key and kind stamps are
   ACCIDENT guards, never integrity mechanisms (below). Whoever can write a
   file can change what a row delivers; the preset bridge is where that
@@ -108,8 +104,7 @@ kind it was set for. A mismatch after decryption fails loudly naming both
 keys (`row-mismatch`). It catches a blob swapped between rows, a value
 replayed from git history onto a renamed key, a transplant across files, and
 honest copy-paste. It is NOT integrity: anyone holding the cleartext recipient
-can mint a correctly-bound blob, and that is stated rather than fought — the
-same stance the vault design took toward its own store, arrived at again.
+can mint a correctly-bound blob, and that is stated rather than fought.
 
 ## The launch flow
 
@@ -117,10 +112,10 @@ same stance the vault design took toward its own store, arrived at again.
    rows and group them by the physical file that contributed each (provenance
    the effective view already tracks). An `[env]` literal beating a credential
    row takes the key out of env_from_host entirely (ADR 0026), so no
-   passphrase is spent on it — one rule, `DeliversCredential`, spelled once and
+   passphrase is spent on it -- one rule, `DeliversCredential`, spelled once and
    asked by every surface that counts credentials.
-2. Print the plan line before asking for anything —
-   `unlocking credentials: default (2), layer acme (1), project (3)` —
+2. Print the plan line before asking for anything --
+   `unlocking credentials: default (2), layer acme (1), project (3)` --
    so a user knows how many passphrases they are about to be asked for. Then
    prompt per contributing file, root-most first. Each entered passphrase is
    first tried against every still-locked identity, because people reuse them;
@@ -128,35 +123,32 @@ same stance the vault design took toward its own store, arrived at again.
 3. **Credentials are BLOCKING.** A declared credential is delivered or the
    launch stops: wrong passphrase (three attempts), unparseable file, broken
    identity, undecryptable blob, a row that appeared while develop waited for
-   the setup lock — each stops the launch naming the file, the row, and the
+   the setup lock -- each stops the launch naming the file, the row, and the
    remedy. `--credentials=ask|skip|stdin`: `ask` is the default; `skip` is the
    one deliberate way to launch without them; `stdin` reads passphrase lines,
    each tried against every still-locked identity in order and each counting
    as an attempt against the root-most file still locked, under that same
    three-attempt bound. What the unlock consented to bounds what the decrypt
-   delivers: never a row beyond the set the plan line counted — a row removed
-   under the lock simply drops out and less is delivered, since the consent
+   delivers: never a row beyond the set the plan line counted -- a row removed
+   under the lock is not delivered, since the consent
    is an upper bound, not a promise of presence.
 4. Delivery: decrypt under the setup lock, stream framed base64 over container
    stdin to the baked receiver, land on the per-session tmpfs. Never `docker
    -e`, never an image layer, volume, or writable layer. The export map rides
    the stream as a non-secret MANIFEST written before the `.done` sentinel,
    which is written LAST, so the launcher never observes a half-written tree.
-   The receiver is handed KEYS, which are already env-grammar — it restates no
+   The receiver is handed KEYS, which are already env-grammar -- it restates no
    name grammar of its own.
-5. **The launcher wait is bounded FAIL-CLOSED** — ADR 0011's shape, not its
+5. **The launcher wait is bounded FAIL-CLOSED** -- ADR 0011's shape, not its
    opposite. No sentinel, a manifest line the launcher cannot honor, a value
    file it cannot read, or a bare restart with credentials scheduled, and the
    agent never runs. The host Stops the container on an inject failure and the
-   launch fails. The wait and export run below the launch gate and ABOVE the
-   firstrun hooks, so a hook (a child process) inherits the delivered values
-   and a login hook stands down on one; a failed-closed launch therefore runs
-   no hook at all. The export is re-applied after the env.d loop (ADR 0028),
-   so credential exports still win env collisions; env-kind exports are
-   byte-exact (`read -rd ''`, never command substitution). (Amended
-   2026-10-03: the export followed the env.d loop alone, after every firstrun
-   hook — a login hook prompted for a key the user had delivered, and the
-   host's "delivered." line landed on its prompt.)
+   launch fails. Order inside the launcher: launch gate, then the credential
+   wait and export, then the firstrun hooks (children, so they inherit the
+   delivered values and a login hook stands down on one; a failed-closed
+   launch runs no hook at all), then the env.d loop (ADR 0028), then the
+   export again so credential exports win env collisions. Env-kind exports
+   are byte-exact (`read -rd ''`, never command substitution).
 6. **Honesty by measurement**: the inject's stderr outcome says plain
    "delivered" only when it provably landed inside the launcher's wait (the
    epoch is captured before the goroutine spawns, so the measurement
@@ -168,7 +160,7 @@ same stance the vault design took toward its own store, arrived at again.
 
 ## Resolution and scope
 
-Resolution is the ORDINARY cascade merge — the winning row IS the value, and
+Resolution is the ORDINARY cascade merge -- the winning row IS the value, and
 `KEY = ""` in a nearer file is the idiomatic disable. There is no
 credential-specific resolution, no nearest-vault-wins, and no orphan-shadowing
 state to reason about.
@@ -179,10 +171,14 @@ That is why `Parse` deliberately drops it (a block that reached the merged
 `Config` could be merged) and why reading one takes `ParseCredentialsBlock`
 over a single file's raw bytes.
 
+Credential state is the config cascade's, not the store's: worktrees share
+the project config and the setup lock (ADR 0009), and the tmpfs is owned by
+the container identity (ADR 0032).
+
 ## Write discipline
 
 - `set`, `unset`, rekey and identity creation are a **compare-and-swap on the
-  complete physical file** under the lock that guards THAT file — the project's
+  complete physical file** under the lock that guards THAT file -- the project's
   setup lock for a project config, the layer's own lock for a layer (which
   `byre layer new` and the `--layer` editor take too). The FILE owns the lock;
   every cooperating writer takes it. The race this closes: `set` reads
@@ -193,7 +189,7 @@ over a single file's raw bytes.
   at the prompt, because holding the setup lock for an authentication cost
   would stall sibling worktrees. Only the cheap per-row decrypts run under it.
 - Setting an inherited credential **names the physical write target before the
-  value is accepted** — "writes to layer acme (…), used by 3 projects — this
+  value is accepted** -- "writes to layer acme (…), used by 3 projects -- this
   changes the value for every project extending it". Layer changes propagate
   live (ADR 0035), so the cross-project effect must be unmistakable. Editor
   and CLI both, from one seam.
@@ -204,13 +200,13 @@ over a single file's raw bytes.
   user already knows instead of minting a new one.
 - `byre credentials set|unset|rekey|list`. There is no `init`: the first `set`
   mints the identity, prompting for a new passphrase. `list` reads config rows
-  — key, kind, source file (a row IS the value, so there is no set/unset
+  -- key, kind, source file (a row IS the value, so there is no set/unset
   state). `set --layer <name>` targets a layer
   file explicitly; the default target is the project config.
 
 ## Size
 
-The per-value plaintext cap is 256 KiB — no real credential is big, and
+The per-value plaintext cap is 256 KiB -- no real credential is big, and
 base64+age overhead keeps several such values comfortably inside the existing
 1 MiB config read bound, so no config-infrastructure bound moves. Kind-specific
 rules ride on top: an env-kind value must be NUL-free and is capped at the
@@ -224,8 +220,8 @@ The repo is agent-writable and `preset apply` is the reviewed bridge into the
 trusted store. If a user ships credentials through a preset (which ships the
 recipient too), a hostile writer of that repo can **MINT** a chosen value;
 even without the recipient it can **SWAP**, **TRANSPLANT**, or **REPLAY**
-existing blobs. The gain is durable poisoning of future sessions — a swapped
-Stripe key that outlives the box — not plaintext, since the box receives
+existing blobs. The gain is durable poisoning of future sessions -- a swapped
+Stripe key that outlives the box -- not plaintext, since the box receives
 delivered plaintext anyway.
 
 Accepted because: never-shared credentials have no exposure at all; a foreign
@@ -236,17 +232,17 @@ gate.
 **The mitigation is the consent gate, not storage.** The preset review
 annotates, at ⚠ weight:
 
-- any changed row where EITHER side is a credential scheme — encrypted to
+- any changed row where EITHER side is a credential scheme -- encrypted to
   encrypted (rotation or swap), encrypted to a plaintext scheme or an `[env]`
-  literal, and plaintext to encrypted — with *"credential value changed … if
+  literal, and plaintext to encrypted -- with *"credential value changed … if
   you didn't rotate this credential, reject"*. Either-side is the point:
   replacing ciphertext with plaintext must not dodge the classifier.
 - a credential row that appeared or vanished, more quietly: those are
   declarations, and the grant summary already lists them.
-- any change to the file's `[credentials]` block — identity or recipient
-  appearing, changing, or vanishing — which is otherwise invisible, since
+- any change to the file's `[credentials]` block -- identity or recipient
+  appearing, changing, or vanishing -- which is otherwise invisible, since
   `Parse` drops the block by design. *"this preset replaces the file's
-  credentials identity — its rows open under ITS passphrase, and values you
+  credentials identity -- its rows open under ITS passphrase, and values you
   set afterward would encrypt to ITS recipient; if you didn't do this,
   reject."*
 
@@ -256,7 +252,7 @@ never rendered. It does not gate.
 Residuals the annotation does NOT close, named rather than fought: a change
 absorbed BEFORE the user reaches the gate (an agent that edits the repo preset
 and the applied marker together shows a clean drift state, exactly as it can
-for `run_args` today), and a value changed in one window and reviewed in
+for `run_args`), and a value changed in one window and reviewed in
 another by a user who no longer remembers whether they rotated it. Both are
 the standing limit of a review gate, not of credentials.
 
@@ -268,55 +264,26 @@ the standing limit of a review gate, not of credentials.
 - The security-model page carries the at-rest claim and the residual list,
   including mint/swap/transplant/replay in those words.
 - The editor is where these are authored (P0): credential rows show on the Env
-  screen, the Source picker
-  carries both kinds, the single-line Value input is masked, and saving a
-  value through the form IS the `set` path — same CAS, same file lock, same
+  screen, the Source picker carries both kinds, the single-line Value input is masked, and saving a
+  value through the form IS the `set` path -- same CAS, same file lock, same
   write-target disclosure, reached through a seam (`configui.CredentialAdmin`)
   rather than a second spelling. Rekey is an editor surface too (the Env
   screen), riding the same seam. The first credential in a file opens the
   per-file passphrase modal. Boundaries taken deliberately: the credential
   kinds appear only where a credentials verb can target the file (project
-  config, layer — not `default.config`); a damaged or reserved-key row refuses
+  config, layer -- not `default.config`); a damaged or reserved-key row refuses
   and names the CLI; the form's `^s` encrypts and writes the value, and the
   form says so before a value is typed; a credential row's key cannot be
   renamed in place, since the payload is stamped with the key; and a file whose
   identity is gone gets told the truth about its orphaned rows rather than a
   modal claiming it holds no credentials.
-- Multiline editor (2026-09-08): Enter never saves the value form. Bracketed
-  newline/control-containing pastes are refused before sanitization. Return
-  in Value requires explicit re-entry (`^e`): typed and pasted Return cannot
-  be distinguished. `^e` warns before displaying a replacement in memory,
-  without plaintext editor files; stored credentials are never loaded.
-  Text is preserved; pasted CR and CRLF become LF by default, and a mode
-  line names the setting. While the draft holds converted line breaks the
-  editor explains the change, with a rainbow line saying so until `^t`
-  has been used on the draft. `^t` switches the draft between LF and
-  exactly what was pasted, converting in place both ways: the line breaks
-  it converted are remembered while the form holds the draft (never
-  stored) and restored exactly. Each editor session starts in LF mode
-  unless the draft it opens already holds CRs.
-  The editor and the form warn, without modifying the draft, when it holds
-  CRs and when it ends in an `-----END ...-----` line with no final line
-  break; `byre credentials set` is out of scope, storing the bytes it is
-  given without those warnings. (Amended 2026-10-04: pastes were kept verbatim, and
-  terminals send pasted line breaks as CR, so a pasted OpenSSH key arrived
-  with no LF and ssh-keygen rejected it. A paste also carries no final line
-  break: OpenSSH 9.2p1 `ssh-keygen -lf` answers "is not a key file" for an
-  LF-separated ed25519 key without a final LF and loads the same key with
-  one, measured 2026-10-04; hence the warning.) Editor `^s` returns a
-  hidden unsaved draft; Esc discards editor changes. Form `^s` uses `set`, with first-file
-  passphrase confirmation as before, leaving unrelated edits unsaved.
-  Empty keeps the stored value. Residuals: viewers/recorders can read the
-  visible draft; unbracketed controls can act as shortcuts; Key-field text
-  is visible; the decoder drops invalid UTF-8 and U+FFFD. The
-  creation/rekey passphrase widgets are unchanged and may normalize pasted
-  controls. The configuration reference owns the
-  binary file-kind CLI/bootstrap instructions and CLI trailing-LF difference.
-- Sibling amendments: 0007 (project credentials are user-declared values, not
-  agent-login seeding), 0009/0032 (credential state is the config cascade's,
-  not the store's — worktrees share the project config and the setup lock;
-  tmpfs owned by the container identity), 0011 (the wait takes this gate's
-  fail-closed shape), 0026/0031 (the scheme set gains two members and
-  env_from_host is again the one deliberate host→box channel), 0028, 0044
-  (every credential write rides tomldoc, under compare-and-swap), 0050, 0052
-  (register entry), 0053 (the record carries outcomes and keys, never values).
+- Multiline values (2026-09-08): the Env editor's `^e` opens an unmasked
+  multiline draft that writes no plaintext editor files, never loads a
+  stored credential (empty keeps the stored value), and keeps the draft's
+  bytes recoverable: pasted CR/CRLF convert to LF by default, because
+  terminals send pasted line breaks as CR and a key without LF fails, and
+  `^t` restores exactly what was pasted. The configuration reference
+  carries the controls and warnings. Residuals: viewers and recorders can
+  read the visible draft; unbracketed controls can act as shortcuts;
+  Key-field text is visible; the decoder drops invalid UTF-8 and U+FFFD;
+  the creation/rekey passphrase widgets may normalize pasted controls.

@@ -65,13 +65,9 @@ weaker base on the user's behalf for no gain.
 
 The move costs byre's own surface nothing:
 
-- Every apt package installed by the core block, every skill under
-  `internal/builtins/skills`, the shipped templates, and `skills/inttest`
-  (gosu, iptables, netcat-openbsd, iputils-ping, traceroute,
-  bind9-dnsutils, telnet, curl, ca-certificates, gawk, jq, util-linux,
-  unzip, ripgrep, xz-utils, build-essential, openssh-client) exists in
-  trixie under the same name (checked against qa.debian.org/madison,
-  2026-11-02).
+- Every apt package the core block, the built-in skills, the shipped
+  templates and `skills/inttest` install exists in trixie under the same
+  name (checked against qa.debian.org/madison, 2026-11-02).
 - Docker's apt repository publishes a trixie dist, and the docker-host skill
   derives the codename from `/etc/os-release`, so it follows the base
   without an edit.
@@ -141,9 +137,7 @@ The gemini skill's keep-the-base-Node branch has one gated arm,
 `TestAgentContractGeminiKeepsTheTemplatesNode` (`BYRE_AGENT_TESTS=1`,
 `internal/commands/agent_contract_test.go`): it builds `template = "node"`
 with `agent = "gemini"` and asserts the box still runs Node 26 with npm and
-the gemini CLI. It is absent from the list below because an index line
-carries one marker: `go test ./...` says nothing about it, and the
-agent-contract tier is where it fires.
+the gemini CLI.
 
 [arm: TestDockerfileDefaultBase, TestDefaultBaseContract,
 TestTemplateBasesContract,

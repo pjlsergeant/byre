@@ -72,22 +72,12 @@ sets BYRE_RUN_*` (the `headless run` claim, ADR 0050).
 
 ## The contract between the chassis and the headless command
 
-The chassis runs the headless command with:
-
-- `BYRE_RUN_TASK_FILE` -- the task text. The command's stdin is
-  `/dev/null`.
-- `BYRE_RUN_RESULT_FILE` -- `/dev/fd/5`, where the command writes the
-  agent's answer.
-- `BYRE_RUN_STATUS_FILE` -- `/dev/fd/6`, where the command appends
-  `key=value` lines. Two keys are read: `backend_exit=<n>` (owed before an
-  exit 11) and `agent_version=<text>`.
-- `BYRE_RUN_MODEL` -- a model override, empty for the agent's default.
-- `BYRE_RUN_DIR` -- the result dir, for files the command keeps for humans.
-- `BYRE_RUN_AGENT`, `BYRE_RUN_ID` -- informational.
-
-The step-by-step rules a command author follows are in the headless-command
-section of [`docs/SKILLS.md`](../SKILLS.md); this section records why each
-one exists.
+The contract a command author follows -- the task file, the answer and
+status descriptors, the model and result-dir variables, the exit set, the
+probe bound and the PATH rule -- is in the headless-command section of
+[`docs/SKILLS.md`](../SKILLS.md). The chassis also sets `BYRE_RUN_AGENT`
+and `BYRE_RUN_ID`, informational only. This section records why each rule
+exists.
 
 **Descriptors.** The two files are descriptors, not paths: the chassis
 creates them exclusively, once, and holds them open, and the command keeps
@@ -129,22 +119,16 @@ asked for, the exit map, signal forwarding and the stream routing. The
 command owns every agent flag.
 
 **The exit status is a CLOSED set, never the agent's raw status.** The
-command exits one of `0` (success, with a non-empty answer), `10` (the
-agent reported failure), `11` (the agent process failed, `backend_exit`
-written first), `13` (credential preflight failed) and `15` (the backend
-is not in the box). The chassis adds `12` (its own deadline passed) and `16`
-(its inputs failed validation), and treats anything else -- a shell death,
-a signal, a raw status passed up by mistake, `0` with an empty answer -- as
-the command breaking the contract: `14`. A raw agent exit of 10 reaches the
-host only as 11 with `backend_exit=10`. Passing raw statuses through would
-make every number ambiguous -- an agent that happens to exit 13 would read
-as "no credential" -- and a script gating on the code could not tell
-byre's verdict from the agent's. The numbers are not unique across owners:
-byre's own codes are 1, 2, 3 and 70, a box that launched and exited one of
-those reaches the host as that number too (develop's 0-127 passthrough),
-and byre itself can exit 1 or 3 after the box was created. `--data`'s
-`outcome` and `phase` tell these apart. The host's full table is the
-generated commands page.
+command owns a few codes, the chassis owns the rest, and anything outside
+the set -- a shell death, a signal, a raw status passed up by mistake, `0`
+with an empty answer -- is the command breaking the contract (14). A raw
+agent exit of 10 reaches the host only as 11 with `backend_exit=10`.
+Passing raw statuses through would make every number ambiguous -- an agent
+that happens to exit 13 would read as "no credential" -- and a script
+gating on the code could not tell byre's verdict from the agent's. Box
+statuses can still collide with byre's own codes; the `--data` document's
+`outcome` and `phase` distinguish their source. The full table, with each
+code's owner, is the generated commands page.
 
 **The inventory.** `BYRE_HEADLESS` and every `BYRE_RUN_*` name join the
 reserved-env inventory under two claims, `headless run` and `launch` (a
@@ -202,10 +186,8 @@ agent-trust content whoever wrote it (Accepted residuals).
   each line is escaped (external text is data, P4); redirected to a file or
   a pipe it is copied byte for byte, because a program wants the bytes.
 - **stdout, with `--data`:** the box's stdout is discarded and byre prints
-  ONE JSON document after the session, `RunDataVersion` 1: `version`,
-  `run_id`, `outcome`, `authority`, `exit_code`, `agent_exit_code`,
-  `phase`, `agent`, `launch_record`, `started_at`, `finished_at`,
-  `message`, `exit_report`. byre prints it on the host after the box has
+  ONE JSON document after the session, `RunDataVersion` 1 (its keys:
+  `runData` in `internal/commands/run.go`). byre prints it on the host after the box has
   exited, so nothing in the box can write into it.
 - **stderr:** everything else -- the agent's live stream and diagnostics
   (in the result dir only under `--quiet`, below), hook output, the build,
@@ -320,39 +302,35 @@ verdict comes from the box's exit status.
 
 The chassis is a core script embedded in the binary and installed at
 `/usr/local/bin/byre-headless` in every image (a conditional copy would
-fork the cache-shared core block). As PID 1 of a headless run it:
+fork the cache-shared core block). As PID 1 of a headless run it holds to
+these constraints:
 
-1. Validates its inputs or exits 16: the result dir is a directory and not
-   a symlink; the task file is a regular, non-symlink file directly inside
-   it; the task's sha256 matches `BYRE_RUN_TASK_SHA256` (one bounded read,
-   the only pathname READ the chassis makes). The hash check exists because
-   repo code -- a pending worktree checkout's hooks and filters -- runs in
-   the launcher before the chassis and can rewrite `task.md`; a match means
-   the agent gets the bytes the host hashed, a mismatch is a loud 16.
-2. Claims its own files once, exclusively, and holds the descriptors:
-   `transcript.jsonl`, `stderr.log`, `result.md`, `status`, and
-   `result.json` written as `started`. Each name is refused when ANY node
-   is already there (`[ -e ] || [ -L ]`), then opened under `set -C`:
-   noclobber is O_EXCL only for a name that does not exist, and opens a
-   pre-existing FIFO or a symlink to one without O_EXCL. From here the
-   streams, the answer and the status lines go through held descriptors,
-   and every read is a bounded read of one, so a FIFO or symlink the agent
-   plants in place of an unlinked name cannot block or redirect PID 1. The
-   final `result.json` publish (step 4) is the one separate path
-   operation, best-effort.
-3. Runs the headless command in its own process group with stdin
-   `/dev/null` and the inherited PATH, relaying its streams as above. When
-   `BYRE_RUN_TIMEOUT` is set, the chassis sends TERM to the group at the
-   deadline and KILL 15 s later. TERM and INT to the chassis are
-   forwarded to the group.
-4. Maps the result (timeout -> 12 first, then the closed set), publishes
-   the final `result.json` by temp and rename (rename replaces a planted
-   symlink rather than following it; a planted directory is probed for and
-   reported), writes the answer to fd 9, prints its own line on stderr,
-   and exits with the code.
-
-`result.json` (schema 1) is a printf JSON writer with a strict escaper;
-the core block carries no jq.
+- **Inputs are validated or the run exits 16**: the result dir is a
+  directory and not a symlink; the task file is a regular, non-symlink
+  file directly inside it; the task's sha256 matches
+  `BYRE_RUN_TASK_SHA256` (one bounded read, the only pathname READ the
+  chassis makes). The hash check exists because repo code -- a pending
+  worktree checkout's hooks and filters -- runs in the launcher before the
+  chassis and can rewrite `task.md`; a match means the agent gets the
+  bytes the host hashed, a mismatch is a loud 16.
+- **Its files are claimed once, exclusively, and held**:
+  `transcript.jsonl`, `stderr.log`, `result.md`, `status`, and
+  `result.json` written as `started`. Each name is refused when ANY node
+  is already there (`[ -e ] || [ -L ]`), then opened under `set -C`:
+  noclobber is O_EXCL only for a name that does not exist, and opens a
+  pre-existing FIFO or a symlink to one without O_EXCL. From then on the
+  streams, the answer and the status lines go through held descriptors,
+  and every read is a bounded read of one, so a FIFO or symlink the agent
+  plants in place of an unlinked name cannot block or redirect PID 1.
+- **The command runs in its own process group**, so TERM and INT to the
+  chassis, and the timeout's TERM/KILL, reach every process it started.
+- **Timeout maps first**: an expired deadline is 12 whatever the command
+  exited, then the closed set.
+- **The final `result.json` publishes by temp and rename** -- rename
+  replaces a planted symlink rather than following it; a planted directory
+  is probed for and reported. It is the one separate path operation, and
+  best-effort. `result.json` (schema 1) is a printf JSON writer with a
+  strict escaper; the core block carries no jq.
 
 **The chassis is guarded at the Dockerfile tail, unconditionally.** The
 launcher (the ENTRYPOINT's content) is re-copied after the project block
@@ -508,22 +486,6 @@ Each is on the security-model page too.
   credential request, headless runs included, so a plant in `~/.local/bin`
   reaches the shared grok login -- which the agent can already read and
   write through the identity volume.
-
-## Rejected
-
-- **The agent's raw exit status as byre's.** Ambiguous against byre's own
-  codes and the chassis's; the closed set plus `backend_exit_code` keeps
-  the raw number without letting it impersonate a verdict.
-- **An env var as the headless trigger.** Reachable by skill env and raw
-  `run_args`; argv is not.
-- **The chassis's bare name as the container command.** PATH would resolve
-  it, and the first PATH entry is agent-writable before the chassis runs.
-- **An in-tree outcome file as the gate.** The result dir is the agent's;
-  a file there is a claim the agent can squat or forge. The authoritative
-  outcome is printed by the host, on stdout, after the box exits.
-- **An implicit task file in the repo.** The tree would choose the prompt.
-- **Staging before `Create`, or before the lock.** A second run could
-  empty the result dir of a run that already owns a box.
 
 [arm: TestHeadlessExitMap, TestHeadlessHasNoHelperProcesses,
 TestHeadlessRefusesInvalidInputs,
