@@ -20,14 +20,28 @@
   hosted runner still rebuilds every job). Cookbook: "Build the box
   without starting a session?"; for setting a box up from a script, "Set
   up a box from a script (new machine, CI)?".
+- **A program planted in `~/.local/bin` no longer stands in for byre's
+  own helpers at launch.** The box's PATH puts `~/.local/bin` first, and
+  the agent and your repository's code can write there, so a planted
+  `jq` or `cat` ran in place of the real one inside byre's launch
+  machinery. The launcher, the launch env hooks, the agents' launch
+  adapters and codex-shared-auth's reconciler now run their helpers from
+  the system PATH, re-pinned before each launch env hook so one hook's
+  PATH change cannot reach the next. First-run hooks run under
+  `/bin/bash` by path, so a planted `bash` is not their interpreter, and
+  with fd 9 closed. The agent's own command and the interactive login
+  hooks still resolve on the agent's PATH, by design. ADR 0028; the
+  security-model page lists what still rides that PATH.
 - **A box with no terminal no longer stalls ten minutes on a login.** With
   the credential absent, the codex, grok and opencode login hooks (and
   grok-shared-auth's shared-store login) ran an interactive login at every
   box start. A launch from a script or a pipe sat out the 600 s bound and
   came up unauthenticated anyway. Each now skips the login when stdin is
-  not a terminal, and prints the remedy: set the agent's API key
-  (`env_from_host`, or `byre credentials set`), or log in from `byre
-  shell`. codex's own `codex login status` probe is bounded at 30 s too.
+  not a terminal, and prints the remedy: for grok and opencode, set the
+  agent's API key (`env_from_host`, or `byre credentials set`) or log in
+  from `byre shell`; for codex, which reads no API key from the
+  environment, run `codex login --device-auth` from `byre shell`. codex's
+  own `codex login status` probe is bounded at 30 s too.
 - **Claude with an env credential skips its first-run wizard.** A box given
   `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`
   by env still stopped in Claude's setup wizard, login step included, on a

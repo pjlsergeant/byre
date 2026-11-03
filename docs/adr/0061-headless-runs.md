@@ -491,18 +491,5 @@ Each is on the security-model page too.
   reaches the shared grok login -- which the agent can already read and
   write through the identity volume.
 
-[arm: TestHeadlessExitMap, TestHeadlessHasNoHelperProcesses,
-TestHeadlessRefusesInvalidInputs,
-TestHeadlessFIFOsPlantedDuringTheRunNeverBlock,
-TestHeadlessStreamRouting, TestLauncherHeadlessExportsSignalFromArgv,
-TestLauncherNonHeadlessUnsetsSignal, TestLauncherHelpersIgnoreInheritedPath,
-TestLauncherFirstrunHookIgnoresBashOnPath,
-TestLauncherFirstrunHookDoesNotInheritAnswerFd,
-TestReservedEnvKnobsCoverChassisReads,
-TestDockerfileGuardReassertsAfterProjectFiles, TestAgentHeadlessValidation,
-TestHeadlessStageRunsAfterCreateUnderLock,
-TestHeadlessEnvBeatsSkillEnvAndLosesToRunArgs, TestRunUsageErrors,
-TestRunTaskPrecedence, TestRunTaskFileContained, TestRunStagesAfterCreate,
-TestRunForcesNonInteractive, TestRunOutcomeClassification,
-TestRunStdoutIsTheAnswer, TestRunDataDocument,
-TestLaunchRecordHeadlessScalarsContract]
+The arms that pinned this decision live with the feature at tag
+`pre-run-removal`.
