@@ -332,7 +332,7 @@ func TestIntegrationRun(t *testing.T) {
 		}
 	})
 
-	// --timeout is the chassis's own timer: the sleeping task is cut short
+	// --timeout is the chassis's own deadline: the sleeping task is cut short
 	// and the run exits 12, not the headless command's status.
 	t.Run("timeout exits 12", func(t *testing.T) {
 		start := time.Now()

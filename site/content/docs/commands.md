@@ -172,7 +172,7 @@ it claims that status means:
 | `3` | byre | A session is already live -- before the box was created, or the attach failed with the box still running. |
 | `10` | script | The agent reported failure. |
 | `11` | script | The agent process failed; its raw status is `backend_exit_code` in `.byre-run/result.json`. |
-| `12` | chassis | `--timeout` expired (the chassis's own timer). |
+| `12` | chassis | `--timeout` expired (the chassis's own deadline). |
 | `13` | script | No usable credential in the box; the remedy is on stderr. |
 | `14` | chassis | The headless script itself failed, or exited `0` without a result; `script_exit_code` in `result.json`. |
 | `15` | script/chassis | The agent's binary is absent, or no headless command is baked into the image. |

@@ -164,7 +164,7 @@ func runExitCodeSection() string {
 		"| `%d` | byre | A session is already live -- before the box was created, or the attach failed with the box still running. |\n"+
 		"| `10` | script | The agent reported failure. |\n"+
 		"| `11` | script | The agent process failed; its raw status is `backend_exit_code` in `.byre-run/result.json`. |\n"+
-		"| `12` | chassis | `--timeout` expired (the chassis's own timer). |\n"+
+		"| `12` | chassis | `--timeout` expired (the chassis's own deadline). |\n"+
 		"| `13` | script | No usable credential in the box; the remedy is on stderr. |\n"+
 		"| `14` | chassis | The headless script itself failed, or exited `0` without a result; `script_exit_code` in `result.json`. |\n"+
 		"| `15` | script/chassis | The agent's binary is absent, or no headless command is baked into the image. |\n"+

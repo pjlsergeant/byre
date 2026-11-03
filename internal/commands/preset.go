@@ -558,18 +558,19 @@ func remotePresetRefusal(arg string) error {
 	// terminal-escaped, shell-quoted form, as the install hints in pack.go
 	// print a hostile URI: a copied line carries no bare metacharacter. -g
 	// stops curl reading [ ] and { } in the URI as a glob.
-	quoted := packages.ShellArg(packages.EscapeTerminal(percentEncodeControls(arg)))
+	quoted := packages.ShellArg(packages.EscapeTerminal(percentEncodeNonPrintableASCII(arg)))
 	return fmt.Errorf("%s -- download it first (curl -fsSLg -o byre.preset %s), review it, and apply the path; or apply on a TTY without --yes", remotePresetRule, quoted)
 }
 
-// percentEncodeControls rewrites every byte below 0x20 and 0x7f as %XX. The
-// remedy must name the URI that was refused, byte for byte, and a control
-// byte has no printable form other than its percent-encoding.
-func percentEncodeControls(s string) string {
+// percentEncodeNonPrintableASCII rewrites every byte outside 0x20..0x7e as
+// %XX. The remedy must name the refused URI byte for byte, and only printable
+// ASCII survives the terminal escape unchanged; a percent-encoded UTF-8
+// sequence is the URL form of the same IRI, so curl fetches the same resource.
+func percentEncodeNonPrintableASCII(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if c < 0x20 || c == 0x7f {
+		if c < 0x20 || c > 0x7e {
 			fmt.Fprintf(&b, "%%%02X", c)
 			continue
 		}

@@ -169,22 +169,39 @@ func TestPresetApplyYesQuotesHostilePresetURI(t *testing.T) {
 	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
 }
 
-// A control byte in an https preset URI is percent-encoded in the curl line,
-// so the pasted URL is the refused one rather than a silently shortened one.
+// A non-printable byte in an https preset URI (C0 or C1 control, invalid
+// UTF-8) is percent-encoded in the curl line, so the pasted URL is the refused
+// one rather than a silently shortened or rewritten one.
 func TestPresetApplyYesPercentEncodesControlBytes(t *testing.T) {
-	p, proj := onboardPaths(t)
-	s, _, _ := testStreams("", false)
-	err := PresetApply(s, proj, "https://example.invalid/a\x1b[31mb", true)
-	if err == nil || !strings.Contains(err.Error(), remotePresetRule) {
-		t.Fatalf("an https preset URI with a control byte must refuse, got %v", err)
+	// want is the curl argument as printed: ShellArg quotes only an argument
+	// carrying a shell metacharacter, here the [.
+	for _, tc := range []struct{ name, uri, want string }{
+		{"C0 control", "https://example.invalid/a\x1b[31mb", "'https://example.invalid/a%1B[31mb'"},
+		{"C1 control", "https://example.invalid/a\u0085b", "https://example.invalid/a%C2%85b"},
+		{"invalid UTF-8", "https://example.invalid/a\xffb", "https://example.invalid/a%FFb"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, proj := onboardPaths(t)
+			s, _, _ := testStreams("", false)
+			err := PresetApply(s, proj, tc.uri, true)
+			if err == nil || !strings.Contains(err.Error(), remotePresetRule) {
+				t.Fatalf("an https preset URI with a non-printable byte must refuse, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "curl -fsSLg -o byre.preset "+tc.want+")") {
+				t.Fatalf("the byte must be percent-encoded in the curl line, got %q", err)
+			}
+			msg := err.Error()
+			if strings.ContainsRune(msg, '\uFFFD') {
+				t.Fatalf("the message must carry no U+FFFD, got %q", msg)
+			}
+			for i := 0; i < len(msg); i++ {
+				if msg[i] < 0x20 || msg[i] > 0x7e {
+					t.Fatalf("the message must carry no raw non-printable byte, got %#x at %d in %q", msg[i], i, msg)
+				}
+			}
+			presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
+		})
 	}
-	if !strings.Contains(err.Error(), "curl -fsSLg -o byre.preset 'https://example.invalid/a%1B[31mb')") {
-		t.Fatalf("the control byte must be percent-encoded in the curl line, got %q", err)
-	}
-	if strings.ContainsRune(err.Error(), 0x1b) {
-		t.Fatalf("the message must carry no raw ESC byte, got %q", err)
-	}
-	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
 }
 
 // An explicit preset path passes --yes: it names bytes the caller controls.
