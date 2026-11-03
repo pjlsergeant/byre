@@ -232,17 +232,18 @@ tee_to() {
 }
 
 on_signal() {
-  interrupted=1
   if [ -n "$child" ]; then kill "-$1" -- "-$child" 2>/dev/null; fi
 }
 
-# on_timeout (USR1, see the traps): TERM the group, KILL 15 s later.
+# on_timeout (USR1, see the traps): TERM the group, KILL 15 s later. A
+# child that is already gone finished before the deadline's signal: not a
+# timeout.
 on_timeout() {
-  interrupted=1
   [ -n "$deadline_cs" ] || return
   uptime_cs || return
   [ "$now_cs" -ge "$deadline_cs" ] || return
   [ "$timed_out" = 0 ] || return
+  kill -0 "$child" 2>/dev/null || return
   timed_out=1
   kill -TERM -- "-$child" 2>/dev/null
   (
@@ -277,8 +278,7 @@ else
 
   # USR1 is the timer's signal, but any same-uid process can send it: it
   # counts only after the monotonic deadline and only while a timer is armed,
-  # and is ignored otherwise (its default action kills the chassis). A
-  # trapped signal interrupts `wait`, which resumes to the child's real status.
+  # and is ignored otherwise (its default action kills the chassis).
   trap 'on_signal TERM' TERM
   trap 'on_signal INT' INT
   if [ -n "$timeout_spec" ]; then
@@ -313,16 +313,22 @@ else
     timer=$!
   fi
 
-  # Resume an interrupted wait (bash keeps a reaped child's status).
-  while :; do
-    interrupted=0
-    wait "$child"
-    rc=$?
-    [ "$interrupted" = 1 ] || break
+  # No `wait` while a trap is armed: when a trapped signal lands as `wait`
+  # reaps the child, bash drops the child's status, and the next `wait`
+  # blocks until every other child is gone -- the timer, then the KILL
+  # follow-up. Waiting on a foreground sleep reaps and records the child
+  # safely, and a trap runs when the sleep ends, so a signal's handler waits
+  # at most 0.1 s. Not `read -t`: a read inside a trap handler (uptime_cs)
+  # cancels its timeout.
+  while kill -0 "$child" 2>/dev/null; do
+    sleep 0.1
   done
   # Ignored, not reset: a timer firing before its stop must not kill PID 1.
   trap - TERM INT
   trap '' USR1
+  # The child is reaped and its status recorded, so this returns at once.
+  wait "$child"
+  rc=$?
   stop_helper "$timer"
   stop_helper "$killer"
   # The run is over: whatever the headless command left in its group has no

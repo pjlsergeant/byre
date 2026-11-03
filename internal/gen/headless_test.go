@@ -212,6 +212,7 @@ func TestHeadlessExitMap(t *testing.T) {
 		{"success", answer + "exit 0", 0, "success", -1, -1, "the answer"},
 		{"zero without a result", "exit 0", 14, "script_failed", -1, 0, ""},
 		{"agent reported failure", `printf 'why it failed' >"$BYRE_RUN_RESULT_FILE"; exit 10`, 10, "agent_error", -1, -1, "why it failed"},
+		{"agent reported failure without an answer", "exit 10", 10, "agent_error", -1, -1, ""},
 		{"agent exit 10", backendExit("10"), 11, "agent_exit", 10, -1, ""},
 		{"agent exit 13", backendExit("13"), 11, "agent_exit", 13, -1, ""},
 		{"agent exit 124", backendExit("124"), 11, "agent_exit", 124, -1, ""},
@@ -377,7 +378,9 @@ printf 'own answer' >"$BYRE_RUN_RESULT_FILE"`
 // be ignored, and leave the run unbounded. A step cannot be staged in a
 // test, so this pins the clock source: uptime_cs reads /proc/uptime, and the
 // USR1 handler consults it and no wall clock (bash's EPOCHREALTIME,
-// EPOCHSECONDS or SECONDS, or date(1)).
+// EPOCHSECONDS or SECONDS, or date(1)). It also pins the data flow: now_cs
+// is assigned only inside uptime_cs, and deadline_cs only by the reset or as
+// now_cs plus timeout_cs.
 func TestHeadlessTimeoutClockIsMonotonic(t *testing.T) {
 	src := string(HeadlessScript())
 	wall := regexp.MustCompile(`EPOCHREALTIME|EPOCHSECONDS|SECONDS|\bdate\b`)
@@ -401,6 +404,46 @@ func TestHeadlessTimeoutClockIsMonotonic(t *testing.T) {
 	}
 	if w := wall.FindString(handler); w != "" {
 		t.Errorf("on_timeout reads a wall clock (%q)", w)
+	}
+
+	// Full-line comments blanked in place, so offsets match src.
+	code := []byte(src)
+	for _, loc := range regexp.MustCompile(`(?m)^[ \t]*#.*$`).FindAllIndex(code, -1) {
+		for i := loc[0]; i < loc[1]; i++ {
+			code[i] = ' '
+		}
+	}
+	clockStart := strings.Index(src, "\nuptime_cs() {\n")
+	clockEnd := clockStart + strings.Index(src[clockStart:], "\n}\n")
+	if w := wall.FindString(src[clockStart:clockEnd]); w != "" {
+		t.Errorf("uptime_cs reads a wall clock (%q)", w)
+	}
+	nowSets := regexp.MustCompile(`\bnow_cs=`).FindAllIndex(code, -1)
+	if len(nowSets) == 0 {
+		t.Error("headless.sh never assigns now_cs")
+	}
+	for _, loc := range nowSets {
+		if loc[0] < clockStart || loc[0] > clockEnd {
+			line := 1 + strings.Count(src[:loc[0]], "\n")
+			t.Errorf("headless.sh line %d assigns now_cs outside uptime_cs", line)
+		}
+	}
+
+	deadlineSet := regexp.MustCompile(`\bdeadline_cs=(\$\(\([^)]*\)\)|"[^"]*"|'[^']*'|[^\s;]*)`)
+	armed := false
+	for _, m := range deadlineSet.FindAllSubmatchIndex(code, -1) {
+		value := strings.Join(strings.Fields(string(code[m[2]:m[3]])), "")
+		switch value {
+		case "", `""`, "''":
+		case "$((now_cs+timeout_cs))":
+			armed = true
+		default:
+			line := 1 + strings.Count(src[:m[0]], "\n")
+			t.Errorf("headless.sh line %d sets deadline_cs=%s, want the reset or $((now_cs + timeout_cs))", line, value)
+		}
+	}
+	if !armed {
+		t.Error("headless.sh never arms deadline_cs=$((now_cs + timeout_cs))")
 	}
 }
 
