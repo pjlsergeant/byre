@@ -347,8 +347,10 @@ This section is the design view: why the cascade has the shape it has,
 with the ADRs. Every key, the merge rules (scalars override, lists
 union, identity-keyed entries replace, removal markers, closures) and the
 preset and named-layer user guide are in the site's configuration
-reference, `site/content/docs/configuration-reference.md` (generated from
-the key registry); the editor walkthrough is `configuration.md`.
+reference, `site/content/docs/configuration-reference.md` (hand-maintained;
+the in-box `/etc/byre/config-reference.md` is derived from it by `go run
+./cmd/byre config-reference-doc`, test-pinned); the editor walkthrough is
+`configuration.md`.
 
 Cascade, config-only (image steps are compiled output, never hand-written
 twice):
@@ -361,7 +363,7 @@ twice):
 ```
 
 Resolution: `default ⊕ template ⊕ chain(root … parent) ⊕ project`. The
-merge rules are ADR 0018 (identity replace per its 2026-07-28 amendment);
+merge rules are ADR 0018 (identity replace: its Cascade semantics);
 `seed_prefs` is tri-state so a later layer's explicit `false` can turn
 an inherited opt-in off (ADR 0045).
 
@@ -369,28 +371,27 @@ an inherited opt-in off (ADR 0045).
 employer config, a personal toolkit) slotted between the template and
 the project. The project config -- or any layer -- names at most ONE
 parent via `extends = "<name>"`; byre walks the pointers to the root and
-merges root-first. Chains are linear (no lists, no diamonds); cycles and
-dangling parents are hard errors naming the loop / the exact path to
-create. Layers are plain files, not packages (no version, no install
-verbs -- ADR 0029's boundary), and resolve LIVE at every develop: the
-same trust position as editing default.config. Attribution names the
-layer everywhere (status's `Extends:` chain, the config UI's
-`layer:<name>` tags, preset-review grant rows), and layer files sit
-outside the `--self-edit` writable set, so a boxed agent can never edit a
-file that propagates into other projects' sandboxes. Manage with `byre
-layer new|list|validate` and edit with `byre config --layer <name>`.
+merges root-first. Chains are strictly linear (no lists, so no diamonds
+and no linearization rule to explain); cycles and dangling parents are
+hard errors naming the loop / the exact path to create. Layers are plain
+files, not packages (no version, no install verbs -- ADR 0029's
+boundary), and resolve LIVE at every develop: the same trust position as
+editing default.config. Attribution names the layer on every surface,
+preset-review grant rows included; the `--self-edit` exclusion and the
+management commands are in the configuration reference's Named layers
+section.
 
 **The project layer lives host-side, NOT in the project tree** (ADR
 0003): a config inside the rw-mounted project would let the boxed agent
 rewrite its own sandbox. A repo can ship a **preset** -- conventionally
 `byre.preset`, a complete config proposal (ADR 0029; an in-repo
 `byre.config` is refused with the rename remedy). Cloning gives you a
-file, not a prompt: nothing takes effect until an explicit `byre preset
-apply`, which chauffeurs installs for missing packages, shows the
-composed box's full grant review (with a diff against the current store
-config -- applying replaces the whole file), and writes the store
-`byre.config` on confirm, recording an `applied` marker (`--yes` is the
-unattended form, ADR 0063). Drift from the applied version is a passive
+file, not a prompt: the proposal reaches the store only through an
+explicit, host-side `byre preset apply` after its grant review, so the
+boxed agent, which can rewrite the file, can never make it take effect.
+The apply flow (installs, review, diff, the `--yes` CI form of ADR 0063)
+is the configuration reference's Presets section. Apply records an
+`applied` marker; drift from the applied version is a passive
 develop/status note, never a question.
 
 `--self-edit` is the one announced exception to the host-side rule: the
@@ -772,8 +773,10 @@ same tree). The invariants every command keeps:
 **No command mutates config behind your back.** Config *content* changes
 only where you asked for the write: files you edit, the `byre config`
 editor, the declaration verbs (`byre mcp add`/`remove`, `byre
-claude-skill add`/`remove`, `byre context add`/`remove`), `byre preset
-apply` (after its review), `byre restore` (after its own, and only into a
+claude-skill add`/`remove`, `byre context add`/`remove`), `byre
+credentials set`/`unset` (the `[credentials]` rows of the project's
+config, or with `--layer` a layer's), `byre layer new` (a stub layer
+file), `byre preset apply` (after its review), `byre restore` (after its own, and only into a
 project that has no config yet), and onboarding's initial write. `rehome`
 and `forget` move or delete the store wholesale, never editing what's
 inside; everything else -- `develop` and friends included -- only reads
@@ -816,15 +819,11 @@ output is the same wherever it is produced.
 verbs: instead of deriving a project from cwd, they discover running
 boxes across every installed engine by the `byre.project` label and pick
 one by a fixed cascade, filtered to the caller's UID. Transport is an
-`exec -i` stream into the running container, never a mount or a copy
-through the engine's storage. Every landing claims its final name
-atomically and never overwrites: in the box a dotfile temp is claimed
-with `ln`, on the host (grab) an `O_EXCL` temp is claimed with a
-hardlink under an `os.Root` anchored at the destination. Remote delivery
-(`ssh://`) streams every source as ONE tar archive up a single ssh exec
-into the remote byre, which feeds the same per-file transport. The user
-guide, the what-works-where matrix and the full transport mechanics are
-`docs/DELIVER.md`; decisions in ADR 0021, ADR 0037 (remote) and ADR 0040
+`exec -i` stream into the running container (never a mount or a copy
+through the engine's storage), every landing claims its final name
+atomically and never overwrites, and remote delivery (`ssh://`) is one
+tar stream over a single ssh exec. The user guide, the what-works-where
+matrix and the transport mechanics are `docs/DELIVER.md`; decisions in ADR 0021, ADR 0037 (remote) and ADR 0040
 (grab).
 
 ### Backup and restore
@@ -832,7 +831,8 @@ guide, the what-works-where matrix and the full transport mechanics are
 `byre backup` and `byre restore` move a project between machines. The
 scope is deliberately narrow: the project's `byre.config` and its state
 volumes, and nothing byre can rebuild (the image, which bakes this host's
-UID), re-reference (layers, templates, skills, the agent -- these must
+UID/GID on a rootful engine or the generic 1000 under keep-id mode),
+re-reference (layers, templates, skills, the agent -- these must
 exist at the destination, and the file names every one it saw), or that
 git already carries (the workspace). `backup` requires the project to be
 completely still, previews what it will carry and what it leaves behind,

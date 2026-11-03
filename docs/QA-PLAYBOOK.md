@@ -847,7 +847,8 @@ source alone (the grok-v1 lesson). Tracked in TODO.md ("Maybe someday").
    with no login prompt. GOTCHA: do not open gemini's `/auth` dialog
    after login -- it rm's the symlink and re-forks. Rotation is already
    proven safe (Google installed-app refresh tokens don't rotate;
-   AGENT-CREDENTIAL-MECHANICS, Gemini §3), and the seed plumbing is
+   AGENT-CREDENTIAL-MECHANICS, the Gemini section's CORRECTED / CONFIRMED
+   2026-07-16 block), and the seed plumbing is
    field-proven credential-less -- only the live cross-box login
    remains.
 2. **grok ~6h broker rollover (ADR 0036):** watch a real box refresh

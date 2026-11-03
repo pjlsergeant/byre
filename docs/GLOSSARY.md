@@ -646,8 +646,9 @@ config) onto its new path-derived id.
 
 **Keep-id mode**:
 The rootless-Podman path (ADR 0032): a generic-uid image (dev at 1000)
-run under `--userns=keep-id`, mapping the invoking user onto the baked
-id. Rootful engines instead bake the host uid directly (ADR 0008); both
+run under `--userns=keep-id:uid=1000,gid=1000` (the explicit form; plain
+`keep-id` only aligns when the host uid already is 1000), mapping the
+invoking user onto the baked id. Rootful engines instead bake the host uid directly (ADR 0008); both
 end at the same place -- box-written files land owned by the invoker.
 _Avoid_: "rootless mode" (rootless names the ENGINE's state; keep-id
 names byre's path on it)

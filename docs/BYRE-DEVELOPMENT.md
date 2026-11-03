@@ -61,11 +61,13 @@ byre skill install skills/inttest/skill.toml    # host-side
 The script uses a `byre` on PATH if there is one and otherwise builds from
 the working tree, so **it also runs inside a box** -- where there is no byre
 binary, but there is Go and the source. Only `skill install` is genuinely
-host-side (it writes the real `~/.byre/skills`).
+host-side (it writes the installed snapshot under the real
+`~/.byre/packages/<digest>/`).
 
 It packs via a throwaway `BYRE_HOME`, because `pack` operates on a *local*
 package and a local copy under the real `~/.byre/skills` would shadow the
-installed one (ADR 0055), changing what every box on the machine runs. It also writes to a temp file and moves it into place only on
+installed one (ADR 0055), changing what every box on the machine runs.
+It also writes to a temp file and moves it into place only on
 success: redirecting pack's stdout straight at the manifest
 (`... > skills/inttest/skill.toml`) truncates that file BEFORE pack reads
 it, so pack copies an empty primary and the original is destroyed. Recover
@@ -145,8 +147,10 @@ The key lands on a **machine-scoped volume**, so every box on the machine
 shares it. The ssh user rides `env_from_host = { INTTEST_USER =
 "env:USER" }` in the preset (Lima names the VM user after the host user).
 
-**Use, from any box:** `byre-inttest` runs the full gated suite (the
-pre-handoff check -- CI's gated job only fires on push); scope it while
+**Use, from any box:** bare `byre-inttest` runs the gated integration
+tests (`./... -run Integration`; the pre-handoff check -- CI's gated job
+only fires on push; pass `./... -count=1 -v` for the whole gated suite,
+as RELEASING does); scope it while
 iterating (`byre-inttest ./internal/runner/ -run Integration -v`);
 `BYRE_TEST_ENGINE=podman` pins the engine. The wrapper syncs to a
 per-worktree directory on the VM, so concurrent sessions don't collide.

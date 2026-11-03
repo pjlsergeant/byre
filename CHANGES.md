@@ -19,7 +19,7 @@
 - **Skills can declare what they require.** `requires = ["codex"]` in a
   skill.toml names skills it does not work without. develop and `byre
   run` refuse a box where one is not enabled; byre never enables it for
-  you. Older byre releases refuse a manifest carrying the key. Author
+  you. Older byre releases refuse a skill.toml carrying the key. Author
   contract: `docs/SKILLS.md`; ADR 0062.
 - **`byre preset apply --yes`: apply a committed preset in CI.** No
   terminal needed; the full review still prints to stderr and the

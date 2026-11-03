@@ -83,8 +83,7 @@ environment are correctly out of scope.
   as-an-epigram rhythm as AI-sounding.
 - **The farm epigram is a safety idiom, not a scope statement** -- an
   accepted risk; the plain what-it-is sentence under the H1 is the
-  mandatory mitigation, and
-  TODO.md's post-launch tripwire watches for cold readers bouncing.
+  mandatory mitigation.
 
 ## "Why not X?" entry format
 

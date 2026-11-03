@@ -33,7 +33,7 @@ weaker than repo source, stronger than docs).
 | Cache/ephemeral | `cache/`, `paste-cache/`, `shell-snapshots/`, `session-env/`, `backups/`, `.last-*` | `tmp/`, `.tmp/`, `cache/`, `models_cache.json`, `*.sqlite`, `log/`, `shell_snapshots/`, `packages/` (binary cache) | `tmp/`, per-project temp trees | `models_cache.json`, `logs/`, `upload_queue/`, `marketplace-cache/`, `downloads/` (binary!) | `~/.cache/opencode/` (incl. `bin/` downloads), `log/`, `snapshot/`, `~/.local/state/opencode/locks` |
 | Config-dir relocation env | `CLAUDE_CONFIG_DIR` (moves everything incl. `.claude.json` + credentials) | `CODEX_HOME` | `GEMINI_CLI_HOME` (moves the whole `~/.gemini` tree -- CORRECTED 2026-07-16; byre still uses per-file symlinks to keep history per-box) | `GROK_HOME` (**verified**: moves auth + sessions + config) | XDG vars, per dir (**verified**: `XDG_DATA_HOME` moves auth+db, `XDG_CONFIG_HOME` moves config); no single all-state env |
 | Credential write pattern | closed source; temp+rename observed for sibling files (symlink-replacing) | **in-place** truncate+write, 0600, no rename | **in-place** `fs.writeFile`, 0600, no rename | closed source; temp+rename **inferred from the 2026-07-10 field failure** (symlink replaced -- gate 1 FAILED; see §6) | **in-place** write + chmod 0600, no rename (**live-verified through a symlink**) |
-| Refresh-token rotation | **rotated server-side, single-use**; concurrent refresh races documented | server MAY return new refresh_token; in-process lock only | **NON-rotating -- reusable until revoked** (CONFIRMED 2026-07-16 from Google docs; concurrent refresh is SAFE, no cascade); client never re-reads disk mid-session | ~6h access tokens, silent OIDC refresh; **single-use with chain revocation inferred** (gate 2 FAILED in the field -- see §6) | per PROVIDER: API keys static; Anthropic OAuth rides the same single-use server rotation as Claude Code |
+| Refresh-token rotation | **rotated server-side, single-use**; concurrent refresh races documented | server MAY return new refresh_token; in-process lock only | **NON-rotating -- reusable until revoked** (CONFIRMED 2026-07-16 from Google docs; concurrent refresh is SAFE, no cascade); client never re-reads disk mid-session | ~6h access tokens, silent OIDC refresh; **single-use, reuse revokes the token family** (SOURCE-CONFIRMED 2026-07-16; gate 2 FAILED in the field -- see §3, §6) | per PROVIDER: API keys static; Anthropic OAuth rides the same single-use server rotation as Claude Code |
 | Plan-scoped env token | `CLAUDE_CODE_OAUTH_TOKEN` via `claude setup-token` (1 year, Pro/Max/Team/Enterprise, inference-only) | `CODEX_ACCESS_TOKEN` (ChatGPT token) + device-code login (beta) | **none** -- API key only (different billing) | **none** -- `XAI_API_KEY` only (different billing); native `grok login --device-auth` | **none** long-lived; `OPENCODE_AUTH_CONTENT` injects the whole store via env (static -- refresh can't write back) |
 | Vendor stance on copying creds between machines | supported implicitly (devcontainer volume docs); copied-file refresh is buggy (#21765) | **explicitly endorsed**: copy `auth.json` to headless machines | silent; headless docs say "use cached credential or env vars" | silent; its own installer reads `auth.json` tokens for authenticated downloads (empirically: a copied credential works) | silent |
 
@@ -346,11 +346,17 @@ small in practice.
 - `CODEX_HOME` -- relocates the whole state dir; "credentials are cached at
   ~/.codex/auth.json under the CODEX_HOME directory (which defaults to
   ~/.codex)" (https://developers.openai.com/codex/auth; empirical, this box).
-- Plan-scoped env token: **yes** -- `CODEX_ACCESS_TOKEN` carries a ChatGPT
-  token (https://developers.openai.com/codex/auth; constant
-  `CODEX_ACCESS_TOKEN_ENV_VAR` read in manager.rs, taking precedence over
-  stored auth). Being an access token (not refresh), it expires -- unlike
-  Claude's one-year setup-token. Device-code login (`codex login
+- Plan-scoped env token: **yes** -- `CODEX_ACCESS_TOKEN` (constant
+  `CODEX_ACCESS_TOKEN_ENV_VAR` read in manager.rs). It carries a Personal
+  Access Token (`at-` prefix) or else an Agent-Identity JWT
+  (`classify_codex_access_token`, access_token.rs), not a generic ChatGPT
+  access token (2026-07-16 source read; the correction block above).
+  Precedence in `load_auth`: `CODEX_API_KEY` env > in-memory ephemeral >
+  `CODEX_ACCESS_TOKEN` env > persisted store; env-derived auth never
+  triggers a file-writing refresh. The docs-based reading it replaced
+  (https://developers.openai.com/codex/auth) was a ChatGPT access token,
+  which expires (not a refresh token) -- unlike Claude's one-year
+  setup-token; the PAT form's lifetime is unverified. Device-code login (`codex login
   --device-auth`, beta) covers headless first-login.
 - API key: `OPENAI_API_KEY` (and `CODEX_API_KEY_ENV_VAR` in manager.rs) --
   "OpenAI bills API key usage through your OpenAI Platform account at standard
@@ -404,8 +410,8 @@ including a Docker-container variant -- with the caveat "Treat
 >   GROK_AUTH_PROVIDER_COMMAND analogue. `security.auth.useExternal` only skips
 >   validation for embedders; it does not shell out. So if the OAuth path ever
 >   needed a broker there is none -- but non-rotation means it doesn't.
-> - **`selectedType` seeding** (the "consciously deferred" residual below is
->   now DONE): it lives at `security.auth.selectedType` in settings.json;
+> - **`selectedType` seeding**: it lives at `security.auth.selectedType` in
+>   settings.json;
 >   seeding `oauth-personal` skips the auth-method dialog, whose
 >   `clearCachedCredentialFile()` (dialog-only -- verified: not called from the
 >   login path) rm's oauth_creds.json and forks a symlinked login. byre's
@@ -483,13 +489,17 @@ parallel access tokens.
 
 ### 4. Env overrides
 
-- Config-dir relocation: **none**. `storage.ts` hardcodes `~/.gemini`; only
+- Config-dir relocation: **`GEMINI_CLI_HOME`** relocates the whole
+  `~/.gemini` tree (paths.ts `homedir()`; CONFIRMED 2026-07-16, the block
+  above). byre does not use it: a whole-tree relocation would sweep
+  per-project `history/` into the shared volume, so the split happens AT
+  `~/.gemini` itself (per-file symlinks inside it). At 0.49 there was no
+  home relocation: `storage.ts` hardcoded `~/.gemini`; only
   `GEMINI_CLI_TRUSTED_FOLDERS_PATH` and `GEMINI_CLI_SYSTEM_SETTINGS_PATH` /
-  `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` relocate specific files. Open feature
-  requests for a home override: #2815, #8440
+  `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` relocated specific files, and feature
+  requests #2815, #8440 asked for a home override
   (https://github.com/google-gemini/gemini-cli/issues/2815,
-  https://github.com/google-gemini/gemini-cli/issues/8440). So the split must
-  happen AT `~/.gemini` itself (mounts/symlinks inside it).
+  https://github.com/google-gemini/gemini-cli/issues/8440).
 - Plan-scoped env token: **none**. Auth methods are Login with Google (OAuth,
   uses Google AI Pro/Ultra subscription quotas), `GEMINI_API_KEY` /
   `GOOGLE_API_KEY` (AI Studio key, pay-per-use billing, separate from
@@ -791,19 +801,17 @@ grok's lock they are cross-container-safe on a shared volume; byre just
 doesn't share opencode's lock dir (per-box `$XDG_STATE_HOME`).
 
 **byre's link hook hardened 2026-10-03.** Because the write follows the link,
-the link hook is the trust boundary, and the original's `mv || true; rm -f; ln
--s || true` shape had eight holes (found by three independent reviewers on the
-mimo port of this hook, each confirmed by failure injection).
-`opencode-shared-auth` now refuses a symlink planted AT the shared `auth.json`
-or on the identity dir's route (physical path must equal the spelling);
-promotes by exclusive create (temp copy + hard `ln`, which counts only once the
-shared name is checked to be that same inode, so two boxes promoting at once
-cannot overwrite each other, and a cross-volume `mv` is no longer copy+unlink);
-keeps the per-project file on any failed promotion or link (temp symlink + `mv
--f`, then checked to be the link to the shared file -- no GNU-only `-T`, since
-the macOS CI leg runs these hooks with BSD tools -- every step checked); reads
-the target newline-safe; and prints each message only after its outcome. The
-`opencode` login hook's trust check additionally requires the trusted target to
+the link hook is the trust boundary. `opencode-shared-auth` refuses a symlink
+planted AT the shared `auth.json` or on the identity dir's route (physical path
+must equal the spelling). It promotes by exclusive create: a temp copy plus a
+hard `ln`, which counts only once the shared name is checked to be that same
+inode, so two boxes promoting at once cannot overwrite each other, and a
+cross-volume promotion is never a copy+unlink `mv`. It keeps the per-project
+file on any failed promotion or link. It links by temp symlink plus `mv -f`,
+then checks the result is the link to the shared file (no GNU-only `-T`, since
+the macOS CI leg runs these hooks with BSD tools). It checks every step. It
+reads the target newline-safe. It prints each message only after its outcome.
+The `opencode` login hook's trust check additionally requires the trusted target to
 be absent or a regular non-symlink file, and stops (never reads, never logs in)
 on a non-regular credential or a foreign link it could not drop. The filesystem
 primitives all of this rides on -- the identity-route check, the shared-path

@@ -17,7 +17,7 @@ fails closed: it stops at the gate rather than starting subtly wrong.
 
 **The firewall.** Its rules are applied from outside the box at launch
 by the netns helper (the handshake is in `docs/ARCHITECTURE.md`, Network;
-decision `docs/adr/0010`), so no Dockerfile or run command can carry
+decision `docs/adr/0010-firewall-outside-the-box.md`), so no Dockerfile or run command can carry
 them, and a firewalled image waits for the helper's ready signal and
 exits without it. Two ways out:
 

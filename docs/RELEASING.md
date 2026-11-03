@@ -2,8 +2,10 @@
 
 byre ships as a single static binary with skills and templates embedded.
 The dev-box *container images* are never part of a release -- every host
-bakes its own (they carry the host's UID, ADR-0008) -- so a release is
-just cross-compiled binaries on a GitHub Release. The pipeline is goreleaser, run by
+bakes its own (they carry the host's UID/GID on a rootful engine,
+ADR-0008, or the generic 1000 under rootless Podman's keep-id mode,
+ADR-0032) -- so a release is just cross-compiled binaries on a GitHub
+Release. The pipeline is goreleaser, run by
 `.github/workflows/release.yml` on every `v*` tag push (ADR-0016).
 
 ## Cutting a release

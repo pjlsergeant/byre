@@ -280,11 +280,11 @@ overwrites a host file or writes through a planted symlink, and
 enumeration records outside the grabbed root are ignored loudly.
 
 **Remote transport.** The local byre asks the remote for its box list
-(`byre deliver --boxes --proto N` over ssh: a frozen tab-separated line
-grammar on stdout, with exit 4 marking a partial pool, which forbids
-auto-picking), picks locally with the ordinary picker, then streams every
-source as ONE tar archive up a single plain-ssh exec into the remote's
-`byre deliver --tar -`. The archive's entries feed the ordinary per-file
+with `byre deliver --boxes --proto N` over ssh, which answers in a frozen
+tab-separated line grammar on stdout; exit 4 marks a partial pool, which
+forbids auto-picking. The local byre picks with the ordinary picker. It
+then streams every source as ONE tar archive up a single plain-ssh exec
+into the remote's `byre deliver --tar -`. The archive's entries feed the ordinary per-file
 transport, so claiming, uniquifying and `/inbox` confinement are
 identical to a local delivery, and nothing is staged on the remote
 host's disk. `--box` skips the enumeration connection. The paste beat,

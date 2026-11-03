@@ -1,8 +1,8 @@
 # Skills and templates as packages
 
 How to discover, install, author, and publish byre packages. Mechanics
-reference: `ARCHITECTURE.md`; decision record: `adr/0029`; vocabulary:
-`GLOSSARY.md` (Packages).
+reference: `ARCHITECTURE.md`; decision record:
+`adr/0029-skills-are-packages.md`; vocabulary: `GLOSSARY.md` (Packages).
 
 A **package** is a skill or a template. Where it came from is its
 provenance, and `byre skill list` / `byre template list` always show it:

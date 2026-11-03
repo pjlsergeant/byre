@@ -62,7 +62,9 @@ of them. Clean up what you create; label it so it is attributable.
 - **Yes:** the agent's job *is* containers (building images, driving
   compose stacks, debugging against a real daemon).
 - **Prefer not, when compose-deps alone are enough:** daemon control is a
-  much larger grant than dependencies need.
+  much larger grant than dependencies need. byre provides no service
+  mechanism for compose-style dependencies, so for them the choice is
+  this grant or none (service sidecars are tracked in `TODO.md`).
 
 ## Compose project names
 
