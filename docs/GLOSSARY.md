@@ -20,9 +20,8 @@ the engine-level artifact (the status row, port mappings, engine errors).
 noun itself.
 
 **Session**:
-One run of a project's box, one container: a foreground `byre develop`, or
-a headless run started by `byre run`. Single-session per project
-directory, whichever verb started it; parallelism comes from worktrees.
+One foreground run of a project's box (one `byre develop`, one container).
+Single-session per project directory; parallelism comes from worktrees.
 
 **Launch record**:
 The durable, content-addressed record of what byre TOLD THE ENGINE for one
@@ -72,8 +71,7 @@ _Avoid_: runtime (collides with a skill's `[runtime]` contributions)
 **Launcher**:
 The constant, unprivileged entrypoint script that preps the box (git
 identity, agent context, first-run hooks, launch gate) and execs the
-selected agent's command -- or, for a headless run, the headless-run
-chassis `byre-headless`.
+selected agent's command.
 
 **Launch gate**:
 The launcher's wait, at its very top, for the firewall ready signal before
@@ -130,58 +128,6 @@ _Avoid_: "manifest" (taken: a package's `[package]` table), "export" /
 "import" (the retired v5 design's words, and both read as a format other
 tools consume), "snapshot" (taken: an installed package's content-addressed
 snapshot)
-
-### Headless runs
-
-**Headless run**:
-A session whose agent executes ONE task non-interactively and exits,
-started by `byre run` (ADR 0061). Still a session: one container.
-_Avoid_: "batch run", "job" (CI's word for the step that calls `byre run`,
-not for the session), "ephemeral" (implies byre discards state it keeps:
-the volumes persist as for any session)
-
-**Task**:
-The text a headless run gives the agent.
-_Avoid_: "prompt" (the agent's word for everything it is sent, which can
-carry more than the task), "job"
-
-**Result dir**:
-`.byre-run/` at the working-tree root: the directory holding one headless
-run's files -- the staged task, the agent's record of the run, and a copy
-of the outcome. **Agent-trust**, all of it.
-_Avoid_: "artifact" (CI's word for what a job uploads -- archiving the
-result dir is how it becomes one), "output" (the answer is on stdout)
-
-**Answer**:
-The agent's final message: what `byre run` prints on stdout without
-`--data`.
-_Avoid_: "result" (the result dir holds more than the answer), "output"
-
-**Outcome**:
-byre's own verdict on a headless run. **Authoritative: the exit code and
-the `--data` document** (the versioned JSON `byre run --data` prints on
-stdout); the `outcome.json` copy in the result dir is not.
-_Avoid_: "status" (taken: `byre status`, and the chassis's `status` file),
-"result" (the result dir is agent-trust; the outcome is not)
-
-**Summary line**:
-The one line byre prints last on stderr after a headless run:
-`byre: run <run id>: <outcome>, exit <n> (<authority>)`. Informational;
-the verdict is the Outcome.
-_Avoid_: "result line", "verdict" (the verdict is the outcome)
-
-**Headless command**:
-The command `[agent].headless` declares: what `byre-headless` runs for a
-headless run. The author contract is in `docs/SKILLS.md`.
-_Avoid_: "headless mode" for the command itself (the mode is the agent's;
-the command is what provides it), "batch command"
-
-**Run id**:
-The per-invocation nonce `byre run` mints and stamps into the outcome,
-`result.json`, the summary line and the launch record. Distinct from the
-`byre.run=<nonce>` container label (ADR 0006), which is the netns
-ownership proof.
-_Avoid_: "job id" (CI's), "session id"
 
 ### Config
 
@@ -420,8 +366,8 @@ skill by name.
 **Chassis**:
 Core's constant provision to every box -- the core block at build time
 plus the runtime constants (the core `env_from_host` layer: git
-identity, TERM, TZ; launcher behavior; the launch gate; the headless-run
-chassis `byre-headless`). What a box has regardless of config; "core chassis"
+identity, TERM, TZ; launcher behavior; the launch gate). What a box has
+regardless of config; "core chassis"
 when ownership needs saying. Cf. the microservice-chassis pattern.
 _Avoid_: plumbing (the old spec's word), fittings, infra
 
@@ -430,9 +376,9 @@ The build-time slice of the chassis -- core's constant contribution to
 the generated Dockerfile: the `dev` user baked at the engine mode's
 identity (the host UID/GID on a rootful engine, the generic 1000 under
 keep-id mode), home/workspace ownership, the launcher install, the
-`byre-fetch-run` installer helper skills build with, the `byre-headless`
-headless-run chassis (plus the `USER dev` + ENTRYPOINT tail, emitted last
-so earlier steps build as root). The block family is named by
+`byre-fetch-run` installer helper skills build with (plus the `USER dev` +
+ENTRYPOINT tail, emitted last so earlier steps build as root). The block
+family is named by
 contributor: template block, core block, skill blocks, project block.
 _Avoid_: infra layer (collides with cascade layers and Docker image
 layers), users block; "plumbing" stays informal prose for core's job

@@ -40,10 +40,7 @@ same four steps, and every step's output is inspectable.
    persists is the image and the [named volumes](/docs/volumes-and-state/).
    Sessions are identified by labels, not guessed names, and a directory
    has one session at a time ([worktrees](/docs/worktrees/) are the
-   parallel story). `byre run` starts the other kind of session: the
-   same box, no terminal, one task handed to the agent's headless mode,
-   and byre's verdict as the exit code
-   ([how](/docs/how-do-i/workflow/#run-one-task-headlessly-ci)).
+   parallel story).
 
 ## The dev identity
 

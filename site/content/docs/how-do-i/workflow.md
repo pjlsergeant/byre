@@ -1,7 +1,7 @@
 ---
 title: Daily workflow
 weight: 92
-description: parallel agents, review loops, delivering files, remote SSH, completions, headless runs
+description: parallel agents, review loops, delivering files, remote SSH, completions, image builds, scripted setup
 ---
 
 ## Run parallel agents on the same repo?
@@ -121,7 +121,8 @@ tldr: `tag=$(byre build)` -- the image `byre develop` would build, and
 its tag on stdout.
 
 The build output goes to stderr; no volumes are seeded and no container
-starts. Use it to warm a persistent runner's engine cache before a job,
+starts. Use it to prebuild after a config change so the next `byre
+develop` starts at once, to warm a persistent CI runner's engine cache,
 to read the tag, or to fail a job early on a config that fails to
 build; a hosted runner starts with an empty cache every job, so it
 gains nothing there.
@@ -134,42 +135,32 @@ gains nothing there.
   configured one, `-a <agent>` swaps the agent for this build only.
 - It checks only what the build needs, not mount paths or credentials.
 
-## Run one task headlessly (CI)?
+## Set up a box from a script (new machine, CI)?
 
-tldr: `byre run --task task.md --data > outcome.json` -- one task, no
-terminal, and byre's verdict as the exit code.
+tldr: commit a `byre.preset`, then `byre preset apply --yes` -- the
+reviewed apply, without a terminal.
 
-`byre run` sets up the box as `byre develop` does, hands one task to the
-agent's headless mode, and exits when the agent does. Nothing in it is
-specific to a CI vendor. The bundled claude, codex and grok skills have a
-headless mode; an agent without one is refused by name.
-
-**Configure once, with a committed preset.** Make the preset on your
-own machine with the editor (`byre config` in the project):
-
-1. Pick the agent and its skills -- the firewall among them.
-2. Open the egress doors the job needs.
-3. In the **Env vars** section, add `ANTHROPIC_API_KEY` (or
-   `OPENAI_API_KEY` for codex) with its source set to the host variable
-   of the same name. Your CI secret store sets that variable for the
-   job. A codex key passed this way is logged into a codex home that
-   lasts one run, never the project's saved codex state
-   ([docs/AGENT-CREDENTIAL-MECHANICS.md](https://github.com/pjlsergeant/byre/blob/main/docs/AGENT-CREDENTIAL-MECHANICS.md)).
+**Make the preset once,** on your own machine, with the editor (`byre
+config` in the project): pick the agent and its skills, open the egress
+doors the box needs, and in the **Env vars** section pass each
+credential through from a host variable of the same name (say
+`ANTHROPIC_API_KEY`). On a CI runner the secret store sets that
+variable for the job.
 
 Then copy the file the editor's footer names
 (`Saves to: ~/.byre/projects/<id>/byre.config`) into the repo as
 `byre.preset`. Packages that are not bundled need a `[sources]` row
 each, with its digest (`byre skill inspect <url>` prints it) -- the
 [configuration reference](/docs/configuration-reference/#presets-byrepreset)
-has the shape. The job applies it before running:
+has the shape. The script applies it:
 
 ```sh
 byre preset apply --yes
 ```
 
-`--yes` prints the review into the job log and applies without asking.
-It refuses an https preset address, a digest-less https source and any
-credential row
+`--yes` prints the review on stderr (into the job log, on CI) and
+applies without asking. It refuses an https preset address, a
+digest-less https source and any credential row
 ([ADR 0063](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0063-preset-apply-yes.md)),
 which is why the credential travels as a host passthrough. A preset
 hosted somewhere is downloaded in a step you control and applied as a
@@ -180,44 +171,8 @@ curl -fsSLg -o byre.preset https://example.com/path/byre.preset
 byre preset apply --yes
 ```
 
-**Or, for the minimal box, two flags.** On a checkout byre has never
-configured, `byre run --template <t> --agent <a> ...` (`none` for no
-template) writes the project's config from them and proceeds. That
-config carries no credential passthrough, so the agent's credential has
-to come from a machine you keep: your baseline (`byre config --global`,
-the same **Env vars** row). On a fresh hosted runner, use the preset.
+Packages the preset does not install for you go in first with `byre
+skill install <url> --digest sha256:... --yes`. After the apply, `byre
+build` builds the box ([above](#build-the-box-without-starting-a-session))
+and `byre develop` starts it.
 
-Either way, packages the preset does not install for you go in first
-with `byre skill install <url> --digest sha256:... --yes`.
-
-**Run it.**
-
-```sh
-byre run --task path/to/task.md --data > outcome.json
-rc=$?
-```
-
-- **Gate on `$rc` or on `outcome.json`, never on stderr** -- the agent
-  shares stderr. The
-  [commands page](/docs/commands/#what-byre-run-exits-with) has the exit
-  table.
-- **Without `--data`, stdout is the agent's answer**, ready to post
-  somewhere.
-- **Set a `--timeout`** (exit `12` when it expires); there is none by
-  default. Grok on a saved login needs one: it hangs on a dead login
-  refresh instead of failing.
-- `byre run --help` has the other task sources (`--task -`,
-  `BYRE_TASK`), `--credentials stdin` for encrypted credentials, and
-  `--quiet`.
-
-**Keep the result dir.** The agent's files, its transcript and the
-answer land in `.byre-run/` in the work tree, which ignores itself in
-git and is **emptied at the start of every run** -- archive it before
-running again. It is the agent's to write; don't gate on it. Push from
-the host after `byre run` exits, so push credentials never enter the
-box.
-
-**Clean up.** A hosted runner is discarded, so there is nothing to
-clean. On a self-hosted runner, `byre reset -y` after the job removes
-the agent's state and keeps the image for the next build
-([which hammer](/docs/volumes-and-state/#which-hammer)).

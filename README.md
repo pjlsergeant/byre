@@ -99,7 +99,7 @@ You can always see what the box can see with `byre status`:
 ```text
 $ byre status
 Project id:   my-project-pjl-069d95
-Agent:        byre/claude, headless: byre-claude-headless
+Agent:        byre/claude
 Template:     byre/go      bundled v1.14.0
 Engine:       docker
 Project:      ~/my-project -> /workspace  (rw)
@@ -130,10 +130,10 @@ By default the agent can't access your host filesystem, environment, or credenti
 
 ## Commands
 
-`byre develop`, `byre config`, and `byre deliver` are the ones you'll use frequently. `byre run` runs one task headlessly -- from CI or any script -- and exits with byre's verdict. There's a full table at
+`byre develop`, `byre config`, and `byre deliver` are the ones you'll use frequently. There's a full table at
 [getbyre.com/docs/commands/](https://getbyre.com/docs/commands/).
 
-`byre build` builds the image without starting a session and prints its tag -- to warm a persistent runner's cache or fail a job early on a broken config.
+`byre build` builds the image without starting a session and prints its tag -- to prebuild a box before you need it, warm a CI runner's cache, or fail a job early on a broken config.
 
 ## Why not...?
 

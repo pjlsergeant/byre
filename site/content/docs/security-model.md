@@ -112,7 +112,7 @@ your config files can replace them.
   proven. Credentials you never ship through a preset or a backup have
   no exposure here.
 
-  The unattended `byre preset apply --yes` (for CI) never stands in for
+  The unattended `byre preset apply --yes` (for scripts and CI) never stands in for
   that confirm. `--yes` consents to the grants the review shows -- the
   review still prints, into the job log -- and refuses, on a terminal
   too, when the preset or the config it would replace carries a
@@ -124,7 +124,7 @@ your config files can replace them.
   consented to is the preset as committed, and a commit nobody reviewed
   applies unread
   ([ADR 0063](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0063-preset-apply-yes.md),
-  [the CI recipe](/docs/how-do-i/workflow/#run-one-task-headlessly-ci)).
+  [the scripted-setup recipe](/docs/how-do-i/workflow/#set-up-a-box-from-a-script-new-machine-ci)).
 - **The screen.** The Env editor's multiline draft (`^e`) shows the
   value you type or paste, unmasked, to anyone watching or recording,
   after a warning; stored values are never loaded into it and no
@@ -210,6 +210,28 @@ or deleted. Changing one re-runs the project block's installs. byre
 images never leave your machine (there is no push path). Secrets belong
 in an agent's own login, a shared-auth skill, an `[env_from_host]`
 passthrough from your host environment, or a project credential.
+
+**byre's launcher runs its own helpers on the system PATH; the agent
+does not.** The box's PATH puts `~/.local/bin` first, where agent CLIs
+install, and the agent and your repository's code can write there. The
+launcher runs its own helpers from the system directories, re-pinned
+around each launch env hook
+([ADR 0028](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0028-env-d-hooks-are-pure.md)).
+What still resolves on the agent's PATH, by design:
+
+- **The agent's own command.** Your tools live on that PATH, so a
+  program planted in `~/.local/bin` under the agent's name runs as your
+  agent.
+- **The interactive login hooks** (codex-login, grok-login,
+  opencode-login and the shared-auth first-run hooks), because they run
+  the agent CLIs. A helper planted there gains only what the agent,
+  which can already write that directory, already has.
+- **grok-shared-auth's broker**, on grok's PATH, which refreshes the
+  machine-wide grok login the agent can already read and write.
+
+The claude onboarding seed's publish (`mktemp`, then reopen) is not
+atomic: it assumes nothing else runs during setup, where the agent has
+not started and repo code has finished.
 
 ### Self-edit sessions
 
@@ -414,62 +436,12 @@ Recovery:
   printing its `rm -f` line, so it is never silent, but removing it is
   yours.
 
-## Headless runs
-
-**Everything a headless run produces is the agent's, except the exit
-code and `--data`.** `byre run`'s stdout, its stderr and the result dir
-(`.byre-run/`) it writes in your work tree are all the agent's to
-shape; byre reads nothing back from `.byre-run/`, and the agent can
-print a line identical to byre's last one. Gate a script on the exit
-code or the `--data` document, which byre produces on the host after
-the box exits. Each limitation below is recorded in
-[ADR 0061](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0061-headless-runs.md).
-
-- **Repository code before the chassis.** A pending worktree checkout
-  runs your repository's git hooks and filters in the box first; a
-  rewritten task is refused (exit 16), but the code has already run.
-- **The chassis's files.** The chassis's exclusive file claims and the
-  onboarding seeds' publish (`mktemp`, then reopen) are not atomic: both
-  assume nothing else runs during setup, where the agent has not
-  started and the repo code has finished. byre's writes into
-  `.byre-run/` follow a symlink swapped in for a directory above the
-  work tree, the residual shared with `grab`.
-- **The agent's output authority.** The answer is agent-trust: the
-  channel it travels on is reachable by any process in the box running
-  as the same user. Exit numbers are shared: a box that exits 1, 2, 3
-  or 70 reaches your script as that number, and `--data` tells them
-  apart.
-- **Raw `run_args`.** They make the verdict unverified: byre does not
-  parse them, and `--data` says `unverified: raw run_args`.
-- **The agent's PATH.** The agent's own command resolves on the
-  agent's PATH, by design: your tools live there, so a program repo
-  code planted in `~/.local/bin` under the agent's name runs as your
-  agent; byre's pin to the system directories covers byre's own helpers
-  only. The interactive login hooks (codex-login, grok-login,
-  opencode-login and the shared-auth first-run hooks) also run on the
-  agent's PATH, because they run the agent CLIs, so in an interactive
-  session a helper planted in `~/.local/bin` runs there; under a
-  headless launch they stand down before any credential work.
-  grok-shared-auth's broker runs on grok's PATH, in headless runs too,
-  and refreshes the machine-wide grok login the agent can already read
-  and write.
-- **The timeout.** There is no time limit unless you set one with
-  `--timeout`. A run can stall its own end: a run that pauses one of
-  the chassis's helper processes or lowers its limits is not cut off by
-  `--timeout`; the box stays contained and `byre run` waits until you
-  stop it; a bound on the host side is future work.
-
 ## Agents hold usable credentials
 
 **Agents hold usable credentials by construction.** Whatever auth story
 you choose, the agent can read its own credential -- it needs it to
 work. byre's job is that the credential's scope is what you chose, its
-location is legible, and nothing you did not choose rides along. In a
-headless run, a codex or grok key from the environment is used in a
-config home made for that one run, never saved to the project's state.
-For codex that keeps codex-shared-auth from sharing the key
-machine-wide; for grok it stops a stored login shadowing the key
-([ADR 0061](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0061-headless-runs.md)).
+location is legible, and nothing you did not choose rides along.
 
 ## Reporting
 

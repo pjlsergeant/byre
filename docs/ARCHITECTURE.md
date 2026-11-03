@@ -141,8 +141,7 @@ FROM <base>                 # from template config
 <skill apt (hoisted)>       # every skill's apt RUN, ahead of all blocks  │ cached
 <skill blocks>              # enabled skills: bundled, installed, local   │ across
 <project block>             # this project only                           │ projects
-<security guard>            # re-COPY chassis paths (launcher, headless,  │
-                            #   gate, fw)                                 │
+<security guard>            # re-COPY chassis paths (launcher, gate, fw)  │
 USER dev / ENTRYPOINT ...   # constant: drop to the baked user, then exec ┘
 ```
 
@@ -162,8 +161,6 @@ The **security guard** re-COPYs byre's own copy of the security-critical
 files *after* the project block:
 
 - the launcher (the ENTRYPOINT's content);
-- the headless-run chassis `byre-headless`, which the launcher execs as
-  PID 1 of a headless run and which produces that run's verdict;
 - when a network-posture skill is enabled, its launch gate and netns
   enforcement script.
 
@@ -178,8 +175,8 @@ security-critical instructions last wherever it controls the order. A
 develop and `byre dockerfile` (byre's copy takes precedence; the
 override isn't silent).
 
-The agent's own baked commands (`agent-cmd`, `agent-headless`) are
-deliberately not guarded: a `files` clobber there replaces the user's
+The agent's own baked command (`agent-cmd`) is deliberately not
+guarded: a `files` clobber there replaces the user's
 agent with the user's own config.
 
 The guard reaches only the image. A **runtime** mount or volume over a
@@ -254,16 +251,6 @@ exit. What persists across sessions is the project-scoped image and the
 named volumes (state + cache) -- agent auth, shell history, and caches
 survive; no long-lived container accretes cruft.
 
-`byre run` starts the other kind of session, a **headless run** (ADR
-0061): the same setup, lock, build and launch record as develop, but the
-box gets no terminal and no stdin, its command is the `byre-headless`
-chassis, and byre exits with its own verdict. Under the setup lock, right
-after Create, byre stages the result dir `.byre-run/` in the work tree,
-so a second run on the same worktree loses the container name before it
-can reach the dir. The box's stdout is the agent's answer; under
-`--data` byre discards it and prints its JSON outcome on stdout after
-the box exits. Everything else is on stderr.
-
 A running session is identified by **labels** (`byre.project` +
 `byre.workdir`), not an assumed name (ADR 0004); that's how `byre status`
 finds "is a session running for this directory?".
@@ -273,9 +260,8 @@ finds "is a session running for this directory?".
 before `create`, byre writes what it is about to tell the engine --
 binds, ports, volumes, env KEYS (never values), network posture and
 resolved egress, the image tag AND digest and the effective base,
-`run_args` verbatim, the
-skill identities, and for a headless run its run id, task hash (never
-the text) and timeout -- to
+`run_args` verbatim, and the
+skill identities -- to
 `~/.byre/projects/<id>/launches/<sha256>.toml`, named by the sha256 of
 its own bytes, and stamps that hash on the container. It records what
 byre TOLD THE ENGINE, deliberately not the config that produced it: the
@@ -389,7 +375,7 @@ rewrite its own sandbox. A repo can ship a **preset** -- conventionally
 file, not a prompt: the proposal reaches the store only through an
 explicit, host-side `byre preset apply` after its grant review, so the
 boxed agent, which can rewrite the file, can never make it take effect.
-The apply flow (installs, review, diff, the `--yes` CI form of ADR 0063)
+The apply flow (installs, review, diff, the unattended `--yes` form of ADR 0063)
 is the configuration reference's Presets section. Apply records an
 `applied` marker; drift from the applied version is a passive
 develop/status note, never a question.
@@ -435,9 +421,7 @@ the author contract are in `docs/SKILLS.md`.
 ENTRYPOINT is a constant launcher that execs the *selected* agent
 skill's recorded command; the `agent` scalar picks which, and
 **implicitly enables** that skill. More than one agent skill can be
-enabled; `agent` decides the default command. An agent skill may also
-declare a **headless command** (`[agent] headless`, ADR 0061), baked to
-`/etc/byre/agent-headless`, that runs one task for `byre run`.
+enabled; `agent` decides the default command.
 
 Skills are template-independent: they drop onto any *supported* base
 identically ("supported" = the Debian-derived family of *The chassis*: a
@@ -678,11 +662,6 @@ mode, always cached):
   a failed fetch would run an empty script and Docker would cache a layer
   with no binary in it; the shebang check catches the download host
   answering 200 with an error page or an empty body.
-- Ship `byre-headless`, the headless-run chassis, in every image --
-  whether a session is a headless run is decided per launch by its argv,
-  and a conditional copy would fork the cache-shared core block.
-  Re-asserted at the Dockerfile tail like the launcher; ADR 0061 owns its
-  contract.
 
 Runtime constants:
 
@@ -724,11 +703,17 @@ Runtime constants:
      0028);
   7. exec the selected agent's command in autonomous mode.
 
-  For a headless run (ADR 0061) the launcher derives the headless mode
-  from its own argv, never the environment, holds the box's real stdout
-  on fd 9 for the chassis, runs its own helpers on the system PATH, and
-  gives the agent PATH back only to the first-run hooks and the final
-  exec.
+  The launcher runs its own helpers on the system PATH
+  (`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`) from
+  its first line, because the agent PATH puts the agent-writable
+  `~/.local/bin` first, where repo code or the agent could plant a
+  helper. It sources each launch env hook on that system PATH, re-pinned
+  before each one, and gives the agent PATH back only to the first-run
+  hooks and the final exec (ADR 0028). First-run hooks run under
+  `/bin/bash` by absolute path, so a `bash` planted on the agent PATH is
+  not the interpreter, and with fd 9 closed (descriptor hygiene: a
+  descriptor the launcher inherited at that number does not pass into a
+  hook it did not write).
 - The agent command itself INJECTS the baked agent context (the chassis
   facts, the base image, a one-line inventory of config-provisioned
   `apt` packages when any exist -- the agent shouldn't discover tools by

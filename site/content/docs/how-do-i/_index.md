@@ -37,7 +37,7 @@ description: the cookbook -- every recipe is a question, a tldr, and a shipped f
 - [Use byre on a remote machine over SSH?](/docs/how-do-i/workflow/#use-byre-on-a-remote-machine-over-ssh)
 - [Get tab completion for byre commands?](/docs/how-do-i/workflow/#get-tab-completion-for-byre-commands)
 - [Build the box without starting a session?](/docs/how-do-i/workflow/#build-the-box-without-starting-a-session)
-- [Run one task headlessly (CI)?](/docs/how-do-i/workflow/#run-one-task-headlessly-ci)
+- [Set up a box from a script (new machine, CI)?](/docs/how-do-i/workflow/#set-up-a-box-from-a-script-new-machine-ci)
 
 ### [Skills & templates](/docs/how-do-i/toolkit/)
 

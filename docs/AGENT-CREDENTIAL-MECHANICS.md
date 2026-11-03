@@ -182,8 +182,7 @@ take effect directly (trade: no first-run theme picker; `/config` re-opens
 it). byre seeds it on fresh volumes only, from two hooks: claude-shared-auth
 for the shared token, and the claude skill's own `claude-onboarding` hook
 when `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`
-arrives by env; claude's headless command repeats the env-credential seed
-for a headless run. None writes through a symlink at `.claude.json` (see
+arrives by env. Neither writes through a symlink at `.claude.json` (see
 "Login hooks with nobody to answer" below).
 
 ### 5. Vendor guidance on sharing
@@ -1037,18 +1036,9 @@ shared store, claude-shared-auth a token paste and a stale-login offer. Each
 of those blocks on a person, bounded at 600 s for the logins. So none of them
 prompts when nobody can answer:
 
-- **The headless signal is `BYRE_HEADLESS=1`.** byre's launcher sets it
-  from its own argv for a headless run (`byre run`) and unsets it
-  otherwise ([ADR 0061](adr/0061-headless-runs.md)). A headless run also
-  never has a terminal, so both tests below hold there.
-- **Hooks test `BYRE_HEADLESS` first, then `[ -t 0 ]`.** Either one holding
-  means no prompt, and the hook exits 0 (a hook never fails a launch).
-  Under `BYRE_HEADLESS` the codex-login, grok-login, opencode-login,
-  claude-shared-auth and grok-shared-auth first-run hooks exit silently at
-  their top, before any credential probe or store write: the headless
-  command owns the bounded preflight and its remedy (below). The test
-  comes first so the hooks' `BYRE_ASSUME_TTY` test seam cannot beat it.
-  With no terminal, what the hook says on the way out differs:
+- **Hooks test `[ -t 0 ]`.** No terminal on stdin means no prompt, and the
+  hook exits 0 (a hook never fails a launch). What the hook says on the
+  way out differs:
   - grok, grok-shared-auth, opencode and codex-login print a remedy on
     stderr naming the env key (`XAI_API_KEY`,
     `ANTHROPIC_API_KEY`/`OPENCODE_API_KEY`, `OPENAI_API_KEY`) and
@@ -1081,7 +1071,7 @@ prompts when nobody can answer:
   login is displaced, all without a word.
 - **The claude onboarding seed refuses a symlink.** `[ ! -e ]` is true for a
   dangling symlink and a plain `>` writes through it, so both seeds (the
-  `claude-onboarding` hook and claude's headless command) also test
+  `claude-onboarding` hook and claude-shared-auth's) also test
   `[ ! -L ]`. The publish then refuses a file or symlink raced in after the
   test: the bytes go to a `mktemp`'d dotfile and `ln -n` claims
   `.claude.json` with link(2), which fails `EEXIST` on an existing file or
@@ -1092,42 +1082,34 @@ prompts when nobody can answer:
   refuses only an existing regular file, so it opens a symlink to a FIFO
   and the hook blocks.
 
-## Headless runs: the credential is the headless command's job
+## Non-interactive modes: findings for whoever drives one
 
-In a headless run (`byre run`, ADR 0061) the login hooks stand down, as
-above, and nobody is there to log in. Each agent's headless command runs
-its own credential preflight, every probe bounded with `timeout -k`, and
-exits 13 with a remedy on stderr when there is no usable credential --
-before the agent starts. The remedies name `env_from_host` in the project
-config, `byre credentials set`, and the agent's shared-auth companion.
+byre launches agents interactively only and ships no non-interactive
+command. These are the agents' own non-interactive mechanics, checked
+against each CLI, for a skill author (or anyone) driving one without a
+terminal. The login hooks stand down there (above), so the driver owns
+the credential check: bound every probe with `timeout -k`, and fail with
+a remedy before the agent starts when there is no usable credential.
 
-The headless commands, launch adapters and codex-shared-auth reconciler
-run their own helpers on the system PATH; the interactive login hooks and
-grok-shared-auth's broker run on the agent PATH
-([ADR 0061](adr/0061-headless-runs.md) has the scope and its residuals).
+### codex: log an env key into a CODEX_HOME made for the one run
 
-### codex: a key in the env is logged into a CODEX_HOME made for the run
+codex has no env-key inference (above), so a key in the env reaches
+codex only through a login written into some `CODEX_HOME`. Writing it
+into the box's real `CODEX_HOME` -- the project's state volume -- lets
+the codex-shared-auth reconciler publish it machine-wide one launch
+later (above). The route that keeps it to one run: make a fresh
+`CODEX_HOME` in the box's temp dir, copy in the user's `config.toml`
+from the real one (a regular file only, never `auth.json`), run `codex
+login --with-api-key` (or `--with-access-token` for
+`CODEX_ACCESS_TOKEN`) there with the key on stdin, run `codex exec`
+under that home, and remove it afterwards. A present key then wins over
+a working stored login, which stays untouched.
 
-**What happens.** With `OPENAI_API_KEY` set (or, failing that,
-`CODEX_ACCESS_TOKEN`), `byre-codex-headless` makes a fresh `CODEX_HOME` in
-the box's temp dir for this one run, copies in the user's `config.toml`
-from the real `CODEX_HOME` (a regular file only, never `auth.json`), runs
-`codex login --with-api-key` (or `--with-access-token`) there with the key
-on stdin, bounded at 30 s, runs `codex exec` under that home, and removes
-it when the run ends. The real `CODEX_HOME` -- the project's state
-volume -- is never written. With no key in the env it checks the real
-`CODEX_HOME`'s login (`codex login status`, bounded at 30 s) and runs
-there if one is present; otherwise it exits 13. A present key wins over a
-working stored login, which stays untouched. Why not the state volume: the
-codex-shared-auth reconciler would publish the key machine-wide (above;
-[ADR 0061](adr/0061-headless-runs.md)).
-
-Two side effects of the per-run home: codex warns on stderr that it skips
-its helper-binary PATH aliases in a temp dir (the run does not need them),
-and a key codex rejects can appear MASKED (first and last few characters)
-in the event stream's error messages, which the result dir's transcript
-records. The full key exists only inside the run's own home, which is
-gone when the run ends.
+Two side effects of a temp-dir home: codex warns on stderr that it skips
+its helper-binary PATH aliases in a temp dir, and a key codex rejects
+can appear MASKED (first and last few characters) in the event stream's
+error messages, so a transcript of that stream records it. The full key
+exists only inside the temp home.
 
 ### claude: what can be checked, and the result event
 
@@ -1135,7 +1117,7 @@ gone when the run ends.
   `ANTHROPIC_AUTH_TOKEN`) can only be checked for presence: claude does
   not validate an env token before a turn, and `claude auth status`
   reports ANY non-empty token as logged in. A bad token surfaces when the
-  agent runs, as a failed run rather than a 13.
+  agent runs, as a failed turn.
 - In `.credentials.json`, the `"claudeAiOauth"` entry is what claude
   writes for an inference login. The file also holds MCP server logins
   (`mcpOAuth`), which do not authenticate inference, so the file's mere
@@ -1148,14 +1130,14 @@ gone when the run ends.
 
 ### grok: presence only, and the one JSON document
 
-- grok has no `login status` probe, so the preflight checks presence
+- grok has no `login status` probe, so a credential check is presence
   only: `XAI_API_KEY`, `GROK_AUTH_PROVIDER_COMMAND` (the grok-shared-auth
   broker), or a regular `$GROK_HOME/auth.json` with a `"key"` member. A
   stored login whose refresh chain has died passes and then HANGS inside
-  grok at use time (above); `byre run --timeout` bounds it.
+  grok at use time (above), so bound the run.
 - grok's stored session wins over `XAI_API_KEY` (the grok section's §4),
-  so a run given a key uses a `GROK_HOME` made for that invocation, with
-  no stored login in it (ADR 0061).
+  so a run meant to use a key needs a `GROK_HOME` made for that
+  invocation, with no stored login in it.
 - `--output-format json` (probed against the grok CLI) prints ONE document
   when grok finishes, the answer at `.text`; a reported failure is
   `{"type":"error","message":...}` with exit 1. The live stream is silent

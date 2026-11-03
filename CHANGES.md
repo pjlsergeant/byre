@@ -2,28 +2,14 @@
 
 ## Unreleased
 
-- **`byre run`: one agent task, headless, with byre's verdict as the
-  exit code.** `byre run --task task.md` (or `--task -`, or `BYRE_TASK`)
-  sets up the box as `byre develop` does and runs the agent's headless
-  mode with no terminal, from CI or any script. stdout is the agent's
-  answer; `--data` prints byre's outcome as one JSON document instead.
-  Gate on the exit code or that document; stderr and `.byre-run/` are the
-  agent's. `--timeout` bounds a run (no limit by default). Exit codes:
-  the commands page. CI recipe: the cookbook's "Run one task headlessly
-  (CI)?". ADR 0061.
-- **Agent skills declare a headless command.** `[agent] headless` in a
-  skill.toml is what `byre run` executes; an agent without one is refused
-  by name. The bundled claude, codex and grok skills ship one, and `byre
-  status`, the config editor's Skills screen and `byre skill inspect`
-  show it. Author contract: `docs/SKILLS.md`.
 - **Skills can declare what they require.** `requires = ["codex"]` in a
-  skill.toml names skills it does not work without. develop and `byre
-  run` refuse a box where one is not enabled; byre never enables it for
-  you. Older byre releases refuse a skill.toml carrying the key. Author
-  contract: `docs/SKILLS.md`; ADR 0062.
-- **`byre preset apply --yes`: apply a committed preset in CI.** No
-  terminal needed; the full review still prints to stderr and the
-  confirm is skipped. It refuses an https preset URL, a digest-less
+  skill.toml names skills it does not work without. byre refuses a box
+  where one is not enabled, and never enables it for you. Older byre
+  releases refuse a skill.toml carrying the key. Author contract:
+  `docs/SKILLS.md`; ADR 0062.
+- **`byre preset apply --yes`: apply a committed preset from a script.**
+  For a new-machine bootstrap or a CI job: no terminal needed, the full
+  review still prints to stderr, and the confirm is skipped. It refuses an https preset URL, a digest-less
   https `[sources]` row, and any credential row -- pass credentials with
   `env_from_host` instead. ADR 0063.
 - **`byre build`: the image without a session.** It builds what `byre
@@ -32,37 +18,16 @@
   and no container is created. Use it to warm a persistent runner, read
   the tag, or fail a job early on a config that no longer builds (a
   hosted runner still rebuilds every job). Cookbook: "Build the box
-  without starting a session?".
-- **codex never saves an env key in a headless run.** Given
-  `OPENAI_API_KEY` or `CODEX_ACCESS_TOKEN`, codex's headless command logs
-  in with the key in a codex home made for that one run, then deletes it.
-  The key never reaches the project's codex state, where codex-shared-auth
-  would share it to every project on the machine. For that run, an env
-  key wins over a codex login the box already has. Mechanics:
-  docs/AGENT-CREDENTIAL-MECHANICS.md.
-- **grok runs headless.** `byre run -a grok` gives grok the task as one
-  `--prompt-file` turn and reads its json output: the answer, or grok's
-  own error message as an agent-reported failure. The credential is
-  `XAI_API_KEY`, the grok-shared-auth broker, or a saved login; with
-  none, the run fails with the remedy. grok prints its whole output at
-  the end, so nothing streams while it works. A saved login that can no
-  longer refresh makes grok hang, so pass `--timeout`. The grok skill now
-  installs `jq`.
-- **The claude skill installs `jq`.** Its headless command reads
-  claude's result event with it.
-- **`status --data` is StatusDataVersion 5:** it adds `agent_headless`.
-- **Launch records are LaunchRecordVersion 2, develop's included:** an
-  older byre's `byre status` on a box this byre launched shows the box
-  running and describes the config, not the box.
+  without starting a session?"; for setting a box up from a script, "Set
+  up a box from a script (new machine, CI)?".
 - **A box with no terminal no longer stalls ten minutes on a login.** With
   the credential absent, the codex, grok and opencode login hooks (and
   grok-shared-auth's shared-store login) ran an interactive login at every
   box start. A launch from a script or a pipe sat out the 600 s bound and
   came up unauthenticated anyway. Each now skips the login when stdin is
-  not a terminal or `BYRE_HEADLESS=1` is set (`byre run` sets it), and
-  prints the remedy: set the agent's API key (`env_from_host`, or `byre
-  credentials set`), or log in from `byre shell`. codex's own `codex login
-  status` probe is bounded at 30 s too.
+  not a terminal, and prints the remedy: set the agent's API key
+  (`env_from_host`, or `byre credentials set`), or log in from `byre
+  shell`. codex's own `codex login status` probe is bounded at 30 s too.
 - **Claude with an env credential skips its first-run wizard.** A box given
   `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`
   by env still stopped in Claude's setup wizard, login step included, on a

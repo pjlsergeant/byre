@@ -104,7 +104,6 @@ dockerfile = ["RUN chmod +x /usr/local/bin/my-launch"]      # raw build lines, a
 
 [agent]                                 # marks this as an agent skill (ADR 0005)
 command       = "my-agent --yolo"       # what the launcher execs
-headless      = "my-agent-headless"     # optional: its headless command (byre run)
 state         = ".my-agent"             # names its state volume; must be declared below
 mcp           = "inject"                # vouch: the command consumes /etc/byre/mcp.json
 claude_skills = "inject"                # vouch: ... /etc/byre/claude-skills
@@ -244,75 +243,10 @@ claude-skill add <dir>` declares a host directory straight from config.
 A skill that ships ONLY Claude Skills is a fine package -- enabling it
 stays the grant, like any other.
 
-An agent skill can make its agent usable from `byre run` -- one task,
-non-interactively, from a script or CI -- by declaring a **headless
-command** beside its interactive one:
-
-```toml
-[agent]
-command  = "my-agent-launch --yolo"
-headless = "my-agent-headless"     # a script you ship via [build].files
-```
-
-It is a shell command string like `command`. byre bakes it to
-`/etc/byre/agent-headless`, and its core chassis, `byre-headless`, runs
-it as the whole of a headless run. Leave the field out and `byre run`
-refuses your agent by name; it must not be blank and must not equal
-`command`. `byre status`, the config editor's Skills screen and `byre
-skill inspect` show each agent's headless command, or `no headless
-command`. The command honours this contract (the why of
-each rule: [ADR 0061](adr/0061-headless-runs.md)):
-
-- **Task.** Read the task from the file `BYRE_RUN_TASK_FILE` names. Stdin
-  is `/dev/null`; never read a terminal, and give your agent the task file
-  or `/dev/null` on stdin -- an agent handed an open pipe waits forever.
-- **Answer and status.** Write the agent's final answer to
-  `BYRE_RUN_RESULT_FILE` and append `key=value` status lines to
-  `BYRE_RUN_STATUS_FILE`. Both are descriptors (`/dev/fd/5`, `/dev/fd/6`):
-  if your agent wants a path, give it a temp file and copy that in
-  afterwards. byre prints the answer on `byre run`'s stdout;
-  `agent_version=<text>` is shown in `result.json`.
-- **The descriptors are yours alone.** Copy the two names into script
-  locals and unset the variables before starting anything; run every child
-  (the agent, its probes, `jq`, `tee`, ...) with `5>&- 6>&-`; open every
-  subshell and command substitution with `exec 5>&- 6>&-`. A child that
-  outlives your script could otherwise rewrite the answer.
-- **Exit** with exactly one of: `0` (success -- an empty answer turns it
-  into 14), `10` (the agent reported failure), `11` (the agent process
-  failed: append `backend_exit=<its status>` to the status file first),
-  `13` (no usable credential -- print the remedy on stderr), `15` (your
-  agent's binary is not in the box). Anything else, a signal included, is
-  read as your command failing (14); never pass the agent's raw status up.
-- **Probes.** Bound every credential probe with `timeout -k <grace>
-  <limit>`, so a probe that ignores TERM is still killed; a probe that
-  times out is a 13.
-- **PATH.** Run your own helpers on the system PATH
-  (`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`) and
-  restore the inherited PATH only for the agent CLI's exec, through the
-  same launch adapter your interactive command uses (so the
-  `mcp`/`claude_skills`/`context` injection holds headless too):
-
-  ```sh
-  agent_path=$PATH
-  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-  # ... your helpers run here ...
-  env PATH="$agent_path" /usr/local/bin/<adapter> ... \
-    <"$BYRE_RUN_TASK_FILE" 5>&- 6>&-
-  ```
-
-  The inherited PATH starts with the agent-writable `~/.local/bin`, so a
-  helper resolved there would run inside your verdict.
-
-Your stdout is the agent's live event stream and your stderr its
-diagnostics: byre records both in `.byre-run/` and relays them to stderr.
-`BYRE_RUN_MODEL`, when non-empty, is the model the caller asked for;
-`BYRE_RUN_DIR` is the result dir, for files worth keeping.
-
-Your login hook must not prompt under `BYRE_HEADLESS=1` (byre sets it
-from the launch's argv for every headless run) or without a terminal.
-Don't set any `BYRE_RUN_*` name in your `[runtime].env` -- status then
-stops vouching for the headless command. byre's own `claude-headless.sh`,
-`codex-headless.sh` and `grok-headless.sh` are worked examples.
+An agent skill's login hook (a first-run hook that offers an interactive
+login) must not prompt when stdin is not a terminal (`[ -t 0 ]` fails):
+a box launched from a script has nobody to answer. Exit 0 and print the
+remedy on stderr instead -- the env key to set, or `byre shell` to log in.
 
 A skill that does not work without another -- a wrapper that drives
 codex's binary, say -- names it in a top-level `requires` list:

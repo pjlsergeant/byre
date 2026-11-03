@@ -41,7 +41,7 @@ Ask the box what it can touch, any time:
 ```text
 $ byre status
 Project id:   my-project-pjl-069d95
-Agent:        byre/claude, headless: byre-claude-headless
+Agent:        byre/claude
 Template:     byre/go      bundled v1.14.0
 Engine:       docker
 Project:      ~/my-project -> /workspace  (rw)

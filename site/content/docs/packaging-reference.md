@@ -1,7 +1,7 @@
 ---
 title: Packaging reference
 weight: 55
-description: user operations on packages -- provenance, inspect, install with --digest, replacement review, uninstall -- plus the headless command and required skills
+description: user operations on packages -- provenance, inspect, install with --digest, replacement review, uninstall -- plus required skills
 params:
   reference: true
 ---
@@ -10,7 +10,7 @@ The user operations behind
 [skills & templates](/docs/skills-and-templates/): seeing what you have,
 reviewing and installing a package, and removing one. Authoring --
 provenance, fork and adopt, packing, validation, the per-field
-`skill.toml` vocabulary and the headless author contract -- is in
+`skill.toml` vocabulary -- is in
 [docs/SKILLS.md](https://github.com/pjlsergeant/byre/blob/main/docs/SKILLS.md).
 
 ## Provenance
@@ -69,18 +69,6 @@ layers and by skills. Using them:
 bake and reach each agent:
 [docs/ARCHITECTURE.md](https://github.com/pjlsergeant/byre/blob/main/docs/ARCHITECTURE.md)
 (MCP provisioning, Claude Skills delivery).
-
-## Headless command
-
-An agent skill's `[agent] headless` command is what `byre run` executes
-for one non-interactive task; an agent without one has no headless mode,
-and `byre run` refuses it by name. `byre status`, the config editor's
-Skills screen and `byre skill inspect` show each agent's headless
-command, or `no headless command`. Setting any `BYRE_RUN_*` name in a
-skill's `[runtime].env` makes status stop vouching for it. The author
-contract is in
-[docs/SKILLS.md](https://github.com/pjlsergeant/byre/blob/main/docs/SKILLS.md)
-([ADR 0061](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0061-headless-runs.md)).
 
 ## Required skills
 
