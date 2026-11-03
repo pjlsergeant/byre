@@ -3,53 +3,43 @@
 byre is distributed as one static cross-compiled binary per platform,
 attached to a GitHub Release cut by pushing a `v*` tag; goreleaser (run
 from `.github/workflows/release.yml`) owns the cross-compile, archives,
-checksums, changelog, and Homebrew publish. Decided 2026-07-06, building
-the "versioning + distribution" item flagged 2026-07-01.
+checksums, changelog, and Homebrew publish. Decided 2026-07-06.
 
 The scope follows from ADR-0008: images are baked per-host (build-time
 UID) and are never shipped, and skills and templates are embedded in the
-binary — so the binary IS the distribution, and anything image-shaped
+binary -- so the binary IS the distribution, and anything image-shaped
 (registries, pulls) is out of scope. goreleaser over a hand-rolled
-Makefile-plus-Actions matrix because the pipeline is pure commodity —
-cross-compile, tar, checksum, upload, cask — with no byre opinion in it
+Makefile-plus-Actions matrix because the pipeline is pure commodity --
+cross-compile, tar, checksum, upload, cask -- with no byre opinion in it
 (the "core ships no opinions" instinct of PRINCIPLES.md #2, applied to
 build tooling); the parts with judgment in them (what a version means,
 when brew publishes) live in config we own.
 
-> **Since v1.4.0:** the ldflags symbol is now
-> `github.com/pjlsergeant/byre/internal/version.Version`. `main.version` was a
-> second stamp for the same value and was dropped -- two stamps can disagree.
-> The decision below is unchanged; only the symbol moved.
-
 Version identity has three sources and they must agree. Release binaries
-carry the tag via `-ldflags -X main.version`; the stamp is deliberately
+carry the tag via `-ldflags -X
+github.com/pjlsergeant/byre/internal/version.Version`, the one stamp (two
+stamps for one value can disagree); the stamp is deliberately
 v-prefixed (`v{{ .Version }}`) so it's byte-identical to what a
-`go install ...@vX.Y.Z` build reports from module build info — the
+`go install ...@vX.Y.Z` build reports from module build info -- the
 fallback when nothing is stamped. Unstamped builds report whatever Go
-recorded in build info — on Go 1.24+ even a plain `go build` in a clone
+recorded in build info -- on Go 1.24+ even a plain `go build` in a clone
 gets a VCS-derived pseudo-version; only a build with no version recorded
 anywhere falls back to `(devel)` plus the VCS revision. Honest reporting
 either way (PRINCIPLES.md #4: legibility), never a pretended version.
 
-The Homebrew publish (a cask, not a formula — goreleaser deprecated
-`brews` for pre-built binaries) is gated on the tap token being present
-and silently skipped otherwise. Releases must work from the first tag;
-the tap repo and its token are a later nicety, and a missing nicety must
-not fail the release that everything else depends on.
-
-> **Since 2026-07-28:** brew is no longer a nicety. PLACEMENT P3 makes
-> `brew install --cask pjlsergeant/tap/byre` the ONE blessed install
-> command the README and the site's install page carry, so a skipped
-> cask push now means the blessed command serves the previous version
-> while the release reports success. The skip stays non-fatal — the
-> reason above is unchanged, a release must not block on brew — but it
-> stopped being silent: `.github/workflows/release.yml` ends with a step
-> that raises a GitHub warning annotation and a run-summary note when
-> the token is absent. Silence was the part that outgrew the decision,
-> not the skip.
+The Homebrew publish (a cask, not a formula -- goreleaser deprecated
+`brews` for pre-built binaries) is gated on the tap token being present.
+A missing token does not fail the release that everything else depends
+on, but it is not silent: PLACEMENT P3 makes
+`brew install --cask pjlsergeant/tap/byre` the ONE blessed install
+command the README and the site's install page carry, so a skipped cask
+push means the blessed command serves the previous version while the
+release reports success. `.github/workflows/release.yml` therefore ends
+with a step that raises a GitHub warning annotation and a run-summary note
+when the token is absent.
 
 Not decided here: any promise about version-number semantics (semver
 discipline pre-1.0), auto-update, or package-manager presence beyond the
-tap. Skill distribution is a separate concern (it later shipped as the
-package model, ADR 0029), not a release one — bundled skills ship
+tap. Skill distribution is a separate concern (the
+package model, ADR 0029), not a release one -- bundled skills ship
 inside the binary.

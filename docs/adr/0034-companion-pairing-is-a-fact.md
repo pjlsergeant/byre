@@ -26,21 +26,18 @@ gating them; hiding a true relationship because a warranty is pending
 inverts that.
 
 The split gives each meaning its own lifecycle. The pairing is true
-from the day a companion exists -- gate-pending, vouched, or anything
-between -- so `companion_for` is display-plumbing with no teeth: it
-nests the row, shows in `skill show`, and triggers nothing. The vouch
-is earned by gates (ADR 0017's verification record; grok failed them
-and was retired, ADR 0023), so `shared_auth_for` alone feeds
-`SharedAuthClaimants` and the per-box offer. When a pending gate
-passes, the author swaps `companion_for` for `shared_auth_for` -- one
-atomic edit -- and the offer switches on; the display never changes,
-because the fact never did. Exactly-once is what makes that edit safe:
-allowing both keys to coexist would mean comparing their values for
-contradiction, and identity comparison at parse time is a trap -- the
-same agent spells as an alias or a canonical ID (`claude` vs
-`byre/claude`), and no catalog exists there to expand either (external
-review finding, 2026-07-16). Refusing coexistence dissolves the
-comparison instead of getting it subtly wrong.
+from the day a companion exists, so `companion_for` is display-plumbing
+with no teeth: it nests the row, shows in `skill show`, and triggers
+nothing. The vouch is earned by gates (ADR 0017; v1 grok failed them,
+ADR 0023), so `shared_auth_for` alone feeds `SharedAuthClaimants` and the
+per-box offer. When a pending gate passes, the author swaps
+`companion_for` for `shared_auth_for` in one atomic edit and the offer
+switches on, with no change to the display. Exactly-once is what makes
+that edit safe: allowing both keys to coexist would mean comparing their
+values for contradiction, and identity comparison at parse time is a
+trap -- the same agent spells as an alias or a canonical ID (`claude` vs
+`byre/claude`), and no catalog exists there to expand either. Refusing
+coexistence dissolves the comparison instead of getting it subtly wrong.
 
 Rejected: redefining `shared_auth_for` as the pairing plus a separate
 readiness flag. That silently changes a shipped key's teeth under
@@ -49,6 +46,5 @@ stop offering because the schema moved under it. Adding a fact key
 beside the vouch key leaves every existing skill.toml meaning what it
 meant.
 
-Retired stubs (grok-shared-auth) declare neither key: a stub makes no
-claims, including companionship; it renders only when a config already
-references it.
+A retired stub declares neither key: a stub makes no claims, including
+companionship; it renders only when a config already references it.

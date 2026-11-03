@@ -1,6 +1,6 @@
 # The agent is a skill
 
-byre ships agent skills for Claude, Codex, and Gemini; the `agent` config
+byre ships one agent skill per supported agent CLI; the `agent` config
 scalar selects which one the constant launcher execs, and setting it
 implicitly enables that skill. An agent skill contributes its CLI (build),
 its launch command + autonomy flag, and its auth state volume -- through

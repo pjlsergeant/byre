@@ -43,44 +43,27 @@ resolve.
 
 **Cascade semantics.** Completing the off-switches:
 
-- `apt` (and `npm_global`, removed 2026-07-28) gain `!name` removal, the same marker skills,
-  mounts, and volumes already use. Unambiguous: `packageRe` has never
+- `apt` gains `!name` removal, the same marker skills, mounts, and
+  volumes already use. Unambiguous: `packageRe` has never
   admitted a leading `!`, so no real package collides with the marker.
-- `ports` gain removal via a field -- `remove = true` on an entry, keyed
-  by **container port alone**:
-
-  ```toml
-  [[ports]]
-  container = 3000
-  remove = true
-  ```
-
-  A port has no string identity for a `!` prefix to ride (`container` is
-  an int), and the user intent is "this project must not expose the
-  inherited 3000" regardless of how a lower layer bound it -- so removal
-  deliberately ignores interface and host port.
-
-  **Amended 2026-07-28:** a plain binding REPLACES by container port too.
-  As first shipped, `ports` was the one identity-keyed vocabulary that
-  UNIONED: a later layer binding an inherited container port differently
-  got both publishes, and changing one meant writing a `remove = true`
-  marker beside the new binding -- two entries for what every other
-  vocabulary says in one. Replacement is now the rule, keyed on the same
-  container port the marker keys on, matching `mounts`, `volumes`,
-  `[[mcp]]`, `[[claude_skills]]` and `[[context]]`. It applies within a
-  layer as well as across layers (last wins), because a layer is not
-  exempt from its own vocabulary. Marker semantics are untouched:
-  removals still apply after additions, so a marker and a binding for one
-  port in one layer still resolves off. Accepted consequence: publishing
-  one container port on two host ports is no longer expressible from a
-  single layer -- it was, by accident of the union, and nothing in byre
-  wrote such a config.
+- `ports` replace and remove by **container port alone**. A later
+  binding of an inherited container port replaces it (last wins), within
+  a layer as well as across layers, matching `mounts`, `volumes`,
+  `[[mcp]]`, `[[claude_skills]]` and `[[context]]`. Removal is a field,
+  `remove = true` on an entry keyed by the same container port: a port
+  has no string identity for a `!` prefix to ride (`container` is an int),
+  and the user intent is "this project must not expose the inherited
+  3000" regardless of how a lower layer bound it -- so removal
+  deliberately ignores interface and host port. Removals apply after
+  additions, so a marker and a binding for one port in one layer resolve
+  off. Accepted consequence: one container port cannot publish on two
+  host ports from a single layer.
 - `env` stays override-only. A project can override an inherited key's
   value (including to empty) but cannot unset it. Deferred, not refused:
-  override-to-empty covers the known cases, and the natural spellings
-  are bad (`env` is a TOML table, so `!KEY` doesn't parse as a key and a
-  magic value like `KEY = "!"` collides with legitimate values). Design
-  it when a real "must not exist" case shows up.
+  override-to-empty covers the known cases, and an unset marker would be
+  new product grammar (a quoted `"!KEY"` key parses, but byre's grammar
+  refuses it; a magic value like `KEY = "!"` collides with legitimate
+  values). Design it when a real "must not exist" case shows up.
 - Raw blocks stay append-only (unchanged).
 
 ## Rejected
@@ -106,7 +89,7 @@ resolve.
   from removal: disabled entries remain visible config; removed entries
   are gone from the resolved set.
 - Skill-contributed state stays unaddressable from config entries; the
-  trust story for skill grants is the skill trust surface (TODO), not
-  per-row toggles.
+  trust story for skill grants is the package trust surface `byre skill
+  inspect` renders (docs/SKILLS.md), not per-row toggles.
 - The `!name` marker's merge position is unchanged: removals apply after
   additions within a layer, so `["x", "!x"]` still resolves off.

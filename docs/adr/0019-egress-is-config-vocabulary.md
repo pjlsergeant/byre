@@ -44,15 +44,13 @@ tells users to move the value into `egress`.
 
 **Ejection: everything but the firewall, and it says so.** `byre
 dockerfile` + `byre dockerrun` are a complete exit -- image and exact
-run command -- except the firewall: its rules are applied from outside
-the box by byre's netns helper, so no Dockerfile or run command can
-carry them, and the baked-in launch gate makes an ejected firewalled
-image fail closed after 30s with a message written for byre's own
-failure context. But the enforcement script ships INSIDE the image, so
-the walls can travel after all: **`byre ejectfirewall`** (Pete's call,
-same session) prints byre's own sidecar invocation as a standalone
-script — start the box, run the script against it, the gate opens.
-The boundary is documented (`docs/EJECTING.md`) and each surface
+run command -- except the firewall. Its rules are applied from outside
+the box by byre's netns helper, so no Dockerfile or run command can carry
+them, and the baked-in launch gate makes an ejected firewalled image fail
+closed after 30s. The enforcement script ships inside the image, so
+**`byre ejectfirewall`** prints byre's own sidecar invocation as a
+standalone script: start the box, run the script against it, the gate
+opens. The boundary is documented (`docs/EJECTING.md`) and each surface
 explains itself when the firewall is enabled: a comment block in the
 `dockerfile` output, a stderr note beside the `dockerrun` command (kept
 off stdout so the printed command stays copy-pasteable), and an
@@ -74,12 +72,8 @@ eject-aware hint in the launch gate's failure message.
   keeps the outside-the-box shape: the privileged step stays a separate
   sidecar, just user-run instead of byre-run.
 
-## Boundaries and follow-ons
+## Boundaries
 
-- Skill guidance strings (a skill declaring env vars it CONSUMES, with a
-  one-line hint the env screen can surface) are a separate, general
-  feature -- no longer the firewall fix, still worth having (e.g.
-  `GEMINI_API_KEY`). Tracked in TODO.
-- GLOSSARY's Egress entry mentions FIREWALL_ALLOW; it reconciles when
-  the implementation lands, not before (vocabulary describes shipped
-  behavior).
+- A skill declaring env vars it CONSUMES, with a one-line hint the env
+  screen can surface, is a separate, general feature:
+  `[runtime.env_docs]` (ADR 0031).

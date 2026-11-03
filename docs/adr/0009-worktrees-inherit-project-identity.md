@@ -1,10 +1,7 @@
 # Worktrees inherit the project identity (no volume scope knob)
 
-> **Amended by ADR 0057** (2026-08-13): credentials are config, not store
-> state — they live inline in the config files, which a worktree already
-> inherits from the main worktree by this ADR. Writes to the project config
-> serialise on the same setup lock; a layer file has its own lock, because the
-> FILE owns the lock and every cooperating writer takes it.
+> Amended by ADR 0057 (credentials are inline config, which a worktree
+> inherits) and ADR 0054 (a volume may declare `sharing = "exclusive"`).
 
 A linked git worktree resolves its byre identity from the **main
 worktree's** canonical path: config, volumes, image, and the setup lock
@@ -20,16 +17,13 @@ Considered and rejected:
   boundary; the one real case (worktrees) is an *identity* question, not
   a volume-scope one.
 - **A creds/history split** (share credentials, isolate history) --
-  unnecessary: agents already handle concurrent access to one state dir
-  (same as two CLI processes sharing `~/.claude` on a host). Sharing one
-  volume is safe; *copying* credentials is what breaks (ADR 0007).
-  **Amended 2026-07-29 (ADR 0054):** that sentence is about the AGENT
-  STATE volume, and it still holds there. It was never a warranty that
-  every volume a project might declare tolerates concurrent holders --
-  and once skills, config and the config editor could all declare
-  arbitrary `[[volumes]]`, it was being read as one. A volume whose data
-  cannot take two writers says so with `sharing = "exclusive"`, and
-  `develop` refuses the second box.
+  unnecessary: agents already handle concurrent access to their state dir
+  (same as two CLI processes sharing `~/.claude` on a host), so the AGENT
+  STATE volume is safely shared; *copying* credentials is what breaks
+  (ADR 0007). That is a fact about the agent state volume, not a warranty
+  for every declared volume: one whose data cannot take two writers
+  declares `sharing = "exclusive"` and `develop` refuses the second box
+  (ADR 0054).
 - **An inherit/standalone opt-out** -- YAGNI; `git clone` is the escape
   hatch (a clone is not a linked worktree).
 - **Remounting the common git dir at a byre-chosen path** -- git worktree
@@ -37,19 +31,23 @@ Considered and rejected:
   dangling them lets in-box `git worktree repair`/`prune` corrupt *host*
   metadata. Decided: **same-path mounting** (main `.git` and the worktree
   bound at their host-absolute paths, rw) so every pointer resolves and
-  nothing is rewritten. Same-path constrains the mount TARGET (the in-box
-  path pointers resolve against); the common git dir's mount SOURCE is
-  taken symlink-resolved, since its git-recorded path is derived from the
-  agent-controlled `.git` pointer and a mutable symlink component would be
-  a check-to-mount retarget race (worktree.go). Source and target differ
-  only when the recorded path contains symlinks. Accepted residual
-  (2026-07-17, shared by EVERY byre bind, WorkDir included): the resolved
-  source is still a pathname, not an inode-pinned handle, so a concurrent
-  rw session that can rename an ancestor of it during another launch's
-  detect-to-mount window could redirect the bind. Not closable from byre:
-  the docker/podman CLI-to-daemon contract is a pathname, resolved in the
-  daemon's own namespace (a VM under Docker Desktop), so a host-side fd
-  pin cannot cross it. Disclosed here so it isn't re-raised per-mount.
+  nothing is rewritten.
+
+Same-path constrains the mount TARGET (the in-box path pointers resolve
+against). The common git dir's mount SOURCE is taken symlink-resolved,
+since its git-recorded path is derived from the agent-controlled `.git`
+pointer and a mutable symlink component would be a check-to-mount retarget
+race (worktree.go). Source and target differ only when the recorded path
+contains symlinks.
+
+Accepted residual (2026-07-17, shared by EVERY byre bind, WorkDir
+included): the resolved source is still a pathname, not an inode-pinned
+handle, so a concurrent rw session that can rename an ancestor of it
+during another launch's detect-to-mount window could redirect the bind.
+Not closable from byre: the docker/podman CLI-to-daemon contract is a
+pathname, resolved in the daemon's own namespace (a VM under Docker
+Desktop), so a host-side fd pin cannot cross it. Disclosed here so it
+isn't re-raised per-mount.
 
 Consequences: detection parses `.git` pointer + `commondir` files
 directly (no git binary dependency; submodules excluded, dangling
@@ -73,8 +71,8 @@ checkout happens.
 
 Decided: `byre worktree` runs **no mutating git against the repo on the
 host at all** -- host-side git is reduced to bounded read-only probes
-(toplevel, is-this-registered). Creation is staged, both halves in the
-box:
+(is-this-registered); the toplevel is derived structurally, without git
+(below). Creation is staged, both halves in the box:
 
 - **Registration** (the branch DWIM and `git worktree add --no-checkout`)
   runs in a short-lived **creation container** from the project image:
@@ -95,7 +93,8 @@ box:
   leaf is the create's **ownership token** -- exactly one invocation can
   create it -- and on failure the host removes only that empty
   mount-point directory, never recursively. The host's role is reduced
-  to: resolve a location, ensure the image, `mkdir` the mount point, run
+  to: resolve a location, build the project image if needed, `mkdir` the
+mount point, run
   the container, hand off to develop.
 - **Population** (the actual checkout) happens at the first session's
   start via the launcher, keyed on the pending-checkout marker
@@ -127,10 +126,7 @@ Consequences and rulings:
 
 Not adopted: enumerating and disabling every exec-capable git config key
 host-side (hooks, smudge, `core.fsmonitor`, …) -- a losing allowlist
-against a moving target. Containing the checkout is the invariant. An
-interim host-side hardening of the add (emptied `core.hooksPath` under
-`--no-checkout`) was built and superseded the next day by the in-box
-design; git history keeps it.
+against a moving target. Containing the checkout is the invariant.
 
 > This reasoning covers byre's OWN git. It does not cover the human's:
 > the tree stays on disk after the box exits, and their next host-side

@@ -1,11 +1,7 @@
 # Egress allowlist: derived from skills, port-scoped
 
-> Superseded in part by ADR 0019 (2026-07-08): the user's extension path
-> is now the `egress` config key; `FIREWALL_ALLOW` is retired. And by
-> ADR 0020 (2026-07-08): the firewall skill's own generic base list is
-> no longer unioned in — it ships as `egress_offered` (closed doors,
-> opened per explicit grant). The derivation and port-scoping decided
-> here are unchanged.
+> Superseded in part by ADR 0019 and ADR 0020 (2026-07-08); the derivation
+> and port-scoping decided here stand.
 
 The firewall allowlist is **derived, not static**: each skill declares
 the egress it needs via a typed `skill.toml` field (`[runtime] egress =
@@ -14,6 +10,8 @@ own API/auth endpoints; the firewall skill carries only the generic base
 (git hosting, package registries, apt mirrors with explicit `:80`). byre
 unions every enabled skill's egress plus the user's `FIREWALL_ALLOW` env
 (same grammar) and passes the result to the netns helper.
+`FIREWALL_ALLOW` is retired vocabulary: ADR 0019 replaced it with the
+`egress` config key.
 
 Why: a static list hardcoded in the firewall skill was backwards
 coupling -- the firewall had to know every agent, enabling only claude
@@ -32,5 +30,7 @@ Consequences: per-project additions go through `FIREWALL_ALLOW` -- the
 generic env mechanism -- rather than a `firewall_allow` core config key,
 which would put firewall opinion in core (PRINCIPLES.md #2). `byre
 status` shows the resolved allowlist as an Egress section with each
-host:port attributed to its declaring skill. v2 candidate: move
-package-registry egress into the language templates that imply it.
+host:port attributed to its declaring skill. The proposed move of
+package-registry egress into language templates is superseded by ADR
+0020, which ships those endpoints as offered, closed `egress_offered`
+entries.

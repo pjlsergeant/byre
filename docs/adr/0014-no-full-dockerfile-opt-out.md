@@ -31,7 +31,7 @@ verified-contract mode, deliberately.
 
 Consequences: Debian-derived bases are a hard boundary (`base` +
 `dockerfile_pre`/`dockerfile_post` cover custom needs on them; other
-bases mean raw Docker). A config carrying `dockerfile =` now fails
+bases mean raw Docker). A config carrying `dockerfile =` fails
 loudly as an unknown key rather than being ignored. The raw tier is
 exactly the raw blocks: `dockerfile_pre`/`dockerfile_post` at build,
 `run_args` at runtime.

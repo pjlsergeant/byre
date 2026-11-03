@@ -1,11 +1,10 @@
 # Launch gate: loopback socket handshake, fail closed
 
 > **Amended by ADR 0057** (2026-08-13): the credential delivery wait takes
-> this gate's SHAPE — bounded and FAIL-CLOSED — sitting after the gate in the
+> this gate's SHAPE -- bounded and FAIL-CLOSED -- sitting after the gate in the
 > launcher. Credentials are blocking: no sentinel, a manifest line the
 > launcher cannot honor, or a bare restart with credentials scheduled, and the
-> agent never runs. (An earlier ruling made this wait the gate's deliberate
-> opposite, fail-open; that was overturned before it shipped.)
+> agent never runs.
 
 When a network-posture skill is enabled, the launcher waits **at its very
 top** -- before agent-context placement and before first-run hooks, which
@@ -19,8 +18,8 @@ Why a socket and not a marker file: the handshake must have **no
 persistent state**. `/run` is NOT tmpfs in Docker containers by default,
 so a marker file would survive `docker restart` into a freshly-recreated,
 rule-less netns and silently fail **open** -- the classic trap this
-design exists to kill. With the socket, a restarted launcher listens
-afresh, nobody connects, and the box dies closed.
+design exists to kill. With the socket, a restarted launcher poll-connects
+afresh, no helper is listening, and the box times out closed.
 
 Consequences:
 
@@ -33,9 +32,6 @@ Consequences:
   engine runs health probes in the netns independently of the
   ENTRYPOINT, so a base image's probe could do network I/O before the
   rules land.
-- The startup window between container start and rules landing is benign:
-  the gate sits above hooks and agent alike -- only the idling launcher
-  has run.
 - The gate is only load-bearing if its baked content is byre's: the
   launcher waits **only** when the gate file is non-empty (`[ -s ]`), so an
   emptied gate would make it skip the wait and launch open. The gate file
@@ -43,15 +39,14 @@ Consequences:
   by the **security guard** at the Dockerfile tail, after the project
   block, so a project `files` entry targeting those paths can't leave its
   own content there (see ARCHITECTURE, "security guard").
-- **The guard covers `files` clobbers, NOT the raw tier**, and this was
-  measured rather than assumed (2026-07-28, docker/buildkit): a raw line
-  need not WRITE the guarded path to beat the re-COPY, it can re-point it
+- **The guard restores what project `files` entries clobber; it does not
+  cover raw build lines.** A raw line need not write the guarded path to
+  beat the re-COPY, it can re-point it
   (`RUN rm -f /etc/byre/launch-gate && ln -s /dev/null /etc/byre/launch-gate`),
   and `COPY` then writes THROUGH the destination symlink -- the gate stays
   a symlink to `/dev/null`, is empty, and the launcher's `[ -s ]` test
-  skips the wait. The earlier "or raw build line" wording claimed a
-  guarantee the guard does not have. The raw tier is covered the way P3
-  says it is -- byre never parses inside a raw block, it degrades every
-  posture claim a raw block could undermine (`networkLine`'s BuildRaw
-  arm) -- so the DISCLOSURE holds either way; only the guard's charter
-  narrows. Pinned by TestIntegrationRawLineRepointingTheGateIsDisclosed.
+  skips the wait (measured 2026-07-28, docker/buildkit). The raw tier is
+  covered the way P3 says it is -- byre never parses inside a raw block, it
+  degrades every posture claim a raw block could undermine (`networkLine`'s
+  BuildRaw arm) -- so the disclosure holds either way. Pinned by
+  TestIntegrationRawLineRepointingTheGateIsDisclosed.

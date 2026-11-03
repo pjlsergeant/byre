@@ -1,20 +1,11 @@
 # Skills and templates are packages; presets replace adoption
 
 > **Amended by ADR 0059** (2026-10-02): `byre restore` is the SECOND entry to
-> the one acquisition flow below, and the only other one. It hands the apply
-> chauffeur the config bytes it verified out of a backup file, so every install
-> it offers is apply's own digest-verified walk-through -- and unlike apply it
-> does not continue past a package that is still missing, because the volumes
-> it must pour and the engine, base and mounts it must prove all come from the
-> resolved set.
+> the one acquisition flow below, and the only other one.
 
-Skills and templates became **packages** with three provenances, an
+Skills and templates are **packages** with three provenances, an
 installation pipeline, and a preset flow that replaces the develop-time
-adoption offer. Decided 2026-07-13 (the working design of record, a
-`wip/`-lifecycle document, is deleted; git history keeps it). This is
-the project's largest
-single decision set; the rationale threads below are the ones that would
-be re-litigated without a record.
+adoption offer. Decided 2026-07-13.
 
 ## The problem
 
@@ -51,9 +42,11 @@ kind; both nouns get the full verb set). Three provenances:
 config canonicalizes references through the catalog BEFORE cascade merge,
 so `!byre/claude` cancels a lower layer's bare `claude`. A bundled
 package always owns its bare name (the alias); duplicates and broken
-packages are per-identity problem rows (INVALID/conflict/LEGACY --
-listed, disabled-with-reason in pickers, hard error only when
-referenced), never a global failure and never silent shadowing. Names a
+packages are per-identity problem rows (INVALID/conflict -- listed,
+disabled-with-reason in pickers, hard error only when referenced), never
+a global failure and never silent shadowing. The one shadowing is
+announced: a same-kind local package displaces an installed one with the
+same id, labelled as such (ADR 0055). Names a
 past release bundled join a permanent **retired-names table** with
 tombstone remedies (`codereview`, `devlog` are the first) -- freeing a
 name users spent releases typing is typosquatting bait.
@@ -61,17 +54,15 @@ name users spent releases typing is typosquatting bait.
 **Manifest.** `[package]` in the primary file (id, version, kind,
 `package_api`, `requires_byre`); two-stage parse -- stage 1 reads only
 that frozen core leniently so a package needing a newer byre says so
-instead of dying on "unknown key"; stage 2 is today's strict parse.
-Local packages may omit the block entirely. A dev build (unstamped)
-passes every `requires_byre` constraint -- the check is compatibility,
-not security. Stage-2 strictness ALSO runs eagerly at catalog scan for
-local and installed packages (ruled 2026-07-13, amending the earlier
-use-time-only stance): a typo'd package shows INVALID in `list` instead
-of looking fine until enabled. Stage 2 is the strict parse **plus every
-value rule byre can judge from one manifest** (2026-07-28) -- the rules
-that used to run only when a config resolved the skill, so a package
-byre cannot run is refused at install and marked INVALID at scan rather
-than passing every command until the first develop.
+instead of dying on "unknown key"; stage 2 is the strict parse **plus
+every value rule byre can judge from one manifest**. Local packages may
+omit the block entirely. A dev build (unstamped) passes every
+`requires_byre` constraint -- the check is compatibility, not security.
+Stage 2 runs eagerly at catalog scan for local and installed packages
+and at install, so a package byre cannot run is refused at install and
+shows INVALID in `list` rather than looking fine until the first
+develop; composition-dependent checks run when a config resolves the
+package.
 
 **Payloads and integrity.** Installed manifests carry an exhaustive
 `[[package.files]]` list (dest, src, sha256, exec bit) -- installation
@@ -120,18 +111,20 @@ complete config proposal from anywhere, conventionally `byre.preset` in
 a repo. It is not a package: no identity, no version, no install.
 `byre preset apply` (and, since ADR 0059, `byre restore`, which hands apply
 the config bytes it verified out of a backup file) is the one flow in which
-byre initiates acquisition walk-throughs -- the **solicitation rule**: inside a flow the user
-invoked to compose a box, the chauffeur walks each missing package
-through its own install consent; anywhere a third party's document
-introduces references (a cloned repo, a develop tripping on dangling
-refs), byre reports and prints exact commands, never prompts. Apply
+byre initiates acquisition walk-throughs -- the **solicitation rule**:
+inside a flow the user invoked to compose a box, the chauffeur walks each
+missing package through its own install consent; anywhere a third
+party's document introduces references (a cloned repo, a develop
+tripping on dangling refs), byre reports and prints exact commands,
+never prompts. Restore, unlike apply, does not continue past a package
+that is still missing, because the volumes it must pour and the engine,
+base and mounts it must prove all come from the resolved set. Apply
 reviews the composed box's full grant summary (diff against the current
 config), writes `byre.config` on confirm, and records an `applied`
 marker (sha + source). Drift is passive and three-state -- not applied /
 silent steady state / "differs from the version you applied" -- claiming
-only what the marker proves. The develop-time adoption prompt and its
-sticky-decline records are deleted; `adopted` records migrate to
-`applied` markers so existing projects keep their history.
+only what the marker proves. There is no develop-time adoption prompt;
+old adoption records are inert files.
 
 ## Consequences
 
@@ -143,15 +136,10 @@ sticky-decline records are deleted; `adopted` records migrate to
   repo ships a `byre.preset` and self-hosts on installed packages -- the
   dogfood is the acceptance test.
 - There is no update verb. Bundled packages update with byre itself, and
-  an installed one is updated by re-running `byre skill install` on it:
-  same id, different digest is a REPLACEMENT, which is machine-wide and
-  therefore consented separately from a fresh install. The
-  materialize/update/backup machinery and `skills.bak/` are gone.
-- Consciously deferred: bundled display digests in inspect (since shipped,
-  2026-07-14: computed from `embed.FS`), authenticated
-  (private-repo) https fetch, and the interactive one-confirm legacy
-  archive the design draft wanted (replaced by ruling with the
-  `byre skill archive-legacy` command plus loud store-ensure notices).
+  an installed one is updated by re-running `byre skill install` on it
+  (a replacement, consented as above). Nothing is materialized into
+  `~/.byre/skills/`, so there is no backup machinery.
+- Consciously deferred: authenticated (private-repo) https fetch.
 
 User guide: `docs/SKILLS.md`. Vocabulary: `GLOSSARY.md` (Packages
 section).

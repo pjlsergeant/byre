@@ -14,16 +14,16 @@ default ⊕ template ⊕ chain(root … parent) ⊕ project
 Chains are arbitrary length and strictly linear: no lists, so no
 diamonds and no linearization rule to explain. Cycles and dangling
 parents are hard errors -- the cycle error names the loop, the dangling
-error names the exact path to create. Decided 2026-07-16.
+error names the exact path to create. Decided 2026-07-16. The user-facing
+vocabulary is the configuration reference's; this ADR keeps the why.
 
 ## Why
 
 One employer, many projects: a central baseline (skills, egress, env,
-mounts -- the FULL config vocabulary), each project adding on. Today's
-cascade was fixed at three layers (`default ⊕ template ⊕ project`, ADR
-0003's stores); there was nowhere between the global default and a
-project to put a shared, user-authored baseline. Presets don't cover
-it: a preset is an apply-time snapshot with a consent ceremony, and the
+mounts -- the FULL config vocabulary), each project adding on. A
+three-layer cascade (`default ⊕ template ⊕ project`, ADR 0003's stores)
+has nowhere between the global default and a project to put a shared,
+user-authored baseline. Presets don't cover it: a preset is an apply-time snapshot with a consent ceremony, and the
 baseline needs to be LIVE -- edit the employer layer once, every
 extending project's next develop picks it up.
 
@@ -59,14 +59,14 @@ banned in `template.config` (a distributable package must not pull in
 machine-local composition) and in `default.config` (the chain slot is
 the project's; a second, global chain would be a silent surprise in
 every project). `extends` is the only pointer key a layer may carry;
-picker-state strip rules (`shared_auth` etc.) apply unchanged, and a
+picker-state strip rules (`[defaults]`) apply unchanged, and a
 resolved config never carries `extends` -- resolution consumes it.
 
 **Reserved names.** A layer may not take a BUNDLED package bare name
 (`byre layer new` refuses; a hand-dropped squatter dir is never loaded
 and `byre layer list` says why) -- a layer named `go` or `claude` would
 look like the template/skill of the same name. Retired names are
-deliberately NOT reserved (Pete, 2026-07-16): the retired table exists
+deliberately NOT reserved: the retired table exists
 to protect package-namespace continuity, and layers are a new namespace
 nothing predates -- `codereview` is a fine layer name. No shadowing
 rule needed because shadowing cannot arise: `extends` only ever names
@@ -91,26 +91,15 @@ sandboxes. A test pins the layers dir out of every bind. The escape
 hatch, if a box legitimately needs to edit layers, is an explicit rw
 mount of `~/.byre` -- a visible grant that documents itself.
 
-**CLI surface.** `byre layer new <name>` (stub + the reserved-name
-gate), `byre layer list` (enumerate, flag broken with the reason),
-`byre layer validate [name]` (parse + ban list + chain walk). `byre
-config` gains an EXTENDS section (pick/change/clear the parent; the
-picker offers loadable layers and preserves a dangling value rather
-than dropping it) and chain-aware attribution; `byre config --layer
-<name>` is the same effective-state editor pointed at a layer --
-resolving `default ⊕ ancestors ⊕ <name>`, writing to the layer's file,
-descendants deliberately not in view, and its EXTENDS picker excludes
-anything that would loop back through the layer. NOT built: `layer
-edit` ($EDITOR does it), `layer show` (status/grant review own the
-composed view), pack/install/fork. The first-run picker never writes
-`extends` (keys with teeth are never picker-written).
-
-## Cites
-
-- ADR 0003 -- host-side stores (layers live under `~/.byre`, outside
-  every rw-mounted tree).
-- ADR 0018 -- merge semantics and off-switches (chain steps reuse them
-  verbatim; the config UI's effective-state machinery gained one more
-  sublayer kind).
-- ADR 0029 -- the package boundary (layers deliberately stay on the
-  plain-file side of it).
+**CLI surface.** The `byre layer` verbs are listed on the commands page;
+`byre config` has an EXTENDS section (pick/change/clear the parent; the
+picker offers loadable layers and preserves a dangling value rather than
+dropping it). Two boundaries are decisions: `byre config --layer <name>`
+is the same effective-state editor pointed at one layer file --
+resolving `default ⊕ ancestors ⊕ <name>`, descendants deliberately not
+in view, and its EXTENDS picker excludes anything that would loop back
+through the layer; and layers get no package lifecycle
+(no pack/install/fork, no `layer edit` -- $EDITOR does it -- and no
+`layer show`, since status and the grant review own the composed view).
+The first-run picker never writes `extends` (keys with teeth are never
+picker-written).

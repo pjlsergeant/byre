@@ -44,8 +44,8 @@ functional requirement vs. convenience:
   firewall skill's entire base list (git hosting, apt mirrors,
   registries) moves there -- the firewall needs none of it to function.
   Language templates carry their registries as offered (go:
-  proxy.golang.org, sum.golang.org, and storage.googleapis.com only if
-  verified still needed, commented as the GCS-wide hole it is; node:
+  proxy.golang.org, sum.golang.org -- both serve content directly, so no
+  GCS-wide storage.googleapis.com door; node:
   registry.npmjs.org; python: pypi.org, files.pythonhosted.org).
 
 **Consequence, stated plainly.** A fresh firewalled box reaches its
