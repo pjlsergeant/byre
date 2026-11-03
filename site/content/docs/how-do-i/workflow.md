@@ -223,7 +223,8 @@ rc=$?
   `--credentials stdin` with the passphrase on stdin, which then can't
   also carry the task.
 - `--quiet` keeps the agent's live output out of your terminal; errors,
-  refusals, a failed run's stderr tail and the summary line still print.
+  refusals, a failed run's stderr tail, the exit report and the summary
+  line still print.
 
 **Keep the output.** The agent's files, its transcript and the answer
 land in `.byre-run/` in the work tree, which ignores itself in git and is

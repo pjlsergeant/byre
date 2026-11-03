@@ -141,8 +141,8 @@ func TestPresetApplyYesRefusesHTTPSPresetURI(t *testing.T) {
 	p, proj := onboardPaths(t)
 	s, _, _ := testStreams("", false)
 	err := PresetApply(s, proj, "https://example.invalid/team/byre.preset", true)
-	if err == nil || !strings.Contains(err.Error(), remotePresetRule) || !strings.Contains(err.Error(), "https://example.invalid/team/byre.preset") {
-		t.Fatalf("an https preset URI must refuse naming the URI, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), remotePresetRule) || !strings.Contains(err.Error(), "byre.preset https://example.invalid/team/byre.preset)") {
+		t.Fatalf("an https preset URI must refuse naming the URI in the curl line, got %v", err)
 	}
 	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
 }
@@ -162,6 +162,9 @@ func TestPresetApplyYesQuotesHostilePresetURI(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "byre.preset "+uri) {
 		t.Fatalf("the curl argument must not carry raw metacharacters, got %v", err)
+	}
+	if n := strings.Count(err.Error(), ";rm -rf $(id)"); n != 1 {
+		t.Fatalf("the URI must appear once, inside the quotes; got %d copies in %v", n, err)
 	}
 	presetApplyYesRefusedNothingWritten(t, p.Dir, p.Home, "")
 }

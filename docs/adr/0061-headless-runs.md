@@ -376,7 +376,10 @@ deadline well inside 64 bits. A `BYRE_RUN_TIMEOUT` a raw `run_args` sets
 is refused by the chassis (exit 16) when it is malformed, under 1s or
 over 3650d; a raw zero (`0`, `0s`, `0.0m`) reads as unset. The chassis holds the deadline
 on the monotonic clock in `/proc/uptime`, so a wall-clock step during the
-run cannot disable the timer. Durations are floored to the centisecond
+run cannot disable the timer. The chassis checks the deadline between
+polls of the child at 0.1 s intervals, so the timeout acts within 0.1 s
+of the deadline, and a run that ends on its own inside that window keeps
+its own verdict. Durations are floored to the centisecond
 with nine fractional digits kept, so a value within 1e-10 of a boundary
 can move one centisecond -- accepted.
 

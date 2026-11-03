@@ -554,10 +554,11 @@ func remotePresetRefusal(arg string) error {
 	if k, err := packages.ParseSourceURI(arg); arg == "" || err != nil || k != "https" {
 		return nil
 	}
-	// The curl line is printed to be pasted, so the URI is terminal-escaped
-	// AND shell-quoted (ADR 0029): metacharacters stay one argument.
-	shown := packages.EscapeTerminal(arg)
-	return fmt.Errorf("%s: %s -- download it first (curl -fsSLo byre.preset %s), review it, and apply the path; or apply on a TTY without --yes", remotePresetRule, shown, packages.ShellArg(shown))
+	// The curl line is printed to be pasted, so the URI appears only in its
+	// terminal-escaped, shell-quoted form (ADR 0029): a copied line carries
+	// no bare metacharacter.
+	quoted := packages.ShellArg(packages.EscapeTerminal(arg))
+	return fmt.Errorf("%s -- download it first (curl -fsSLo byre.preset %s), review it, and apply the path; or apply on a TTY without --yes", remotePresetRule, quoted)
 }
 
 // undigestedSourceRule is the stable head of the `apply --yes` source

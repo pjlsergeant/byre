@@ -235,9 +235,10 @@ on_signal() {
   if [ -n "$child" ]; then kill "-$1" -- "-$child" 2>/dev/null; fi
 }
 
-# on_timeout (USR1, see the traps): TERM the group, KILL 15 s later. A
-# child that is already gone finished before the deadline's signal: not a
-# timeout.
+# on_timeout (USR1, see the traps): TERM the group, KILL 15 s later. The
+# handler runs when the poll's sleep ends, so a child can finish after the
+# timer's signal and before this check; one that is gone keeps its own
+# verdict. The timeout is enforced to within one poll interval.
 on_timeout() {
   [ -n "$deadline_cs" ] || return
   uptime_cs || return
@@ -326,7 +327,8 @@ else
   # Ignored, not reset: a timer firing before its stop must not kill PID 1.
   trap - TERM INT
   trap '' USR1
-  # The child is reaped and its status recorded, so this returns at once.
+  # Reaped and recorded, so this returns at once; nothing blocks before it,
+  # the group is gone (nothing to forward), PID 1 discards a default TERM.
   wait "$child"
   rc=$?
   stop_helper "$timer"
