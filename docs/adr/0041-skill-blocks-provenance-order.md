@@ -13,8 +13,7 @@ Docker invalidates every layer after the first changed one. A skill block is
 `COPY files -> raw lines`, so in enable order one skill's payload edit re-runs
 every later skill's raw lines -- and the expensive raw lines are the agent and
 reviewer installers, which all live in bundled skills. Bumping an installed
-package (the codereview 1.0.1 release, 2026-07-20) re-ran every installer
-behind it.
+package (a codereview point release) re-ran every installer behind it.
 
 Provenance is a volatility proxy that the catalog already knows: bundled
 content changes only with the byre binary, installed packages only on install

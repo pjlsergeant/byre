@@ -141,5 +141,5 @@ old adoption records are inert files.
   `~/.byre/skills/`, so there is no backup machinery.
 - Consciously deferred: authenticated (private-repo) https fetch.
 
-User guide: `docs/SKILLS.md`. Vocabulary: `GLOSSARY.md` (Packages
+User guide: `docs/SKILLS.md`. Vocabulary: `GLOSSARY.md` (Skills
 section).

@@ -10,9 +10,8 @@ thing off from here" is expressible everywhere the UI implies it.
 The editor is layer-scoped (it edits one file), but presents itself as
 "your config". Before this decision only the skills screen told the
 truth: it rendered effective checkboxes with `(inherited)` tags and
-mapped each toggle onto one legible change to the open layer (found live
-2026-07-07 -- a globally-enabled skill showed as unchecked in every
-project). apt/env/mounts/ports still showed the open layer's raw
+mapped each toggle onto one legible change to the open layer (without
+it, a globally-enabled skill showed as unchecked in every project). apt/env/mounts/ports still showed the open layer's raw
 entries: inherited entries were invisible, and the form's summary counts
 were layer deltas masquerading as totals. Skill-contributed runtime
 state (a mount, an env var) was invisible in exactly the screens
@@ -47,9 +46,11 @@ resolve.
   volumes already use. Unambiguous: `packageRe` has never
   admitted a leading `!`, so no real package collides with the marker.
 - `ports` replace and remove by **container port alone**. A later
-  binding of an inherited container port replaces it (last wins), within
-  a layer as well as across layers, matching `mounts`, `volumes`,
-  `[[mcp]]`, `[[claude_skills]]` and `[[context]]`. Removal is a field,
+  binding of an inherited container port replaces it (last wins) across
+  layers, matching `mounts`, `volumes`, `[[mcp]]`, `[[claude_skills]]`
+  and `[[context]]`. Within one layer a repeated container port also
+  resolves last-wins, where those families refuse an in-layer duplicate
+  name. Removal is a field,
   `remove = true` on an entry keyed by the same container port: a port
   has no string identity for a `!` prefix to ride (`container` is an int),
   and the user intent is "this project must not expose the inherited

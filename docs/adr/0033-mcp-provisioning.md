@@ -68,15 +68,12 @@ egress = ["auth.linear.app"]               # extra hosts (e.g. OAuth side-host)
   table was chosen over a bearer-only field (one mechanism; bearer is one
   spelling), with `byre mcp add --bearer TOKEN_NAME` as the CLI sugar.
 - **Tokens are names.** `env` lists what the server consumes; values arrive
-  via `env_from_host`/`[env]` (attributed grants). Spike-verified: claude's
+  via `env_from_host` (a grant where it names a host source), `[env]` or a
+  credential row (config), each attributed. Spike-verified: claude's
   stdio servers inherit the full agent process env, so a provided name
   reaches the server with no further wiring, and `${VAR}` expands inside
-  injected config for the day another consumer needs it. Fallback tiers for
-  future state-writing adapters (ruled): (1) prefer by-name indirection
-  (rotation-proof); (2) literals into VOLUME-RESIDENT agent config allowed
-  with one disclosure line (the agent's config already holds its own OAuth
-  tokens -- refusing would be nannying); (3) hard lines: never into image
-  layers, byre-owned files, or the repo tree.
+  injected config for the day another consumer needs it. A state-writing
+  adapter would need its own ADR (Why injection-only).
 
 ## The bake: /etc/byre/mcp.json, always
 

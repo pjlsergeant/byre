@@ -28,7 +28,9 @@ Consequences:
   inside root build steps); nothing runs as root after PID 1 in a session.
   The one exception is byre's one-shot helper containers (volume seeding,
   backup's capture, restore's pour), which run as root in the box's userns
-  and exit before any session starts (ADR 0059).
+  and exit before any session starts (ADR 0059). Seeding mounts its
+  declared host source read-only and runs on the engine's default
+  network; the backup helpers run networkless with no host bind.
 - First-run hooks run as the user -- a future skill needing privileged
   setup would need an explicit, status-visible grant, not root hooks.
 - No automatic volume migration was built for the upgrade (single-operator

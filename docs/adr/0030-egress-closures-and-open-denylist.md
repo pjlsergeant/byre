@@ -21,7 +21,9 @@ substrate: closures that outlive the merge.
 
 **Closures survive the cascade.** Resolution extracts egress `!` markers
 into closure bookkeeping beside the merged config (`config.Closures`,
-ADR 0049) instead of consuming them; the derived
+kept off the merged `Config` so a raw layer never carries merge output;
+the full layer/resolved type split is ruled out, with its revive trigger,
+in TODO.md) instead of consuming them; the derived
 allowlist (`resolvedEgress`) subtracts them LAST, after the skill union.
 Everything else about the cascade is unchanged: precedence stays ordered (a
 later layer's plain entry re-opens a closure, deleting every closure it

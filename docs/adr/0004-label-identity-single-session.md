@@ -1,4 +1,4 @@
-# Sessions found by label; develop is single-session per project
+# Sessions found by label; develop is single-session per directory
 
 A running session is identified by the `byre.project` label (plus the
 per-worktree `byre.workdir` label -- see ADR 0009), not by assuming a
@@ -11,11 +11,11 @@ volumes (agent auth/history) and race them -- name-safe is not state-safe.
 Genuine parallelism is worktrees (ADR 0009): different workdir, isolated
 workspace, deliberately shared project identity.
 
-Consequences: the identity label is the one thing `run_args` cannot
-override (re-asserted after it; ADR 0006) -- lifecycle and `byre status`
-must always be able to find the session.
+Consequences: `run_args` cannot override the identity label, which is
+one of byre's own labels, all re-asserted after it (ADR 0006) --
+lifecycle and `byre status` must always be able to find the session.
 
-## Single-session across an engine switch (2026-07-22)
+## Single-session across an engine switch
 
 Flipping `engine` mid-session makes a box on the previous engine invisible
 to the configured runner, so a second develop would launch a second agent

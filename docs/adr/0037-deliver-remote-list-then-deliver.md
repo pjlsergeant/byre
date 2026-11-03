@@ -4,11 +4,11 @@ Decided 2026-07-16. `byre deliver ssh://[user@]host[:port]
 ...` delivers through another machine running byre as **two headless ssh
 invocations**: enumerate the remote boxes, pick locally, then stream one
 tar archive into a single targeted remote deliver. **Partially
-supersedes ADR 0021**: its "ssh remote shape (follow-on tranche)"
-section -- scp staging, `--porcelain` sentinels, `--consume`, and the
-remote interactive picker over `ssh -t` -- is reversed in full, before
-any of it was built (v1 shipped with no ssh surface, so the paper
-protocol carries no compatibility weight). The layering principle it
+supersedes ADR 0021**, whose "Remote delivery" section points here: the
+ssh remote design it sketched -- scp staging, `--porcelain` sentinels,
+`--consume`, and the remote interactive picker over `ssh -t` -- is
+reversed in full, before any of it was built (v1 shipped with no ssh
+surface, so the paper protocol carries no compatibility weight). The layering principle it
 stated holds: local byre owns local capabilities (clipboard, the paste
 beat, staging, GUI); remote byre owns what it already owns -- and
 *selection* is a local capability too, because the human doing the

@@ -2,7 +2,9 @@
 
 Decided 2026-07-27, absorbing the 2026-07-18 complexity review's
 "compatibility sunset" item. Guardrail: no compatibility path ships
-without a stated removal release (ADR 0048). This ADR records the
+without a stated removal release (ADR 0048) once byre has external users;
+until then removal is a per-path operator call (The policy). This ADR
+records the
 retirement policy and the authoritative inventory of paths still live;
 TODO.md carries the removals as open work.
 

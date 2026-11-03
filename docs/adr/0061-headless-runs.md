@@ -186,8 +186,10 @@ agent-trust content whoever wrote it (Accepted residuals).
   each line is escaped (external text is data, P4); redirected to a file or
   a pipe it is copied byte for byte, because a program wants the bytes.
 - **stdout, with `--data`:** the box's stdout is discarded and byre prints
-  ONE JSON document after the session, `RunDataVersion` 1 (its keys:
-  `runData` in `internal/commands/run.go`). byre prints it on the host after the box has
+  ONE JSON document after the session, `RunDataVersion` 1: `version`,
+  `run_id`, `outcome`, `authority`, `exit_code`, `agent_exit_code`,
+  `phase`, `agent`, `launch_record`, `started_at`, `finished_at`,
+  `message`, `exit_report`. byre prints it on the host after the box has
   exited, so nothing in the box can write into it.
 - **stderr:** everything else -- the agent's live stream and diagnostics
   (in the result dir only under `--quiet`, below), hook output, the build,
@@ -228,8 +230,10 @@ scraping stderr or scanning launch records:
   contract -- it never reached the chassis, or what ran it died.
 - `byre_failed`: a plain byre error, before or after create (a credential
   delivery failure, a box status past 127), exit 1.
-- `crashed`: byre panicked after staging; the document and the summary
-  line are printed best-effort and the process exits 70 as any crash does.
+- `crashed`: byre panicked on its main goroutine after staging; the
+  document and the summary line are printed best-effort and the process
+  exits 70, byre's recovered-panic code. A panic on another goroutine is
+  beyond a recover: it ends the process at 2 with no document (ADR 0022).
 
 `authority` is `verified` unless the resolved `run_args` were non-empty,
 when it is `unverified: raw run_args` on EVERY class, `ran` included. With
@@ -394,16 +398,13 @@ other project's box gains a credential nobody granted it, and a shared
 login is displaced, all without a prompt. That is a P5 violation, and ADR
 0057 already names a credential copy that outlives its window as a hole.
 
-So codex's headless command, given `OPENAI_API_KEY` or
-`CODEX_ACCESS_TOKEN`, logs the key into a `CODEX_HOME` made for that one
-run (in the box's temp dir, holding only a copy of the user's
-`config.toml`), runs there, and removes it on exit. The key wins over an
-existing login: the run uses it even when the real `CODEX_HOME` holds a
-working login. Without a key it checks the real `CODEX_HOME`'s login,
-bounded, and exits 13 if there is none. codex's own login hook stands down
-entirely under `BYRE_HEADLESS`, leaving the bounded preflight to the
-headless command. It matters on machines that persist -- a laptop, a
-self-hosted runner -- and never on a hosted runner the job discards.
+So codex's headless command isolates a present key in a `CODEX_HOME`
+made for that one run and never writes the real one; the key wins over an
+existing login. It matters on machines that persist -- a laptop, a
+self-hosted runner -- and never on a hosted runner the job discards. The
+mechanics (what the per-run home holds, the no-key preflight and its exit
+13, the login hook standing down) are in `docs/AGENT-CREDENTIAL-MECHANICS.md`
+(Headless runs).
 
 ## A present grok key runs in its own GROK_HOME
 

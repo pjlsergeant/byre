@@ -71,11 +71,6 @@ inherit) the handoff refuses the flag by name rather than letting
 onboarding consume it and durably configure the whole repo from a flag
 that promised "nothing written".
 
-Accepted residual: the pre-release intermediate commit (654a912c) wrote
-`--agent none` records with an empty `agent`; under the sentinel rule those
-read as pre-agent records and lose their qualifier until relaunch. Never
-released, never launched in anger.
-
 [arm: TestAgentOverrideResolvesLikeAWrittenKeyWithoutWriting,
 TestAgentOverrideNoneRunsAgentless,
 TestAgentOverrideBlankValueIsRejected,

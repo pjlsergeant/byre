@@ -218,8 +218,7 @@ rows describe configuration and construction rather than what the engine was
 told.
 
 `--data` follows the same rule `--full` does: whatever the page's subject is,
-the JSON says the same and carries the same qualifiers (schema: the `--data`
-reference).
+the JSON says the same and carries the same qualifiers.
 
 ## The config editor
 
@@ -247,7 +246,8 @@ accurately -- it is the record's SOURCE, not a consumer.
 - The record's serialization is a byte-exact contract: the bytes ARE the
   address, so reordering a field changes every address. It
   is pinned byte-exact.
-- `status --data` moves to version 2.
+- This decision introduced `status --data` version 2; the current
+  `StatusDataVersion` is in ADR 0061 and the doctrine index.
 - Env keys are recorded and rendered (`Box env`) but deliberately do NOT
   participate in the delta: the config side has no runtime env key set without
   re-implementing `runParams`' env union, which is the re-derivation this

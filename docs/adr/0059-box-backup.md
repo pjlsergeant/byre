@@ -139,7 +139,10 @@ plain file the user sends alongside the backup, which is ADR 0035's
 distribution story and remains it.
 
 Each reference is discovered, and hinted, by the ordinary loader that reads
-it, with that loader's own missing-reference remedy. Restore offers the
+it, with that loader's own missing-reference remedy. A missing template's
+hint can come only from `default.config` and the project file, because the
+template resolves before the extends chain loads; the agent's and skills'
+hints come from the merged `[sources]`, layers included. Restore offers the
 install where a hint exists (a `[sources]` entry visible at that step), under
 `byre preset apply`'s own digest-verified install consent and nothing else
 (ADR 0029); where no hint exists it stops naming the package and its install

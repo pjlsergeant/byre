@@ -57,7 +57,7 @@ metadata is a hard error -- never a silent standalone fallback);
 blast radius, announced loudly); `rehome` refuses from a worktree and
 points at the main tree.
 
-## Worktree creation runs in the box, never on the host (2026-07-18/19)
+## Worktree creation runs in the box, never on the host
 
 A **containment** correctness issue: `byre worktree` ran `git worktree
 add` on the **host**, and a git checkout runs the repository's own code --
@@ -133,7 +133,7 @@ against a moving target. Containing the checkout is the invariant.
 > `git` runs whatever the agent left in it. ADR 0047 takes that up, and
 > explains why a REPORT is not the allowlist rejected here.
 
-## Toplevel is derived structurally, not via `git rev-parse` (2026-07-22)
+## Toplevel is derived structurally, not via `git rev-parse`
 
 The one remaining host-side git call for the toplevel probe
 (`git -C <dir> rev-parse --show-toplevel`) honored a `.git/config`

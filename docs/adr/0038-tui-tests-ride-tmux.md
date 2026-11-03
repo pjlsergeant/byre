@@ -12,9 +12,8 @@ Model-level tests (bubbletea update/view against synthetic messages)
 cannot see the pty boundary: real key encoding through a terminal
 (ctrl chords, bracketed paste), raw mode engaging and restoring, the
 inline renderer against a real screen, cobra-to-TUI wiring in the built
-binary. The field record put bugs exactly there (the 2026-07-10
-drag-onto-the-window paste discovery was found by a human at a
-terminal). Model tests stay; this tier covers what they can't.
+binary. The field record put bugs exactly there (a drag-onto-the-window
+paste bug was found by a human at a terminal). Model tests stay; this tier covers what they can't.
 
 ## Why tmux
 

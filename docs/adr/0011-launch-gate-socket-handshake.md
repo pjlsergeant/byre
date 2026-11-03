@@ -45,7 +45,7 @@ Consequences:
   (`RUN rm -f /etc/byre/launch-gate && ln -s /dev/null /etc/byre/launch-gate`),
   and `COPY` then writes THROUGH the destination symlink -- the gate stays
   a symlink to `/dev/null`, is empty, and the launcher's `[ -s ]` test
-  skips the wait (measured 2026-07-28, docker/buildkit). The raw tier is
+  skips the wait (docker/buildkit). The raw tier is
   covered the way P3 says it is -- byre never parses inside a raw block, it
   degrades every posture claim a raw block could undermine (`networkLine`'s
   BuildRaw arm) -- so the disclosure holds either way. Pinned by

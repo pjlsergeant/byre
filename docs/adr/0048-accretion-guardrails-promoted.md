@@ -3,8 +3,8 @@
 Decided 2026-07-27. The four working rules the 2026-07-18
 configuration/feature-complexity review set "until the consolidation
 lands" are standing commitments: PRINCIPLES.md carries them as the
-unnumbered "Accretion guardrails" list under principle 7, which is their
-one home. They earned promotion by surviving contact -- the [[context]]
+unnumbered "Accretion guardrails" section after principle 7, which is
+their one home. They earned promotion by surviving contact -- the [[context]]
 family, the exit report, and three slop-review rounds all shipped under
 them.
 

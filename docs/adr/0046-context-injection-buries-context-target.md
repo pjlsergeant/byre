@@ -3,8 +3,7 @@
 > **Amended by ADR 0059**: `byre restore` returning the user's own files to
 > the user's own volume, at their instruction, is outside this rule.
 
-Decided 2026-07-26, maintainer-diagnosed ("we've made a terrible mistake
-with the design of byre"). The agent context -- chassis facts, skill
+Decided 2026-07-26. The agent context -- chassis facts, skill
 snippets, `[[context]]` standing instructions -- reaches every agent by
 INJECTION through that agent's own vendor channel, exactly as MCP servers
 (ADR 0033) and Claude Skills (ADR 0039) do. The `context_target`
@@ -65,7 +64,7 @@ directly onto the baked text).
   `/etc/byre/agent-context.md` with `$BYRE_SESSION_CONTEXT` into one temp
   file passed as a single `--append-system-prompt-file`, because the CLI
   rejects `--append-system-prompt-file` and `--append-system-prompt`
-  together ("Cannot use both", field-hit 2026-07-29; an EMPTY second flag
+  together ("Cannot use both"; an EMPTY second flag
   slips that check, so only boxes with session additions failed).
   System-prompt append is the RIGHT authority level for standing
   instructions.

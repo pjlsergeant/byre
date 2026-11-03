@@ -37,7 +37,8 @@ Mechanics:
   validation error naming the legal schemes.
 - **No `raw:` / literal scheme** (proposed, rejected): a literal value
   already has a home -- `[env]` -- and per the glossary a config-literal
-  env var is *config* while `env_from_host` entries are *grants*; a
+  env var is *config* while an `env_from_host` entry naming a host source
+  is a *grant* (a credential row is config the file carries, encrypted); a
   literal riding the grant key would be a non-grant wearing a grant
   costume on every GRANTS surface. The runtime-only-literal case is the
   already-parked "runtime-only env" item, not this key's job.

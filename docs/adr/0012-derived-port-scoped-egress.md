@@ -26,9 +26,10 @@ looser than what was meant. An **empty allowlist is legal** (a
 maximally-locked box -- loopback + scoped DNS only); the helper dies only
 when a non-empty request resolves to nothing.
 
-Consequences: per-project additions go through `FIREWALL_ALLOW` -- the
-generic env mechanism -- rather than a `firewall_allow` core config key,
-which would put firewall opinion in core (PRINCIPLES.md #2). `byre
+Consequences: per-project additions went through the generic env
+mechanism -- then `FIREWALL_ALLOW`; today the `egress` key, ADR 0019 --
+rather than a `firewall_allow` core config key, which would put firewall
+opinion in core (PRINCIPLES.md #2). `byre
 status` shows the resolved allowlist as an Egress section with each
 host:port attributed to its declaring skill. The proposed move of
 package-registry egress into language templates is superseded by ADR
