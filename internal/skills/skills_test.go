@@ -363,6 +363,20 @@ func TestRemovedSkillNpmGlobalRefusesWithItsRemedy(t *testing.T) {
 	}
 }
 
+// [agent] headless named a mode byre no longer has; an agent skill still
+// carrying it gets the delete-the-line remedy, not a bare unknown-key list.
+func TestRemovedSkillAgentHeadlessRefusesWithItsRemedy(t *testing.T) {
+	_, err := ParsePrimaryBytes([]byte("[package]\nid = \"x\"\nkind = \"skill\"\n\n[agent]\ncommand = \"x\"\nheadless = \"x -p\"\n"))
+	if err == nil {
+		t.Fatal("a removed skill.toml key must be refused")
+	}
+	for _, want := range []string{"[agent] headless is removed", "delete the line"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name the rule and the remedy, missing %q: %v", want, err)
+		}
+	}
+}
+
 // Two sources for one image destination is an authoring mistake with a silent
 // consequence: only one file lands there, and which one is map-iteration order
 // at every consumer that keys by dest -- build/planGuard's byDest among them,

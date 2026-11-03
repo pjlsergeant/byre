@@ -246,7 +246,8 @@ stays the grant, like any other.
 An agent skill's login hook (a first-run hook that offers an interactive
 login) must not prompt when stdin is not a terminal (`[ -t 0 ]` fails):
 a box launched from a script has nobody to answer. Exit 0 and print the
-remedy on stderr instead -- the env key to set, or `byre shell` to log in.
+remedy on stderr instead -- the env key to set where the agent reads one,
+or `byre shell` to log in.
 
 A skill that does not work without another -- a wrapper that drives
 codex's binary, say -- names it in a top-level `requires` list:
@@ -256,8 +257,8 @@ requires = ["codex"]
 ```
 
 Each entry must already be enabled (in `skills` or as the agent); byre
-never enables it for you, and an unmet requirement refuses at develop and
-run with the `skills = [...]` remedy. Details and compatibility:
+never enables it for you, and an unmet requirement refuses at develop
+with the `skills = [...]` remedy. Details and compatibility:
 [ADR 0062](adr/0062-skill-requires.md).
 
 To publish, declare identity in `[package]` -- a qualified id

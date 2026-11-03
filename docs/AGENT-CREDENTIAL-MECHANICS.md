@@ -1039,10 +1039,12 @@ prompts when nobody can answer:
 - **Hooks test `[ -t 0 ]`.** No terminal on stdin means no prompt, and the
   hook exits 0 (a hook never fails a launch). What the hook says on the
   way out differs:
-  - grok, grok-shared-auth, opencode and codex-login print a remedy on
-    stderr naming the env key (`XAI_API_KEY`,
-    `ANTHROPIC_API_KEY`/`OPENCODE_API_KEY`, `OPENAI_API_KEY`) and
+  - grok, grok-shared-auth and opencode print a remedy on stderr naming
+    the env key (`XAI_API_KEY`, `ANTHROPIC_API_KEY`/`OPENCODE_API_KEY`) and
     `byre shell`.
+  - codex-login's remedy names `byre shell` and
+    `codex login --device-auth` and no env key: codex reads none (see
+    "No persistent codex key file" below).
   - claude-shared-auth's token paste exits silently: a missing shared token
     is not a failure, the box falls back to its own per-project login, and
     the no-terminal exit has always been quiet. Its stale-login check still

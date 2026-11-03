@@ -393,7 +393,7 @@ fi
 # claude-shared-auth hook's precedent).
 if [ ! -t 0 ] && [ -z "${BYRE_ASSUME_TTY:-}" ]; then
   restore_shared_link || echo "byre: the shared Codex credential link could not be restored; it will retry next launch." >&2
-  echo "byre: codex is not logged in and there is no terminal for the device login -- set OPENAI_API_KEY to launch without a terminal (env_from_host, or byre credentials set), or log in from byre shell" >&2
+  echo "byre: codex is not logged in and there is no terminal for the device login -- to log in, open a terminal, run byre shell, then codex login --device-auth" >&2
   diag_event device_login_skipped_no_terminal
   exit 0
 fi

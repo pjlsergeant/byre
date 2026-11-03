@@ -1264,6 +1264,27 @@ func TestAssembleClearsStaleAgentFiles(t *testing.T) {
 	}
 }
 
+// A store's context written by an older byre can carry files no current
+// build writes; Assemble removes them so a hand-written dockerfile_post
+// cannot COPY a leftover into the image.
+func TestAssembleRemovesRetiredContextFiles(t *testing.T) {
+	paths := bootstrapped(t)
+	retired := []string{"agent-context-target", "agent-headless", "byre-headless"}
+	for _, name := range retired {
+		if err := os.WriteFile(filepath.Join(paths.ContextDir, name), []byte("stale\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := Assemble(paths, config.Config{Base: "node:22"}, skills.Resolved{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range retired {
+		if _, err := os.Stat(filepath.Join(paths.ContextDir, name)); !os.IsNotExist(err) {
+			t.Errorf("retired %s survived a re-assemble: %v", name, err)
+		}
+	}
+}
+
 // writeClaudeSkillDir lays down a minimal well-formed Claude Skill.
 func writeClaudeSkillDir(t *testing.T, dir, name string) {
 	t.Helper()

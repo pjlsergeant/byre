@@ -236,9 +236,12 @@ func AssembleWarn(paths project.Paths, cfg config.Merged, res skills.Resolved, w
 	// Same for the conditional context files: each is written only when its
 	// condition holds, so a condition that turned false since the last build
 	// (agent removed, context emptied) would otherwise leave a stale file behind.
-	// "agent-context-target" is the RETIRED placement pointer (pre-ADR 0046
-	// stores may still carry one) — removed like the live conditional files.
-	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, "agent-context-target", gen.SelfEditDocName, gen.ConfigRefName} {
+	// The quoted names are RETIRED files a store's context may still carry --
+	// "agent-context-target" the pre-ADR 0046 placement pointer,
+	// "agent-headless" and "byre-headless" the headless-run command and its
+	// chassis -- removed like the live conditional files so no hand-written
+	// dockerfile_post can COPY them.
+	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, "agent-context-target", "agent-headless", "byre-headless", gen.SelfEditDocName, gen.ConfigRefName} {
 		if err := ctxRoot.Remove(name); err != nil && !os.IsNotExist(err) {
 			return "", err
 		}

@@ -843,9 +843,10 @@ func decodeSkillFile(body []byte) (File, error) {
 
 // removedSkillKeys maps a skill.toml key byre REMOVED to its remedy. Same
 // stance as config's refusedConfigKeys: loud, with the replacement spelled
-// out, because a silently-ignored build key changes what the image contains
-// without saying so.
+// out, because a silently-ignored key changes what the box does without
+// saying so.
 var removedSkillKeys = map[string]string{
+	"agent.headless":   "skill.toml: [agent] headless is removed. byre has no headless run mode for it to name; delete the line.",
 	"build.npm_global": "skill.toml: [build] npm_global is removed. It assumed node/npm in the image and named one ecosystem in byre's vocabulary; use a raw build line instead:\n  [build]\n  dockerfile = [\"RUN npm install -g <pkg>\"]",
 }
 

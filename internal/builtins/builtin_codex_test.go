@@ -1842,7 +1842,7 @@ func TestCodexLoginHookBoundsLoginStatus(t *testing.T) {
 	if _, err := os.Stat(logins); !os.IsNotExist(err) {
 		t.Fatal("no terminal: the device login must not run")
 	}
-	for _, frag := range []string{"OPENAI_API_KEY", "byre shell"} {
+	for _, frag := range []string{"byre shell", "codex login --device-auth"} {
 		if !strings.Contains(out, frag) {
 			t.Fatalf("remedy must name %q: %s", frag, out)
 		}
@@ -1917,8 +1917,13 @@ func TestCodexLoginHookNoTerminalRestoresSharedLink(t *testing.T) {
 					t.Fatalf("diagnostic log lacks %s:\n%s", ev, log)
 				}
 			}
-			if !strings.Contains(out, "OPENAI_API_KEY") {
-				t.Fatalf("remedy must name OPENAI_API_KEY: %s", out)
+			for _, frag := range []string{"byre shell", "codex login --device-auth"} {
+				if !strings.Contains(out, frag) {
+					t.Fatalf("remedy must name %q: %s", frag, out)
+				}
+			}
+			if strings.Contains(out, "OPENAI_API_KEY") {
+				t.Fatalf("remedy must not offer an env key codex never reads: %s", out)
 			}
 		})
 	}
