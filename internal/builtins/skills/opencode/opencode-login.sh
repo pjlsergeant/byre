@@ -30,9 +30,7 @@ if [ ! -r "$BYRE_SA_LIB" ]; then
   exit 0
 fi
 . "$BYRE_SA_LIB"
-# A headless launch stands down before touching the credential at all (the
-# symlink judgment and its removal included): nobody is there to answer the
-# login picker, and the run's headless command owns its own preflight.
+# A headless run (BYRE_HEADLESS) has nobody to answer a login: stand down (ADR 0061).
 [ -n "${BYRE_HEADLESS:-}" ] && exit 0
 # A symlinked credential must never count — drop it so a clean re-login
 # writes a fresh regular file a planted link can't redirect. ONE exception:

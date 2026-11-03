@@ -131,7 +131,7 @@ func stageReconcile(t *testing.T, cat *packages.Catalog, pin string) string {
 // which credential is valid), cp (which publishes one machine-wide) and
 // flock (which serializes the publish), planted first on the inherited PATH
 // where the agent-writable ~/.local/bin sits in a box, never run, and the
-// local login is still published and linked.
+// local login is published and linked.
 func TestCodexReconcileIgnoresPlantedHelpers(t *testing.T) {
 	needCodexReconciler(t)
 	_, cat := testCat(t)
@@ -274,7 +274,7 @@ func TestCodexSharedAuthDiagnosticsAreGatedAndRedacted(t *testing.T) {
 // The shared-auth hook bounds its reconciler with the system timeout and runs
 // it with the system bash, both by absolute path: decoys of either planted
 // first on PATH (where the agent-writable ~/.local/bin sits in a box) never
-// run, and the reconciler still asserts the link.
+// run, and the reconciler asserts the link.
 func TestCodexSharedAuthHookIgnoresPlantedHelpers(t *testing.T) {
 	needCodexReconciler(t)
 	if _, err := os.Stat("/bin/bash"); err != nil {

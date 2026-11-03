@@ -13,10 +13,7 @@
 # with no copying and no translation. The provider command is unset for that
 # one call so the login can't recurse into the broker. The base override is a
 # test seam (the launcher's gate-file precedent).
-# A headless launch stands down before any credential work: the run's
-# headless command owns its own bounded preflight, nobody is there to answer
-# a device login, and a headless run must never promote a box's login into
-# the machine-wide store (P5).
+# A headless run (BYRE_HEADLESS) has nobody to answer a login: stand down (ADR 0061).
 [ -n "${BYRE_HEADLESS:-}" ] && exit 0
 BASE="${BYRE_IDENTITY_BASE:-/home/dev/.byre-identity}/grok"
 STORE="$BASE/auth.json"

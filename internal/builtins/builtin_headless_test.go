@@ -634,7 +634,7 @@ func TestClaudeHeadlessBackendAbsentIs15(t *testing.T) {
 // one runs, of the launch adapter, and of grok (which is named by its
 // root-owned link) planted first on it never run; the verdict and answer are
 // unchanged, the system timeout is the one that bounds the probes -- and the
-// agent itself still sees the inherited PATH. The context is over the
+// agent itself sees the inherited PATH. The context is over the
 // adapters' argv budget, so their truncation chain runs too.
 func TestHeadlessHelpersIgnoreTheInheritedPath(t *testing.T) {
 	type agentCase struct {

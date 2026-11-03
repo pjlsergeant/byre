@@ -63,7 +63,6 @@ apt = ["curl", "ca-certificates", "gawk", "jq", "util-linux"]
 # planted credential with. Five skills ship it to the same path,
 # byte-identical, so this skill works with or without codex-shared-auth
 # (ADR 0056).
-# codex-headless.sh: the headless command `byre run` drives ([agent] below).
 files = { "codex-login.sh" = "/etc/byre/firstrun.d/codex-login", "codex-mcp-launch.sh" = "/usr/local/bin/byre-codex-mcp-launch", "byre-shared-auth-lib.sh" = "/usr/local/lib/byre-shared-auth-lib.sh", "codex-headless.sh" = "/usr/local/bin/byre-codex-headless" }
 dockerfile = [
   # This comment line is emitted into the generated Dockerfile so the awk swap
@@ -104,11 +103,6 @@ egress = ["api.openai.com", "auth.openai.com", "chatgpt.com"]
 # Bypass flag per moarcode's `codex exec --dangerously-bypass-approvals-and-sandbox`;
 # verify it applies to the interactive `codex` launch.
 command = "byre-codex-mcp-launch --dangerously-bypass-approvals-and-sandbox"
-# The headless command `byre run` drives: `codex exec` through the same
-# adapter, its outcome translated into byre's closed exit set. A key in the
-# environment is logged into a CODEX_HOME made for that one run, never into
-# the state volume (codex-headless.sh says why: codex-shared-auth would
-# publish it to every project on the machine).
 headless = "byre-codex-headless"
 # The author's vouch that the command consumes the baked file (ADR 0033).
 mcp = "inject"

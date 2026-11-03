@@ -76,7 +76,7 @@ func newCodexBox(t *testing.T) (*headlessBox, string) {
 		filepath.Join("skills", "codex", "codex-mcp-launch.sh"), "byre-codex-mcp-launch")
 }
 
-// realHomeUntouched fails unless the real CODEX_HOME still holds exactly the
+// realHomeUntouched fails unless the real CODEX_HOME holds exactly the
 // login and config it started with.
 func (b *headlessBox) realHomeUntouched() {
 	b.t.Helper()

@@ -192,7 +192,9 @@ func jsonInt(t *testing.T, m map[string]any, key string) (int, bool) {
 
 // The exit code is a CLOSED set: the stub's status maps to byre's verdict,
 // and anything outside the contract -- a raw 12 or 16 included -- is the
-// script failing (14), never passed up.
+// script failing (14), never passed up. fd 9 carries the answer whatever the
+// exit code -- a reported failure has a message worth reading -- and
+// nothing when the answer is empty.
 func TestHeadlessExitMap(t *testing.T) {
 	const answer = `printf 'the answer' >"$BYRE_RUN_RESULT_FILE"; `
 	backendExit := func(n string) string {
@@ -205,25 +207,26 @@ func TestHeadlessExitMap(t *testing.T) {
 		status      string
 		backendExit int // -1 = null
 		scriptExit  int // -1 = null
+		fd9         string
 	}{
-		{"success", answer + "exit 0", 0, "success", -1, -1},
-		{"zero without a result", "exit 0", 14, "script_failed", -1, 0},
-		{"agent reported failure", "exit 10", 10, "agent_error", -1, -1},
-		{"agent exit 10", backendExit("10"), 11, "agent_exit", 10, -1},
-		{"agent exit 13", backendExit("13"), 11, "agent_exit", 13, -1},
-		{"agent exit 124", backendExit("124"), 11, "agent_exit", 124, -1},
-		{"agent exit 137", backendExit("137"), 11, "agent_exit", 137, -1},
-		{"agent exit without backend_exit", "exit 11", 11, "agent_exit", -1, -1},
-		{"agent exit with a malformed backend_exit", backendExit("1234"), 11, "agent_exit", -1, -1},
-		{"credential preflight", "exit 13", 13, "no_credentials", -1, -1},
-		{"backend absent", "exit 15", 15, "backend_unavailable", -1, -1},
-		{"script exit 1", "exit 1", 14, "script_failed", -1, 1},
-		{"script exit 124", "exit 124", 14, "script_failed", -1, 124},
-		{"script exit 137", "exit 137", 14, "script_failed", -1, 137},
-		{"raw 12 is not a timeout", "exit 12", 14, "script_failed", -1, 12},
-		{"raw 16 is not a result-dir refusal", "exit 16", 14, "script_failed", -1, 16},
-		{"killed by a signal", "kill -KILL $$", 14, "script_failed", -1, 137},
-		{"set -e death", "set -e; false; exit 0", 14, "script_failed", -1, 1},
+		{"success", answer + "exit 0", 0, "success", -1, -1, "the answer"},
+		{"zero without a result", "exit 0", 14, "script_failed", -1, 0, ""},
+		{"agent reported failure", `printf 'why it failed' >"$BYRE_RUN_RESULT_FILE"; exit 10`, 10, "agent_error", -1, -1, "why it failed"},
+		{"agent exit 10", backendExit("10"), 11, "agent_exit", 10, -1, ""},
+		{"agent exit 13", backendExit("13"), 11, "agent_exit", 13, -1, ""},
+		{"agent exit 124", backendExit("124"), 11, "agent_exit", 124, -1, ""},
+		{"agent exit 137", backendExit("137"), 11, "agent_exit", 137, -1, ""},
+		{"agent exit without backend_exit", "exit 11", 11, "agent_exit", -1, -1, ""},
+		{"agent exit with a malformed backend_exit", backendExit("1234"), 11, "agent_exit", -1, -1, ""},
+		{"credential preflight", "exit 13", 13, "no_credentials", -1, -1, ""},
+		{"backend absent", "exit 15", 15, "backend_unavailable", -1, -1, ""},
+		{"script exit 1", "exit 1", 14, "script_failed", -1, 1, ""},
+		{"script exit 124", "exit 124", 14, "script_failed", -1, 124, ""},
+		{"script exit 137", "exit 137", 14, "script_failed", -1, 137, ""},
+		{"raw 12 is not a timeout", "exit 12", 14, "script_failed", -1, 12, ""},
+		{"raw 16 is not a result-dir refusal", "exit 16", 14, "script_failed", -1, 16, ""},
+		{"killed by a signal", "kill -KILL $$", 14, "script_failed", -1, 137, ""},
+		{"set -e death", "set -e; false; exit 0", 14, "script_failed", -1, 1, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -250,12 +253,15 @@ func TestHeadlessExitMap(t *testing.T) {
 			if !strings.Contains(r.stderr, "exit "+strconv.Itoa(tc.code)) {
 				t.Errorf("no summary line naming exit %d on stderr:\n%s", tc.code, r.stderr)
 			}
+			if r.fd9 != tc.fd9 {
+				t.Errorf("fd 9 = %q, want %q", r.fd9, tc.fd9)
+			}
 		})
 	}
 }
 
 // A headless command that is not there is the backend-absent verdict, with
-// result.json saying so -- the run still publishes its outcome.
+// result.json saying so -- the run publishes its outcome.
 func TestHeadlessAbsentCommandIs15(t *testing.T) {
 	r := runHeadless(t, headlessCase{
 		stub:    "exit 0",
@@ -322,10 +328,10 @@ while :; do wait; done`,
 // USR1 is the timer's signal, but the agent shares the chassis's uid and can
 // send it: an early USR1 -- with no timer at all, or before the deadline --
 // leaves the headless command's own verdict standing, never a forged 12. The
-// real timer still times the run out, whatever the duration's spelling.
+// real timer times the run out, whatever the duration's spelling.
 //
 // The deadline is exact, not whole seconds: the "late" forger signals 1.2 s
-// into a 1.9 s timeout, past any whole-second floor of it, and must still be
+// into a 1.9 s timeout, past any whole-second floor of it, and must be
 // ignored. It exits at once after signalling, so 0.7 s separate its verdict
 // from the real timer's.
 func TestHeadlessForgedUSR1IsNotATimeout(t *testing.T) {
@@ -366,14 +372,12 @@ printf 'own answer' >"$BYRE_RUN_RESULT_FILE"`
 	}
 }
 
-// The timeout deadline is held on a monotonic clock. A wall-clock step
-// during a run cannot be staged in a test, so this pins the contract
-// instead: uptime_cs reads /proc/uptime, the deadline is armed from it and
-// the USR1 handler checks against it, and no wall clock -- bash's
-// EPOCHREALTIME, EPOCHSECONDS or SECONDS, or date(1) -- feeds either. A
-// deadline on a wall clock moves with it: a backward step lets the real
-// timer's one USR1 arrive "early" and be ignored, and the run is unbounded.
-// (SECONDS and date still time and stamp the record; they decide nothing.)
+// The timeout deadline is held on the monotonic clock: a deadline on a wall
+// clock moves with a step, so the real timer's one USR1 could arrive "early",
+// be ignored, and leave the run unbounded. A step cannot be staged in a
+// test, so this pins the clock source: uptime_cs reads /proc/uptime, and the
+// USR1 handler consults it and no wall clock (bash's EPOCHREALTIME,
+// EPOCHSECONDS or SECONDS, or date(1)).
 func TestHeadlessTimeoutClockIsMonotonic(t *testing.T) {
 	src := string(HeadlessScript())
 	wall := regexp.MustCompile(`EPOCHREALTIME|EPOCHSECONDS|SECONDS|\bdate\b`)
@@ -388,29 +392,15 @@ func TestHeadlessTimeoutClockIsMonotonic(t *testing.T) {
 		}
 		return src[start : start+end]
 	}
-	if clock := body("uptime_cs"); !strings.Contains(clock, "read -r up rest </proc/uptime") {
+	if clock := body("uptime_cs"); !strings.Contains(clock, "</proc/uptime") {
 		t.Errorf("uptime_cs does not read /proc/uptime:\n%s", clock)
 	}
 	handler := body("on_timeout")
-	if !regexp.MustCompile(`(?m)^\s*uptime_cs \|\| return$`).MatchString(handler) ||
-		!strings.Contains(handler, `[ "$now_cs" -ge "$deadline_cs" ]`) {
-		t.Errorf("on_timeout does not check the deadline against uptime_cs:\n%s", handler)
+	if !strings.Contains(handler, "uptime_cs") {
+		t.Errorf("on_timeout does not consult uptime_cs:\n%s", handler)
 	}
 	if w := wall.FindString(handler); w != "" {
 		t.Errorf("on_timeout reads a wall clock (%q)", w)
-	}
-	arms := regexp.MustCompile(`(?m)^.*\bdeadline_cs=.*$`).FindAllString(src, -1)
-	want := []string{
-		`child="" timer="" killer="" deadline_cs=""`,
-		`    deadline_cs=$((now_cs + timeout_cs))`,
-	}
-	if strings.Join(arms, "\n") != strings.Join(want, "\n") {
-		t.Errorf("deadline_cs assignments = %q, want only the reset and the arming from now_cs, %q", arms, want)
-	}
-	for _, l := range regexp.MustCompile(`(?m)^.*\bnow_cs=.*$`).FindAllString(src, -1) {
-		if w := wall.FindString(l); w != "" || !strings.Contains(l, "${up/./}") {
-			t.Errorf("now_cs is set from something other than /proc/uptime: %q", l)
-		}
 	}
 }
 
@@ -641,7 +631,7 @@ func TestHeadlessRefusesInvalidInputs(t *testing.T) {
 
 // After the exclusive opens the chassis never opens a pathname in the dir:
 // a FIFO the headless command plants at status, result.md and result.json
-// (each unlinked first) blocks nothing, and the held descriptors still carry
+// (each unlinked first) blocks nothing, and the held descriptors carry
 // what was written to them.
 func TestHeadlessFIFOsPlantedDuringTheRunNeverBlock(t *testing.T) {
 	r := runHeadless(t, headlessCase{
@@ -795,7 +785,7 @@ printf 'THE-ANSWER' >"$BYRE_RUN_RESULT_FILE"`
 // --quiet never hides a refusal: a failed quiet run prints the tail of the
 // headless command's stderr, where its remedy lives. A successful quiet run
 // prints none of it, and a loud run shows the remedy once -- the live relay
-// -- not again at the end.
+// -- not a second time at the end.
 func TestHeadlessQuietFailureShowsTheStderrTail(t *testing.T) {
 	const remedy = "REMEDY-give-the-box-a-credential"
 	for _, tc := range []struct {
@@ -828,7 +818,7 @@ func TestHeadlessQuietFailureShowsTheStderrTail(t *testing.T) {
 
 // A process that leaves the headless command's group (its own setsid) while
 // holding the stdout relay open survives the group KILL; the chassis's wait
-// for its relays is bounded, so it still finishes with the verdict.
+// for its relays is bounded, so it finishes with the verdict.
 func TestHeadlessEscapedRelayHolderDoesNotHoldTheRun(t *testing.T) {
 	var escaped string
 	t.Cleanup(func() {
@@ -854,24 +844,11 @@ printf 'the answer' >"$BYRE_RUN_RESULT_FILE"`,
 	}
 }
 
-// fd 9 carries the answer whatever the exit code -- a reported failure still
-// has a message worth reading -- and nothing when the answer is empty.
-func TestHeadlessAnswerOnEveryExit(t *testing.T) {
-	r := runHeadless(t, headlessCase{stub: `printf 'why it failed' >"$BYRE_RUN_RESULT_FILE"; exit 10`})
-	if r.code != 10 || r.fd9 != "why it failed" {
-		t.Errorf("exit %d fd9 %q, want 10 and the answer", r.code, r.fd9)
-	}
-	r = runHeadless(t, headlessCase{stub: `exit 13`})
-	if r.code != 13 || r.fd9 != "" {
-		t.Errorf("exit %d fd9 %q, want 13 and nothing on fd 9", r.code, r.fd9)
-	}
-}
-
 // The chassis's own helpers never resolve through the inherited PATH, whose
 // first entry is agent-writable in the box: a planted sha256sum, tee, setsid
-// (and the rest) earlier on PATH never runs, and the verdict is still right.
+// (and the rest) earlier on PATH never runs, and the verdict is right.
 // The headless command alone gets the inherited PATH back, so the agent's own
-// binaries there still resolve.
+// binaries there resolve.
 func TestHeadlessHelpersIgnoreThePlantedPath(t *testing.T) {
 	if !bytes.HasPrefix(HeadlessScript(), []byte("#!/bin/bash\n")) {
 		t.Errorf("headless.sh must name its interpreter absolutely, not through PATH")

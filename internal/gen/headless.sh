@@ -1,48 +1,27 @@
 #!/bin/bash
-# byre-headless [script] -- the headless-run chassis. The launcher execs it as
-# the container command for `byre run` (PID 1 after that exec). It validates
-# the result dir the host staged, holds byre's own files there as open
-# descriptors, supervises the agent skill's headless command, and owns the
-# verdict: the exit code is one of a CLOSED set, never the agent's raw status.
+# byre-headless [script] -- the headless-run chassis, the container command
+# of `byre run`. It validates the staged inputs, holds byre's own result-dir
+# files as descriptors, supervises the agent skill's headless command, and
+# owns the verdict. Its own exits are 12, 14 and 16; the command's set and the
+# full table: ADR 0061 / the commands page. The command's contract:
+# docs/SKILLS.md.
 #
-#   0  success (the headless command exited 0 and wrote an answer)
-#   10 the agent reported failure       11 the agent process failed
-#   12 the run exceeded BYRE_RUN_TIMEOUT 13 credential preflight failed
-#   14 the headless command broke the contract (any other status, a signal,
-#      or 0 without an answer)
-#   15 the backend (or the headless command itself) is not present
-#   16 the result dir or the task failed validation
+# The optional positional is the test seam; production runs the baked
+# /etc/byre/agent-headless. No env seam: a skill's [runtime].env can set any
+# BYRE_* name, but it cannot reach the container argv.
 #
-# The headless command holds fds 5 and 6 (BYRE_RUN_RESULT_FILE and
-# BYRE_RUN_STATUS_FILE) for its own writes and must not pass them, or the
-# variables naming them, to any child it starts -- the agent, a probe, or
-# a helper.
-#
-# The optional positional is the test seam: production passes no argument and
-# the command is the baked /etc/byre/agent-headless. There is deliberately no
-# env seam for it -- a skill's [runtime].env can set any BYRE_* name, but it
-# cannot reach the container argv.
-#
-# The dir is agent-writable for the whole run, so after the exclusive opens
-# below the chassis never opens a pathname inside it again: every write goes
-# to a held descriptor and every read is a bounded read of one through
-# /dev/fd/N, which resolves to the held inode -- an unlinked name with a FIFO
-# or symlink planted in its place cannot block or redirect PID 1. The one
-# exception is the final result.json publish, best-effort and
-# non-authoritative.
+# The dir is agent-writable, so after the exclusive opens below every write
+# goes to a held descriptor and every read is a bounded read through
+# /dev/fd/N: a FIFO or symlink planted at a name cannot block or redirect
+# PID 1. The one exception is the best-effort final result.json publish.
 set -u
 
-# The chassis's own helpers (sha256sum, tee, setsid, date, mktemp, ...) run
-# from the image's system directories only: the inherited PATH starts with the
-# agent-writable ~/.local/bin, and repository code has run in the launcher
-# before this point, so a lookup through it could run a planted binary inside
-# the verdict's own machinery. The inherited PATH is restored for the headless
-# command alone -- the agent's own binaries legitimately live there.
+# Helpers resolve on the system PATH; the saved PATH is restored for the
+# headless command only (ADR 0061).
 byre_saved_path=${PATH-}
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
-# Nothing here, nor the headless command, ever reads the box's stdin.
 exec </dev/null
 
 SECONDS=0
@@ -98,12 +77,10 @@ json_str() {
   printf '"%s"' "$s"
 }
 
-# json_opt prints a JSON string, or null when the value is empty.
 json_opt() {
   if [ -n "$1" ]; then json_str "$1"; else printf 'null'; fi
 }
 
-# json_int prints a non-negative integer, or null when the value is empty.
 json_int() {
   if [ -n "$1" ]; then printf '%d' "$1"; else printf 'null'; fi
 }
@@ -155,9 +132,9 @@ want_sha=${BYRE_RUN_TASK_SHA256:-}
 [[ $want_sha =~ ^[0-9a-f]{64}$ ]] || refuse "BYRE_RUN_TASK_SHA256 is not a lowercase sha256 hex digest"
 # Repo code (a pending worktree checkout's hooks and filters) runs in the
 # launcher before this point and can rewrite the task; nothing untrusted runs
-# concurrently with this check, so a match means the agent gets the bytes the
-# host hashed. The read is bounded one byte past the host's 1 MiB cap: an
-# oversized file then cannot match.
+# concurrently, so a match means the agent gets the bytes the host hashed.
+# The read stops one byte past the host's 1 MiB cap, so an oversized file
+# cannot match.
 got_sha=$(head -c 1048577 <"$task" | sha256sum)
 got_sha=${got_sha%% *}
 [ "$got_sha" = "$want_sha" ] || refuse "the task's sha256 does not match BYRE_RUN_TASK_SHA256 (the task file changed after the host staged it)"
@@ -170,23 +147,11 @@ if [ -n "$timeout_spec" ]; then
   if [[ ${timeout_spec%[smhd]} =~ ^[0.]*$ ]]; then timeout_spec=""; fi
 fi
 
-# timeout_cs is the duration in centiseconds, rounded down: the USR1
-# handler holds the monotonic clock in /proc/uptime (seconds since boot to
-# the centisecond, unmoved by a wall-clock step) to arming time plus this.
-# A clock correction during the run cannot hold the deadline off, so the
-# timer's one signal always counts; a forged signal is ignored until under
-# 20 ms remain (the duration and the arming time are each floored to the
-# centisecond); and the real timer's always passes, because sleep(1) of the
-# exact duration never wakes early and the deadline is rounded down.
-# The fraction keeps nine digits, multiplied by the unit before dividing;
-# digits past the ninth are dropped (under 1e-10 d, 8.64 us, for the day
-# suffix), which can move a value sitting within that much of a
-# centisecond or of the 1 s minimum by one step. Accepted: no timeout is
-# meant to that precision.
-# timeout_secs, the whole seconds rounded down, is only the range check:
-# the smallest timeout is 1 s, the largest 3650 d (31,536,000,000 cs, well
-# inside 64 bits), and the integer part's digits are counted before
-# multiplying so neither product can wrap to a deadline already past.
+# timeout_cs offsets a deadline on the monotonic clock (/proc/uptime);
+# timeout_secs only range-checks 1s..3650d. The fraction keeps nine digits and
+# both are floored, so a value within 1e-10 of a boundary can move one
+# centisecond -- accepted. The integer digits are counted before multiplying,
+# so 3650d (31,536,000,000 cs) is the largest product and none wraps 64 bits.
 timeout_max_secs=315360000
 timeout_secs=0 timeout_cs=0
 if [ -n "$timeout_spec" ]; then
@@ -266,18 +231,12 @@ tee_to() {
   fi
 }
 
-# on_signal forwards TERM/INT to the headless command's group.
 on_signal() {
   interrupted=1
   if [ -n "$child" ]; then kill "-$1" -- "-$child" 2>/dev/null; fi
 }
 
-# on_timeout runs when the chassis's own timer fires: TERM to the group, KILL
-# 15 s later if anything in it is still alive. USR1 is the timer's signal, but
-# any process with the box's uid -- the agent included -- can send it too, so
-# the handler acts only once the deadline has really passed; an early USR1 is
-# ignored and cannot forge the chassis-owned exit 12. interrupted is set
-# either way: the trap cut the wait short, and the loop must wait again.
+# on_timeout (USR1, see the traps): TERM the group, KILL 15 s later.
 on_timeout() {
   interrupted=1
   [ -n "$deadline_cs" ] || return
@@ -316,26 +275,22 @@ else
   exec 8> >(exec 3>&- 5>&- 6>&- 7>&- 9>&-; tee_to 4)
   tee_err=$!
 
+  # USR1 is the timer's signal, but any same-uid process can send it: it
+  # counts only after the monotonic deadline and only while a timer is armed,
+  # and is ignored otherwise (its default action kills the chassis). A
+  # trapped signal interrupts `wait`, which resumes to the child's real status.
   trap 'on_signal TERM' TERM
   trap 'on_signal INT' INT
-  # USR1 is handled only when a timer exists to send it; without one it is
-  # ignored, so a stray USR1 neither forges a timeout nor takes its default
-  # action, which kills the chassis.
   if [ -n "$timeout_spec" ]; then
     trap 'on_timeout' USR1
   else
     trap '' USR1
   fi
 
-  # Its own session, so its own process group: the group id is its pid, which
-  # is what the signals above are sent to. setsid(1) does not fork here,
-  # because a background child of a non-interactive shell is never a group
-  # leader, so $! IS the group. The subshell restores INT/QUIT first: bash
-  # starts a background child with any it does not trap ignored, an ignored
-  # signal stays ignored across exec, and a forwarded one would then reach
-  # nothing. Explicit here rather than left to the traps above, so the order
-  # of these lines cannot decide it. USR1 is restored for the same reason:
-  # the chassis may ignore it, and the agent must not inherit that.
+  # Its own session, so $! is the group the signals go to: setsid(1) does not
+  # fork, as a non-interactive shell's background child is never a group
+  # leader. INT, QUIT and USR1 are reset first, because bash starts it with
+  # untrapped ones ignored and an ignored signal stays ignored across exec.
   setsid_bin=$(command -v setsid)
   (
     trap - INT QUIT USR1
@@ -345,12 +300,9 @@ else
   child=$!
   exec 7>&- 8>&-
 
-  # The timer exists only when one was asked for: no timeout means no bound.
-  # timeout(1) is not used: a headless command that exits 124 or 137 on its
-  # own must not read as a timeout, so the verdict comes from this flag.
+  # Not timeout(1): a command's own exit 124 or 137 must not read as a timeout.
   if [ -n "$timeout_spec" ]; then
-    # A failed re-read keeps the probe's earlier reading: that deadline is
-    # only sooner than the timer's, so the timer still passes it.
+    # A failed re-read keeps the earlier, sooner reading.
     uptime_cs
     deadline_cs=$((now_cs + timeout_cs))
     (
@@ -361,17 +313,14 @@ else
     timer=$!
   fi
 
-  # A trapped signal interrupts wait with 128+N; wait again until it returns
-  # the child's own status (bash keeps a reaped child's status for a repeat
-  # wait on its pid).
+  # Resume an interrupted wait (bash keeps a reaped child's status).
   while :; do
     interrupted=0
     wait "$child"
     rc=$?
     [ "$interrupted" = 1 ] || break
   done
-  # USR1 is ignored, not reset: a timer firing between here and its stop
-  # must not take USR1's default action, which kills the chassis.
+  # Ignored, not reset: a timer firing before its stop must not kill PID 1.
   trap - TERM INT
   trap '' USR1
   stop_helper "$timer"
@@ -454,7 +403,7 @@ if tmp=$(mktemp "$dir/.result.json.XXXXXXXX" 2>/dev/null); then
   fi
 fi
 if [ -z "$published" ]; then
-  say "could not publish the final result.json (something in the result dir holds the name); the exit code is the verdict"
+  say "could not publish the final result.json (the temp write or the rename failed, or a non-file holds the name); the exit code is the verdict"
 fi
 
 # --- 6. the one stdout write --------------------------------------------------
@@ -463,12 +412,8 @@ fi
 # failure still has a message worth reading, and an empty fd prints nothing.
 cat /dev/fd/5 >&9 2>/dev/null
 
-# Under --quiet the headless command's stderr reached only stderr.log, but a
-# refusal and its remedy (a missing credential, an absent backend) live
-# there, and --quiet never hides those. So a failed quiet run prints the
-# log's tail, bounded by bytes before lines (one line could otherwise be the
-# whole file), from the held descriptor. Not on 0, and not on 10: the
-# agent's reported failure carries its message as the answer, printed above.
+# A failed quiet run prints stderr.log's tail, bounded by bytes before lines so
+# one huge line cannot flood stderr; exits 0 and 10 already carry the answer.
 if [ -n "${BYRE_RUN_QUIET:-}" ] && [ "$code" != 0 ] && [ "$code" != 10 ]; then
   tail -c 8192 /dev/fd/4 2>/dev/null | tail -n 40 | while IFS= read -r line || [ -n "$line" ]; do
     say "stderr| $line"

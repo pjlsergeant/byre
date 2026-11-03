@@ -1,49 +1,18 @@
 #!/bin/bash
-# byre-claude-headless -- the claude skill's headless command: the program the
-# byre-headless chassis runs for `byre run`. It gives claude the task once,
-# non-interactively, and translates the outcome into the chassis contract:
-#
-#   0  claude answered           10 claude reported failure (is_error)
-#   11 claude failed without reporting why (backend_exit=<rc> is in the
-#      status file)              13 no usable credential
-#   15 claude, its launch adapter, or jq is not in the box
-#
-# The chassis sets BYRE_RUN_TASK_FILE (the task text, given to claude on
-# stdin), BYRE_RUN_RESULT_FILE (a descriptor the answer is written to, once),
-# BYRE_RUN_STATUS_FILE (key=value lines the chassis reads) and, optionally,
-# BYRE_RUN_MODEL. This script's stdout is the live event stream the chassis
-# records and relays; nothing here reads a terminal.
-#
-# claude runs through byre-claude-launch, the same adapter the interactive
-# command uses, so the injected agent context, MCP servers and Claude Skills
-# reach a headless run exactly as they reach an interactive one.
+# byre-claude-headless -- the claude skill's headless command. One -p turn,
+# the task on stdin, stream-json output; the answer and the failure flag come
+# from the last `result` event. claude runs through byre-claude-launch, so the
+# agent context, MCP servers and Claude Skills match an interactive session.
+# Contract: docs/SKILLS.md.
 set -u
 
-# The result and status descriptors (5 and 6) and the variables naming them
-# are this script's alone. The names move into script locals before anything
-# runs, and every program the script starts -- claude, its probes, jq, tee,
-# the file helpers -- runs through run_child, which closes both descriptors
-# for it. So nothing claude or a probe leaves running can rewrite the answer
-# or append status lines after the script's own writes.
-#
-# A subshell or command substitution is a forked copy of this shell: it holds
-# both descriptors for as long as the program it starts runs, as that
-# program's parent. So each one closes both before anything else runs, and
-# the script's own data reaches a program as a here-string, never through a
-# pipeline element that is such a copy.
+# run_child and every subshell close 5 and 6.
 result_file=$BYRE_RUN_RESULT_FILE status_file=$BYRE_RUN_STATUS_FILE
 unset BYRE_RUN_RESULT_FILE BYRE_RUN_STATUS_FILE
 run_child() { "$@" 5>&- 6>&-; }
 
-# The script's own helpers (timeout, env, jq, tee, mktemp, ...) run from the
-# image's system directories only: the inherited PATH starts with the
-# agent-writable ~/.local/bin, which repository code could write before the
-# chassis ran, and a helper found there would run inside the verdict -- a
-# planted timeout voids every bound, a planted jq judges the answer. The
-# inherited PATH is claude's own: claude's probes and its launch adapter run
-# with it restored through env, the adapter named by its absolute path. The
-# adapter treats the PATH it is given as the agent's, pins its own, and hands
-# this one to claude.
+# Helpers on the system PATH; the agent PATH is restored only for claude's
+# probes and the launch adapter (by absolute path).
 agent_path=${PATH-}
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
@@ -66,7 +35,7 @@ fi
 
 no_credential() {
   say "no Claude credential${1:+ ($1)}."
-  say "Give the box one: CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY through env_from_host in the project config, or stored with \`byre credentials set\`; or enable claude-shared-auth for one login shared by every project on this machine."
+  say "Give the box one: CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY through env_from_host or \`byre credentials set\`, or enable claude-shared-auth."
   exit 13
 }
 
@@ -98,14 +67,8 @@ else
   fi
 fi
 
-# A fresh config dir has no .claude.json, and claude's first-run wizard gates
-# on it rather than on an env credential. The claude onboarding hook seeds the
-# marker before launch; this is the same seed, so a headless run cannot reach
-# the wizard even where that hook did not run. Fresh dirs only: never touch an
-# existing .claude.json (claude owns it), and never write through a symlink
-# (`-L` catches the dangling one `-e` misses). The bytes go to a mktemp'd name
-# and `ln -n` claims the final one with link(2), which fails on any node raced
-# in and never follows a symlink. A lost claim leaves nothing behind.
+# The onboarding seed claude-firstrun.sh writes (the publish trade is
+# explained in claude-shared-auth's firstrun hook), so the wizard never runs.
 if [ -n "$env_cred" ] && [ ! -e "$cfg/.claude.json" ] && [ ! -L "$cfg/.claude.json" ]; then
   if run_child mkdir -p -- "$cfg" 2>/dev/null && seed=$(exec 5>&- 6>&-; run_child mktemp -- "$cfg/.claude.json.byre-XXXXXX" 2>/dev/null); then
     if printf '{"hasCompletedOnboarding": true}\n' >"$seed" 2>/dev/null; then
@@ -124,9 +87,8 @@ fi
 
 # A private copy of the stream, for the result event: the chassis's transcript
 # lives in the agent-writable result dir, and this script reads nothing from
-# there. A box that cannot make a temp file is broken in a way no exit in the
-# contract names, so this exits 1 and the chassis's verdict -- the headless
-# command failed -- is the true one.
+# there.
+# No temp file: exit 1, which the chassis reports as 14.
 log=$(exec 5>&- 6>&-; run_child mktemp "${TMPDIR:-/tmp}/byre-claude-headless.XXXXXXXX") || {
   say "cannot create a temp file for the event stream"
   exit 1

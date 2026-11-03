@@ -33,9 +33,6 @@
 # chain can't renew, is the same command. Alternatively a static XAI_API_KEY
 # (from console.x.ai — separate API billing) skips file auth; the vendor doc
 # says a stored session login takes precedence over the key, so don't mix.
-# byre run with XAI_API_KEY runs grok under a per-run GROK_HOME, so a stored
-# login cannot shadow the key; interactive sessions still follow grok's rule
-# that a stored login wins.
 
 description = "The Grok CLI agent (Grok Build); login persists per project."
 
@@ -46,7 +43,6 @@ apt = ["curl", "ca-certificates", "jq"]
 # a fresh box (guarded by auth.json), so grok works without hunting for a
 # shell to log in from. Runs before the agent launches; skippable with Ctrl-C.
 # grok-bundled bridges $GROK_HOME/bundled to the image tree (see its header).
-# grok-headless.sh: the headless command `byre run` drives ([agent] below).
 files = { "grok-login.sh" = "/etc/byre/firstrun.d/grok-login", "grok-bundled.sh" = "/etc/byre/firstrun.d/grok-bundled", "grok-launch.sh" = "/usr/local/bin/byre-grok-launch", "grok-headless.sh" = "/usr/local/bin/byre-grok-headless" }
 dockerfile = [
   # The launch wrapper and the headless command must be executable: bundled
@@ -97,10 +93,6 @@ egress_offered = ["x.ai"]
 # legal-but-large
 # context must degrade, not kill the exec.
 command = "byre-grok-launch --always-approve"
-# The headless command `byre run` drives: one --prompt-file turn through the
-# same adapter, its json document translated into byre's closed exit set.
-# grok has no default time limit and can wait on a dead login's device
-# prompt; `byre run --timeout` bounds that.
 headless = "byre-grok-headless"
 state = ".grok"
 # context = "inject": the command's --append-system-prompt carries the baked

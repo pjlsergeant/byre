@@ -10,24 +10,16 @@
 # all as the same user. Agent context is INJECTED by the agent command (ADR
 # 0046); the launcher writes no agent file.
 #
-# The interpreter is /bin/bash by path, not `env bash`: the image's PATH puts
-# the agent-writable ~/.local/bin first, and the pinned path does not depend on
-# what that directory holds when the box starts.
+# /bin/bash by path, not `env bash`, so the interpreter never rides PATH.
 set -euo pipefail
 
 # The dev user's home is baked at build time (skills.DevHome); not an env
 # knob — the chassis paths are constants, not configuration.
 export HOME=/home/dev
 
-# The launcher runs its own helpers (tr, sleep, git, sed, head, ls, grep, rm,
-# cat) on the image's system directories from here to the exec. The inherited
-# PATH starts with the agent-writable ~/.local/bin, and repository code -- the
-# worktree checkout below runs the repo's hooks and filters -- can write there
-# before the launcher composes the session context or waits for credentials.
-# The inherited PATH is saved as the agent PATH and handed back only to what
-# runs as the agent: the firstrun hooks (they run the agent CLIs for device
-# login) and the final exec. Readonly so a sourced env.d hook cannot re-point
-# the helpers' PATH for the hooks after it (ADR 0028).
+# Save the inherited PATH as the agent PATH and run every helper on the
+# readonly system PATH; the agent PATH comes back for the first-run hooks and
+# the final exec. Why: ADR 0061.
 readonly BYRE_system_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 BYRE_agent_path="$PATH"
 PATH="$BYRE_system_path"
@@ -315,18 +307,15 @@ byre_credentials_apply() {
   # reached by silence instead of by a bad line. Refused whole, here, so the
   # loop only ever sees terminated records.
   #
-  # Read with a BUILTIN, never `tail`: the SECOND pass runs with every
-  # delivered value already exported, and an external command here is one a
-  # delivered value (an IFS, a PATH) could disturb. With `tail`, a PATH that
-  # left it unfindable made its substitution come back empty, this check
-  # pass vacuously, and a manifest shortened between the two passes export a
-  # partial set. The only external command left in this function is the wait
-  # loop's `sleep`, which the second pass never reaches (.done exists by then)
-  # and the first pass runs before any credential is exported. A credential
-  # named PATH becomes the AGENT PATH (byre_cred_export re-pins the
-  # launcher's own): the firstrun hooks and the final exec resolve on it, and
-  # a value that re-points it breaks the user's own box, which is theirs to
-  # do (P1) -- byre says so rather than reserving the name.
+  # Read with a BUILTIN: the SECOND pass runs with every delivered value
+  # already exported, and a builtin is one an exported credential value (an
+  # IFS, a PATH) cannot alter. The only external command left in this
+  # function is the wait loop's `sleep`, which the second pass never reaches
+  # (.done exists by then) and the first pass runs before any credential is
+  # exported. A credential named PATH becomes the AGENT PATH: the firstrun
+  # hooks and the final exec resolve on it, and a value that re-points it
+  # breaks the user's own box, which is theirs to do (P1) -- byre says so
+  # rather than reserving the name.
   BYRE_cred_nl='
 '
   BYRE_cred_manifest=""
@@ -414,18 +403,9 @@ byre_credentials_apply() {
 }
 byre_credentials_apply
 
-# Headless signal: a headless run (`byre run`) is keyed on ARGV, the one input
-# a skill's [runtime].env and raw run_args cannot reach -- so the variable is
-# exported from it, and UNSET otherwise, whatever the environment carried.
-# Hooks test it to never prompt. Under headless the box's stdout is the
-# product (the agent's answer, written once by byre-headless), so it is saved
-# on fd 9 and everything from here on -- this launcher, every hook, the
-# chassis -- writes stdout to stderr instead.
-# The key is the chassis's ABSOLUTE path (gen.HeadlessPath), compared as a
-# string, and the explicit-argv arm below execs it as given: the agent PATH
-# the exec restores starts with the agent-writable ~/.local/bin and repository
-# code (a worktree checkout's hooks) has run above, so a bare name could
-# resolve to a planted binary.
+# The exact chassis argv (gen.HeadlessPath) means a headless run: export
+# BYRE_HEADLESS, save stdout on fd 9, and send setup output to stderr.
+# Otherwise unset it, whatever the environment carried.
 if [ "${1:-}" = /usr/local/bin/byre-headless ]; then export BYRE_HEADLESS=1; exec 9>&1 >&2; else unset BYRE_HEADLESS; fi
 
 # First-run hooks — agent skills drop scripts here. They run as the dev user
@@ -448,14 +428,8 @@ if [ -d "$BYRE_firstrun_dir" ]; then
     # load-bearing under `set -e`: the naive `/bin/bash "$BYRE_hook";
     # BYRE_hook_status=$?` kills the launcher on the failing hook, the exact
     # inversion of best-effort.
-    # The interpreter is /bin/bash, never a PATH lookup, and fd 9 is closed
-    # for the hook: repo code has run above and the agent PATH starts with
-    # the agent-writable ~/.local/bin, so a bare `bash` could be a planted
-    # binary that runs in place of every hook -- and under headless, one
-    # holding the box's real stdout. Closing fd 9 keeps the hook from
-    # inheriting it; a same-uid process can still reach it through /proc, so
-    # the answer stays agent-trust content. The hook runs on the agent PATH
-    # because it runs the agent CLIs, so its own helpers resolve there too.
+    # /bin/bash by path with fd 9 closed; the answer stays agent-trust (a
+    # same-uid process can reach fd 9 through /proc).
     if [ -r "$BYRE_hook" ]; then
       if PATH="$BYRE_agent_path" /bin/bash "$BYRE_hook" 9>&-; then
         :
@@ -479,16 +453,7 @@ fi
 # guaranteed only to the former. First user: claude-shared-auth exports
 # CLAUDE_CODE_OAUTH_TOKEN from its identity volume (ADR 0017). The dir
 # override is a test seam, per the gate precedent.
-# The hooks are sourced on the launcher's system PATH, re-pinned before EACH
-# hook and once more after the loop: a hook computes its exports with system
-# tools (claude-shared-auth's `tr` decides the token the agent runs with),
-# and the agent PATH starts with the agent-writable ~/.local/bin, which
-# repository code (a worktree checkout's hooks) could write before this
-# point. The pin is per hook because the hooks share this shell: a PATH one
-# hook exports would otherwise become the helper PATH of every hook after it.
-# Firstrun hooks above keep the agent PATH: they run the agent CLIs. The
-# agent's PATH is the saved one, so an env.d hook cannot change it -- a PATH
-# it sets is discarded here (ADR 0028).
+# Re-pin the system PATH between sourced hooks: they share this shell (ADR 0028).
 BYRE_envd_dir="${BYRE_ENVD_DIR:-/etc/byre/env.d}"
 if [ -d "$BYRE_envd_dir" ]; then
   for BYRE_envhook in "$BYRE_envd_dir"/*.sh; do
@@ -517,11 +482,6 @@ byre_credentials_apply
 # Agent command: explicit run args > recorded agent command > login shell.
 # /etc/byre/agent-cmd is an *executable script* an agent skill installs;
 # executing it (rather than word-splitting its text) preserves quoting/spaces.
-# The agent PATH comes back as the last assignment before the exec, so the
-# command -- a bare argv name, `bash -l`, the skill command agent-cmd execs,
-# the chassis's own saved PATH -- resolves on exactly the inherited PATH (or a
-# delivered PATH credential). A plain assignment, not `exec env PATH=...`:
-# env would read a NAME=value first argument as another assignment.
 if [ "$#" -gt 0 ]; then
   BYRE_cmd=("$@")
 elif [ -x /etc/byre/agent-cmd ]; then

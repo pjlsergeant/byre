@@ -40,10 +40,7 @@ if [ ! -r "$BYRE_SA_LIB" ]; then
   exit 0
 fi
 . "$BYRE_SA_LIB"
-# A headless launch has nobody to authorize a device login, and the probes
-# below (`codex login status`, the live probe) cost launch time for a run
-# this hook cannot authenticate anyway. So stand down before touching the
-# credential at all.
+# A headless run (BYRE_HEADLESS) has nobody to answer a login: stand down (ADR 0061).
 [ -n "${BYRE_HEADLESS:-}" ] && exit 0
 
 cleanup_snapshot() {
@@ -289,14 +286,8 @@ if [ -e "$cred" ] && [ ! -L "$cred" ] && [ ! -f "$cred" ]; then
   exit 0
 fi
 needs_login=""
-# Bounded like the reconciler calls: a status probe that hangs (planted state,
-# a wedged CLI) must not hold the launch. A timeout reads as not logged in,
-# which a terminal-less launch turns into the remedy below. The bound is the
-# system timeout by absolute path, as at every bound below: the inherited PATH
-# starts with the agent-writable ~/.local/bin, and a timeout planted there
-# would void the bound. codex itself still resolves on the inherited PATH,
-# where it legitimately lives. A shell without /usr/bin/timeout (a macOS
-# test host) runs the call unbounded.
+# Bound the status probe with the system timeout; a timeout reads as not
+# logged in. A host without /usr/bin/timeout (macOS tests) runs it unbounded.
 STO=""
 [ -x /usr/bin/timeout ] && STO="/usr/bin/timeout -k 5 30"
 if $STO codex login status >/dev/null 2>&1; then

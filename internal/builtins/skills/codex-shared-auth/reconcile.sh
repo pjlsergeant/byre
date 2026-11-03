@@ -10,12 +10,8 @@
 # immediately after a Byre-managed login. It never logs credential contents.
 set -u
 
-# Every helper here (jq judges which credential is valid, cp publishes one to
-# every box on the machine, flock serializes the publish) runs from the
-# image's system directories only: the inherited PATH starts with the
-# agent-writable ~/.local/bin, and repository code (a worktree checkout's
-# hooks) runs in the launcher before this reconciler. It runs no agent CLI, so
-# nothing here needs the inherited PATH back.
+# Helpers on the system PATH (ADR 0061); the reconciler runs no agent CLI, so
+# it needs no agent PATH.
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 

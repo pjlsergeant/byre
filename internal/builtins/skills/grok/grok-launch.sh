@@ -13,15 +13,9 @@
 # disclosure pointing at the baked file, which the agent can read in-box.
 set -eu
 
-# The adapter's own helpers (cat, head, wc, iconv) run from the image's system
-# directories only: the inherited PATH starts with the agent-writable
-# ~/.local/bin, and repository code (a worktree checkout's hooks) runs in the
-# launcher before this adapter, so a helper found there would decide what grok
-# is told. grok itself is named by the root-owned link the skill installs: its
-# binary lives under ~/.grok, not on the inherited PATH's first entry, so a
-# grok planted in ~/.local/bin would otherwise run in its place. The inherited
-# PATH is restored on the exec of grok alone, because everything grok starts
-# needs the full image PATH.
+# Helpers on the system PATH; the agent PATH is restored for the final exec
+# only (ADR 0061). grok is the skill's root-owned
+# link, so a grok planted in ~/.local/bin cannot stand in for it.
 agent_path=${PATH-}
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH

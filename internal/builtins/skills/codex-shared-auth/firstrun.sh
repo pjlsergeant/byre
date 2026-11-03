@@ -13,11 +13,9 @@ fi
 
 # The timeout is the hard bound on adversarial-filesystem hangs inside the
 # shared identity volume (the reconciler's own lock wait is 3s; anything
-# approaching 30s is a planted-FIFO-class stall, not work). timeout and the
-# reconciler's shell are the system ones by absolute path: the inherited PATH
-# starts with the agent-writable ~/.local/bin, where a planted timeout would
-# void the bound and a planted bash would run in the reconciler's place. A
-# shell without /usr/bin/timeout (a macOS test host) runs it unbounded.
+# approaching 30s is a planted-FIFO-class stall, not work). timeout and bash
+# are the system ones by path (ADR 0061); a host without /usr/bin/timeout
+# (macOS tests) runs it unbounded.
 TO=""
 [ -x /usr/bin/timeout ] && TO="/usr/bin/timeout -k 5 30"
 $TO /bin/bash "$RECONCILE" startup

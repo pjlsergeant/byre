@@ -764,10 +764,10 @@ func TestLauncherStateIsAllByrePrefixed(t *testing.T) {
 	// on the system directories (byre_cred_export re-pins after a delivered
 	// PATH, the env.d loop before each hook and after the last), and the
 	// final exec restores the agent PATH, which holds a delivered PATH
-	// byte-exact -- so a credential named PATH still reaches the agent
+	// byte-exact -- so a credential named PATH reaches the agent
 	// (TestLauncherPathCredentialReachesTheAgent), and a PATH an env.d hook
 	// sets does not (TestLauncherEnvdHookIgnoresHelpersOnPath). Any other
-	// PATH binding is still a hole.
+	// PATH binding is a hole.
 	allowedLines := map[string]bool{
 		`PATH="$BYRE_system_path"`: true,
 		`PATH="$BYRE_agent_path"`:  true,

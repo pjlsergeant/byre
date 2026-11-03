@@ -13,10 +13,7 @@
 # --device-auth is only needed again when the chain can no longer renew (or
 # after a logout).
 #
-# A headless launch stands down before any credential work, the symlink heal
-# included: the run's headless command owns its own bounded preflight (which
-# refuses a symlinked credential itself), and nobody is there to answer a
-# device login.
+# A headless run (BYRE_HEADLESS) has nobody to answer a login: stand down (ADR 0061).
 [ -n "${BYRE_HEADLESS:-}" ] && exit 0
 command -v grok >/dev/null 2>&1 || exit 0
 export GROK_HOME="${GROK_HOME:-/home/dev/.grok-home}"

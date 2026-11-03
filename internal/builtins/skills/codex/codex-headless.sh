@@ -1,50 +1,17 @@
 #!/bin/bash
-# byre-codex-headless -- the codex skill's headless command: the program the
-# byre-headless chassis runs for `byre run`. It gives codex the task once
-# (`codex exec`), non-interactively, and translates the outcome into the
-# chassis contract:
-#
-#   0  codex answered            10 codex reported failure (turn.failed)
-#   11 codex failed without reporting why (backend_exit=<rc> is in the
-#      status file)              13 no usable credential
-#   15 codex, its launch adapter, or jq is not in the box
-#
-# The chassis sets BYRE_RUN_TASK_FILE (the task text, given to codex on
-# stdin), BYRE_RUN_RESULT_FILE (a descriptor the answer is written to, once),
-# BYRE_RUN_STATUS_FILE (key=value lines the chassis reads) and, optionally,
-# BYRE_RUN_MODEL. This script's stdout is the live event stream the chassis
-# records and relays; nothing here reads a terminal.
-#
-# codex runs through byre-codex-mcp-launch, the same adapter the interactive
-# command uses, so byre's MCP servers and agent context reach a headless run
-# exactly as they reach an interactive one.
+# byre-codex-headless -- the codex skill's headless command. One `codex exec`
+# turn, the task on stdin; `turn.failed` is the reported failure. codex runs
+# through byre-codex-mcp-launch, so MCP servers and agent context match an
+# interactive session. Contract: docs/SKILLS.md.
 set -u
 
-# The result and status descriptors (5 and 6) and the variables naming them
-# are this script's alone. The names move into script locals before anything
-# runs, and every program the script starts -- codex, its login and probes,
-# jq, tee, the file helpers -- runs through run_child, which closes both
-# descriptors for it. So nothing codex or a probe leaves running can rewrite
-# the answer or append status lines after the script's own writes.
-#
-# A subshell or command substitution is a forked copy of this shell: it holds
-# both descriptors for as long as the program it starts runs, as that
-# program's parent. So each one closes both before anything else runs, and
-# the script's own data reaches a program as a here-string, never through a
-# pipeline element that is such a copy.
+# run_child and every subshell close 5 and 6.
 result_file=$BYRE_RUN_RESULT_FILE status_file=$BYRE_RUN_STATUS_FILE
 unset BYRE_RUN_RESULT_FILE BYRE_RUN_STATUS_FILE
 run_child() { "$@" 5>&- 6>&-; }
 
-# The script's own helpers (timeout, env, jq, tee, mktemp, ...) run from the
-# image's system directories only: the inherited PATH starts with the
-# agent-writable ~/.local/bin, which repository code could write before the
-# chassis ran, and a helper found there would run inside the verdict -- a
-# planted timeout voids every bound, a planted jq judges the answer. The
-# inherited PATH is codex's own (codex itself may live in ~/.local/bin):
-# codex's login and probes and its launch adapter run with it restored
-# through env, the adapter named by its absolute path. The adapter treats the
-# PATH it is given as the agent's, pins its own, and hands this one to codex.
+# Helpers on the system PATH; the agent PATH (codex may live in ~/.local/bin)
+# is restored only for codex's login, probes and the launch adapter.
 agent_path=${PATH-}
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
@@ -67,7 +34,7 @@ fi
 
 no_credential() {
   say "no Codex credential${1:+ ($1)}."
-  say "Give the box one: OPENAI_API_KEY or CODEX_ACCESS_TOKEN through env_from_host in the project config, or stored with \`byre credentials set\`; or log in once in an interactive session (codex login --device-auth), or enable codex-shared-auth for one login shared by every project on this machine."
+  say "Give the box one: OPENAI_API_KEY or CODEX_ACCESS_TOKEN through env_from_host or \`byre credentials set\`, log in once in an interactive session (codex login --device-auth), or enable codex-shared-auth."
   exit 13
 }
 
@@ -85,27 +52,9 @@ real_home="${CODEX_HOME:-$HOME/.codex}"
 
 # --- credential ---------------------------------------------------------------
 
-# codex reads its credential only from a login written into CODEX_HOME; a key
-# in the environment is never used on its own. So a key given to the box is
-# logged into a CODEX_HOME made for this one run and removed when it ends --
-# never into the real one, which is the project's state volume. The reason is
-# codex-shared-auth: its reconciler runs at every launch and publishes any
-# valid credential it finds in a project's CODEX_HOME to every project on the
-# machine, preferring an API-key file over a shared ChatGPT login. A key left
-# in the state volume would therefore bill other projects' work to it, hand
-# their boxes a credential nobody granted them, and displace the shared login
-# -- one launch later, without a prompt. That matters on machines that persist
-# (a laptop, a self-hosted runner); a discarded hosted runner never relaunches.
-#
-# A key in the environment wins over an existing login: the run uses the key
-# even when the real CODEX_HOME holds a working one. OPENAI_API_KEY is tried
-# before CODEX_ACCESS_TOKEN. Only config.toml (the user's preferences) is
-# copied into the run's home; auth.json and the rest stay where they are.
-#
-# The run's home sits in TMPDIR, so codex warns on stderr that it skips its
-# helper-binary PATH aliases there; the run does not need them. A key codex
-# rejects can appear masked (first and last few characters) in the event
-# stream's error messages; the full key is only ever in the run's own home.
+# An env key is logged into a CODEX_HOME made for this run, never the state
+# volume, so codex-shared-auth cannot publish it machine-wide; only
+# config.toml is copied in. Why: ADR 0061.
 key="" login_flag=""
 if [ -n "${OPENAI_API_KEY:-}" ]; then
   key=$OPENAI_API_KEY login_flag=--with-api-key
@@ -114,9 +63,7 @@ elif [ -n "${CODEX_ACCESS_TOKEN:-}" ]; then
 fi
 
 if [ -n "$key" ]; then
-  # A box that cannot make a temp dir is broken in a way no exit in the
-  # contract names, so this exits 1 and the chassis's verdict -- the headless
-  # command failed -- is the true one.
+  # No temp dir: exit 1, which the chassis reports as 14.
   home=$(exec 5>&- 6>&-; run_child mktemp -d "${TMPDIR:-/tmp}/byre-codex-home.XXXXXXXX") || {
     say "cannot create a temporary CODEX_HOME for the run"
     exit 1

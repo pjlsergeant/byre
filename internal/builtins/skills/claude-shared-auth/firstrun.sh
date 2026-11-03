@@ -8,11 +8,7 @@
 # The base override is a test seam (the launcher's gate-file precedent).
 IDENTITY_DIR="${BYRE_IDENTITY_BASE:-/home/dev/.byre-identity}/claude"
 TOKEN_FILE="$IDENTITY_DIR/token"
-# A headless launch stands down before any credential work: nobody is there
-# to paste a token or answer the stale-login offer, and the claude headless
-# command needs nothing from this hook -- env.sh exports the shared token,
-# and the headless command seeds the onboarding marker itself on an env
-# token.
+# A headless run (BYRE_HEADLESS) has nobody to answer a login: stand down (ADR 0061).
 [ -n "${BYRE_HEADLESS:-}" ] && exit 0
 
 # The env token authenticates inference but does NOT satisfy interactive
@@ -21,23 +17,15 @@ TOKEN_FILE="$IDENTITY_DIR/token"
 # (host-verified 2026-07-07). Seeding the onboarding-complete marker makes
 # Claude use the token directly. FRESH volumes only — never touch an existing
 # .claude.json (Claude owns it; it rewrites via temp+rename), and never write
-# through a symlink at that name: `-e` is false for a dangling one, so `-L` is
-# tested too. A node raced in after the test is refused by the publish
-# itself: the bytes go to a mktemp'd dotfile (O_EXCL, a fresh name), and
-# `ln -n` claims the final name with link(2), which fails EEXIST on any
-# existing node and never follows a symlink (-n keeps even a link to a
-# directory from being read as one). Noclobber would not do: it refuses only
-# an existing regular file, and opens a symlink to a FIFO, blocking the
-# launch. A claim lost to a file or symlink leaves nothing behind. A REAL
-# directory planted at the name is the one exception: ln links the marker
-# inside it under the temp's basename, so `rm -f` removes only the temp name
-# and that second link stays. Accepted: the bytes are the onboarding flag,
-# not a credential, and a directory at that name means claude's config dir is
-# already broken by something else. The reopen of the mktemp'd name by
-# `printf >` is a window too (a concurrent writer could swap the entry in
-# between); it stays open because nothing untrusted runs alongside firstrun
-# hooks -- the launcher checks out a pending worktree before the hooks and
-# starts the agent after them. Trade recorded:
+# through a symlink at that name (`-L` catches the dangling one `-e` misses).
+# The publish: the bytes go to a mktemp'd name, and `ln -n` claims the final
+# one with link(2), which fails on any existing node and never follows a
+# symlink; a lost claim leaves nothing behind. Not noclobber: it follows a
+# symlink to a FIFO and blocks the launch. A real directory at the name is
+# the accepted exception (ln links the marker inside it; the bytes are the
+# onboarding flag, and the config dir is already broken). The `printf >`
+# reopen of the temp name is a window; nothing untrusted runs alongside
+# firstrun hooks. Trade recorded:
 # skipping the wizard skips the theme picker; /config re-opens it in-session.
 seed_onboarding() {
   cfg="${CLAUDE_CONFIG_DIR:-/home/dev/.claude}"

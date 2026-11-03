@@ -26,16 +26,9 @@
 # already reads; the baked mcp.json stays free of byre-placed secrets.
 set -eu
 
-# The adapter's own helper (jq) runs from the image's system directories only:
-# the inherited PATH starts with the agent-writable ~/.local/bin, and
-# repository code (a worktree checkout's hooks) runs in the launcher before
-# this adapter, so a jq found there would decide what opencode is told -- it
-# writes the MCP server commands opencode runs. opencode itself is named by
-# the root-owned link the skill installs: its binary lives under ~/.opencode,
-# not on the inherited PATH's first entry, so an opencode planted in
-# ~/.local/bin would otherwise run in its place. The inherited PATH is
-# restored on the exec of opencode alone, because everything opencode starts
-# needs the full image PATH.
+# Helpers on the system PATH; the agent PATH is restored for the final exec
+# only (ADR 0061). jq here writes the MCP server
+# commands opencode runs; opencode is the skill's root-owned link.
 agent_path=${PATH-}
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH

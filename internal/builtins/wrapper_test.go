@@ -751,7 +751,7 @@ func TestClaudeLaunchWrapperMergesContextIntoOneFlag(t *testing.T) {
 // Decoys of the adapter's helpers -- and of grok and opencode, which their
 // adapters name by root-owned link -- planted first on that PATH never run:
 // the jq that writes codex's and opencode's MCP commands and the
-// cat/head/wc/iconv chain that builds the context come from the pinned PATH. The agent CLI still gets the inherited
+// cat/head/wc/iconv chain that builds the context come from the pinned PATH. The agent CLI gets the inherited
 // PATH whole, because everything it starts needs it.
 func TestLaunchAdaptersIgnoreTheInheritedPath(t *testing.T) {
 	testtools.NeedTool(t, "bash", "jq", "env")
