@@ -39,8 +39,8 @@
   came up unauthenticated anyway. Each now skips the login when stdin is
   not a terminal, and prints the remedy: for grok and opencode, set the
   agent's API key (`env_from_host`, or `byre credentials set`) or log in
-  from `byre shell`; for codex, which reads no API key from the
-  environment, run `codex login --device-auth` from `byre shell`. codex's
+  from `byre shell`; for codex, whose login check an env key does not
+  satisfy, run `codex login --device-auth` from `byre shell`. codex's
   own `codex login status` probe is bounded at 30 s too.
 - **Claude with an env credential skips its first-run wizard.** A box given
   `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`

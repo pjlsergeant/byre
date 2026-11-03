@@ -1043,7 +1043,8 @@ prompts when nobody can answer:
     the env key (`XAI_API_KEY`, `ANTHROPIC_API_KEY`/`OPENCODE_API_KEY`) and
     `byre shell`.
   - codex-login's remedy names `byre shell` and
-    `codex login --device-auth` and no env key: codex reads none (see
+    `codex login --device-auth` and no env key: an env key does not satisfy `codex login
+    status`, the gate this hook checks, and codex never persists one (see
     "No persistent codex key file" below).
   - claude-shared-auth's token paste exits silently: a missing shared token
     is not a failure, the box falls back to its own per-project login, and
@@ -1095,8 +1096,9 @@ a remedy before the agent starts when there is no usable credential.
 
 ### codex: log an env key into a CODEX_HOME made for the one run
 
-codex has no env-key inference (above), so a key in the env reaches
-codex only through a login written into some `CODEX_HOME`. Writing it
+An env key does not satisfy `codex login status` and codex never
+persists one (above), so for a key to count as a login it has to be
+written into some `CODEX_HOME`. Writing it
 into the box's real `CODEX_HOME` -- the project's state volume -- lets
 the codex-shared-auth reconciler publish it machine-wide one launch
 later (above). The route that keeps it to one run: make a fresh
