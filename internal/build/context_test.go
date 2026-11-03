@@ -66,7 +66,7 @@ func TestAssembleWritesDockerfileAndLauncher(t *testing.T) {
 	}
 
 	// Every executable the core block COPYs must land in the context.
-	for _, name := range []string{gen.LauncherName, gen.FetchRunName, gen.HeadlessName} {
+	for _, name := range []string{gen.LauncherName, gen.FetchRunName} {
 		info, err := os.Stat(paths.ContextDir + "/" + name)
 		if err != nil {
 			t.Fatalf("%s not written: %v", name, err)
@@ -191,7 +191,7 @@ func TestAssembleWritesAgentFiles(t *testing.T) {
 	paths := bootstrapped(t)
 	res := skills.Resolved{
 		Skills: []skills.Skill{{Name: "claude", Context: "be concise"}},
-		Agent:  &skills.AgentContrib{Command: "claude --dangerously-skip-permissions", Headless: "claude-headless --json"},
+		Agent:  &skills.AgentContrib{Command: "claude --dangerously-skip-permissions"},
 	}
 	df, err := Assemble(paths, config.Config{Base: "node:22"}, res)
 	if err != nil {
@@ -199,16 +199,6 @@ func TestAssembleWritesAgentFiles(t *testing.T) {
 	}
 	if !strings.Contains(df, "COPY agent-cmd /etc/byre/agent-cmd") {
 		t.Errorf("agent-cmd COPY missing:\n%s", df)
-	}
-	if !strings.Contains(df, "COPY agent-headless "+gen.AgentHeadlessPath) {
-		t.Errorf("agent-headless COPY missing:\n%s", df)
-	}
-	headless, err := os.ReadFile(paths.ContextDir + "/" + gen.AgentHeadlessName)
-	if err != nil {
-		t.Fatalf("agent-headless not written: %v", err)
-	}
-	if string(headless) != "#!/bin/sh\nexec claude-headless --json \"$@\"\n" {
-		t.Errorf("agent-headless script wrong: %q", headless)
 	}
 
 	script, err := os.ReadFile(paths.ContextDir + "/" + gen.AgentCmdName)
@@ -1246,12 +1236,12 @@ func TestAssembleClearsStaleAgentFiles(t *testing.T) {
 	paths := bootstrapped(t)
 	withAgent := skills.Resolved{
 		Skills: []skills.Skill{{Name: "claude", Context: "rules"}},
-		Agent:  &skills.AgentContrib{Command: "claude", Headless: "claude-headless", Context: "inject"},
+		Agent:  &skills.AgentContrib{Command: "claude", Context: "inject"},
 	}
 	if _, err := Assemble(paths, config.Config{Base: "node:22"}, withAgent); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{gen.AgentCmdName, gen.AgentHeadlessName, gen.AgentContextName, gen.SelfEditDocName, gen.ConfigRefName} {
+	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, gen.SelfEditDocName, gen.ConfigRefName} {
 		if _, err := os.Stat(filepath.Join(paths.ContextDir, name)); err != nil {
 			t.Fatalf("%s not written with an agent: %v", name, err)
 		}
@@ -1262,7 +1252,7 @@ func TestAssembleClearsStaleAgentFiles(t *testing.T) {
 	if _, err := Assemble(paths, config.Config{Base: "node:22"}, skills.Resolved{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{gen.AgentCmdName, gen.AgentHeadlessName, gen.SelfEditDocName, gen.ConfigRefName, "agent-context-target"} {
+	for _, name := range []string{gen.AgentCmdName, gen.SelfEditDocName, gen.ConfigRefName, "agent-context-target"} {
 		if _, err := os.Stat(filepath.Join(paths.ContextDir, name)); !os.IsNotExist(err) {
 			t.Errorf("stale %s survived an agent-less re-assemble: %v", name, err)
 		}

@@ -101,14 +101,13 @@ func buildInput(paths project.Paths, cfg config.Merged, res skills.Resolved) (ge
 		return gen.Input{}, nil, err
 	}
 	in := gen.Input{
-		Base:          cfg.Base,
-		Env:           cfg.Env,
-		Files:         genFiles,
-		Apt:           cfg.Apt,
-		Skills:        genSkills,
-		AgentCmd:      res.AgentCommand() != "",
-		AgentHeadless: res.AgentHeadless() != "",
-		AgentContext:  true, // the chassis paragraph makes context non-empty on every box
+		Base:         cfg.Base,
+		Env:          cfg.Env,
+		Files:        genFiles,
+		Apt:          cfg.Apt,
+		Skills:       genSkills,
+		AgentCmd:     res.AgentCommand() != "",
+		AgentContext: true, // the chassis paragraph makes context non-empty on every box
 		// The self-edit note rides any agent: the launcher folds it into the
 		// per-session context (BYRE_SESSION_CONTEXT) when the grant is live.
 		SelfEditDoc:    res.AgentCommand() != "",
@@ -239,7 +238,7 @@ func AssembleWarn(paths project.Paths, cfg config.Merged, res skills.Resolved, w
 	// (agent removed, context emptied) would otherwise leave a stale file behind.
 	// "agent-context-target" is the RETIRED placement pointer (pre-ADR 0046
 	// stores may still carry one) — removed like the live conditional files.
-	for _, name := range []string{gen.AgentCmdName, gen.AgentHeadlessName, gen.AgentContextName, "agent-context-target", gen.SelfEditDocName, gen.ConfigRefName} {
+	for _, name := range []string{gen.AgentCmdName, gen.AgentContextName, "agent-context-target", gen.SelfEditDocName, gen.ConfigRefName} {
 		if err := ctxRoot.Remove(name); err != nil && !os.IsNotExist(err) {
 			return "", err
 		}
@@ -276,19 +275,11 @@ func AssembleWarn(paths project.Paths, cfg config.Merged, res skills.Resolved, w
 	if err := ctxRoot.WriteFile(gen.FetchRunName, gen.FetchRunScript(), 0o755); err != nil {
 		return "", err
 	}
-	if err := ctxRoot.WriteFile(gen.HeadlessName, gen.HeadlessScript(), 0o755); err != nil {
-		return "", err
-	}
 	if err := ctxRoot.WriteFile(gen.ProfileEnvName, gen.ProfileEnvScript(), 0o644); err != nil {
 		return "", err
 	}
 	if cmd := res.AgentCommand(); cmd != "" {
 		if err := ctxRoot.WriteFile(gen.AgentCmdName, agentScript(cmd), 0o755); err != nil {
-			return "", err
-		}
-	}
-	if headless := res.AgentHeadless(); headless != "" {
-		if err := ctxRoot.WriteFile(gen.AgentHeadlessName, agentScript(headless), 0o755); err != nil {
 			return "", err
 		}
 	}

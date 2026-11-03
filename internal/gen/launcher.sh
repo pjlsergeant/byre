@@ -19,7 +19,10 @@ export HOME=/home/dev
 
 # Save the inherited PATH as the agent PATH and run every helper on the
 # readonly system PATH; the agent PATH comes back for the first-run hooks and
-# the final exec. Why: ADR 0061.
+# the final exec. The inherited PATH leads with the agent-writable
+# ~/.local/bin, and repository code (a pending worktree checkout's hooks and
+# filters) runs in this launcher, so a helper resolved on it could be one the
+# agent planted.
 readonly BYRE_system_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 BYRE_agent_path="$PATH"
 PATH="$BYRE_system_path"
@@ -403,11 +406,6 @@ byre_credentials_apply() {
 }
 byre_credentials_apply
 
-# The exact chassis argv (gen.HeadlessPath) means a headless run: export
-# BYRE_HEADLESS, save stdout on fd 9, and send setup output to stderr.
-# Otherwise unset it, whatever the environment carried.
-if [ "${1:-}" = /usr/local/bin/byre-headless ]; then export BYRE_HEADLESS=1; exec 9>&1 >&2; else unset BYRE_HEADLESS; fi
-
 # First-run hooks — agent skills drop scripts here. They run as the dev user
 # (the launcher is unprivileged), so a hook does its own user-level setup directly
 # (codex device-auth login → the .codex volume; devlog → /workspace). A hook that
@@ -428,8 +426,9 @@ if [ -d "$BYRE_firstrun_dir" ]; then
     # load-bearing under `set -e`: the naive `/bin/bash "$BYRE_hook";
     # BYRE_hook_status=$?` kills the launcher on the failing hook, the exact
     # inversion of best-effort.
-    # /bin/bash by path with fd 9 closed; the answer stays agent-trust (a
-    # same-uid process can reach fd 9 through /proc).
+    # /bin/bash by path, so a bash planted earlier on PATH never stands in
+    # for a hook; fd 9 closed as descriptor hygiene, so a hook never inherits
+    # a stray descriptor in that slot from whatever started the launcher.
     if [ -r "$BYRE_hook" ]; then
       if PATH="$BYRE_agent_path" /bin/bash "$BYRE_hook" 9>&-; then
         :

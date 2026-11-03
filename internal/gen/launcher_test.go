@@ -863,31 +863,27 @@ func TestLauncherGateWaitsAboveCredentialWait(t *testing.T) {
 	}
 }
 
-// runLauncherSplit drives the real launcher with the hook dirs it is given
-// and a bin dir prepended to PATH, keeping stdout and stderr apart: the
-// headless tests are about which bytes land on which stream.
-func runLauncherSplit(t *testing.T, dir, bin string, env []string, args ...string) (int, string, string) {
-	t.Helper()
-	return runLauncherSplitScript(t, dir, bin, LauncherScript(), env, args...)
-}
-
-// runLauncherSplitScript is runLauncherSplit with the launcher text given.
-func runLauncherSplitScript(t *testing.T, dir, bin string, body []byte, env []string, args ...string) (int, string, string) {
+// runLauncherSplit drives the real launcher with the hook dirs under dir and
+// a bin dir prepended to PATH, keeping stdout and stderr apart. preFd9 opens
+// fd 9 on /dev/null before the launcher starts, so a test can see whether
+// the launcher hands that descriptor on.
+func runLauncherSplit(t *testing.T, dir, bin string, preFd9 bool, env []string, args ...string) (int, string, string) {
 	t.Helper()
 	script := filepath.Join(dir, "launcher.sh")
-	if err := os.WriteFile(script, body, 0o755); err != nil {
+	if err := os.WriteFile(script, LauncherScript(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// The launcher tests assert what the launcher does to fd 9, so the launcher
-	// must start with fd 9 closed: a parent that leaks an open fd 9 (the macOS
-	// CI runner does) would otherwise reach the probe through os/exec. The
-	// wrapper re-execs the absolute bash it is handed as $0, so the PATH given
-	// to the launcher never chooses the interpreter that runs it.
+	// The wrapper re-execs the absolute bash it is handed as $0, so the PATH
+	// given to the launcher never chooses the interpreter that runs it.
 	bash, err := exec.LookPath("bash")
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := exec.Command(bash, append([]string{"-c", `exec 9>&-; exec "$0" "$@"`, bash, script}, args...)...)
+	fd9 := "exec 9>&-"
+	if preFd9 {
+		fd9 = "exec 9>/dev/null"
+	}
+	c := exec.Command(bash, append([]string{"-c", fd9 + `; exec "$0" "$@"`, bash, script}, args...)...)
 	c.Env = launcherEnv(append([]string{
 		"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"),
 		"BYRE_LAUNCH_GATE_FILE=" + filepath.Join(dir, "no-such-gate"),
@@ -908,144 +904,18 @@ func runLauncherSplitScript(t *testing.T, dir, bin string, body []byte, env []st
 	return -1, "", ""
 }
 
-// headlessLauncherFixture stages a firstrun hook and an env.d hook that each
-// print to stdout; a stub chassis at an absolute path OFF PATH that records
-// its argv and BYRE_HEADLESS, prints to its stdout, and writes the answer to
-// fd 9; and a decoy byre-headless on PATH that records that it ran. The
-// launcher it returns keys on the stub's absolute path in place of
-// HeadlessPath (the real one cannot be installed by a test).
-func headlessLauncherFixture(t *testing.T) (dir, bin, chassis string, launcher []byte) {
+// launcherHookFixture stages the bin, firstrun.d and env.d dirs
+// runLauncherSplit points the launcher at.
+func launcherHookFixture(t *testing.T) (dir, bin string) {
 	t.Helper()
 	dir = t.TempDir()
 	bin = filepath.Join(dir, "bin")
-	firstrun := filepath.Join(dir, "firstrun.d")
-	envd := filepath.Join(dir, "env.d")
-	chassisDir := filepath.Join(dir, "chassis")
-	for _, d := range []string{bin, firstrun, envd, chassisDir} {
+	for _, d := range []string{bin, filepath.Join(dir, "firstrun.d"), filepath.Join(dir, "env.d")} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	chassis = filepath.Join(chassisDir, "byre-headless")
-	files := map[string]string{
-		filepath.Join(firstrun, "10-loud"): "echo FIRSTRUN-STDOUT\n",
-		filepath.Join(envd, "10-loud.sh"):  "echo ENVD-STDOUT\n",
-		chassis: "#!/bin/sh\n" +
-			`printf '%s|%s' "${BYRE_HEADLESS-unset}" "$*" >"` + filepath.Join(dir, "seen") + `"` + "\n" +
-			"echo CHASSIS-STDOUT\n" +
-			"printf THE-ANSWER >&9\n",
-		filepath.Join(bin, HeadlessName): "#!/bin/sh\n" +
-			`printf '%s|%s' "${BYRE_HEADLESS-unset}" "$*" >"` + filepath.Join(dir, "seen-decoy") + `"` + "\n",
-	}
-	for p, body := range files {
-		if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	src := string(LauncherScript())
-	if !strings.Contains(src, HeadlessPath) {
-		t.Fatalf("launcher.sh does not carry %s", HeadlessPath)
-	}
-	return dir, bin, chassis, []byte(strings.ReplaceAll(src, HeadlessPath, chassis))
-}
-
-// headlessSignalRow is one launch through headlessLauncherFixture's
-// launcher: argv builds the command from the fixture dir and the stub
-// chassis, probe names the file the command that ran records
-// "BYRE_HEADLESS|rest" into, absent names a probe that must not exist, and
-// hooksOnStdout asks that the hooks' output stayed on stdout.
-type headlessSignalRow struct {
-	name          string
-	env           []string
-	argv          func(dir, chassis string) []string
-	probe, want   string
-	absent        string
-	hooksOnStdout bool
-}
-
-func runHeadlessSignalRows(t *testing.T, rows []headlessSignalRow) {
-	t.Helper()
-	for _, row := range rows {
-		t.Run(row.name, func(t *testing.T) {
-			dir, bin, chassis, launcher := headlessLauncherFixture(t)
-			code, stdout, stderr := runLauncherSplitScript(t, dir, bin, launcher, row.env, row.argv(dir, chassis)...)
-			if code != 0 {
-				t.Fatalf("exit %d\n%s", code, stderr)
-			}
-			seen, err := os.ReadFile(filepath.Join(dir, row.probe))
-			if err != nil {
-				t.Fatalf("the explicit-argv arm did not run the command (no %s): %v\n%s", row.probe, err, stderr)
-			}
-			if string(seen) != row.want {
-				t.Errorf("the command saw %q, want %q", seen, row.want)
-			}
-			if _, err := os.Stat(filepath.Join(dir, row.absent)); err == nil {
-				t.Errorf("%s was written: the wrong command ran", row.absent)
-			}
-			if row.hooksOnStdout && (!strings.Contains(stdout, "FIRSTRUN-STDOUT") || !strings.Contains(stdout, "ENVD-STDOUT")) {
-				t.Errorf("hook output left stdout: %q", stdout)
-			}
-		})
-	}
-}
-
-// BYRE_HEADLESS is keyed on the launcher's argv: exported as 1 when the
-// command is the chassis's absolute path -- whatever the environment said --
-// and the explicit-argv arm execs that path as given, never a PATH lookup
-// (the decoy earlier on PATH never runs).
-func TestLauncherHeadlessExportsSignalFromArgv(t *testing.T) {
-	chassisArgv := func(_, chassis string) []string { return []string{chassis, "--probe"} }
-	runHeadlessSignalRows(t, []headlessSignalRow{
-		{name: "no inherited signal", argv: chassisArgv, probe: "seen", want: "1|--probe", absent: "seen-decoy"},
-		{name: "inherited BYRE_HEADLESS=0", env: []string{"BYRE_HEADLESS=0"}, argv: chassisArgv, probe: "seen", want: "1|--probe", absent: "seen-decoy"},
-	})
-}
-
-// Any other launch UNSETS BYRE_HEADLESS even when the environment carried it,
-// and leaves stdout and fd 9 alone: a skill's [runtime].env or raw run_args
-// can set the variable, and neither may make an interactive session look
-// headless to its hooks. The BARE chassis name is such a launch: whatever
-// PATH resolves it to is an ordinary command, never a run byre would read a
-// verdict from.
-func TestLauncherNonHeadlessUnsetsSignal(t *testing.T) {
-	runHeadlessSignalRows(t, []headlessSignalRow{
-		{
-			name: "interactive command",
-			env:  []string{"BYRE_HEADLESS=1"},
-			argv: func(dir, _ string) []string {
-				return []string{"bash", "-c",
-					`fd9=; if { : >&9; } 2>/dev/null; then fd9=fd9-open; fi; printf '%s|%s' "${BYRE_HEADLESS-unset}" "$fd9" >"$0"`,
-					filepath.Join(dir, "seen-shell")}
-			},
-			probe: "seen-shell", want: "unset|", absent: "seen", hooksOnStdout: true,
-		},
-		{
-			name:  "bare chassis name",
-			env:   []string{"BYRE_HEADLESS=1"},
-			argv:  func(_, _ string) []string { return []string{HeadlessName} },
-			probe: "seen-decoy", want: "unset|", absent: "seen", hooksOnStdout: true,
-		},
-	})
-}
-
-// Under headless the box's stdout is the product: the launcher's own output
-// (a sourced env.d hook), a firstrun hook's and the chassis's stdout all land
-// on stderr, and fd 9 is the original stdout -- the only bytes on it are what
-// the chassis wrote there.
-func TestLauncherHeadlessMovesStdoutToStderr(t *testing.T) {
-	dir, bin, chassis, launcher := headlessLauncherFixture(t)
-	code, stdout, stderr := runLauncherSplitScript(t, dir, bin, launcher, nil, chassis)
-	if code != 0 {
-		t.Fatalf("exit %d\n%s", code, stderr)
-	}
-	if stdout != "THE-ANSWER" {
-		t.Errorf("the box's stdout = %q, want only the bytes written to fd 9", stdout)
-	}
-	for _, line := range []string{"FIRSTRUN-STDOUT", "ENVD-STDOUT", "CHASSIS-STDOUT"} {
-		if !strings.Contains(stderr, line) {
-			t.Errorf("%s did not land on stderr:\n%s", line, stderr)
-		}
-	}
+	return dir, bin
 }
 
 // A firstrun hook runs under /bin/bash by path, never the `bash` PATH finds
@@ -1054,7 +924,7 @@ func TestLauncherHeadlessMovesStdoutToStderr(t *testing.T) {
 // hook. The decoy logs that it ran; the hook records the interpreter that ran
 // it.
 func TestLauncherFirstrunHookIgnoresBashOnPath(t *testing.T) {
-	dir, bin, chassis, launcher := headlessLauncherFixture(t)
+	dir, bin := launcherHookFixture(t)
 	decoyLog := filepath.Join(dir, "decoy-bash-ran")
 	interp := filepath.Join(dir, "interp")
 	files := map[string]string{
@@ -1068,36 +938,31 @@ func TestLauncherFirstrunHookIgnoresBashOnPath(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, args := range [][]string{{"true"}, {chassis}} {
-		if err := os.RemoveAll(interp); err != nil {
-			t.Fatal(err)
-		}
-		code, _, stderr := runLauncherSplitScript(t, dir, bin, launcher, nil, args...)
-		if code != 0 {
-			t.Fatalf("%v: exit %d\n%s", args, code, stderr)
-		}
-		got, err := os.ReadFile(interp)
-		if err != nil {
-			t.Fatalf("%v: the firstrun hook did not run: %v\n%s", args, err, stderr)
-		}
-		if string(got) != "/bin/bash" {
-			t.Errorf("%v: the firstrun hook ran under %q, want /bin/bash", args, got)
-		}
-		if _, err := os.Stat(decoyLog); err == nil {
-			t.Errorf("%v: the bash on PATH ran", args)
-		}
+	code, _, stderr := runLauncherSplit(t, dir, bin, false, nil, "true")
+	if code != 0 {
+		t.Fatalf("exit %d\n%s", code, stderr)
+	}
+	got, err := os.ReadFile(interp)
+	if err != nil {
+		t.Fatalf("the firstrun hook did not run: %v\n%s", err, stderr)
+	}
+	if string(got) != "/bin/bash" {
+		t.Errorf("the firstrun hook ran under %q, want /bin/bash", got)
+	}
+	if _, err := os.Stat(decoyLog); err == nil {
+		t.Errorf("the bash on PATH ran")
 	}
 }
 
 // An env.d hook computes its exports on the system PATH, not the inherited
 // one, whose first entry is the agent-writable ~/.local/bin: a decoy `tr`
 // there does not run, the hook's `tr` is the system one, a PATH the hook sets
-// does not reach the agent, and the agent command sees the inherited
-// PATH -- interactive and headless alike. The pin holds per hook: an earlier
-// hook that exports a PATH leading with a decoy directory does not hand that
-// directory's `tr` to the hook sourced after it.
+// does not reach the agent, and the agent command sees the inherited PATH.
+// The pin holds per hook: an earlier hook that exports a PATH leading with a
+// decoy directory does not hand that directory's `tr` to the hook sourced
+// after it.
 func TestLauncherEnvdHookIgnoresHelpersOnPath(t *testing.T) {
-	dir, bin, chassis, launcher := headlessLauncherFixture(t)
+	dir, bin := launcherHookFixture(t)
 	decoyLog := filepath.Join(dir, "decoy-tr-ran")
 	hookSaw := filepath.Join(dir, "hook-saw")
 	agentPath := filepath.Join(dir, "agent-path")
@@ -1121,55 +986,42 @@ func TestLauncherEnvdHookIgnoresHelpersOnPath(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// The chassis is replaced by the agent probe for the headless arm: it
-	// records the PATH and the hook's export the way the interactive arm does.
-	probe := "#!/bin/sh\n" + `printf '%s|%s' "$BYRE_TEST_TR" "$PATH" >"` + agentPath + `"` + "\n"
-	if err := os.WriteFile(chassis, []byte(probe), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	inherited := bin + string(os.PathListSeparator) + os.Getenv("PATH")
-	for _, args := range [][]string{{"/bin/sh", "-c", `printf '%s|%s' "$BYRE_TEST_TR" "$PATH" >"$0"`, agentPath}, {chassis}} {
-		for _, f := range []string{agentPath, hookSaw} {
-			if err := os.RemoveAll(f); err != nil {
-				t.Fatal(err)
-			}
-		}
-		code, _, stderr := runLauncherSplitScript(t, dir, bin, launcher, nil, args...)
-		if code != 0 {
-			t.Fatalf("%v: exit %d\n%s", args, code, stderr)
-		}
-		if _, err := os.Stat(decoyLog); err == nil {
-			t.Errorf("%v: the tr on the inherited PATH ran", args)
-		}
-		saw, err := os.ReadFile(hookSaw)
-		if err != nil {
-			t.Fatalf("%v: the env.d hook did not run: %v\n%s", args, err, stderr)
-		}
-		if got := strings.TrimSpace(string(saw)); strings.HasPrefix(got, bin) || strings.HasPrefix(got, hookPath) {
-			t.Errorf("%v: the env.d hook resolved tr to %q, inside the inherited PATH's first entry or an earlier hook's PATH", args, got)
-		}
-		got, err := os.ReadFile(agentPath)
-		if err != nil {
-			t.Fatalf("%v: the agent command did not run: %v\n%s", args, err, stderr)
-		}
-		if want := "ab|" + inherited; string(got) != want {
-			t.Errorf("%v: the agent saw %q, want %q", args, got, want)
-		}
+	code, _, stderr := runLauncherSplit(t, dir, bin, false, nil, "/bin/sh", "-c", `printf '%s|%s' "$BYRE_TEST_TR" "$PATH" >"$0"`, agentPath)
+	if code != 0 {
+		t.Fatalf("exit %d\n%s", code, stderr)
+	}
+	if _, err := os.Stat(decoyLog); err == nil {
+		t.Errorf("the tr on the inherited PATH ran")
+	}
+	saw, err := os.ReadFile(hookSaw)
+	if err != nil {
+		t.Fatalf("the env.d hook did not run: %v\n%s", err, stderr)
+	}
+	if got := strings.TrimSpace(string(saw)); strings.HasPrefix(got, bin) || strings.HasPrefix(got, hookPath) {
+		t.Errorf("the env.d hook resolved tr to %q, inside the inherited PATH's first entry or an earlier hook's PATH", got)
+	}
+	got, err := os.ReadFile(agentPath)
+	if err != nil {
+		t.Fatalf("the agent command did not run: %v\n%s", err, stderr)
+	}
+	if want := "ab|" + inherited; string(got) != want {
+		t.Errorf("the agent saw %q, want %q", got, want)
 	}
 }
 
-// Under headless a firstrun hook does not inherit fd 9, the box's real
-// stdout, so a hook does not write the answer channel by accident. This is
-// inheritance only: a same-uid process can reach the descriptor
-// through /proc, which is why the answer is agent-trust content.
-func TestLauncherFirstrunHookDoesNotInheritAnswerFd(t *testing.T) {
-	dir, bin, chassis, launcher := headlessLauncherFixture(t)
+// A firstrun hook does not inherit fd 9 even when the launcher was started
+// with one open: the launcher closes it for every hook as descriptor
+// hygiene, so a hook holds only what it opens itself plus the standard
+// streams.
+func TestLauncherFirstrunHookDoesNotInheritFd9(t *testing.T) {
+	dir, bin := launcherHookFixture(t)
 	probe := filepath.Join(dir, "fd9")
 	hook := `if [ -e /dev/fd/9 ]; then printf open >"` + probe + `"; else printf closed >"` + probe + `"; fi` + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "firstrun.d", "20-fd9"), []byte(hook), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	code, stdout, stderr := runLauncherSplitScript(t, dir, bin, launcher, nil, chassis)
+	code, _, stderr := runLauncherSplit(t, dir, bin, true, nil, "true")
 	if code != 0 {
 		t.Fatalf("exit %d\n%s", code, stderr)
 	}
@@ -1178,11 +1030,7 @@ func TestLauncherFirstrunHookDoesNotInheritAnswerFd(t *testing.T) {
 		t.Fatalf("the firstrun hook did not run: %v\n%s", err, stderr)
 	}
 	if string(got) != "closed" {
-		t.Errorf("a firstrun hook under headless saw fd 9 %s", got)
-	}
-	// The chassis holds it: the answer reaches the box's stdout.
-	if stdout != "THE-ANSWER" {
-		t.Errorf("the box's stdout = %q, want THE-ANSWER", stdout)
+		t.Errorf("a firstrun hook saw fd 9 %s", got)
 	}
 }
 
@@ -1195,11 +1043,11 @@ const launcherSystemPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/s
 // filters) can write: a decoy of each helper there never runs across a launch
 // that drives them -- the gate's `tr`, the credential wait's `sleep`, the
 // worktree populate's `git`/`sed`/`head`/`rm`, the egress list's `sed`, the
-// self-edit probe's `grep` -- interactive and headless alike. The firstrun
-// hook and the agent command see exactly the inherited PATH.
+// self-edit probe's `grep`. The firstrun hook and the agent command see
+// exactly the inherited PATH.
 func TestLauncherHelpersIgnoreInheritedPath(t *testing.T) {
 	testtools.NeedTool(t, "git")
-	dir, bin, chassis, launcher := headlessLauncherFixture(t)
+	dir, bin := launcherHookFixture(t)
 	decoyLog := filepath.Join(dir, "decoys-ran")
 	for _, tool := range []string{"tr", "sleep", "git", "sed", "head", "rm", "ls", "grep", "cat", "env"} {
 		realTool, err := exec.LookPath(tool)
@@ -1217,10 +1065,6 @@ func TestLauncherHelpersIgnoreInheritedPath(t *testing.T) {
 		[]byte(`printf '%s' "$PATH" >"`+hookPath+`"`+"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	probe := "#!/bin/sh\n" + `printf '%s' "$PATH" >"` + agentPath + `"` + "\n"
-	if err := os.WriteFile(chassis, []byte(probe), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	gate := gateWithListener(t, dir)
 	inherited := bin + string(os.PathListSeparator) + os.Getenv("PATH")
 	realGit := func(a ...string) string {
@@ -1231,7 +1075,7 @@ func TestLauncherHelpersIgnoreInheritedPath(t *testing.T) {
 		}
 		return strings.TrimSpace(string(out))
 	}
-	for i, args := range [][]string{{"/bin/sh", "-c", `printf '%s' "$PATH" >"$0"`, agentPath}, {chassis}} {
+	for i, args := range [][]string{{"/bin/sh", "-c", `printf '%s' "$PATH" >"$0"`, agentPath}} {
 		// A pending worktree checkout, so the populate runs git, sed, head
 		// and rm.
 		root := filepath.Join(dir, fmt.Sprintf("wt%d", i))
@@ -1263,7 +1107,7 @@ func TestLauncherHelpersIgnoreInheritedPath(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		code, _, stderr := runLauncherSplitScript(t, dir, bin, launcher, []string{
+		code, _, stderr := runLauncherSplit(t, dir, bin, false, []string{
 			"BYRE_LAUNCH_GATE_FILE=" + gate,
 			"BYRE_EGRESS=api.example.com:443 github.com:22",
 			"BYRE_WORKSPACE_DIR=" + wt,

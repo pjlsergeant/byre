@@ -56,21 +56,6 @@ var fetchRunScript []byte
 // build-context assembler writes these to <context>/byre-fetch-run.
 func FetchRunScript() []byte { return fetchRunScript }
 
-// HeadlessName is the build-context filename of the headless-run chassis the
-// core block COPYs to HeadlessPath.
-const HeadlessName = "byre-headless"
-
-// HeadlessPath is the absolute, tail-guarded chassis path; launcher.sh keys
-// on it byte-for-byte (ADR 0061).
-const HeadlessPath = "/usr/local/bin/" + HeadlessName
-
-//go:embed headless.sh
-var headlessScript []byte
-
-// HeadlessScript returns the constant headless-chassis script bytes. The
-// build-context assembler writes these to <context>/byre-headless.
-func HeadlessScript() []byte { return headlessScript }
-
 // ProfileEnvName is the build-context filename of the /etc/profile.d shim that
 // sources env.d for login shells (so `byre shell` sessions get the same
 // env.d-provided environment the launcher gives the agent).
@@ -89,14 +74,13 @@ func ProfileEnvScript() []byte { return profileEnvScript }
 // Input is the generation input. It carries plain fields (no config dependency)
 // so the generator stays standalone; callers map the resolved config onto it.
 type Input struct {
-	Base          string
-	Env           map[string]string
-	Files         map[string]string // src -> dest
-	Apt           []string
-	Skills        []SkillBlock // per-skill build blocks, in order
-	AgentCmd      bool         // emit COPY of the agent launch script
-	AgentHeadless bool         // emit COPY of the agent's headless-run script
-	AgentContext  bool         // emit COPY of the concatenated agent context
+	Base         string
+	Env          map[string]string
+	Files        map[string]string // src -> dest
+	Apt          []string
+	Skills       []SkillBlock // per-skill build blocks, in order
+	AgentCmd     bool         // emit COPY of the agent launch script
+	AgentContext bool         // emit COPY of the concatenated agent context
 	// SelfEditDoc emits the --self-edit note the launcher folds into the
 	// per-session context (BYRE_SESSION_CONTEXT) when that grant is present.
 	// Rides any agent command — context delivery itself is the agent
@@ -137,10 +121,9 @@ type SkillBlock struct {
 
 // Context-baked paths the launcher reads at runtime.
 const (
-	AgentCmdName      = "agent-cmd"
-	AgentHeadlessName = "agent-headless"
-	AgentContextName  = "agent-context.md"
-	SelfEditDocName   = "self-edit.md"
+	AgentCmdName     = "agent-cmd"
+	AgentContextName = "agent-context.md"
+	SelfEditDocName  = "self-edit.md"
 	// ConfigRefName is the full config reference (derived from the site's
 	// configuration-reference page) that self-edit.md points the agent at --
 	// a file on disk costs nothing until read, unlike the injected self-edit
@@ -148,11 +131,6 @@ const (
 	// agents.
 	ConfigRefName = "config-reference.md"
 )
-
-// AgentHeadlessPath is where the agent block installs the agent's headless-run
-// script, and the command byre-headless execs when handed no positional
-// (headless.sh carries the same literal; a test pins that they agree).
-const AgentHeadlessPath = ByreDir + "/" + AgentHeadlessName
 
 // MCPConfigName is the build-context filename of the canonical declared MCP
 // set; the core section below COPYs it to MCPConfigPath. The path and the
@@ -288,12 +266,7 @@ const coreBlock = "ARG BYRE_UID=1000\n" +
 	// The installer helper precedes the skill blocks that call it; a build
 	// step only, so it is not re-asserted by the security guard.
 	"COPY " + FetchRunName + " " + FetchRunPath + "\n" +
-	"RUN chmod +x " + FetchRunPath + "\n" +
-	// The headless-run chassis rides every image, like the receiver: whether
-	// a session is a headless run is decided per launch by its argv, and a
-	// conditional COPY would fork the cache-shared core block.
-	"COPY " + HeadlessName + " " + HeadlessPath + "\n" +
-	"RUN chmod +x " + HeadlessPath + "\n"
+	"RUN chmod +x " + FetchRunPath + "\n"
 
 // Dockerfile renders the generated Dockerfile in byre's canonical order:
 // FROM, the template block, the constant core block, the hoisted skill apt
@@ -351,18 +324,11 @@ func Dockerfile(in Input) string {
 
 	// Agent files are project/agent-specific, so they go after the constant
 	// core block (and after skills), keeping them out of the shared path.
-	if in.AgentCmd || in.AgentHeadless || in.AgentContext || in.SelfEditDoc {
+	if in.AgentCmd || in.AgentContext || in.SelfEditDoc {
 		b.WriteString("\n# --- agent ---\n")
 		if in.AgentCmd {
 			fmt.Fprintf(&b, "COPY %s /etc/byre/%s\n", AgentCmdName, AgentCmdName)
 			b.WriteString("RUN chmod +x /etc/byre/" + AgentCmdName + "\n")
-		}
-		// Not re-asserted by the security guard, like agent-cmd: both are a
-		// skill-declared command the user enabled, so a `files` clobber here
-		// replaces the user's own agent with the user's own config.
-		if in.AgentHeadless {
-			fmt.Fprintf(&b, "COPY %s %s\n", AgentHeadlessName, AgentHeadlessPath)
-			b.WriteString("RUN chmod +x " + AgentHeadlessPath + "\n")
 		}
 		if in.AgentContext {
 			fmt.Fprintf(&b, "COPY %s /etc/byre/%s\n", AgentContextName, AgentContextName)
@@ -430,17 +396,12 @@ func Dockerfile(in Input) string {
 	// but its *content* — the launcher, and the launch gate it enforces — sits in
 	// the overridable zone, so a one-line `files` clobber could stub the launcher
 	// or empty the gate while status still reads deny-by-default. The launcher is
-	// re-asserted unconditionally (it is the ENTRYPOINT's content), and so is
-	// byre-headless for the same reason one hop on: the launcher execs it as
-	// PID 1 of a headless run and it produces that run's verdict, so the
-	// content behind a tail-protected pointer must itself be tail-protected.
-	// A network-posture skill's gate + netns script arrive in in.Guard from
-	// the build layer, derived from the resolved skills so the set can't rot.
+	// re-asserted unconditionally (it is the ENTRYPOINT's content); a
+	// network-posture skill's gate + netns script arrive in in.Guard from the
+	// build layer, derived from the resolved skills so the set can't rot.
 	b.WriteString("\n# --- byre security guard (re-assert chassis paths after the project block) ---\n")
 	b.WriteString("COPY " + LauncherName + " " + LauncherPath + "\n")
 	b.WriteString("RUN chmod +x " + LauncherPath + "\n")
-	b.WriteString("COPY " + HeadlessName + " " + HeadlessPath + "\n")
-	b.WriteString("RUN chmod +x " + HeadlessPath + "\n")
 	for _, g := range in.Guard {
 		b.WriteString(CopyLine(g.Staged, g.Dest) + "\n")
 		if g.Exec {

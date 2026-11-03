@@ -61,7 +61,7 @@ func TestReservedEnvKnobsCoverChassisReads(t *testing.T) {
 	}
 	// The check must have seen the knobs it exists for, or a regex that
 	// matches nothing would keep it green.
-	for _, want := range []string{"BYRE_LAUNCH_GATE_FILE", "BYRE_FETCH_RUN_RETRIES", "BYRE_RUN_DIR"} {
+	for _, want := range []string{"BYRE_LAUNCH_GATE_FILE", "BYRE_FETCH_RUN_RETRIES", "BYRE_CRED_DIR"} {
 		found := false
 		for _, c := range checked {
 			if strings.HasSuffix(c, ":"+want) {
