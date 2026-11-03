@@ -1,10 +1,10 @@
 # docker-host: host Docker daemon access
 
 The `docker-host` skill grants the box access to the **host's Docker
-daemon** via `/var/run/docker.sock`. It is the ergonomic form of a grant
-already expressible by hand (mount + CLI + group); the skill bundles that
-with honest, loud legibility in `byre status`, the launch line, preset
-apply's grant review, and the config UI.
+daemon** via `/var/run/docker.sock`. It packages a grant already
+expressible by hand (mount + CLI + group) and declares it as a
+containment hole, which `byre status`, the launch line, preset apply's
+grant review, and the config UI all name.
 
 This is **not** docker-in-docker (no nested daemon), and not a Podman host
 skill (a Podman host would need a sibling skill with its own verified
@@ -40,9 +40,7 @@ Daemon-side actions (image pulls, `--network host`, sibling containers)
 ride the **host's** network. The box's egress rules govern only the box's
 netns. A sibling container started with `--network container:<box>` plus
 `NET_ADMIN` can even flush the box's own firewall rules from inside its
-netns. The Network status row still describes what byre built for the box
-(and that remains true for the box); the Containment row disclaims the
-hole.
+netns. See "Warranty model" for what the Network row then means.
 
 ## Cross-box / shared-auth volumes
 
@@ -64,9 +62,7 @@ of them. Clean up what you create; label it so it is attributable.
 - **Yes:** the agent's job *is* containers (building images, driving
   compose stacks, debugging against a real daemon).
 - **Prefer not, when compose-deps alone are enough:** daemon control is a
-  much larger grant than dependencies need. Service sidecars would cover
-  that case without this grant, but they are not built yet (see the project
-  TODO), so today the choice is this grant or none.
+  much larger grant than dependencies need.
 
 ## Compose project names
 
@@ -79,9 +75,11 @@ without reason.
 ## Warranty model
 
 byre warrants its own **construction**, never the consequences of your
-hole. Every `byre status` row still describes what byre built, and holds
-**for the box**. The Containment line disclaims everything done through the
-socket in one place -- including attacks not yet enumerated.
+hole (ADR 0027 owns the model). Every `byre status` row -- the Network
+row included -- describes what byre built **for the box**, not what a
+sibling container may since have done to it through the socket. The
+Containment line disclaims everything done through the socket in one
+place, including attacks nobody has enumerated.
 
 See also: the security model at <https://getbyre.com/docs/security-model/>
 (daemon access is root-equivalent),

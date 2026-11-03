@@ -1,24 +1,25 @@
 # Ejecting
 
-byre is a transparent layer over Docker; leaving is two commands.
+byre is a transparent layer over Docker: two commands print the whole
+box, except the firewall's rules and credential delivery, which byre does
+from OUTSIDE the box at launch.
 
 ```sh
 byre dockerfile > Dockerfile   # the image: base, packages, skills' build output, your files
-byre dockerrun                 # the exact run command: mounts, env, volumes, ports, args
+byre dockerrun                 # the run command: mounts, env, volumes, ports, args
 ```
 
 Build the one, run the other, and you have byre's box without byre --
-nothing in the image or the run command depends on byre existing.
-
-**The exceptions are the two things byre does from OUTSIDE the box at
-launch.** Both make the box fail closed without them, so the printed
-command carries the gate and the run stops at it rather than starting
-subtly wrong.
+nothing else in the image or the run command depends on byre existing.
+Both exceptions leave a gate behind -- baked into the image for the
+firewall, in the printed command for credentials -- so an ejected box
+fails closed: it stops at the gate rather than starting subtly wrong.
 
 **The firewall.** Its rules are applied from outside the box at launch
-(`docs/adr/0010`), so no Dockerfile or run command can carry them -- and
-a firewalled image refuses to start without byre's ready signal (it
-fails closed rather than launching unwalled). Two ways out:
+by the netns helper (the handshake is in `docs/ARCHITECTURE.md`, Network;
+decision `docs/adr/0010`), so no Dockerfile or run command can carry
+them, and a firewalled image waits for the helper's ready signal and
+exits without it. Two ways out:
 
 ```sh
 byre ejectfirewall > firewall.sh   # the netns helper byre runs, as a script:

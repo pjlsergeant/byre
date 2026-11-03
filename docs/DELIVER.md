@@ -1,18 +1,13 @@
 # Getting files into the box: `byre deliver`
 
-Your agent is boxed. That's the point -- but sometimes *you* are holding
-the thing it needs: a screenshot of the bug, a PDF spec, a CSV someone
-mailed you. `byre deliver` gets it in there in one move, and hands you
-back the in-box path, already on your clipboard, ready to paste into the
-agent prompt.
+`byre deliver` copies host files, the clipboard, or stdin into a running
+box and prints the in-box paths, ready to paste into the agent prompt.
 
 ```
 $ byre deliver report.pdf
 /inbox/report.pdf
 byre: path copied to clipboard
 ```
-
-Cmd-V into the agent and keep talking.
 
 ## The flows
 
@@ -26,8 +21,12 @@ byre deliver ./bugreport/
 Files land in the box's `/inbox`, keeping their names (`shot.png` →
 `/inbox/shot.png`; collisions uniquify to `shot-2.png`, never
 overwrite). A directory arrives with its structure preserved and yields
-one path (`/inbox/bugreport/`). Every delivered path prints to stdout,
-one per line, and the same list lands on your clipboard.
+one path (`/inbox/bugreport/`).
+
+Every delivered path prints to stdout, one per line -- that is the
+contract. Where the host has a clipboard byre can write (pbcopy, wl-copy,
+xclip, or OSC 52 through SSH), the same list is copied to it too; each
+nicety that is unavailable says so on stderr (see "What works where").
 
 **Deliver the clipboard** -- the screenshot flow. Copy anything
 (Cmd-Shift-Ctrl-4 a region, Cmd-C a file in Finder, copy some text),
@@ -92,14 +91,12 @@ directory.
 Only boxes started by your user are considered; `--skip-uid-check`
 includes everyone's (the error tells you when sessions were hidden).
 
-**Exit codes are script-trustworthy:** 0 means bytes landed. Every
-nothing-was-delivered outcome is nonzero — cancelling the picker or the
-paste prompt, an empty paste, an ambiguous box set with no terminal —
-exit 1, alongside ordinary errors (2 stays usage; `--boxes` uses 4 for a
-partial pool, see Remote delivery; 70 is a byre crash, never a delivery
-outcome). The whole contract, byre-wide, is published at
+**Exit codes are script-trustworthy:** 0 means bytes landed, and every
+nothing-was-delivered outcome is nonzero -- cancelling the picker or the
+paste prompt, an empty paste, an ambiguous box set with no terminal. The
+byre-wide table is published at
 [/docs/commands/#exit-codes](https://getbyre.com/docs/commands/#exit-codes),
-generated from these same constants.
+generated from the same constants.
 
 ## What works where
 
@@ -112,19 +109,21 @@ generated from these same constants.
 | script / detached (no terminal, no GUI) | none -- `--box` or error | printed only | stdin only |
 | delivering *to* an `ssh://` remote | interactive list (local) | yes (local) | paste beat, full clipboard |
 
-Whenever a nicety is unavailable, byre says so and the path still
-prints -- stdout is the contract, the clipboard is garnish. Images over
-SSH genuinely can't ride a terminal paste; deliver them from the laptop
-side instead -- that's what remote delivery is for
-(`byre deliver ssh://host`, below).
+Images over SSH can't ride a terminal paste; deliver them from the
+laptop side instead -- that's what remote delivery is for (`byre deliver
+ssh://host`, below).
 
-**Platform note.** The terminal flows above are fully supported on macOS
-and Linux alike. macOS is the tested platform for the *graphical* extras
+**Platform note.** The terminal flows are fully supported on macOS and
+Linux alike. macOS is the tested platform for the *graphical* extras
 (the deliver app, the Finder Quick Action, notification popups). On
 Linux the graphical layer -- the `.desktop` launcher, the
-`zenity`/`kdialog` picker, `notify-send` -- is **experimental and
-unverified across desktop environments** (see "The deliver app"); the
-terminal path is the one to rely on.
+`zenity`/`kdialog` picker, `notify-send` feedback -- is **experimental
+and unverified across desktop environments**: whether you can drop files
+onto a launcher, and whether a dropped-on launch reaches `/inbox`,
+depends on your desktop environment and file manager, and byre's
+maintainers haven't tested that spread. In a terminal, `byre deliver
+<file>` and the clipboard flows are the supported Linux path. Reports
+welcome.
 
 ## The inbox
 
@@ -132,8 +131,7 @@ Delivered files live at `/inbox` inside the box, owned by the dev user;
 the agent is told files from you appear there. The inbox dies with the
 box -- it's a hand-off point, not storage; if the box is rebuilt,
 deliver again (it's one command). Deliveries never land in `/workspace`,
-so your repo stays clean. Boxes built before this feature don't have an
-`/inbox`; rebuild with `byre develop`.
+so your repo stays clean.
 
 ## Getting files back out: `byre grab`
 
@@ -184,14 +182,15 @@ interactive clipboard flow -- the paste beat, so you see what's on your
 clipboard before it ships. The right-click **Deliver to Byre** Quick
 Action delivers from Finder's context menu.
 
-The app is a *generated, readable artifact* -- its AppleScript source
-ships inside the bundle (at `Contents/Resources/droplet.applescript`,
-the applet stub's own filename convention -- Apple's word, not ours), it's
-assembled on your machine by macOS's own `osacompile` (nothing prebuilt,
-so no signing or notarization is ever involved), and re-running
-`--install-app` regenerates it -- do that if you move the byre binary.
-`--box <id>` bakes a fixed target box in. First use triggers macOS's
-one-time permission prompts. To uninstall, delete the printed paths.
+The app is a generated, readable artifact: its AppleScript source ships
+inside the bundle (at `Contents/Resources/droplet.applescript`, the
+applet stub's own filename), and it is assembled on your machine by
+macOS's own `osacompile` and ad-hoc signed there -- nothing prebuilt
+crosses a machine boundary, so no signing certificate or notarization is
+involved. Re-running `--install-app` regenerates it; do that if you move
+the byre binary. `--box <id>` bakes a fixed target box in. First use
+triggers macOS's one-time permission prompts. To uninstall, delete the
+printed paths.
 
 Remote and named installs share the same command:
 
@@ -206,21 +205,13 @@ likewise: "Deliver to Byre (<label>)"); without it a remote install is
 named for its target and a local install stays the singleton. `--box`
 on a remote install names the box on the *remote* machine.
 
-On **Linux**, `--install-app` writes a `.desktop` launcher instead. This
-is **experimental and unverified**: whether you can drop files onto a
-launcher (and whether a dropped-on launch reaches `/inbox`) depends
-heavily on your desktop environment and file manager -- some support it,
-some don't, and byre's maintainers haven't been able to test the
-graphical path across that spread. The `byre deliver <file>` and
-clipboard flows in a **terminal** are the supported Linux path and work
-the same as everywhere; the graphical extras (the launcher, the
-`zenity`/`kdialog` picker, `notify-send` feedback) are best-effort until
-a Linux user confirms them. Reports welcome.
+On **Linux**, `--install-app` writes a `.desktop` launcher instead --
+experimental; see the platform note under "What works where".
 
 ## Remote delivery
 
-Your box runs on another machine? Put the machine in front of the
-sources as an `ssh://` target:
+For a box on another machine, put an `ssh://` target in front of the
+sources:
 
 ```
 byre deliver ssh://dev@studio shot.png notes.md
@@ -251,3 +242,72 @@ Wrinkles:
 - Large deliveries draw a sending meter locally ("sending", honestly:
   bytes handed to ssh); the box's own confirmation follows when it
   lands.
+
+## How it works
+
+Mechanics in `internal/deliver`; decisions in ADR 0021, ADR 0037
+(remote) and ADR 0040 (grab).
+
+**Discovery.** `ps` on every installed engine, filtered on the
+`byre.project` label; each hit keeps engine affinity for the later exec.
+The target cascade is the one in "Which box?": `--box` (unique prefix),
+cwd match walking ancestor directories against the `byre.workdir` label,
+the sole owned session, the picker (Bubble Tea on the terminal, through
+`/dev/tty` when stdin carries a piped payload; osascript, zenity or
+kdialog on a graphical launch), else an error listing the candidates. For
+the sole-session step an unreachable engine counts as zero boxes, and
+any other failed query disables the step, because a partial pool can't
+prove "exactly one". The `BYRE_UID` filter is an accident filter, not
+confinement.
+
+**Delivery transport.** One `exec -i` per file, as the container's own
+`BYRE_UID:BYRE_GID` (the `byre shell` attach model), running a POSIX-sh
+script that streams stdin to a dotfile temp under `set -C` (noclobber)
+and claims the final name with `ln`. link(2) fails EEXIST atomically, so
+collisions uniquify with no overwrite window, and a stream that dies
+leaves no half-file under a real name. Directories claim their top-level
+name with an atomic `mkdir` and stream the tree per file. `/inbox` itself
+is baked by the chassis: dev-owned under root-owned `/`, so the boxed
+agent can't replace it with a symlink.
+
+**Grab transport.** The same exec in reverse, with the judgment moved
+host-side: dumb box scripts classify the path, enumerate a directory
+(NUL-framed `find` output), and `cat` each file out, while the host
+treats everything the box says as agent input. Writes ride an `os.Root`
+anchored at the destination, names are claimed with an `O_EXCL` dotfile
+temp plus a hardlink (`mkdir` for directories), so nothing ever
+overwrites a host file or writes through a planted symlink, and
+enumeration records outside the grabbed root are ignored loudly.
+
+**Remote transport.** The local byre asks the remote for its box list
+(`byre deliver --boxes --proto N` over ssh: a frozen tab-separated line
+grammar on stdout, with exit 4 marking a partial pool, which forbids
+auto-picking), picks locally with the ordinary picker, then streams every
+source as ONE tar archive up a single plain-ssh exec into the remote's
+`byre deliver --tar -`. The archive's entries feed the ordinary per-file
+transport, so claiming, uniquifying and `/inbox` confinement are
+identical to a local delivery, and nothing is staged on the remote
+host's disk. `--box` skips the enumeration connection. The paste beat,
+stdin spooling, the sending meter and the clipboard round-trip run on the
+near side; the remote's clipboard leg is suppressed with `--no-clip`.
+
+**Host capabilities** are probed per axis and degrade independently. The
+landed paths always print to stdout, one per line; the clipboard copy is
+best-effort. The no-argument clipboard import waits for a paste gesture
+on a TTY and classifies what arrives: text that mirrors the pasteboard is
+a real paste (the pasteboard is then read out-of-band: file references,
+then image, then text); existing absolute host paths are a possible drag
+onto the window (named, and delivered only after confirmation); anything
+else is literal pasted text. Graphical launches (no TTY, GUI present)
+also report by OS notification.
+
+**The deliver app's artifacts.** The ad-hoc codesign repairs the
+signature that writing byre's script and icons into the applet stub
+invalidates. An `ssh://` target and/or `--name` produce coexisting
+per-target installs. Regeneration replaces only text artifacts carrying
+byre's generated marker in their header (plus, for a labeled install,
+its identity token -- a colliding label refuses rather than clobbers);
+a same-named file byre didn't write is refused. Icons are the one
+non-text artifact: on Linux they are judged by content (only byre's own
+bytes are ever replaced; anything else is skipped with a note), and the
+icns inside a macOS bundle rides the bundle's own marker gate.

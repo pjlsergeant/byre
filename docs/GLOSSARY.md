@@ -1,13 +1,12 @@
 # byre glossary
 
-byre runs an AI coding agent in a throwaway, project-scoped container -- a
-local-first, inspectable, Docker-native harness. This file is canonical for
-**vocabulary only**: TODO.md owns what to do, `ARCHITECTURE.md` owns how
-things work, `PRINCIPLES.md` owns how we decide, `adr/` owns why decisions
-went the way they did -- this file owns what things are called. When
-another doc, the code, or a conversation disagrees with a definition here,
-one of them is wrong and should be reconciled -- naming drift is a bug you
-can point at.
+byre runs an AI coding agent in a throwaway, project-scoped container.
+This file is canonical for **vocabulary only**: TODO.md owns what to do,
+`ARCHITECTURE.md` owns how things work, `PRINCIPLES.md` owns how we
+decide, `adr/` owns why decisions went the way they did -- this file owns
+what things are called. When another doc, the code, or a conversation
+disagrees with a definition here, one of them is wrong and should be
+reconciled -- naming drift is a bug you can point at.
 
 ## Language
 
@@ -26,17 +25,11 @@ a headless run started by `byre run`. Single-session per project
 directory, whichever verb started it; parallelism comes from worktrees.
 
 **Launch record**:
-What byre TOLD THE ENGINE for one container, made durable: the exposure
-facts as they went out the door -- binds, ports, volumes, env KEYS (never
-values), network posture and resolved egress, image tag AND digest, base,
-`run_args` verbatim, skill identities. Written under the setup lock at
-create to `~/.byre/projects/<id>/launches/<sha256>.toml`, named by the
-sha256 of its own bytes, and pointed at by the container's
-`byre.launch=<sha256>` label. `byre status` re-hashes it rather than
-trusting it, and while a box runs that box is status's subject. It is not
-a copy of the config: it is one step closer to reality than config, and
-deliberately holds nothing byre would otherwise have to re-derive. (ADR
-0053)
+The durable, content-addressed record of what byre TOLD THE ENGINE for one
+session container -- the exposure facts as they went out the door, never a
+copy of the config -- pointed at by the container's `byre.launch=<sha256>`
+label and re-hashed by every reader (ADR 0053). Contents, location and
+readers: `ARCHITECTURE.md`, Box lifecycle.
 _Avoid_: "manifest" (taken: a package's `[package]` table), "snapshot"
 (implies restorable state; this is a description, never restored),
 "session record" (the record outlives the attached session and describes
@@ -90,11 +83,10 @@ closed, never launches open.
 **Deliver**:
 Getting a file from the host into a running box, human-initiated: `byre
 deliver` streams path arguments, the host clipboard, or stdin into the
-box's inbox and hands the in-box path back (stdout + host clipboard).
-Machine-scoped -- picks a box by discovery, not cwd (as does its mirror,
-grab). An `ssh://` target makes it a **remote delivery**: the same verb
-routed through another machine's byre, same inbox, same path back.
-(ADR 0021; remote: ADR 0037)
+box's inbox and prints the in-box paths. Machine-scoped -- picks a box by
+discovery, not cwd (as does its mirror, grab). An `ssh://` target makes it
+a **remote delivery**: the same verb routed through another machine's
+byre. Behavior and mechanics: `DELIVER.md` (ADR 0021; remote: ADR 0037)
 _Avoid_: drop, ingest, airlock (all lost the naming)
 
 **Grab**:
@@ -116,7 +108,7 @@ human-initiated)
 **Deliver app**:
 The generated host-side drag target `byre deliver --install-app` writes:
 a readable macOS `.app` (display name "Byre Deliver", or a per-target
-named "Byre Deliver (<label>)" since 2026-08) or Linux `.desktop` entry
+named "Byre Deliver (<label>)") or Linux `.desktop` entry
 whose only job is invoking `byre deliver` on what you drop. The Finder
 Quick Action is "Deliver to Byre" ("Deliver to Byre (<label>)" for a
 named install). (ADR 0021)
@@ -129,15 +121,11 @@ existing installs are recognized by -- they keep Apple's names.
 
 **Backup**:
 Both the file and the verb pair. The FILE is what `byre backup` writes: one
-gzip tar holding a project's config and its state volumes, index first, with
-a plain tar per volume inside it -- nothing byre can rebuild (the image) or
-re-reference (layers, templates, skills, the agent) and nothing git already
-carries (the workspace). The VERBS are `byre backup`, which writes it with
-the project completely still, and `byre restore`, which makes a fresh project
-from it on this machine or another: config written, volumes poured, ready for
-`byre develop` once every package the config names is installed. A backup is
-your own box coming back to you -- not an export format and not a
-distribution channel. (ADR 0059)
+gzip tar holding a project's config and its state volumes; the VERBS are
+`byre backup` and `byre restore`, which makes a fresh project from it on
+this machine or another. A backup is your own box coming back to you --
+not an export format and not a distribution channel. Scope, format and
+helpers: `ARCHITECTURE.md`, Backup and restore (ADR 0059).
 _Avoid_: "manifest" (taken: a package's `[package]` table), "export" /
 "import" (the retired v5 design's words, and both read as a format other
 tools consume), "snapshot" (taken: an installed package's content-addressed
@@ -200,18 +188,16 @@ _Avoid_: "job id" (CI's), "session id"
 **Cascade**:
 The config resolution `default ⊕ template ⊕ chain(root … parent) ⊕
 project` -- the chain being the project's named layers, walked via
-`extends`, and empty for a project that extends nothing. Scalars
-override (last wins), plain string lists union, identity-keyed lists
-replace by identity (mounts by target, volumes and named declarations by
-name, ports by container port), and a removal marker removes.
+`extends`, and empty for a project that extends nothing. Its merge rules
+are in the configuration reference
+(`site/content/docs/configuration-reference.md`).
 
 **Removal marker**:
-A later layer's off-switch for an inherited list entry. Two spellings by
-identity type: `!name` where the entry's identity is a string (skills,
-apt, volumes, mounts by target), `remove = true` where it's structured
-(ports, keyed by container port alone). Applied after the same layer's
-additions; the removed entry is gone from the resolved set -- contrast a
-mount's `disabled`, which keeps the entry visible (ADR 0015). (ADR 0018)
+A later layer's off-switch for an inherited list entry: `!name` where the
+entry's identity is a string, `remove = true` where it's structured
+(ports). Applied after the same layer's additions; the removed entry is
+gone from the resolved set -- contrast a mount's `disabled`, which keeps
+the entry visible (ADR 0015). (ADR 0018)
 
 **Layer**:
 One file in the cascade: the global default, a template, a named layer,
@@ -219,12 +205,8 @@ or the project config.
 
 **Named layer**:
 A user-authored cascade layer at `~/.byre/layers/<name>/layer.config`,
-pulled into a project's cascade by `extends = "<name>"` in its config
-(or in another layer -- chains are linear, walked to the root). A plain
-file, not a package: no version, no install verbs; distribution is
-sending someone the file. Carries the full config vocabulary except
-`template`. Resolved live at every develop -- editing a layer changes
-every extending project's next box. (ADR 0035)
+pulled into a project's cascade by `extends = "<name>"`. A plain file, not
+a package, resolved live at every develop (ADR 0035).
 _Avoid_: preset (apply-time snapshot with a consent ceremony; a layer
 is live), template (shape-only package; a layer is local composition)
 
@@ -236,12 +218,10 @@ node). A config-cascade concept, not a Dockerfile template.
 The `FROM` image the generated Dockerfile builds on. Debian-derived.
 
 **Preservation engine (tomldoc)**:
-byre's style-preserving TOML document editor (`internal/tomldoc`, ADR
-0044) -- every surface that edits a stored config file goes through it.
-Edits are byte-range splices, so bytes an edit doesn't touch (comments,
-formatting, exotic spellings) survive identically; content byre writes
-comes out in house shape. Config files are **shared custody**: byre
-owns the layout only where it is sole author.
+byre's style-preserving TOML document editor (`internal/tomldoc`): every
+surface that edits a stored config file goes through it, and bytes an edit
+doesn't touch survive identically, because config files are **shared
+custody**. Contract: ADR 0044.
 _Avoid_: renderer (it edits in place; whole-file rendering is only the
 fresh-file case), serializer
 
@@ -251,21 +231,19 @@ deliberately outside the rw-mounted project tree so the boxed agent can't
 rewrite its own sandbox.
 
 **Project credentials**:
-Values a project stores age-encrypted INLINE in its config files (ADR
-0057) and delivers at launch. Each one is a **credential row** in
-`env_from_host` whose source names a **kind**: `encrypted:` (arrives as
-an env var) or `encrypted-file:` (arrives as a file on the session
-tmpfs, its path in an env var). The **`[credentials]` block** is the
-file-local table holding the scrypt-wrapped **identity** that opens THAT
-file's rows and the cleartext **recipient** new values encrypt to; it
-belongs to the physical file and never merges through the cascade.
-Delivery is **blocking**: a declared credential is delivered or the
-launch stops (`--credentials=skip` is the one deliberate way without).
-The user-facing noun is "credentials" (`byre credentials`; the editor
-authors them on its Env screen). Distinct from the AGENT's own logins
-(the agent-login sense -- claude/codex signing in INSIDE the box, ADR
-0007's territory): project credentials are values the user hands the
-agent, not identities the agent holds.
+Values a project stores age-encrypted INLINE in its config files and
+delivers at launch (ADR 0057). Each is a **credential row** in
+`env_from_host` whose source names a **kind**: `encrypted:` (arrives as an
+env var) or `encrypted-file:` (arrives as a file on the session tmpfs).
+The file-local **`[credentials]` block** holds the scrypt-wrapped
+**identity** that opens that file's rows and the cleartext **recipient**
+new values encrypt to; it belongs to the physical file and never merges
+through the cascade. Delivery is **blocking**: a declared credential is
+delivered or the launch stops (`--credentials=skip` is the one deliberate
+way without). The user-facing noun is "credentials" (`byre credentials`;
+the editor authors them on its Env screen). Distinct from the AGENT's own
+logins (ADR 0007's territory): project credentials are values the user
+hands the agent, not identities the agent holds.
 _Avoid_: "secrets" as the noun (byre is not a secret manager in the
 rotation/IAM sense -- PRINCIPLES); "vault", "entry", and
 "declaration" (the vault-directory design ADR 0057 overturned -- there is
@@ -307,35 +285,27 @@ The display mirror at `~/.byre/bundled/` is for humans (regenerated per
 version, never loaded from).
 
 **Local package**:
-An editable directory under `~/.byre/skills|templates/` (bare or
-`owner/name` nested); the id defaults to the store path. The directory
-is the package: no manifest hashes, no install lifecycle. A symlinked
-directory is the user's own arrangement and loads like a real one; when
-the same id is also installed (same kind), the local package **shadows**
-the snapshot — it wins resolution, the label says `local (shadows
-installed <version>)`, and the snapshot returns when the local entry
-goes. (ADR 0055.)
+An editable directory under `~/.byre/skills|templates/`; the directory is
+the package, with no manifest hashes and no install lifecycle. When the
+same id is also installed, the local package **shadows** the snapshot.
+Details: `SKILLS.md` (ADR 0055).
 
 **Installed package**:
 A content-addressed, hash-verified snapshot under
 `~/.byre/packages/<digest>/`, acquired with `byre skill|template
-install <manifest-url>` and recorded in the store index. Installed ids
+install <url>` and recorded in the store index. Installed ids
 must be qualified (`owner/name`). Immutable; fork to edit under a new
 id, or adopt to re-establish a local source for the same id.
 
 **Fork**:
 `byre skill|template fork <id> <new-id>`: copy an immutable (bundled or
-installed) package into a local, editable one under a NEW id — for
-making someone else's package yours. Provenance in the fork is a
-documentary comment, never read for resolution or trust. To re-establish
-the source for the SAME id, the verb is adopt.
+installed) package into a local, editable one under a NEW id. To
+re-establish the source for the SAME id, the verb is adopt.
 
 **Adopt**:
 `byre skill|template adopt <dir>`: make a directory the local source for
-the package id its manifest declares — a symlink at the store path the
-id names, validated by a catalog reload (anything landing non-LOCAL
-rolls the link back out). The publishing round trip back from a
-distribution repo checkout. (ADR 0055.)
+the package id its manifest declares -- the publishing round trip back
+from a distribution repo checkout. Details: `SKILLS.md` (ADR 0055).
 
 **Manifest**:
 A package's `[package]` block in its primary file (`skill.toml` /
@@ -351,8 +321,8 @@ integrity model: ADR 0029.
 
 **Catalog**:
 The per-store index of every package byre can see -- bundled, installed,
-local -- plus per-identity problem rows (INVALID / conflict / LEGACY)
-shown disabled-with-reason. One resolution function serves every name
+local -- plus per-identity problem rows (INVALID / conflict) shown
+disabled-with-reason. One resolution function serves every name
 surface. Resolution mechanics: ADR 0029.
 
 **Retired name**:
@@ -362,10 +332,9 @@ exact pinned install command): the name never returns to the free pool.
 First retirees: `codereview`, `devlog`.
 
 **LEGACY row**:
-RETIRED vocabulary (2026-08-23, ADR 0049 #4). A leftover local dir
-wearing a bundled or retired name under `~/.byre/skills|templates/` is
-now an ordinary INVALID row: never loaded, listed with the rename
-remedy.
+Retired catalog vocabulary (ADR 0049): a local directory wearing a bundled
+or retired name is an ordinary INVALID row -- never loaded, listed with
+the rename remedy. Use the word only to describe what was removed.
 
 **`[sources]` hint**:
 A config/preset table mapping package ids to `{ uri, digest }`
@@ -427,11 +396,13 @@ discussion: `docs/DOCKER-HOST.md`.
 
 **Shared-auth offer**:
 The first-run picker's per-box question -- "Use machine-wide credentials
-to log in to <agent>?" -- asked at every onboarding whose chosen agent
-has a companion skill declaring `shared_auth_for`. Yes puts the companion
-in the project's `byre.config` `skills` -- the only grant the answer ever
-makes; the saved favourite (`shared_auth`) only prefills the next box's
-offer. Mechanics: ADR 0025.
+to log in to <agent>?" -- for a chosen agent with a companion skill
+declaring `shared_auth_for`. Yes puts the companion in the project's
+`byre.config` `skills`, the only grant the answer makes; the saved
+favourite (`[defaults] shared_auth`) only prefills the next box's offer.
+Skipped when `default.config` already grants the companion machine-wide,
+or answered from the stored pick under `defaults.skip_questions`.
+Mechanics: `ARCHITECTURE.md`, Mounts & volumes (ADR 0025).
 
 **Launch env hooks**:
 The chassis mechanism `/etc/byre/env.d/*.sh`: skill-contributed scripts
@@ -456,27 +427,28 @@ _Avoid_: plumbing (the old spec's word), fittings, infra
 
 **Core block**:
 The build-time slice of the chassis -- core's constant contribution to
-the generated Dockerfile: the `dev` user
-baked at the host UID/GID, home/workspace ownership, the launcher install,
-the `byre-fetch-run` installer helper skills build with, the
-`byre-headless` headless-run chassis (plus the `USER dev` + ENTRYPOINT tail, emitted last so earlier steps build
-as root). The block family is named by contributor: template block, core
-block, skill blocks, project block.
+the generated Dockerfile: the `dev` user baked at the engine mode's
+identity (the host UID/GID on a rootful engine, the generic 1000 under
+keep-id mode), home/workspace ownership, the launcher install, the
+`byre-fetch-run` installer helper skills build with, the `byre-headless`
+headless-run chassis (plus the `USER dev` + ENTRYPOINT tail, emitted last
+so earlier steps build as root). The block family is named by
+contributor: template block, core block, skill blocks, project block.
 _Avoid_: infra layer (collides with cascade layers and Docker image
 layers), users block; "plumbing" stays informal prose for core's job
 
 **Materialize** (historical):
 Pre-package-model (ADR 0029) vocabulary: writing a built-in skill's files
 into `~/.byre/skills/<name>/` as editable copies. The mechanism is
-deleted; use the word only to describe what was removed. Leftovers are
-LEGACY rows.
+deleted; use the word only to describe what was removed. A leftover copy
+wearing a protected name is an INVALID row.
 
 **Devlog dir**:
 `.byre-devlog/` at the working-tree root -- the self-ignoring dir (its own
 `.gitignore` is `*`) where box-side skills keep their working files: the
 agent diary, the code-review log. A convention that belongs to byre, not to
 any one skill: the devlog skill curates it (bootstraps the dir, keeps the
-diary), but each skill that writes there ensures it exists itself, so
+diary), but each skill that writes there creates it if absent, so
 codereview never needs devlog installed.
 _Avoid_: `.devloop/` (the dir's old name; an existing old dir is left
 untouched, renamed by hand if its history matters) and `devloop` as the
@@ -497,52 +469,42 @@ legible; it never gates them.
 _Avoid_: permission (implies a policy engine deciding; byre only reports)
 
 **Host env passthrough (`env_from_host`)**:
-The one deliberate host→box data channel: a config map `KEY = "source"`.
-Sources are a closed scheme set -- `git:<config-key>`, `env:<HOST_VAR>`
-(absent host var sets nothing), `tz:` (the host timezone: TZ var if set,
-else the `/etc/localtime` symlink's IANA name), `cwd:` (the host
-directory the box's `/workspace` comes from: the project dir, and under
-`byre worktree` the worktree), the two credential kinds
-`encrypted:` / `encrypted-file:`, and `""` to disable a lower layer's
-key. byre's core layer ships git identity, TERM, and TZ (ADR
-0026/0031). The `BYRE_` namespace is refused here as it is in `[env]`
-(ADR 0050 tier 1): the scheme set limits what a passthrough can SPELL,
-not what it can reach.
-A live entry naming a HOST source is a grant; a plaintext literal
-belongs in `[env]` and is config, not a grant. A **credential row** is
-the third case: a value the config itself carries, encrypted, asking the
-host for nothing -- so it is delivered on the credential channel rather
-than `-e`, and it is classified rendered wherever it appears
-(ciphertext elides, values never render).
+The one deliberate host→box data channel: a config map `KEY = "source"`
+whose sources are a closed scheme set (`git:`, `env:`, `tz:`, `cwd:`, the
+two credential kinds, and `""` to disable a lower layer's key). A live
+entry naming a HOST source is a grant; a plaintext literal belongs in
+`[env]` and is config, not a grant; a credential row is the third case, a
+value the config itself carries, encrypted. Schemes and delivery:
+`ARCHITECTURE.md`, The chassis (ADR 0026/0031/0057).
 
 **Env docs (`env_docs`)**:
 A skill's declared consumed-env guidance (`[runtime.env_docs]`,
-`NAME = "one-line guidance"`): vars the skill READS but does not set.
-Pure documentation -- no validation, no warning when unset; the config
-UI env screen shows each unprovided var as a dim *suggestion row*
-attributed to the skill, and enter prefills the add editor. Cf.
-`runtime.env`, the vars a skill SETS.
+`NAME = "one-line guidance"`): vars the skill READS but does not set. Pure
+documentation, shown as suggestion rows in the config UI env screen
+(`SKILLS.md`). Cf. `runtime.env`, the vars a skill SETS.
 
 **MCP declaration (`[[mcp]]`)**:
 Wiring, not a grant (ADR 0033): a declared MCP server -- local
 (`command`, an argv) or remote (`url`), self-discriminating. What's
 real are the grants a declaration *carries* (implied egress, consumed
 env NAMES), rendered where grants always render, attributed
-`mcp:<name>`. Mechanics: ADR 0033.
+`mcp:<name>`. Mechanics: `ARCHITECTURE.md`, MCP provisioning (ADR 0033).
 _Avoid_: calling an MCP a grant
 
 **MCP adapter**:
 How a selected agent's session receives the declared MCP set -- always by
 INJECTION (`[agent] mcp = "inject"`, the skill author's vouch); byre
 never writes an agent's MCP state, and an adapter-less agent degrades
-honestly (declared-but-NOT-delivered). Mechanics: ADR 0033.
+honestly (declared-but-NOT-delivered). Mechanics: `ARCHITECTURE.md`
+(ADR 0033).
 
 **Claude Skill (`[[claude_skills]]`)**:
 Wiring, not a grant (ADR 0039): a declared Claude Skill -- Anthropic's
 agent-skill format, a directory whose root holds a `SKILL.md` -- shipped
 into the box for the agent. NOT a byre skill (the box-composition
 package) -- the two words never appear unqualified where they could be
-confused. Mechanics: ADR 0039.
+confused. Mechanics: `ARCHITECTURE.md`, Claude Skills delivery (ADR
+0039).
 _Avoid_: bare "skill" for either concept in user-facing prose; calling a
 Claude Skill a grant; `[[agent_skills]]` (collides with "agent skill")
 
@@ -562,15 +524,12 @@ ADR 0046 buried)
 
 **Standing instructions (`[[context]]`)**:
 The operator's prose for the agent's instructions, declared in config
-layers (ADR 0043) -- the cascade is the scoping (default.config =
-machine-global, template/named layer = per-stack, project config = one
-project). Inline `text` or a host `file`; joins the baked agent context
-after the skill snippets and is INJECTED by the agent command (the
-context adapter, ADR 0046).
-One of three prose voices: the skill author's (skill.toml `[context]`),
-the project's (in-tree agent memory, e.g. a repo `CLAUDE.md`), the
-operator's (this key -- host-side, out of the box's reach short of a
-`--self-edit` grant).
+layers -- the cascade is the scoping -- and injected by the agent command
+after the skill snippets (ADR 0043, ADR 0046). The operator's is one of
+three prose voices: the skill author's (skill.toml `[context]`), the
+project's (in-tree agent memory, e.g. a repo `CLAUDE.md`), the
+operator's (this key, host-side). Mechanics: `ARCHITECTURE.md`, Standing
+instructions.
 _Avoid_: "memory" for the key (the agent's own state volume owns that
 word); calling standing instructions a grant
 
@@ -596,14 +555,10 @@ from silently sharing state.
 
 **Volume sharing**:
 How many boxes may hold a volume at once: `shared` (the default -- any
-number, which is what every byre volume has always been) or `exclusive`
-(at most one live box; ADR 0054). Scope answers *which* boxes may see
-the volume, sharing answers *how many at a time* -- independent
-questions. `exclusive` is enforced: `develop` reads this project's live
-boxes' launch records and refuses (exit 3) rather than mount a volume
-one of them is holding, or than proceed where it cannot establish that
-none is. Project scope only. General `[[volumes]]` grammar, config or
-skill.
+number) or `exclusive` (at most one live box, enforced at develop; ADR
+0054). Scope answers *which* boxes may see the volume, sharing answers
+*how many at a time* -- independent questions. Enforcement:
+`ARCHITECTURE.md`, Mounts & volumes.
 _Avoid_: "locked", "single-user" (a lock is held and released; this is a
 declared property of the data)
 
@@ -622,9 +577,9 @@ A disposable, regenerable volume: node_modules, build caches. Wiping is a
 shrug.
 
 **Seed**:
-A one-time copy into a *fresh* state volume from a declared source. Not
-credentials (today) -- agent logins are rotating tokens, so they are
-performed in the box instead; see ADR 0007.
+A one-time copy into a *fresh* state volume from a declared source.
+Never agent credentials: agent logins are rotating tokens, so they are
+performed in the box instead (ADR 0007).
 
 ### Network
 
@@ -635,34 +590,26 @@ network, the config's closures dropped). Declared by a skill via
 `network_posture`; printed by status under the honesty rules.
 
 **Egress**:
-The derived allowlist: every enabled skill declares the `host[:port]`
-endpoints it NEEDS to function, byre unions them (plus the user's
-`egress` config key, ADR 0019, and the declared MCP set's carried
-endpoints), subtracts the closures, and enforces the rest as
-port-scoped per-IP rules. A host is a hostname, an IPv4 literal, or a
-bracketed IPv6 literal (`[2001:db8::1]:8443` -- the RFC 3986
-convention; bare IPv6 is ambiguous with host:port and rejected with a
-pointer at the brackets). Empty is legal -- a maximally-locked box. An
-egress entry under a restrictive posture is a grant; without one it is
-declared and inert.
+The derived allowlist: every enabled skill's declared `host[:port]`
+needs, unioned with the user's `egress` config key and the declared MCP
+set's carried endpoints, minus the closures, enforced as port-scoped
+per-IP rules. An egress entry under a restrictive posture is a grant;
+without one it is declared and inert. Derivation and grammar:
+`ARCHITECTURE.md`, Network (ADR 0019, ADR 0020).
 
 **Closure**:
-A `!host[:port]` entry in the `egress` config key (ADR 0030). Unlike
-the plain-list `!name` idiom it is not consumed by the merge: it
-survives the cascade and subtracts its endpoint from the DERIVED
-allowlist, skill-declared entries included ("claude minus statsig").
-Portless closes EVERY port (addition is never greedy, subtraction may
-be); a later layer's plain entry re-opens. Under open-denylist the
-closures are themselves the enforced list. Never invisible: status
+A `!host[:port]` entry in the `egress` config key (ADR 0030). Unlike the
+plain-list `!name` idiom it survives the cascade and subtracts its
+endpoint from the DERIVED allowlist, skill-declared entries included
+("claude minus statsig"); portless closes every port. Under
+open-denylist the closures are themselves the enforced list. Status
 prints them as `Closed:` rows whatever the posture.
 
 **Offered egress**:
 A declared-but-CLOSED door (`egress_offered`, ADR 0020): same grammar,
-never enforced. Templates and skills use it for convenience endpoints
-(registries, git hosting); the config UI offers each as a switch whose
-open writes the plain entry into the user's own `egress`. Deny-by-default
-means nothing opens except explicit user intent or a skill's own
-functional requirement.
+never enforced, opened only by the user (the config UI writes the plain
+entry into their own `egress`). Templates and skills use it for
+convenience endpoints (registries, git hosting).
 
 **Netns helper**:
 The run-to-completion container (root + NET_ADMIN, sharing only the box's
@@ -709,12 +656,8 @@ names byre's path on it)
 
 **Footgun doctrine**:
 The named principle that byre's threat model is the *agent*, never the
-user. Protections are tamper-proof against the box and one config edit
-away from off for the user; byre never refuses a deliberate user choice.
-We don't give you a gun that will shoot you in the foot if you were aiming
-somewhere else, but we do give you a gun that lets you accurately target
-your foot should you wish to.
-Substance: PRINCIPLES.md #1.
+user: protections are tamper-proof against the box and one config edit
+away from off for the user. Substance: PRINCIPLES.md #1.
 
 **Legibility**:
 byre's alternative to gating: `byre status` names every grant truthfully,
