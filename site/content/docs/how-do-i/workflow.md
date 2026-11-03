@@ -129,16 +129,11 @@ byre completion fish | source         # ~/.config/fish/config.fish
 tldr: `tag=$(byre build)` -- the image `byre develop` would build, and
 its tag on stdout.
 
-`byre build` generates and builds the project's image exactly as
-`byre develop` does, then stops: no volumes seeded, no container. stdout
-is the image tag and nothing else; the build output goes to stderr. Use
-it to warm a persistent runner's engine cache before a job, to read the
-tag, or to fail a job early on a config that no longer builds.
-
-It does not make a hosted CI runner faster: a hosted runner rebuilds the
-image every job, because the engine's build cache lives on the machine
-and the machine is new each time. A persistent runner keeps that cache,
-so its builds after the first are quick with or without `byre build`.
+The build output goes to stderr; no volumes are seeded and no container
+starts. Use it to warm a persistent runner's engine cache before a job,
+to read the tag, or to fail a job early on a config that fails to
+build. A hosted runner starts with an empty cache every job, so it gains
+nothing there.
 
 - It uses the engine's cache, as develop does. For a build with the
   cache off and the base pulled again, use `byre rebuild`.
@@ -157,11 +152,10 @@ so its builds after the first are quick with or without `byre build`.
 tldr: `byre run --task task.md --data > outcome.json` -- one task, no
 terminal, and byre's verdict as the exit code.
 
-`byre run` sets up the box exactly as `byre develop` does, hands one task
-to the agent's headless mode, and exits when the agent does. It works from
-any script; nothing in it is specific to a CI vendor. The bundled claude,
-codex and grok skills have a headless mode; an agent without one is
-refused by name.
+`byre run` sets up the box as `byre develop` does, hands one task to the
+agent's headless mode, and exits when the agent does. Nothing in it is
+specific to a CI vendor. The bundled claude, codex and grok skills have a
+headless mode; an agent without one is refused by name.
 
 **Configure once, with a committed preset.** Commit a `byre.preset`
 that carries the agent, its skills -- the firewall among them -- the
@@ -184,21 +178,18 @@ digest (`byre skill inspect <url>` prints it) -- the
 [configuration reference](/docs/configuration-reference/#presets-byrepreset)
 has the shape.
 
-`--yes` prints the whole review into the job log and applies without
-asking, installing the packages the preset's `[sources]` name. It
-refuses three things, before fetching or writing anything:
+`--yes` prints the review into the job log and applies without asking.
+It refuses an https preset address, a digest-less https source and any
+credential row
+([ADR 0063](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0063-preset-apply-yes.md)),
+which is why the credential travels as a host passthrough. A preset
+hosted somewhere is downloaded in a step you control and applied as a
+file:
 
-- a preset named by an https URL -- nobody would look at what it
-  serves. Commit the preset to the repo and apply the path;
-- an https `[sources]` row with no digest -- nobody would look at what
-  it fetched;
-- anything the review's credential lines would show: an encrypted
-  credential row (`byre credentials set`) in the preset or in the config
-  it would replace, a credentials identity arriving, leaving or being
-  replaced, or a side byre could not read. A swapped value is something
-  only your own confirm can catch, so `--yes` never stands in for it,
-  on a terminal either. That is why the credential travels as a host
-  passthrough here.
+```sh
+curl -fsSLo byre.preset https://example.com/path/byre.preset
+byre preset apply --yes
+```
 
 **Or, for the minimal box, two flags.** On a checkout byre has never
 configured, `byre run --template <t> --agent <a> ...` (`none` for no
@@ -217,57 +208,33 @@ byre run --task path/to/task.md --data > outcome.json
 rc=$?
 ```
 
-- **Gate on `$rc` or on `outcome.json`, never on stderr.** The last
-  stderr line (`byre: run <id>: ran, exit 0 (verified)`) is for humans:
-  the agent writes to stderr for the whole run, so it could print the
-  same line. `0` is success; `10`-`16` are the agent's or the headless
-  machinery's verdicts (`13` is "no usable credential", with the remedy
-  on stderr); `1`-`3` and `70` are byre's. The
-  [commands page](/docs/commands/#what-byre-run-exits-with) has the
-  table, and the `--data` document's `outcome` and `phase` tell byre's
-  codes from a box that happened to exit with the same number. Its
-  `authority` reads `unverified: raw run_args` when the config carries
-  raw `run_args` -- byre cannot vouch for what such a box was handed.
-- **Without `--data`, stdout is the agent's answer** and nothing else,
-  ready to post somewhere.
-- **The task** can also come from `BYRE_TASK` in byre's own environment,
-  or `--task -` from stdin. `--task -` reads until the writer closes its
-  end; a step that cannot promise that uses a file or `BYRE_TASK`. Tasks
-  are capped at 1 MiB.
+- **Gate on `$rc` or on `outcome.json`, never on stderr** -- the agent
+  shares stderr. The
+  [commands page](/docs/commands/#what-byre-run-exits-with) has the exit
+  table.
+- **Without `--data`, stdout is the agent's answer**, ready to post
+  somewhere.
+- **The task** can also come from `BYRE_TASK` or `--task -` (stdin, read
+  until the writer closes it).
 - **No time limit unless you set one.** `--timeout 30m` stops the agent
-  and exits `12`. Use it for an agent that can hang instead of failing --
-  grok, for one, hangs on a dead login refresh, so set `--timeout` for
-  grok runs that rely on a saved login.
+  and exits `12`. Set it for grok runs on a saved login: grok hangs on a
+  dead login refresh instead of failing.
 - **Encrypted credentials** (`byre credentials set`) need
   `--credentials stdin` with the passphrase on stdin, which then can't
   also carry the task.
-- `--quiet` sends the agent's live output and stderr to the result dir
-  instead of your terminal; errors, the exit report and the summary line
-  still print, and a failed run (any exit but 0 and 10) prints the last
-  lines of the agent's stderr before the summary, so a refusal's remedy
-  is never hidden.
+- `--quiet` keeps the agent's live output out of your terminal.
 
-**Keep the output.** The agent's files, its full transcript and the
-answer land in `.byre-run/` in the work tree, which ignores itself in git
-and is **emptied at the start of every run** -- archive it before running
-again. Everything in it is the agent's to write; byre reads none of it
-back. Push from the host after `byre run` exits, so push credentials
-never enter the box.
+**Keep the output.** The agent's files, its transcript and the answer
+land in `.byre-run/` in the work tree, which ignores itself in git and is
+**emptied at the start of every run** -- archive it before running again.
+It is the agent's to write; don't gate on it. Push from the host after
+`byre run` exits, so push credentials never enter the box.
 
-**Clean up.** A hosted runner is discarded, so there is nothing to clean
--- and nothing carried over: every job builds the image from scratch. On
-a self-hosted runner, `byre reset -y` after the job removes this
+**Clean up.** A hosted runner is discarded, so there is nothing to clean.
+On a self-hosted runner, `byre reset -y` after the job removes this
 project's volumes (the agent's state) and keeps the image for the next
 build; `byre forget -y` removes everything byre holds for the project.
 
-**codex on a machine you keep.** codex's headless mode logs an
-`OPENAI_API_KEY` (or `CODEX_ACCESS_TOKEN`) into a codex home made for that
-one run and deletes it afterwards -- never into the project's saved codex
-state. That is deliberate: with codex-shared-auth enabled, any key saved
-there would be shared with every project on the machine at the next
-launch -- billing their work to this key and replacing a shared login,
-without asking. A key in the environment also wins over a codex login the
-box already has, for that run. On a discarded hosted runner none of this
-can bite; on a laptop or a self-hosted runner it is why the key never
-sticks. The mechanics:
-[docs/AGENT-CREDENTIAL-MECHANICS.md](https://github.com/pjlsergeant/byre/blob/main/docs/AGENT-CREDENTIAL-MECHANICS.md).
+**codex on a machine you keep.** A key in the environment is logged into
+a codex home that lasts one run, never the project's saved codex state
+([docs/AGENT-CREDENTIAL-MECHANICS.md](https://github.com/pjlsergeant/byre/blob/main/docs/AGENT-CREDENTIAL-MECHANICS.md)).

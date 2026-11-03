@@ -291,7 +291,7 @@ Needs a real engine; the split only shows against a live container.
    `~/.byre/projects/<id>/launches/<that>.toml` exists.
    `shasum -a 256` of the file equals the label. It carries `record = 2`,
    an `[image]` with a real `digest`, `[[binds]]` including `/secrets`,
-   and `env_keys` with KEYS only — no values anywhere in the file. A
+   and `env_keys` with KEYS only -- no values anywhere in the file. A
    develop record has no `headless`, `run_id`, `task_sha256` or
    `run_timeout` (those four are a `byre run` box's).
 3. BEFORE changing anything, `byre status` from another window.

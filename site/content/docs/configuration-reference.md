@@ -281,16 +281,11 @@ file -- and writes the project's config on your confirm.
 
 `byre preset apply --yes` applies without a terminal -- for CI. The
 review still prints, to stderr; the confirm and the install confirms are
-skipped. It refuses, before fetching or writing anything, a preset
-named by an https URL (commit it to the repo, or fetch it in a step you
-control, and apply the path), an https `[sources]` row with no digest,
-and anything the credential review would show -- any encrypted
-credential row in the preset or in the config it would replace, a
-`[credentials]` identity arriving, leaving or replaced, a side byre
-could not read (on a terminal too: only your own confirm vouches for a
-credential value). A preset meant for CI
-therefore pins every package and passes credentials through from the
-runner's environment:
+skipped. It refuses an https preset address, a digest-less https source
+and any credential row
+([ADR 0063](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0063-preset-apply-yes.md)),
+so a preset meant for CI pins every package and passes credentials
+through from the runner's environment:
 
 ```toml
 agent  = "claude"

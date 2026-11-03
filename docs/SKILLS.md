@@ -204,51 +204,59 @@ headless = "my-agent-headless"     # a script you ship via [build].files
 byre bakes it to `/etc/byre/agent-headless`, and its core chassis,
 `byre-headless`, runs it as the whole of a headless run. Leave the field
 out and `byre run` refuses your agent by name; it must not be blank and
-must not equal `command`. The command honours a small contract
-([ADR 0061](adr/0061-headless-runs.md) is the record):
+must not equal `command`. The command honours this contract (the why of
+each rule: [ADR 0061](adr/0061-headless-runs.md)):
 
-- Read the task from the file `BYRE_RUN_TASK_FILE` names. Stdin is
-  `/dev/null`; never read a terminal, and give your agent the task file or
-  `/dev/null` on stdin -- an agent handed an open pipe waits on it forever.
-- Write the agent's final answer to `BYRE_RUN_RESULT_FILE` (a descriptor,
-  `/dev/fd/5`: if your agent wants a path, give it a temp file and copy
-  that in afterwards). byre prints it on `byre run`'s stdout. Keep fds 5
-  and 6 and the `BYRE_RUN_RESULT_FILE` / `BYRE_RUN_STATUS_FILE` variables
-  to your script's own writes -- no child ever inherits them: copy the two
-  names into script locals and unset them first, and start every program
-  (the agent, its probes, `jq`, `tee`, ...) with `5>&- 6>&-`. A child
-  that outlives your script while holding them could rewrite the answer or
-  the status lines before byre reads them.
-- Exit with exactly one of: `0` (success -- an empty answer turns it into
-  14), `10` (the agent reported failure), `11` (the agent process failed:
-  append `backend_exit=<its status>` to `BYRE_RUN_STATUS_FILE` first), `13`
-  (no usable credential -- print the remedy on stderr), `15` (your agent's
-  binary is not in the box). Anything else, a signal included, is read as
-  your command failing (14); never pass the agent's raw status up.
-- Bound every credential probe with `timeout -k <grace> <limit>`, so a
-  probe that ignores TERM is still killed; a probe that times out is a 13.
-  Your stdout is the agent's live event stream and your stderr its
-  diagnostics: byre records both in `.byre-run/` and relays them to
-  stderr. `BYRE_RUN_MODEL`, when non-empty, is the model the caller asked
-  for; `BYRE_RUN_DIR` is the result dir, for files worth keeping;
-  `agent_version=<text>` in the status file is shown in `result.json`.
-- Run your agent through the same launch adapter your interactive command
-  uses, so the injection your `mcp`/`claude_skills`/`context` vouches
-  promise holds in a headless run too. Keep your own helpers (`timeout`,
-  `env`, `jq`, `tee`, ...) on the system PATH
+- **Task.** Read the task from the file `BYRE_RUN_TASK_FILE` names. Stdin
+  is `/dev/null`; never read a terminal, and give your agent the task file
+  or `/dev/null` on stdin -- an agent handed an open pipe waits forever.
+- **Answer and status.** Write the agent's final answer to
+  `BYRE_RUN_RESULT_FILE` and append `key=value` status lines to
+  `BYRE_RUN_STATUS_FILE`. Both are descriptors (`/dev/fd/5`, `/dev/fd/6`):
+  if your agent wants a path, give it a temp file and copy that in
+  afterwards. byre prints the answer on `byre run`'s stdout;
+  `agent_version=<text>` is shown in `result.json`.
+- **The descriptors are yours alone.** Copy the two names into script
+  locals and unset the variables before starting anything; run every child
+  (the agent, its probes, `jq`, `tee`, ...) with `5>&- 6>&-`; open every
+  subshell and command substitution with `exec 5>&- 6>&-`. A child that
+  outlives your script could otherwise rewrite the answer.
+- **Exit** with exactly one of: `0` (success -- an empty answer turns it
+  into 14), `10` (the agent reported failure), `11` (the agent process
+  failed: append `backend_exit=<its status>` to the status file first),
+  `13` (no usable credential -- print the remedy on stderr), `15` (your
+  agent's binary is not in the box). Anything else, a signal included, is
+  read as your command failing (14); never pass the agent's raw status up.
+- **Probes.** Bound every credential probe with `timeout -k <grace>
+  <limit>`, so a probe that ignores TERM is still killed; a probe that
+  times out is a 13.
+- **PATH.** Run your own helpers on the system PATH
   (`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`) and
-  invoke the agent by the adapter's absolute path with the inherited PATH
-  restored for that call alone (`timeout -k 5 30 env PATH="$agent_path"
-  /usr/local/bin/<adapter> ...`): the inherited PATH starts with the
-  agent-writable `~/.local/bin`, where a planted `timeout` or `jq` would
-  run inside your verdict.
+  restore the inherited PATH only for the agent CLI's exec, through the
+  same launch adapter your interactive command uses (so the
+  `mcp`/`claude_skills`/`context` injection holds headless too):
 
-Your login hook should not prompt under `BYRE_HEADLESS=1` (byre sets it
-from the launch's argv for every headless run) or without a terminal: a
-headless run has nobody to answer. Don't set any `BYRE_RUN_*` name in your
-`[runtime].env` -- status then stops vouching for the headless command.
-byre's own `claude-headless.sh`, `codex-headless.sh` and
-`grok-headless.sh` are worked examples.
+  ```sh
+  agent_path=$PATH
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  # ... your helpers run here ...
+  env PATH="$agent_path" /usr/local/bin/<adapter> ... \
+    <"$BYRE_RUN_TASK_FILE" 5>&- 6>&-
+  ```
+
+  The inherited PATH starts with the agent-writable `~/.local/bin`, so a
+  helper resolved there would run inside your verdict.
+
+Your stdout is the agent's live event stream and your stderr its
+diagnostics: byre records both in `.byre-run/` and relays them to stderr.
+`BYRE_RUN_MODEL`, when non-empty, is the model the caller asked for;
+`BYRE_RUN_DIR` is the result dir, for files worth keeping.
+
+Your login hook must not prompt under `BYRE_HEADLESS=1` (byre sets it
+from the launch's argv for every headless run) or without a terminal.
+Don't set any `BYRE_RUN_*` name in your `[runtime].env` -- status then
+stops vouching for the headless command. byre's own `claude-headless.sh`,
+`codex-headless.sh` and `grok-headless.sh` are worked examples.
 
 A skill that does not work without another -- a wrapper that drives
 codex's binary, say -- declares it at the top level of its skill.toml:
@@ -257,17 +265,10 @@ codex's binary, say -- declares it at the top level of its skill.toml:
 requires = ["codex"]
 ```
 
-develop (and `byre run`) then refuses any box where codex is not
-enabled, naming both skills and the remedy (`add it to skills =
-[...]`). byre never enables the requirement for the user: enabling a
-skill is consent to its egress, mounts and build, and that is theirs to
-give ([ADR 0062](adr/0062-skill-requires.md)). `skill inspect` and the
-install summary show the line, and the config editor marks an enabled
-skill whose requirement is off. Names are skill names (an alias or
-`owner/name`); one byre cannot find is reported at develop, not by
-`validate`. Older byre releases refuse a manifest carrying the key, so a
-published skill that adopts it raises its `requires_byre` to the first
-release that has it.
+`requires` names skills that must already be enabled; byre never enables
+them for you. An unmet requirement refuses at develop and run with the
+`skills = [...]` remedy. Details and compatibility:
+[ADR 0062](adr/0062-skill-requires.md).
 
 To publish, declare identity in `[package]` -- a qualified id
 (`owner/name`), a `version`, and a `requires_byre` constraint -- then:
@@ -335,23 +336,10 @@ confirm writes it as this project's `byre.config`. A preset's
 walk-through, and for the error remedies if you decline and develop
 later. Both verbs also take an explicit path or https URL.
 
-`byre preset apply --yes` is the unattended form, for CI (ADR 0063): it
-runs without a terminal, prints the full review to stderr all the same,
-skips the confirm, and passes `--yes` to the walk-through's installs.
-Without `--yes`, a pipe still refuses (the review is the point). With
-`--yes`, three things refuse, all before anything is fetched or
-written: an https preset URL, because nobody looks at what it serves --
-commit the preset to the repo (or fetch it in a step you control) and
-apply the path; an https `[sources]` row with no digest, naming the
-row, for the same reason; and anything the credential review would
-show, naming it, on a terminal too: an `encrypted:`/`encrypted-file:`
-row in the preset OR in the config it would replace (an unchanged row,
-or one an `[env]` literal shadows, included), a `[credentials]` identity
-arriving, leaving or replaced, or a side byre could not read -- a swapped
-ciphertext is invisible in the review, and only your confirm vouches for
-it (ADR 0057). Apply those on a terminal, or keep credentials out of the
-preset and deliver them with `env_from_host` from the runner's
-environment.
+`byre preset apply --yes` is the unattended form, for CI: it prints the
+review, skips the confirm, and refuses an https preset URL, a digest-less
+https `[sources]` row, and any credential row
+([ADR 0063](adr/0063-preset-apply-yes.md)).
 
 After applying, develop and status stay quiet while the repo's preset
 matches what you applied, and note when it changes ("differs from the

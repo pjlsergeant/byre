@@ -108,37 +108,16 @@ name). `byre status`, the config editor's Skills screen and
 `byre skill inspect` show each agent's headless command, or `no headless
 command`.
 
-The contract it honours: the task is the file `BYRE_RUN_TASK_FILE` names
-(stdin is `/dev/null`, and no terminal is read); the answer goes to the
-descriptor `BYRE_RUN_RESULT_FILE`; `key=value` lines go to
-`BYRE_RUN_STATUS_FILE` (`backend_exit=<n>` before an exit 11,
-`agent_version=<text>`); `BYRE_RUN_MODEL` is an optional model override
-and `BYRE_RUN_DIR` the result dir. The command keeps its own helpers
-(`timeout`, `jq`, ...) on the system PATH, invokes the agent by its
-adapter's absolute path with the agent's inherited PATH, and holds fds 5
-and 6 and their variables itself: no child it starts ever inherits them. The exit is exactly one of `0`
-(success, with an answer), `10` (the agent reported failure), `11` (the
-agent process failed), `13` (no usable credential, remedy on stderr), or
-`15` (the agent's binary is absent) -- anything else, or `0` with no
-answer, is read as the command failing (`14`). Every credential probe is
-bounded with `timeout -k`, so one that ignores TERM is still killed. Setting any `BYRE_RUN_*` name in a skill's `[runtime].env`
-makes status stop vouching for the headless command. Authoring notes:
-[docs/SKILLS.md](https://github.com/pjlsergeant/byre/blob/main/docs/SKILLS.md);
-the decision:
-[ADR 0061](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0061-headless-runs.md).
+The command honours the author contract in
+[docs/SKILLS.md](https://github.com/pjlsergeant/byre/blob/main/docs/SKILLS.md)
+([ADR 0061](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0061-headless-runs.md)).
+Setting any `BYRE_RUN_*` name in a skill's `[runtime].env` makes status
+stop vouching for the headless command.
 
 ## Required skills
 
 `requires = ["<skill>", ...]` at the top level of a skill.toml names
-skills this one does not work without. Each name expands through the
-catalog like any skill name and must be ENABLED -- in the cascade's
-`skills` list or as the agent -- or develop and `byre run` refuse:
-`skill "owner/name" requires "codex", which is not enabled -- add it to
-skills = [...]`. byre never enables a requirement itself. The check is
-the same under `develop -a`. `validate` refuses a malformed name, a
-duplicate, or the skill's own id; a name that does not exist is reported
-at resolve. `byre skill inspect` and the install summary print
-`requires: <name>`, and the config editor's Skills screen marks an
-enabled skill whose requirement is off, `(requires codex -- not
-enabled)`, leaving the row toggleable. The decision:
+skills this one does not work without; each must already be enabled, and
+byre never enables one itself. `byre skill inspect` and the install
+summary print `requires: <name>`. Resolution:
 [ADR 0062](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0062-skill-requires.md).

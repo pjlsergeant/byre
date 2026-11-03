@@ -1034,22 +1034,16 @@ shared store, claude-shared-auth a token paste and a stale-login offer. Each
 of those blocks on a person, bounded at 600 s for the logins. So none of them
 prompts when nobody can answer:
 
-- **The headless signal is `BYRE_HEADLESS=1`.** It is byre's own variable,
-  set for a headless run (`byre run`, ADR 0061). The launcher exports it
-  from its OWN argv -- when the container command is exactly
-  `/usr/local/bin/byre-headless` --
-  and unsets it otherwise, whatever the environment carried: a skill's
-  `[runtime].env` can set any `BYRE_*` name and raw `run_args` can override
-  any `-e`, but neither reaches the command argv. A headless run also never
-  has a terminal (`byre run` launches without `-t` and with stdin
-  `/dev/null`), so both tests below hold there.
+- **The headless signal is `BYRE_HEADLESS=1`.** byre's launcher sets it
+  from its own argv for a headless run (`byre run`) and unsets it
+  otherwise ([ADR 0061](adr/0061-headless-runs.md)). A headless run also
+  never has a terminal, so both tests below hold there.
 - **Hooks test `BYRE_HEADLESS` first, then `[ -t 0 ]`.** Either one holding
   means no prompt, and the hook exits 0 (a hook never fails a launch).
   Under `BYRE_HEADLESS` the codex-login, grok-login, opencode-login,
   claude-shared-auth and grok-shared-auth first-run hooks exit silently at
   their top, before any credential probe or store write: the headless
-  command owns the bounded preflight and its remedy (below), and a headless
-  run never promotes a box's login into a machine-wide store. The test
+  command owns the bounded preflight and its remedy (below). The test
   comes first so the hooks' `BYRE_ASSUME_TTY` test seam cannot beat it.
   With no terminal, what the hook says on the way out differs:
   - grok, grok-shared-auth, opencode and codex-login print a remedy on
@@ -1063,9 +1057,10 @@ prompts when nobody can answer:
     offer is withheld.
 - **codex-login's probe is bounded.** Its `codex login status` call is
   bounded at 30 s (the same bound as the codex-shared-auth reconciler
-  call), because it runs before anything else bounds the hook. Its no-terminal guard sits after the
-  shared-link detach, so both the not-logged-in and the stale-credential
-  routes reach it, and it restores the shared-auth link before exiting.
+  call), because it runs before anything else bounds the hook. Its
+  no-terminal guard sits after the shared-link detach, so both the
+  not-logged-in and the stale-credential routes reach it, and it restores
+  the shared-auth link before exiting.
 - **No persistent codex key file.** codex has no env-key inference: with
   `OPENAI_API_KEY` set and an empty `CODEX_HOME`, `codex login status` says
   "Not logged in", and `codex exec --help` says auth "still uses
@@ -1082,50 +1077,31 @@ prompts when nobody can answer:
   project's box gains a credential nobody granted it, and a shared ChatGPT
   login is displaced, all without a word.
 - **The claude onboarding seed refuses a symlink.** `[ ! -e ]` is true for a
-  dangling symlink and a plain `>` writes through it, so both seeds also test
-  `[ ! -L ]`. A node raced in after the test is refused by the publish: the
-  bytes go to a `mktemp`'d dotfile and `ln -n` claims `.claude.json` with
-  link(2), which fails `EEXIST` on any existing node and never follows a
-  symlink; the temp is removed either way. `set -C` would not do: noclobber
-  refuses only an existing regular file, so it opens a symlink to a FIFO and
-  the hook blocks.
+  dangling symlink and a plain `>` writes through it, so both seeds (the
+  `claude-onboarding` hook and claude's headless command) also test
+  `[ ! -L ]`. The publish then refuses a file or symlink raced in after the
+  test: the bytes go to a `mktemp`'d dotfile and `ln -n` claims
+  `.claude.json` with link(2), which fails `EEXIST` on an existing file or
+  symlink and never follows one; the temp is removed either way. A REAL
+  directory planted at the name is the one exception: `ln` links the marker
+  inside it under the temp's basename, and that link stays (the bytes are
+  the onboarding flag, not a credential). `set -C` would not do: noclobber
+  refuses only an existing regular file, so it opens a symlink to a FIFO
+  and the hook blocks.
 
 ## Headless runs: the credential is the headless command's job
 
 In a headless run (`byre run`, ADR 0061) the login hooks stand down, as
-above, and nobody is there to log in. Each agent's
-headless command therefore runs its own credential preflight, every probe
-bounded with `timeout -k` (so a probe that ignores TERM is still killed;
-the codex login hook's probe is bounded the same way), and exits 13 with a remedy on stderr when there is no usable
-credential -- before the agent starts, so a credential-less run fails in
-seconds rather than at the agent's first request. The remedies name
-`env_from_host` in the project config, `byre credentials set`, and the
-agent's shared-auth companion.
+above, and nobody is there to log in. Each agent's headless command runs
+its own credential preflight, every probe bounded with `timeout -k`, and
+exits 13 with a remedy on stderr when there is no usable credential --
+before the agent starts. The remedies name `env_from_host` in the project
+config, `byre credentials set`, and the agent's shared-auth companion.
 
-**Helpers come from the system PATH.** The image's PATH puts
-`~/.local/bin` first, and repo code can write there before any of this
-runs (a pending worktree checkout's hooks and filters). The headless
-commands, the launch adapters (`byre-claude-launch`,
-`byre-codex-mcp-launch`, `byre-grok-launch`, which the headless commands
-invoke, and `byre-opencode-mcp-launch`) and the codex-shared-auth
-reconciler therefore run their own helpers (`cat`, `jq`, `head`, `wc`,
-`iconv`, `cp`, `flock`, `mktemp`, `timeout`) on the system PATH and hand
-the inherited agent PATH only to the final exec of the agent CLI, so a
-planted helper never runs inside byre's launch or credential machinery.
-grok and opencode, whose binaries live outside `~/.local/bin`, are named
-by the root-owned `/usr/local/bin` link each skill installs, so a
-planted copy never runs in their place.
-The interactive login hooks (codex-login, grok-login, opencode-login,
-grok-shared-auth's first-run hook) still run the agent CLIs and their
-helpers on the agent PATH: they stand down under a headless launch, and a
-plant there gains only what the agent already has. grok-shared-auth's
-broker does not stand down: grok runs `GROK_AUTH_PROVIDER_COMMAND` on
-every credential request, headless runs included, on grok's PATH, so the
-command's `bash` and the broker's `jq`, `curl`, `flock`, `date` and `mv`
-resolve through `~/.local/bin` inside the code that refreshes the
-machine-wide grok login -- a plant there reaches the shared store, which
-the agent can already read and write in the identity volume (ADR 0061
-residuals).
+The headless commands, launch adapters and codex-shared-auth reconciler
+run their own helpers on the system PATH; the interactive login hooks and
+grok-shared-auth's broker run on the agent PATH
+([ADR 0061](adr/0061-headless-runs.md) has the scope and its residuals).
 
 ### codex: a key in the env is logged into a CODEX_HOME made for the run
 
@@ -1138,104 +1114,49 @@ on stdin, bounded at 30 s, runs `codex exec` under that home, and removes
 it when the run ends. The real `CODEX_HOME` -- the project's state
 volume -- is never written. With no key in the env it checks the real
 `CODEX_HOME`'s login (`codex login status`, bounded at 30 s) and runs
-there if one is present; otherwise it exits 13.
+there if one is present; otherwise it exits 13. A present key wins over a
+working stored login, which stays untouched. Why not the state volume: the
+codex-shared-auth reconciler would publish the key machine-wide (above;
+[ADR 0061](adr/0061-headless-runs.md)).
 
-**Why not log the key into the state volume.** codex has no env-key
-inference (above): a key only reaches codex as a login written into SOME
-`CODEX_HOME`, so the question is which one. Not the state volume, because
-of codex-shared-auth. Its reconciler runs at every launch and publishes
-any valid credential it finds in a project's `CODEX_HOME` to the shared
-store, and when both are valid it prefers one with no `last_refresh` --
-which an API-key login never has. A key left in the state volume would
-therefore become the machine's shared codex credential one launch later:
-other projects' work billed to this key, every other project's box handed
-a credential nobody granted it, and a shared ChatGPT login displaced --
-with no prompt anywhere. A login that exists only for the length of one
-run, in a directory the reconciler never looks at, cannot leak that way.
+Two side effects of the per-run home: codex warns on stderr that it skips
+its helper-binary PATH aliases in a temp dir (the run does not need them),
+and a key codex rejects can appear MASKED (first and last few characters)
+in the event stream's error messages, which the result dir's transcript
+records. The full key exists only inside the run's own home, which is
+gone when the run ends.
 
-**When it matters.** On a machine that persists between runs AND has
-codex-shared-auth enabled: a developer laptop, a self-hosted CI runner. A
-hosted runner that is discarded after the job never launches again, so
-nothing there is ever reconciled -- but the headless command behaves the
-same everywhere, so nobody has to know which kind of machine they are on.
+### claude: what can be checked, and the result event
 
-**A present key wins.** When `OPENAI_API_KEY` or `CODEX_ACCESS_TOKEN` is
-set, the run uses it even if the real `CODEX_HOME` holds a working login
-(a human's device login on a persistent runner, or the shared one). The
-key is the explicit choice for this run; the stored login is untouched and
-is what the next interactive session uses.
-
-Two side effects of the per-run home, both noted in the script: codex
-warns on stderr that it skips its helper-binary PATH aliases in a temp
-dir (the run does not need them), and a key codex rejects can appear
-MASKED (first and last few characters) in the event stream's error
-messages, which the result dir's transcript records. The full key exists
-only inside the run's own home, which is gone when the run ends.
-
-### claude: presence of an env credential is the whole check
-
-`byre-claude-headless`'s preflight, in order:
-
-- `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`
-  non-empty passes. Presence is all that can be checked cheaply: claude
-  does not validate an env token before a turn, and `claude auth status`
-  reports ANY non-empty token as logged in, so probing it adds nothing. A
-  bad token is not caught here: it surfaces when the agent runs, as a
-  failed run rather than a 13.
-- Otherwise a regular, non-symlink `.credentials.json` in the config dir
-  holding a `"claudeAiOauth"` entry passes -- that key is what claude
+- An env credential (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`,
+  `ANTHROPIC_AUTH_TOKEN`) can only be checked for presence: claude does
+  not validate an env token before a turn, and `claude auth status`
+  reports ANY non-empty token as logged in. A bad token surfaces when the
+  agent runs, as a failed run rather than a 13.
+- In `.credentials.json`, the `"claudeAiOauth"` entry is what claude
   writes for an inference login. The file also holds MCP server logins
   (`mcpOAuth`), which do not authenticate inference, so the file's mere
   existence is not enough.
-- Otherwise `claude auth status`, bounded at 30 s, must report
-  `loggedIn: true` (read with `jq`, which the claude skill installs for
-  this). A timeout is a 13, never a stalled run.
+- The answer is claude's last `result` event in its `stream-json` output
+  (which requires `--verbose` under `-p`): `.result` is the answer, and
+  `.is_error == true` is a reported failure. The event's `subtype` is no
+  signal -- a failed turn still says `success` -- and claude exits 1 when
+  it reports a failure, so the event is judged before the exit status.
 
-With an env credential and a fresh config dir, the headless command also
-seeds the onboarding marker itself -- the same publish as the
-`claude-onboarding` hook, with the same `-L` check and `ln -n` claim -- so a
-headless run cannot reach the first-run wizard even where that hook did
-not run.
+### grok: presence only, and the one JSON document
 
-The answer comes from claude's last `result` event in its `stream-json`
-output (which requires `--verbose` under `-p`): `.result` is the answer,
-and `.is_error == true` is a reported failure (exit 10). The event's
-`subtype` is no signal -- a failed turn still says `success` -- and claude
-exits 1 when it reports a failure, so the event is judged before the exit
-status. A nonzero status with no reported failure, or no result event at
-all, is the process failing (exit 11, with its status recorded).
-
-### grok: presence is the whole preflight
-
-grok has no `login status` probe, so `byre-grok-headless` checks presence
-only, in this order: `XAI_API_KEY` non-empty; `GROK_AUTH_PROVIDER_COMMAND`
-non-empty (the grok-shared-auth broker); a regular, non-symlink
-`$GROK_HOME/auth.json` containing a `"key"` member -- the grok login
-hook's own shape sniff. Anything else is a 13. A stored login whose
-refresh chain has died passes this check and then HANGS inside grok at
-use time (above): the check cannot see it, which is why the docs point
-grok runs at `byre run --timeout`.
-
-**A present key runs in a GROK_HOME made for the invocation.** grok's
-own rule is that a stored session wins over `XAI_API_KEY` (the grok
-section's §4), so
-a login in the state volume -- a dead one included -- would shadow a key
-the run was given. With `XAI_API_KEY` set, `byre-grok-headless` runs grok
-with `GROK_HOME` pointing at a temp dir made for that invocation and
-removed on exit, where no stored login exists: it holds only a `bundled`
-link to `/home/dev/.grok/bundled` (the grok-bundled hook's link, so the
-run sees the bundled skills) and no file from the real home. Without a
-key it runs on the stored login, under the same presence check, and
-`--timeout` stays the remedy for a dead refresh chain.
-
-The run is one `--prompt-file` turn with `--output-format json`
-(probed against the grok CLI): grok prints ONE document when it finishes, the
-answer at `.text`; a reported failure is `{"type":"error","message":...}`
-with exit 1, so the document is judged before the exit status -- an error
-document is 10 whatever the status, its message written as the answer. A
-nonzero status with no error document, or no answer document at all, is
-11. Because the document arrives only at the end, the live stream `byre
-run` relays is silent until grok finishes.
+- grok has no `login status` probe, so the preflight checks presence
+  only: `XAI_API_KEY`, `GROK_AUTH_PROVIDER_COMMAND` (the grok-shared-auth
+  broker), or a regular `$GROK_HOME/auth.json` with a `"key"` member. A
+  stored login whose refresh chain has died passes and then HANGS inside
+  grok at use time (above); `byre run --timeout` bounds it.
+- grok's stored session wins over `XAI_API_KEY` (the grok section's §4),
+  so a run given a key uses a `GROK_HOME` made for that invocation, with
+  no stored login in it (ADR 0061).
+- `--output-format json` (probed against the grok CLI) prints ONE document
+  when grok finishes, the answer at `.text`; a reported failure is
+  `{"type":"error","message":...}` with exit 1. The live stream is silent
+  until grok finishes.
 
 ## Source list
 

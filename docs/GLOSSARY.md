@@ -147,63 +147,44 @@ snapshot)
 
 **Headless run**:
 A session whose agent executes ONE task non-interactively and exits,
-started by `byre run`. Still a session: one container, and the
-single-session rule applies. The box gets no terminal and no stdin, and
-byre exits with its own verdict. (ADR 0061)
+started by `byre run` (ADR 0061). Still a session: one container.
 _Avoid_: "batch run", "job" (CI's word for the step that calls `byre run`,
 not for the session), "ephemeral" (implies byre discards state it keeps:
 the volumes persist as for any session)
 
 **Task**:
-The text a headless run gives the agent: from `--task <file>`, `--task -`
-(byre's stdin, read to EOF), or `BYRE_TASK` in byre's own environment; the
-flag wins when both are set. Bounded at 1 MiB. There is no implicit task
-file in the repo.
+The text a headless run gives the agent.
 _Avoid_: "prompt" (the agent's word for everything it is sent, which can
 carry more than the task), "job"
 
 **Result dir**:
-`.byre-run/` at the working-tree root, self-ignoring (its own `.gitignore`
-is `*`, the devlog-dir pattern): the task as byre staged it, what the agent
-produced, the chassis's record of the run (`result.md`, `result.json`,
-`transcript.jsonl`, `stderr.log`, `status`), and byre's copy of the
-outcome. Emptied by byre at the start of every headless run. **Agent-trust,
-all of it**: byre reads nothing back from it, and a script must not gate on
-it.
+`.byre-run/` at the working-tree root: the directory holding one headless
+run's files -- the staged task, the agent's record of the run, and a copy
+of the outcome. **Agent-trust**, all of it.
 _Avoid_: "artifact" (CI's word for what a job uploads -- archiving the
 result dir is how it becomes one), "output" (the answer is on stdout)
 
 **Answer**:
-The agent's final message: the one thing `byre run` prints on stdout
-without `--data`, escaped on a terminal and byte for byte into a file or a
-pipe. Agent-trust text.
+The agent's final message: what `byre run` prints on stdout without
+`--data`.
 _Avoid_: "result" (the result dir holds more than the answer), "output"
 
 **Outcome**:
-byre's own verdict on a headless run: the exit code, and the versioned
-JSON document `byre run --data` prints on stdout (`RunDataVersion`) --
-`outcome` (`ran`, `refused`, `box_exited`, `byre_failed`, `crashed`),
-`phase`, `authority` and the rest. **Only these two are authoritative.**
-`authority` reads `unverified: raw run_args` when raw `run_args` were in
-force. A copy lands in the result dir as `outcome.json` for humans and
-carries no authority there.
+byre's own verdict on a headless run. **Authoritative: the exit code and
+the `--data` document** (the versioned JSON `byre run --data` prints on
+stdout); the `outcome.json` copy in the result dir is not.
 _Avoid_: "status" (taken: `byre status`, and the chassis's `status` file),
 "result" (the result dir is agent-trust; the outcome is not)
 
 **Summary line**:
 The one line byre prints last on stderr after a headless run:
-`byre: run <run id>: <outcome>, exit <n> (<authority>)`. Informational and
-FORGEABLE: the agent shares stderr for the whole run and can print an
-identical line first. Gate a script on the exit code or `--data`, never on
-this line.
+`byre: run <run id>: <outcome>, exit <n> (<authority>)`. Informational;
+the verdict is the Outcome.
 _Avoid_: "result line", "verdict" (the verdict is the outcome)
 
 **Headless command**:
-The `[agent] headless = "..."` command an agent skill declares: the in-box
-program `byre-headless` runs for a headless run, honouring the contract in
-ADR 0061 -- the task from `BYRE_RUN_TASK_FILE`, the answer to
-`BYRE_RUN_RESULT_FILE`, an exit from the closed set. Absent means the agent
-has no headless mode, and `byre run` refuses it by name.
+The command `[agent].headless` declares: what `byre-headless` runs for a
+headless run. The author contract is in `docs/SKILLS.md`.
 _Avoid_: "headless mode" for the command itself (the mode is the agent's;
 the command is what provides it), "batch command"
 
@@ -396,8 +377,8 @@ attributed to the layer that supplied it.
 A saved answer to onboarding's questions: a complete proposed config in
 byre.config format, from anywhere -- conventionally `byre.preset` in a
 repo. Not a package (no identity, no version, no install). Applied only
-via `byre preset apply` (review + chauffeur + confirm + write; `--yes`
-replaces the confirm and never covers a credential row, ADR 0063);
+via `byre preset apply` (review + chauffeur + confirm + write; `--yes` is
+the unattended form, ADR 0063);
 `byre.config` is reserved for the box's live consent document.
 
 **Chauffeur**:
@@ -432,9 +413,8 @@ row in the config UI (ADR 0034).
 **Required skill (`requires`)**:
 A skill another skill names in its top-level `requires` list because it
 does not work without it (zai requires codex). A requirement is MET only
-when the user has enabled it -- in `skills` or as the agent -- and
-develop refuses otherwise; byre never enables one on the user's behalf
-(ADR 0062). Not a companion: a companion augments an agent, a
+when the user has enabled it -- in `skills` or as the agent (ADR 0062).
+Not a companion: a companion augments an agent, a
 requirement is something the requiring skill uses.
 
 **docker-host**:

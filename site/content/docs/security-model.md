@@ -379,88 +379,45 @@ Clear each refuse while one is there, printing its `rm -f` line, so it is
 never silent, but removing it is yours.
 
 **A headless run's output is the agent's, all of it -- except the exit
-code and `--data`.** `byre run`
-([ADR 0061](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0061-headless-runs.md))
-writes into your work tree: it empties `.byre-run/` at the start of every
-run and stages the task there, and the agent and byre's in-box chassis
-then write the answer, a transcript, a stderr log and a `result.json`
-beside it; afterwards byre adds a copy of its outcome. Every one of those
-files is in a directory the agent can write for the whole run, and byre
-reads none of them back. So is everything on stdout and stderr: the
-answer is the agent's text (escaped on a terminal, raw into a file), and
-stderr carries the agent's own output alongside byre's -- including
-byre's last line, which the agent could print first. The verdict a
-script can trust is the exit code and the `--data` document, which byre
-prints on the host after the box has exited; a script that gates on
-anything in `.byre-run/` or on stderr is gating on the agent's word. The
-answer belongs in that class too: an agent that writes a different answer
-than the one its headless command meant to deliver changes only what it
-could have written anyway. byre keeps the channel the answer travels on
-out of what a skill's first-run hooks inherit, and away from an
-interpreter the agent could plant, but that is hygiene, not a wall: any
-process in the box can reach that channel through `/proc`, and a skill's
-launch env hooks run inside byre's launcher and hold it outright. The
-answer was never more than the agent's word; the exit code and the
-`--data` document never travel on that channel.
-byre's own writes there are anchored and never follow a link or
-overwrite a file the agent planted (the same machinery as grab), with
-one residual shared with grab: a symlink an agent swaps in for a
-directory ABOVE the work tree is followed. Five more facts, each a
-limitation rather than a bug: **repo code runs before the chassis** -- a
-worktree checkout still pending runs your repository's git hooks and
-filters in the box before the headless machinery starts, and that code
-can rewrite the staged task; the chassis checks the task's hash and
-refuses a changed one (exit 16), but the code has already run -- what it
-cannot do is stand in for the chassis, which byre launches by its
-absolute, build-guarded path and which runs its own helper tools from the
-system directories only, never from the agent-writable `~/.local/bin`.
-byre's own launcher, the agents' launch wrappers and codex-shared-auth's
-credential reconciler do the same, handing the agent's own PATH only to
-the agent program itself (and, for the launcher, to the first-run steps),
-and the skills' launch env hooks run with only the system directories on
-PATH, so a helper planted there never runs inside those. The exceptions run on the agent's PATH, and code planted there
-gains only what the agent already has. The interactive login steps
-(codex, grok, opencode, and claude-shared-auth's and grok-shared-auth's
-first-run steps) stand down in a headless run before they run anything. grok-shared-auth's broker, which grok runs whenever
-it needs a credential, does not: it runs in headless runs too, on grok's
-PATH, and refreshes the grok login every project on the machine shares,
-which the agent can already read and write in the box. And the agent
-itself: byre starts the agent's own command, headless
-or interactive, by its name on the agent's PATH, so a same-named program
-repo code planted in `~/.local/bin` runs as your agent for that session.
-It is trusted as the agent is and no further: the exit codes the agent's
-script reports were already the agent's word, while byre's own (timeout,
-contract breach, changed task) and the host's verdict cannot be forged
-this way. Resolving the agent's command off the system directories alone
-is a contract change left to its own decision; **the
-chassis's own file claims rely on nothing else running yet** -- it
-checks each name is free and then creates it, two steps that are only
-safe because the agent has not started and the repo code has finished,
-and the claude onboarding seeds rely on the same sequencing; **raw
-`run_args` make the verdict unverified** -- byre does not parse them, so
-the box may have been handed any mount or a different first process, and
-the `--data` document says `unverified: raw run_args` on every outcome
-rather than claiming otherwise; **exit numbers are shared** -- a box that
-exits 1, 2, 3 or 70 reaches your script as that number, the same as byre's
-own codes, and only `--data` tells them apart; and **there is no time
-limit unless you set one** -- an agent that hangs holds the run until
-`--timeout` (if given) or you stop it.
+code and `--data`.** `byre run`'s stdout, its stderr and the `.byre-run/`
+directory it writes in your work tree are all the agent's to shape; byre
+reads nothing back from `.byre-run/`, and the agent can print a line
+identical to byre's last one. Gate a script on the exit code or the
+`--data` document, which byre produces on the host after the box exits.
+The limitations, each recorded in
+[ADR 0061](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0061-headless-runs.md):
+
+- **Repo code runs before the chassis**: a pending worktree checkout runs
+  your repository's git hooks and filters in the box first; a rewritten
+  task is refused (exit 16), but the code has already run.
+- **The chassis's exclusive file claims assume nothing else runs during
+  setup**: the agent has not started and the repo code has finished.
+- **The answer is agent-trust**: the channel it travels on is reachable
+  by any process in the box running as the same user.
+- **Raw `run_args` make the verdict unverified**: byre does not parse
+  them, and `--data` says `unverified: raw run_args`.
+- **The agent's own command resolves on the agent's PATH, by design**:
+  your tools live there, so a program repo code planted in `~/.local/bin`
+  under the agent's name runs as your agent; byre's pin to the system
+  directories covers byre's own helpers only.
+- **grok-shared-auth's broker runs on grok's PATH**, in headless runs too,
+  and refreshes the machine-wide grok login the agent can already read
+  and write.
+- **byre's writes into `.byre-run/` follow a symlink swapped in for a
+  directory above the work tree**, the residual shared with `grab`.
+- **Exit numbers are shared**: a box that exits 1, 2, 3 or 70 reaches
+  your script as that number, and `--data` tells them apart.
+- **There is no time limit unless you set one** with `--timeout`.
 
 **Agents hold usable credentials by construction.** Whatever auth story
 you choose, the agent can read its own credential -- it needs it to
 work. byre's job is that the credential's scope is what you chose, its
-location is legible, and nothing you did not choose rides along. One
-consequence for codex: its headless mode never saves a key from the
-environment into the project's codex state, because with codex-shared-auth
-enabled a saved key would be shared to every project on the machine at
-the next launch. It logs the key into a codex home that exists for one
-run, and a key in the environment wins over a login the box already has
-for that run. grok is handled the same way for the opposite reason: grok
-itself prefers a stored login over a key in the environment, so a
-headless run given `XAI_API_KEY` runs grok in a config home made for
-that one run, where no stored login can shadow the key. Without a key it
-uses the stored login, and if that login's refresh has died grok hangs
-rather than failing -- `byre run --timeout` bounds it.
+location is legible, and nothing you did not choose rides along. In a
+headless run, a codex or grok key from the environment is used in a
+config home made for that one run, never saved to the project's state:
+for codex that keeps codex-shared-auth from sharing the key machine-wide,
+and for grok it stops a stored login shadowing the key
+([ADR 0061](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0061-headless-runs.md)).
 
 ## Reporting
 
