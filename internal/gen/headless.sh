@@ -44,7 +44,7 @@ refuse() {
 
 # uptime_cs sets now_cs to the monotonic clock: /proc/uptime's first field
 # (seconds since boot, two decimals) as whole centiseconds. A builtin read of
-# a kernel file, so it is safe inside a trap handler.
+# a kernel file, so a poll forks nothing to take it.
 uptime_cs() {
   local up rest
   read -r up rest </proc/uptime || return 1
@@ -143,7 +143,7 @@ timeout_spec=${BYRE_RUN_TIMEOUT:-}
 if [ -n "$timeout_spec" ]; then
   [[ $timeout_spec =~ ^([0-9]+(\.[0-9]*)?|\.[0-9]+)[smhd]?$ ]] ||
     refuse "BYRE_RUN_TIMEOUT is not a duration (a number with an optional s/m/h/d suffix): $(printf '%q' "$timeout_spec")"
-  # Zero means no timer, as if the variable were unset.
+  # Zero means no timeout, as if the variable were unset.
   if [[ ${timeout_spec%[smhd]} =~ ^[0.]*$ ]]; then timeout_spec=""; fi
 fi
 
@@ -209,15 +209,14 @@ set +C
 
 cmd=${1:-/etc/byre/agent-headless}
 timed_out=0
-child="" timer="" killer="" deadline_cs=""
+child="" deadline_cs="" kill_cs=""
 
 # --- 4. supervise -------------------------------------------------------------
 
-# Every helper process (the tees, the timer, the KILL follow-up) and the
-# headless command itself start with the descriptors they must not hold
-# closed: a relay pipe held open elsewhere keeps its tee from seeing EOF, and
-# fd 9 is the chassis's alone -- the headless command never writes the box's
-# real stdout.
+# The tee relays and the headless command itself start with the descriptors
+# they must not hold closed: a relay pipe held open elsewhere keeps its tee
+# from seeing EOF, and fd 9 is the chassis's alone -- the headless command
+# never writes the box's real stdout.
 
 # tee_to appends a stream to a held file and, unless BYRE_RUN_QUIET, relays it
 # to the box's stderr. It ignores TERM/INT so a signal aimed at the run never
@@ -235,36 +234,6 @@ on_signal() {
   if [ -n "$child" ]; then kill "-$1" -- "-$child" 2>/dev/null; fi
 }
 
-# on_timeout (USR1, see the traps): TERM the group, KILL 15 s later. The
-# handler runs when the poll's sleep ends, so a child can finish after the
-# timer's signal and before this check; one that is gone keeps its own
-# verdict. The timeout is enforced to within one poll interval.
-on_timeout() {
-  [ -n "$deadline_cs" ] || return
-  uptime_cs || return
-  [ "$now_cs" -ge "$deadline_cs" ] || return
-  [ "$timed_out" = 0 ] || return
-  kill -0 "$child" 2>/dev/null || return
-  timed_out=1
-  kill -TERM -- "-$child" 2>/dev/null
-  (
-    trap 'kill $! 2>/dev/null; exit 0' TERM
-    sleep 15 &
-    wait $!
-    kill -KILL -- "-$child" 2>/dev/null
-  ) 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&- &
-  killer=$!
-}
-
-# stop_helper ends a timer or KILL follow-up the run no longer needs (its trap
-# kills the sleep it is waiting on, so no sleep outlives it).
-stop_helper() {
-  if [ -n "$1" ]; then
-    kill "$1" 2>/dev/null
-    wait "$1" 2>/dev/null
-  fi
-}
-
 if [ ! -x "$cmd" ]; then
   code=15 status=backend_unavailable
   message="no headless command at $cmd"
@@ -277,16 +246,12 @@ else
   exec 8> >(exec 3>&- 5>&- 6>&- 7>&- 9>&-; tee_to 4)
   tee_err=$!
 
-  # USR1 is the timer's signal, but any same-uid process can send it: it
-  # counts only after the monotonic deadline and only while a timer is armed,
-  # and is ignored otherwise (its default action kills the chassis).
   trap 'on_signal TERM' TERM
   trap 'on_signal INT' INT
-  if [ -n "$timeout_spec" ]; then
-    trap 'on_timeout' USR1
-  else
-    trap '' USR1
-  fi
+  # No signal from any process produces the timeout verdict: PID 1 checks the
+  # deadline itself, and the agent cannot kill PID 1. USR1 is ignored so its
+  # default action cannot end a chassis that is not PID 1.
+  trap '' USR1
 
   # Its own session, so $! is the group the signals go to: setsid(1) does not
   # fork, as a non-interactive shell's background child is never a group
@@ -306,33 +271,36 @@ else
     # A failed re-read keeps the earlier, sooner reading.
     uptime_cs
     deadline_cs=$((now_cs + timeout_cs))
-    (
-      trap 'kill $! 2>/dev/null; exit 0' TERM
-      sleep "$timeout_spec" &
-      wait $! && kill -USR1 $$
-    ) 3>&- 4>&- 5>&- 6>&- 9>&- &
-    timer=$!
   fi
 
-  # No `wait` while a trap is armed: when a trapped signal lands as `wait`
-  # reaps the child, bash drops the child's status, and the next `wait`
-  # blocks until every other child is gone -- the timer, then the KILL
-  # follow-up. Waiting on a foreground sleep reaps and records the child
-  # safely, and a trap runs when the sleep ends, so a signal's handler waits
-  # at most 0.1 s. Not `read -t`: a read inside a trap handler (uptime_cs)
-  # cancels its timeout.
+  # A poll on a foreground sleep, not `wait`: when a trapped signal lands as
+  # the `wait` builtin reaps the child, bash drops the child's status. The
+  # foreground sleep reaps and records the child safely, and a trap runs when
+  # the sleep ends, so a signal's handler waits at most 0.1 s. The deadline
+  # is checked between polls, so the timeout acts within one poll interval
+  # and no helper process the agent could kill is involved: TERM to the group
+  # at the deadline, KILL 15 s later. A failed clock read skips one check;
+  # the next poll retries.
   while kill -0 "$child" 2>/dev/null; do
+    if [ -n "$deadline_cs" ] && uptime_cs; then
+      if [ "$timed_out" = 0 ]; then
+        if [ "$now_cs" -ge "$deadline_cs" ]; then
+          timed_out=1
+          kill_cs=$((now_cs + 1500))
+          kill -TERM -- "-$child" 2>/dev/null
+        fi
+      elif [ "$now_cs" -ge "$kill_cs" ]; then
+        kill -KILL -- "-$child" 2>/dev/null
+      fi
+    fi
     sleep 0.1
   done
-  # Ignored, not reset: a timer firing before its stop must not kill PID 1.
   trap - TERM INT
-  trap '' USR1
-  # Reaped and recorded, so this returns at once; nothing blocks before it,
-  # the group is gone (nothing to forward), PID 1 discards a default TERM.
+  # Reaped and recorded, so this returns at once: the leader is reaped,
+  # nothing blocks before the wait, and PID 1 discards a default-disposition
+  # TERM.
   wait "$child"
   rc=$?
-  stop_helper "$timer"
-  stop_helper "$killer"
   # The run is over: whatever the headless command left in its group has no
   # one to report to, and would hold the relay pipes open.
   kill -KILL -- "-$child" 2>/dev/null

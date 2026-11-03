@@ -342,8 +342,8 @@ fork the cache-shared core block). As PID 1 of a headless run it:
    operation, best-effort.
 3. Runs the headless command in its own process group with stdin
    `/dev/null` and the inherited PATH, relaying its streams as above. When
-   `BYRE_RUN_TIMEOUT` is set, the chassis's own timer sends TERM to the
-   group on expiry and KILL 15 s later. TERM and INT to the chassis are
+   `BYRE_RUN_TIMEOUT` is set, the chassis sends TERM to the group at the
+   deadline and KILL 15 s later. TERM and INT to the chassis are
    forwarded to the group.
 4. Maps the result (timeout -> 12 first, then the closed set), publishes
    the final `result.json` by temp and rename (rename replaces a planted
@@ -374,20 +374,24 @@ kill legitimate long runs that nothing in the config asked to bound.
 duration under 1s or over 3650d: the cap keeps the chassis's centisecond
 deadline well inside 64 bits. A `BYRE_RUN_TIMEOUT` a raw `run_args` sets
 is refused by the chassis (exit 16) when it is malformed, under 1s or
-over 3650d; a raw zero (`0`, `0s`, `0.0m`) reads as unset. The chassis holds the deadline
-on the monotonic clock in `/proc/uptime`, so a wall-clock step during the
-run cannot disable the timer. The chassis checks the deadline between
-polls of the child at 0.1 s intervals, so the timeout acts within 0.1 s
-of the deadline, and a run that ends on its own inside that window keeps
-its own verdict. Durations are floored to the centisecond
-with nine fractional digits kept, so a value within 1e-10 of a boundary
-can move one centisecond -- accepted.
+over 3650d; a raw zero (`0`, `0s`, `0.0m`) reads as unset. The chassis
+takes the deadline from the monotonic clock in `/proc/uptime` after the
+headless command starts, so a wall-clock step during the run cannot move
+it. It checks the deadline between polls of the child at 0.1 s intervals,
+so the timeout acts within 0.1 s of the deadline, and a run that ends on
+its own inside that window keeps its own verdict. TERM goes to the group
+at the deadline, KILL 15 s later. No helper process exists and no signal
+produces exit 12, so an agent in the same PID namespace cannot disable
+the timeout -- PID 1 cannot be killed or stopped from inside the
+namespace. Durations are floored to the centisecond with nine fractional
+digits kept, so a value within 1e-10 of a boundary can move one
+centisecond -- accepted.
 
-The timer is the chassis's own, so exit 12 means byre's timer fired --
-never an agent that exited 124 or 137 on its own, which `timeout(1)`
-would make indistinguishable. The chassis arms it after it starts the
-headless command; the build, the launcher, the hooks and the chassis's
-input checks run before that and do not count against it. Stalls there
+The timeout is the chassis's own, so exit 12 means byre's own timeout
+fired -- never an agent that exited 124 or 137 on its own, which
+`timeout(1)` would make indistinguishable. The deadline is taken after
+the headless command starts; the build, the launcher, the hooks and the
+chassis's input checks run before that and do not count against it. Stalls there
 are bounded on their own paths (the launch gate, the bounded and
 headless-aware login hooks).
 
@@ -511,7 +515,7 @@ Each is on the security-model page too.
 - **Staging before `Create`, or before the lock.** A second run could
   empty the result dir of a run that already owns a box.
 
-[arm: TestHeadlessExitMap, TestHeadlessNoTimeoutMeansNoTimer,
+[arm: TestHeadlessExitMap, TestHeadlessHasNoHelperProcesses,
 TestHeadlessRefusesInvalidInputs,
 TestHeadlessFIFOsPlantedDuringTheRunNeverBlock,
 TestHeadlessStreamRouting, TestLauncherHeadlessExportsSignalFromArgv,

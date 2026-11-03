@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -284,7 +283,7 @@ func mustRemove(t *testing.T, p string) {
 	}
 }
 
-// The chassis's own timer: past BYRE_RUN_TIMEOUT the verdict is 12 and the
+// The chassis's own timeout: past BYRE_RUN_TIMEOUT the verdict is 12 and the
 // headless command's whole process group is gone, a background grandchild
 // included.
 //
@@ -327,15 +326,16 @@ while :; do wait; done`,
 	}
 }
 
-// USR1 is the timer's signal, but the agent shares the chassis's uid and can
-// send it: an early USR1 -- with no timer at all, or before the deadline --
-// leaves the headless command's own verdict standing, never a forged 12. The
-// real timer times the run out, whatever the duration's spelling.
+// The chassis ignores USR1 outright, and the agent shares its uid and can send
+// it: these cases pin that no USR1 from any process decides the verdict -- with
+// no timeout at all, or before the deadline, the headless command's own
+// verdict stands, never a forged 12 -- and that the deadline alone does,
+// whatever the duration's spelling.
 //
 // The deadline is exact, not whole seconds: the "late" forger signals 1.2 s
 // into a 1.9 s timeout, past any whole-second floor of it, and must be
 // ignored. It exits at once after signalling, so 0.7 s separate its verdict
-// from the real timer's.
+// from the deadline's.
 func TestHeadlessForgedUSR1IsNotATimeout(t *testing.T) {
 	t.Parallel()
 	// The stub's parent is the chassis: setsid(1) execs in place.
@@ -346,7 +346,7 @@ printf 'own answer' >"$BYRE_RUN_RESULT_FILE"`
 		name, stub string
 		env        []string
 	}{
-		{"no timer", forger, nil},
+		{"no timeout", forger, nil},
 		{"before the deadline", forger, []string{"BYRE_RUN_TIMEOUT=30s"}},
 		{"before a whole-second deadline", forger, []string{"BYRE_RUN_TIMEOUT=5"}},
 		{"before a fractional deadline", forger, []string{"BYRE_RUN_TIMEOUT=1.9s"}},
@@ -361,7 +361,7 @@ printf 'own answer' >"$BYRE_RUN_RESULT_FILE"`
 		})
 	}
 	for _, spec := range []string{"1", "1.5", "0.02m"} {
-		t.Run("real timer "+spec, func(t *testing.T) {
+		t.Run("real deadline "+spec, func(t *testing.T) {
 			t.Parallel()
 			r := runHeadless(t, headlessCase{
 				env:  []string{"BYRE_RUN_TIMEOUT=" + spec},
@@ -375,13 +375,12 @@ printf 'own answer' >"$BYRE_RUN_RESULT_FILE"`
 }
 
 // The timeout deadline is held on the monotonic clock: a deadline on a wall
-// clock moves with a step, so the real timer's one USR1 could arrive "early",
-// be ignored, and leave the run unbounded. A step cannot be staged in a
-// test, so this pins the clock source: uptime_cs reads /proc/uptime, and the
-// USR1 handler consults it and no wall clock (bash's EPOCHREALTIME,
-// EPOCHSECONDS or SECONDS, or date(1)). It also pins the data flow: now_cs
-// is assigned only inside uptime_cs, and deadline_cs only by the reset or as
-// now_cs plus timeout_cs.
+// clock moves with a step, so the run could end early or late. A step cannot
+// be staged in a test, so this pins the clock source: uptime_cs reads
+// /proc/uptime, and the poll loop that checks the deadline consults it and no
+// wall clock (bash's EPOCHREALTIME, EPOCHSECONDS or SECONDS, or date(1)). It
+// also pins the data flow: now_cs is assigned only inside uptime_cs, and
+// deadline_cs only by the reset or as now_cs plus timeout_cs.
 func TestHeadlessTimeoutClockIsMonotonic(t *testing.T) {
 	src := string(HeadlessScript())
 	wall := regexp.MustCompile(`EPOCHREALTIME|EPOCHSECONDS|SECONDS|\bdate\b`)
@@ -399,12 +398,21 @@ func TestHeadlessTimeoutClockIsMonotonic(t *testing.T) {
 	if clock := body("uptime_cs"); !strings.Contains(clock, "</proc/uptime") {
 		t.Errorf("uptime_cs does not read /proc/uptime:\n%s", clock)
 	}
-	handler := body("on_timeout")
-	if !strings.Contains(handler, "uptime_cs") {
-		t.Errorf("on_timeout does not consult uptime_cs:\n%s", handler)
+	const pollHead = "\n  while kill -0 \"$child\" 2>/dev/null; do\n"
+	pollStart := strings.Index(src, pollHead)
+	if pollStart < 0 {
+		t.Fatal("headless.sh has no child-poll loop")
 	}
-	if w := wall.FindString(handler); w != "" {
-		t.Errorf("on_timeout reads a wall clock (%q)", w)
+	pollEnd := strings.Index(src[pollStart:], "\n  done\n")
+	if pollEnd < 0 {
+		t.Fatal("headless.sh's child-poll loop has no done")
+	}
+	poll := src[pollStart : pollStart+pollEnd]
+	if !strings.Contains(poll, "uptime_cs") || !strings.Contains(poll, "deadline_cs") {
+		t.Errorf("the child-poll loop does not check deadline_cs against uptime_cs:\n%s", poll)
+	}
+	if w := wall.FindString(poll); w != "" {
+		t.Errorf("the child-poll loop reads a wall clock (%q)", w)
 	}
 
 	// Full-line comments blanked in place, so offsets match src.
@@ -499,39 +507,31 @@ done >"$STUB_WS/children"
 sleep 2
 printf done >"$BYRE_RUN_RESULT_FILE"`
 
-// No BYRE_RUN_TIMEOUT means no bound at all: no timer process exists while
-// the headless command runs, and a sleeping one is not killed. The timer is
-// a bash subshell child of the chassis; the chassis's own children -- its
-// tee relays and the sleep of its child-poll loop -- are not timers. The
-// same probe with a timeout set sees a bash child -- the control that
-// proves the probe can see the timer.
-func TestHeadlessNoTimeoutMeansNoTimer(t *testing.T) {
-	children := func(t *testing.T, env ...string) []string {
+// The timeout is enforced by PID 1 from its poll loop, so there is no helper
+// process an agent could kill: with or without a timeout, the chassis's only
+// children while the headless command runs are its tee relays and the sleep
+// of its child-poll loop, and a sleeping command inside its bound is not
+// killed.
+func TestHeadlessHasNoHelperProcesses(t *testing.T) {
+	for _, spec := range []string{"", "0", "0s", "0.0m", "60"} {
+		var env []string
+		if spec != "" {
+			env = []string{"BYRE_RUN_TIMEOUT=" + spec}
+		}
 		r := runHeadless(t, headlessCase{stub: childNamesProbe, env: env})
 		if r.code != 0 {
-			t.Fatalf("exit %d, want 0 (a sleeping headless command must not be killed)\nstderr:\n%s", r.code, r.stderr)
+			t.Fatalf("BYRE_RUN_TIMEOUT=%q: exit %d, want 0 (a sleeping headless command must not be killed)\nstderr:\n%s", spec, r.code, r.stderr)
 		}
 		b, err := os.ReadFile(filepath.Join(r.ws, "children"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		return strings.Fields(string(b))
-	}
-	for _, spec := range []string{"", "0", "0s", "0.0m"} {
-		var env []string
-		if spec != "" {
-			env = []string{"BYRE_RUN_TIMEOUT=" + spec}
-		}
-		names := children(t, env...)
+		names := strings.Fields(string(b))
 		for _, name := range names {
 			if name != "tee" && name != "sleep" {
-				t.Errorf("BYRE_RUN_TIMEOUT=%q must mean no timer, but the chassis has a %q child beside its relays and poll: %v", spec, name, names)
+				t.Errorf("BYRE_RUN_TIMEOUT=%q: the chassis has a %q child beside its relays and poll: %v", spec, name, names)
 			}
 		}
-	}
-	with := children(t, "BYRE_RUN_TIMEOUT=60")
-	if !slices.Contains(with, "bash") {
-		t.Errorf("control: with BYRE_RUN_TIMEOUT=60 the probe saw no bash timer child (%v), so it cannot see one", with)
 	}
 }
 
