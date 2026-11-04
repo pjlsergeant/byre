@@ -298,10 +298,11 @@ the unattended form, ADR 0063);
 
 **Chauffeur**:
 The inside-apply walk-through of a preset's missing packages: each gets
-its normal, kind-specific install flow with its own grant summary and
-confirm -- N explicit consents the user solicited by invoking apply,
-never the banned transitive install (silent fetching). The solicitation
-rule's full statement: ADR 0029.
+its normal, kind-specific install flow with its own grant summary. An
+interactive apply confirms each one -- N explicit consents the user
+solicited by invoking apply, never the banned transitive install (silent
+fetching); under `--yes` each install runs with `--yes` too (ADR 0063).
+The solicitation rule's full statement: ADR 0029.
 
 **Applied marker**:
 The per-project record `preset apply` writes (sha256 of the applied

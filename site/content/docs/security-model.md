@@ -76,7 +76,11 @@ your config files can replace them.
   restart without a fresh unlock (disclosed as a managed-path shadow).
   Transient plaintext in process memory -- byre's during launch, the
   agent's afterwards -- can reach swap, core dumps, or a hibernation
-  image.
+  image. The same holds for every auth route, an agent login or a
+  passthrough as much as a project credential: the agent can read its own
+  credential because it needs it to work. byre's job is that its scope
+  is what you chose, its location is legible, and nothing you did not
+  choose rides along.
 - **Names.** The **key names are cleartext**, and so is the recipient
   each value is encrypted to. Disk access learns which credentials exist
   and what they are called.
@@ -211,11 +215,17 @@ images never leave your machine (there is no push path). Secrets belong
 in an agent's own login, a shared-auth skill, an `[env_from_host]`
 passthrough from your host environment, or a project credential.
 
+**The claude onboarding seed assumes a quiet setup.** On a fresh config
+dir the claude skills mark onboarding complete by writing a `mktemp`'d
+file and then reopening it by name. That publish is not atomic: it
+assumes nothing replaces the temporary path in between, which holds
+because it runs during setup, where the agent has not started and repo
+code has finished.
+
 **byre's launcher runs its own helpers on the system PATH; the agent
 does not.** The box's PATH puts `~/.local/bin` first, where agent CLIs
-install, and the agent and your repository's code can write there. The
-launcher runs its own helpers from the system directories, re-pinned
-around each launch env hook
+install and the agent and your repository's code can write, so byre's
+launch machinery never resolves its helpers through it
 ([ADR 0028](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0028-env-d-hooks-are-pure.md)).
 What still resolves on the agent's PATH, by design:
 
@@ -229,10 +239,6 @@ What still resolves on the agent's PATH, by design:
 - **grok-shared-auth's broker**, on grok's PATH, which refreshes the
   machine-wide grok login the agent can already read and write.
 
-The claude onboarding seed's publish (`mktemp`, then reopen) is not
-atomic: it assumes nothing else runs during setup, where the agent has
-not started and repo code has finished.
-
 ### Self-edit sessions
 
 **`--self-edit` is transitive trust of the agent with your host.** A
@@ -244,17 +250,21 @@ launch banner says exactly this, and the session ends with a diff of
 what changed in the store.
 
 **A `--self-edit` box can stop `byre status` describing it.** Every
-container carries a launch record -- what byre told the engine, in the
-project store, addressed by the hash of its own bytes
+session container carries a launch record (byre's one-shot helper
+containers do not) -- what byre told the engine, in the project store,
+addressed by the hash of its own bytes
 ([ADR 0053](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0053-launch-record-content-addressed.md))
 -- and that store is exactly what `--self-edit` mounts read-write. byre
 re-hashes rather than trusts, so a record an agent EDITS is refused, not
 believed; but an agent can delete its own record or make it unreadable,
 and status then says so and falls back to describing your current
-config. The failure direction is a claim withdrawn, never a false one,
-and the record only ever informs a human reading status -- no host
-action is driven by it. Status falls back the same way for any box
-that has no launch record.
+config. The failure direction is a claim withdrawn, never a false one.
+Records also feed the `exclusive` volume check
+([ADR 0054](https://github.com/pjlsergeant/byre/blob/main/docs/adr/0054-volume-sharing-exclusive.md)),
+which refuses to start a box that mounts an `exclusive` volume while a
+live sibling's record is missing, tampered, unreadable or from a newer
+byre, so a deleted record costs a refusal, not a double mount. Status
+falls back the same way for any box that has no launch record.
 
 ## The network
 
@@ -435,13 +445,6 @@ Recovery:
   the config editor's volume Clear each refuse while one is there,
   printing its `rm -f` line, so it is never silent, but removing it is
   yours.
-
-## Agents hold usable credentials
-
-**Agents hold usable credentials by construction.** Whatever auth story
-you choose, the agent can read its own credential -- it needs it to
-work. byre's job is that the credential's scope is what you chose, its
-location is legible, and nothing you did not choose rides along.
 
 ## Reporting
 

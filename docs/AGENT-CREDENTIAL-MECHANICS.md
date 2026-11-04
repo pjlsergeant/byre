@@ -1040,8 +1040,9 @@ prompts when nobody can answer:
   hook exits 0 (a hook never fails a launch). What the hook says on the
   way out differs:
   - grok, grok-shared-auth and opencode print a remedy on stderr naming
-    the env key (`XAI_API_KEY`, `ANTHROPIC_API_KEY`/`OPENCODE_API_KEY`) and
-    `byre shell`.
+    the env key (`XAI_API_KEY`, `ANTHROPIC_API_KEY`/`OPENCODE_API_KEY`),
+    set through `env_from_host` or `byre credentials set`, and a login
+    from `byre shell`.
   - codex-login's remedy names `byre shell` and
     `codex login --device-auth` and no env key: an env key does not satisfy `codex login
     status`, the gate this hook checks, and codex never persists one (see
@@ -1057,21 +1058,21 @@ prompts when nobody can answer:
   no-terminal guard sits after the shared-link detach, so both the
   not-logged-in and the stale-credential routes reach it, and it restores
   the shared-auth link before exiting.
-- **No persistent codex key file.** codex has no env-key inference: with
+- **No persistent codex key file.** An env key does not satisfy `codex login
+  status`, which is the login hook's gate, and codex never persists it: with
   `OPENAI_API_KEY` set and an empty `CODEX_HOME`, `codex login status` says
   "Not logged in", and `codex exec --help` says auth "still uses
-  `CODEX_HOME`". The only way a key reaches codex is a login written into
-  some `CODEX_HOME`. byre's hook never writes one into the box's real
-  `CODEX_HOME`: with codex-shared-auth enabled, its firstrun hook sorts
-  before codex-login and runs `reconcile.sh startup` on every launch, which
-  publishes a valid local regular `auth.json` when the shared one is
-  missing or invalid, and when both are valid prefers the local one by mtime
-  if it carries no `last_refresh` -- which an API-key file never does.
-  `auth_valid` accepts the `OPENAI_API_KEY` form, and no per-file scope
-  marker exists. So a project-supplied key persisted there becomes
-  machine-wide one launch later: billing lands on that key, every other
-  project's box gains a credential nobody granted it, and a shared ChatGPT
-  login is displaced, all without a word.
+  `CODEX_HOME`". byre's hook never writes a key login into the box's real
+  `CODEX_HOME`: with codex-shared-auth enabled, its firstrun hook sorts before
+  codex-login and runs `reconcile.sh startup` on every launch, which publishes
+  a valid local regular `auth.json` when the shared one is missing or invalid,
+  and when both are valid prefers the local one by mtime if it carries no
+  `last_refresh` -- which an API-key file never does. `auth_valid` accepts the
+  `OPENAI_API_KEY` form, and no per-file scope marker exists. So a
+  project-supplied key persisted there becomes machine-wide one launch later:
+  billing lands on that key, every other project's box gains a credential
+  nobody granted it, and a shared ChatGPT login is displaced, all without a
+  word.
 - **The claude onboarding seed refuses a symlink.** `[ ! -e ]` is true for a
   dangling symlink and a plain `>` writes through it, so both seeds (the
   `claude-onboarding` hook and claude-shared-auth's) also test
@@ -1085,29 +1086,23 @@ prompts when nobody can answer:
   refuses only an existing regular file, so it opens a symlink to a FIFO
   and the hook blocks.
 
-## Non-interactive modes: findings for whoever drives one
+## Non-interactive use: vendor facts
 
 byre launches agents interactively only and ships no non-interactive
 command. These are the agents' own non-interactive mechanics, checked
-against each CLI, for a skill author (or anyone) driving one without a
-terminal. The login hooks stand down there (above), so the driver owns
-the credential check: bound every probe with `timeout -k`, and fail with
-a remedy before the agent starts when there is no usable credential.
+against each CLI. Without a terminal byre's login hooks stand down
+(above).
 
-### codex: log an env key into a CODEX_HOME made for the one run
+### codex: a key logged into a CODEX_HOME of its own
 
-An env key does not satisfy `codex login status` and codex never
-persists one (above), so for a key to count as a login it has to be
-written into some `CODEX_HOME`. Writing it
-into the box's real `CODEX_HOME` -- the project's state volume -- lets
-the codex-shared-auth reconciler publish it machine-wide one launch
-later (above). The route that keeps it to one run: make a fresh
-`CODEX_HOME` in the box's temp dir, copy in the user's `config.toml`
-from the real one (a regular file only, never `auth.json`), run `codex
-login --with-api-key` (or `--with-access-token` for
-`CODEX_ACCESS_TOKEN`) there with the key on stdin, run `codex exec`
-under that home, and remove it afterwards. A present key then wins over
-a working stored login, which stays untouched.
+What an env key counts for, and what the codex-shared-auth reconciler
+does with a key written into the box's real `CODEX_HOME`, is above ("No
+persistent codex key file"). `codex login --with-api-key` (or
+`--with-access-token` for `CODEX_ACCESS_TOKEN`) takes the key on stdin
+and logs it into whichever `CODEX_HOME` it runs under. `codex exec` under
+a fresh `CODEX_HOME` holding that login and a copy of the user's
+`config.toml` uses the key even where the real home holds a working
+login, which stays untouched.
 
 Two side effects of a temp-dir home: codex warns on stderr that it skips
 its helper-binary PATH aliases in a temp dir, and a key codex rejects
@@ -1130,7 +1125,7 @@ exists only inside the temp home.
   (which requires `--verbose` under `-p`): `.result` is the answer, and
   `.is_error == true` is a reported failure. The event's `subtype` is no
   signal -- a failed turn still says `success` -- and claude exits 1 when
-  it reports a failure, so the event is judged before the exit status.
+  it reports a failure.
 
 ### grok: presence only, and the one JSON document
 
@@ -1138,10 +1133,10 @@ exists only inside the temp home.
   only: `XAI_API_KEY`, `GROK_AUTH_PROVIDER_COMMAND` (the grok-shared-auth
   broker), or a regular `$GROK_HOME/auth.json` with a `"key"` member. A
   stored login whose refresh chain has died passes and then HANGS inside
-  grok at use time (above), so bound the run.
+  grok at use time (above); only a time bound ends it.
 - grok's stored session wins over `XAI_API_KEY` (the grok section's §4),
-  so a run meant to use a key needs a `GROK_HOME` made for that
-  invocation, with no stored login in it.
+  so the key is used only under a `GROK_HOME` with no stored login in
+  it.
 - `--output-format json` (probed against the grok CLI) prints ONE document
   when grok finishes, the answer at `.text`; a reported failure is
   `{"type":"error","message":...}` with exit 1. The live stream is silent

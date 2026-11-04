@@ -74,12 +74,14 @@ codex for a week and back to claude costs no re-auth.
 
 ## Run a different agent just this once?
 
-tldr: `byre develop -a codex` -- one run, nothing written.
+tldr: `byre develop -a codex` -- one run, project config unchanged.
 
-The next plain `byre develop` is back on your config, and `byre status`
-names the override while the box runs. A new worktree takes the flag
-too -- `byre worktree fix-thing -a codex` -- on a project that is
-already configured; a repo that has never been developed refuses it.
+The override's image, state volume and launch record persist as for
+any run, but the next plain `byre develop` is back on your config, and
+`byre status` names the override while the box runs. A new worktree
+takes the flag too -- `byre worktree fix-thing -a codex` -- on a project
+that is already configured; a repo that has never been developed refuses
+it.
 What the override enables, and what it leaves out:
 [`agent`](/docs/configuration-reference/#key-reference).
 
@@ -115,10 +117,10 @@ tldr: pass it at runtime -- `[env_from_host]` with
 
 The variable is the agent's own:
 `ANTHROPIC_API_KEY` for claude, `XAI_API_KEY` for grok,
-`ANTHROPIC_API_KEY` or `OPENCODE_API_KEY` for opencode. codex has no
-env-key route: its login check ignores a key in the environment, so log
-in once with `codex login --device-auth` from `byre shell` (or use
-codex-shared-auth to share that login).
+`ANTHROPIC_API_KEY` or `OPENCODE_API_KEY` for opencode. For codex, an
+env key does not count as a login to byre's codex login hook, so log in
+once with `codex login --device-auth` from `byre shell` (or share that
+login with codex-shared-auth).
 
 The agents' own login flows are still the better default: the
 credential lands in the agent's state volume, per project, and the

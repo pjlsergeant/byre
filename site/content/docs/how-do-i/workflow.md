@@ -141,18 +141,20 @@ tldr: commit a `byre.preset`, then `byre preset apply --yes` -- the
 reviewed apply, without a terminal.
 
 **Make the preset once,** on your own machine, with the editor (`byre
-config` in the project): pick the agent and its skills, open the egress
-doors the box needs, and in the **Env vars** section pass each
-credential through from a host variable of the same name (say
-`ANTHROPIC_API_KEY`). On a CI runner the secret store sets that
-variable for the job.
+config` in the project): pick the agent and its skills and open the
+egress doors the box needs. Applying and building need no credentials.
+For the agent sessions started later, pass each credential through in
+the **Env vars** section from a host variable of the same name (say
+`ANTHROPIC_API_KEY`), set wherever `byre develop` runs.
 
 Then copy the file the editor's footer names
 (`Saves to: ~/.byre/projects/<id>/byre.config`) into the repo as
 `byre.preset`. Packages that are not bundled need a `[sources]` row
 each, with its digest (`byre skill inspect <url>` prints it) -- the
 [configuration reference](/docs/configuration-reference/#presets-byrepreset)
-has the shape. The script applies it:
+has the shape. Packages the preset does not install for you go in
+first, with `byre skill install <url> --digest sha256:... --yes`. Then
+the script applies the preset:
 
 ```sh
 byre preset apply --yes
@@ -171,8 +173,7 @@ curl -fsSLg -o byre.preset https://example.com/path/byre.preset
 byre preset apply --yes
 ```
 
-Packages the preset does not install for you go in first with `byre
-skill install <url> --digest sha256:... --yes`. After the apply, `byre
-build` builds the box ([above](#build-the-box-without-starting-a-session))
-and `byre develop` starts it.
+After the apply, the script runs `byre build` to build the box
+([above](#build-the-box-without-starting-a-session)); a person starts
+sessions on it later with `byre develop`.
 

@@ -80,12 +80,12 @@ alone, and some of byre's rules are properties of a SET that only exists
 once a config selects one: two skills declaring a `network_posture` or a
 `netns_init`, two setting the same env key to different values, MCP or
 Claude Skill names colliding across skills and config, the `agent`
-scalar naming a skill that is not enabled, a `requires` entry naming one
-that is not. Those are checked when the cascade resolves -- at develop
--- and no per-package command can check them earlier, because the other
-packages are not in view. A green
-`validate` says this skill.toml is sound, never that any particular box
-will come up.
+scalar naming a skill that is not available or has no `[agent]` command
+(the agent itself is enabled implicitly), a `requires` entry naming a
+skill that is not enabled. Those are checked when the cascade resolves
+-- at develop -- and no per-package command can check them earlier,
+because the other packages are not in view. A green `validate` says
+this skill.toml is sound, never that any particular box will come up.
 
 The fields a `skill.toml` can carry, in one agent skill (a non-agent
 skill omits `[agent]`); the paragraphs below cover the ones with rules
