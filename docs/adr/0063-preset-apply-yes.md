@@ -8,12 +8,13 @@ human (the three cases below). Without `--yes`, a pipe refuses and the
 message names `--yes`.
 
 Principles: P5 (consent to applied content is consent to its RENDERED
-grants -- `--yes` keeps the rendering, into the CI log); P1 (every refusal
-here names a route the user can take on purpose; none blocks a deliberate
-choice); P6 (no new config key; `[sources]` stays the existing read-only
-row). Related: ADR 0003 (the sandbox config is read from the host-side store
-only), ADR 0029 (installs are digest-verified), ADR 0057 (project
-credentials; the preset bridge is answered at the consent gate).
+grants -- `--yes` keeps the rendering, on stderr for the invoking script
+or CI to capture); P1 (every refusal here names a route the user can take
+on purpose; none blocks a deliberate choice); P6 (no new config key;
+`[sources]` stays the existing read-only row). Related: ADR 0003 (the
+sandbox config is read from the host-side store only), ADR 0029
+(installs are digest-verified), ADR 0057 (project credentials; the
+preset bridge is answered at the consent gate).
 
 ## Why
 
@@ -84,10 +85,8 @@ confirm, not the terminal.
 The remedy names both routes: apply on a terminal without `--yes`, or keep
 credentials out of the preset and deliver them with `env_from_host` from
 the runner's environment (`KEY = "env:KEY"`, fed by the CI secret store).
-The second is the natural CI route anyway: the secret already lives in
-the CI secret store, and `env_from_host` hands it to the box without a
-passphrase to feed in (`--credentials stdin`) or a ciphertext to keep in
-the repo.
+The second needs no passphrase to feed in (`--credentials stdin`) and no
+ciphertext to keep in the repo.
 
 ## Rejected
 

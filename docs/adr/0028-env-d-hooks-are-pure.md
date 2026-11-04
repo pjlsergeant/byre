@@ -30,11 +30,11 @@ PATH.
 there), and that directory is agent-writable -- and so writable by repo
 code, which runs in the launcher (a pending worktree checkout's hooks
 and filters). A helper resolved through it would run planted code inside
-byre's own launch machinery. So the launcher runs its own helpers on the
-system PATH and restores the inherited agent PATH only for the firstrun
-hooks and the agent's exec, whose binaries legitimately live under
-`~/.local/bin`. First-run hooks run under `/bin/bash` by absolute path,
-so a planted `bash` is never the interpreter, and with fd 9 closed, so a
+byre's own launch machinery. The firstrun hooks and the agent's exec get
+the agent PATH back because their binaries legitimately live under
+`~/.local/bin`. The same failure mode is why first-run hooks run under
+`/bin/bash` by absolute path: a planted `bash` is never their
+interpreter. They also run with fd 9 closed, as descriptor hygiene: a
 descriptor the launcher inherited at that number does not pass into a
 hook it did not write. What still resolves on the agent PATH -- the
 agent's command, the interactive login hooks, grok-shared-auth's broker

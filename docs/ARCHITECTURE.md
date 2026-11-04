@@ -302,16 +302,16 @@ config editor's volume Clear -- queries `byre.helper=<project id>` and
 container and its `rm -f` line, so a labelled helper left behind by a
 killed byre or an engine outage can never run beside them unseen.
 
-**`develop` is single-session per directory** (ADR 0004), and so is
-`run`, against the same sessions: if a session is already running here,
-it reports that session (and how to re-attach to its terminal, stop it,
-or get a shell via `byre shell`) rather than spawning a parallel one --
-two boxes on one directory would race the shared state volumes. For two
-agents on one codebase, use worktrees: each worktree is its own workdir
-with its own session, deliberately sharing the project's config,
-volumes, and image (ADR 0009). A volume that cannot take two concurrent
-holders says so with `sharing = "exclusive"`, and `develop` then refuses
-the second box rather than corrupt it (ADR 0054).
+**`develop` is single-session per directory** (ADR 0004): if a session
+is already running here, it reports that session (and how to re-attach
+to its terminal, stop it, or get a shell via `byre shell`) rather than
+spawning a parallel one -- two boxes on one directory would race the
+shared state volumes. For two agents on one codebase, use worktrees:
+each worktree is its own workdir with its own session, deliberately
+sharing the project's config, volumes, and image (ADR 0009). A volume
+that cannot take two concurrent holders says so with
+`sharing = "exclusive"`, and `develop` then refuses the second box
+rather than corrupt it (ADR 0054).
 
 **The configuration a session launches is read under the setup lock.**
 The config editor's save takes that same lock, so a save landing while
@@ -703,17 +703,17 @@ Runtime constants:
      0028);
   7. exec the selected agent's command in autonomous mode.
 
-  The launcher runs its own helpers on the system PATH
+  The launcher's own helpers resolve on the system PATH
   (`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`) from
-  its first line, because the agent PATH puts the agent-writable
-  `~/.local/bin` first, where repo code or the agent could plant a
-  helper. It sources each launch env hook on that system PATH, re-pinned
-  before each one, and gives the agent PATH back only to the first-run
-  hooks and the final exec (ADR 0028). First-run hooks run under
-  `/bin/bash` by absolute path, so a `bash` planted on the agent PATH is
-  not the interpreter, and with fd 9 closed (descriptor hygiene: a
-  descriptor the launcher inherited at that number does not pass into a
-  hook it did not write).
+  its first line, never through the `~/.local/bin` the agent PATH puts
+  first (agent-writable: repo code or the agent can plant a helper
+  there); the agents' launch adapters and codex-shared-auth's reconciler
+  pin the same PATH for theirs. Each launch env hook is sourced on that
+  system PATH, re-pinned before each one; only the first-run hooks and
+  the final exec get the agent PATH back (ADR 0028). First-run hooks run
+  under `/bin/bash` by absolute path, so a planted `bash` is not their
+  interpreter, and with fd 9 closed, so a descriptor the launcher
+  inherited at that number does not reach a hook it did not write.
 - The agent command itself INJECTS the baked agent context (the chassis
   facts, the base image, a one-line inventory of config-provisioned
   `apt` packages when any exist -- the agent shouldn't discover tools by

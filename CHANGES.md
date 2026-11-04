@@ -13,35 +13,21 @@
   https `[sources]` row, and any credential row -- pass credentials with
   `env_from_host` instead. ADR 0063.
 - **`byre build`: the image without a session.** It builds what `byre
-  develop` would, with the engine cache, and prints the image tag as the
-  one line on stdout; build output goes to stderr. No volumes are seeded
-  and no container is created. Use it to warm a persistent runner, read
-  the tag, or fail a job early on a config that no longer builds (a
-  hosted runner still rebuilds every job). Cookbook: "Build the box
-  without starting a session?"; for setting a box up from a script, "Set
-  up a box from a script (new machine, CI)?".
+  develop` would and prints the image tag as the one line on stdout,
+  creating no container; cookbook: "Build the box without starting a
+  session?".
 - **A program planted in `~/.local/bin` no longer stands in for byre's
-  own helpers at launch.** The box's PATH puts `~/.local/bin` first, and
-  the agent and your repository's code can write there, so a planted
-  `jq` or `cat` ran in place of the real one inside byre's launch
-  machinery. The launcher, the launch env hooks, the agents' launch
-  adapters and codex-shared-auth's reconciler now run their helpers from
-  the system PATH, re-pinned before each launch env hook so one hook's
-  PATH change cannot reach the next. First-run hooks run under
-  `/bin/bash` by path, so a planted `bash` is not their interpreter, and
-  with fd 9 closed. The agent's own command and the interactive login
-  hooks still resolve on the agent's PATH, by design. ADR 0028; the
-  security-model page lists what still rides that PATH.
-- **A box with no terminal no longer stalls ten minutes on a login.** With
-  the credential absent, the codex, grok and opencode login hooks (and
-  grok-shared-auth's shared-store login) ran an interactive login at every
-  box start. A launch from a script or a pipe sat out the 600 s bound and
-  came up unauthenticated anyway. Each now skips the login when stdin is
-  not a terminal, and prints the remedy: for grok and opencode, set the
-  agent's API key (`env_from_host`, or `byre credentials set`) or log in
-  from `byre shell`; for codex, whose login check an env key does not
-  satisfy, run `codex login --device-auth` from `byre shell`. codex's
-  own `codex login status` probe is bounded at 30 s too.
+  own helpers at launch.** The launcher, the launch env hooks, the
+  agents' launch adapters and codex-shared-auth's reconciler run their
+  helpers from the system PATH, and first-run hooks run under `/bin/bash`
+  by path. Mechanics: `docs/ARCHITECTURE.md`; why: ADR 0028; what still
+  rides the agent's PATH: the security-model page.
+- **A box with no terminal no longer stalls ten minutes on a login.** The
+  codex, grok and opencode login hooks (and grok-shared-auth's
+  shared-store login) skip the login when stdin is not a terminal and
+  print the remedy instead of sitting out the 600 s bound. Each agent's
+  remedy: `docs/AGENT-CREDENTIAL-MECHANICS.md`, "Login hooks with nobody
+  to answer".
 - **Claude with an env credential skips its first-run wizard.** A box given
   `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`
   by env still stopped in Claude's setup wizard, login step included, on a

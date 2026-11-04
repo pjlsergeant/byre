@@ -1,7 +1,8 @@
 # Headless runs: the agent declares a headless command; `byre run` drives it
 
 > Withdrawn (2026-11-04): byre run left main; the feature is parked on the
-> headless-runs branch, tag pre-run-removal.
+> headless-runs branch, tag pre-run-removal, which also holds the arms that
+> pinned this decision.
 
 Decided 2026-11-02. A byre box can run ONE agent task non-interactively,
 from any script -- a CI job or anything else -- with an exit status the
@@ -77,10 +78,10 @@ sets BYRE_RUN_*` (the `headless run` claim, ADR 0050).
 
 The contract a command author follows -- the task file, the answer and
 status descriptors, the model and result-dir variables, the exit set, the
-probe bound and the PATH rule -- is in the headless-command section of
-[`docs/SKILLS.md`](../SKILLS.md). The chassis also sets `BYRE_RUN_AGENT`
-and `BYRE_RUN_ID`, informational only. This section records why each rule
-exists.
+probe bound and the PATH rule -- is in the headless-command passage of
+`docs/SKILLS.md` at tag `pre-run-removal`. The chassis also sets
+`BYRE_RUN_AGENT` and `BYRE_RUN_ID`, informational only. This section
+records why each rule exists.
 
 **Descriptors.** The two files are descriptors, not paths: the chassis
 creates them exclusively, once, and holds them open, and the command keeps
@@ -407,7 +408,7 @@ existing login. It matters on machines that persist -- a laptop, a
 self-hosted runner -- and never on a hosted runner the job discards. The
 mechanics (what the per-run home holds, the no-key preflight and its exit
 13, the login hook standing down) are in `docs/AGENT-CREDENTIAL-MECHANICS.md`
-(Headless runs).
+("Headless runs") at tag `pre-run-removal`.
 
 ## A present grok key runs in its own GROK_HOME
 
@@ -433,7 +434,8 @@ box.
 
 ## Accepted residuals
 
-Each is on the security-model page too.
+Each is on the security-model page ("Headless runs") at tag
+`pre-run-removal`.
 
 **Filesystem assumptions**
 
@@ -490,6 +492,3 @@ Each is on the security-model page too.
   credential request, headless runs included, so a plant in `~/.local/bin`
   reaches the shared grok login -- which the agent can already read and
   write through the identity volume.
-
-The arms that pinned this decision live with the feature at tag
-`pre-run-removal`.
