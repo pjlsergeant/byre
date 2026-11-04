@@ -103,7 +103,9 @@ func TestDoctrineIndexArmsResolve(t *testing.T) {
 			return err
 		}
 		if d.IsDir() {
-			if name := d.Name(); name == ".git" || name == "site" || name == "node_modules" {
+			// .claude holds agent worktrees: whole stale copies of the repo, whose
+			// tests would resolve arm names this tree no longer defines.
+			if name := d.Name(); name == ".git" || name == "site" || name == "node_modules" || name == ".claude" {
 				return filepath.SkipDir
 			}
 			return nil
