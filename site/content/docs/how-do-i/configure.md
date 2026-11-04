@@ -99,7 +99,7 @@ at runtime.
 
 Each row's **Source** picker says where the value comes from: a literal
 (baked into the image, so `docker history` shows it), a host source
-read at launch (`OPENAI_API_KEY = "env:OPENAI_API_KEY"`), or an
+read at launch (`ANTHROPIC_API_KEY = "env:ANTHROPIC_API_KEY"`), or an
 encrypted **project credential** that lives in the config and unlocks
 with a passphrase at launch (`byre credentials set KEY` writes one from
 the command line). Switching the source moves the entry rather than
@@ -110,8 +110,15 @@ reserved `BYRE_` names:
 ## Use my API key instead of an agent login?
 
 tldr: pass it at runtime -- `[env_from_host]` with
-`OPENAI_API_KEY = "env:OPENAI_API_KEY"` -- don't use `[env]`, which bakes
-it into the image.
+`ANTHROPIC_API_KEY = "env:ANTHROPIC_API_KEY"` for claude -- don't use
+`[env]`, which bakes it into the image.
+
+The variable is the agent's own:
+`ANTHROPIC_API_KEY` for claude, `XAI_API_KEY` for grok,
+`ANTHROPIC_API_KEY` or `OPENCODE_API_KEY` for opencode. codex has no
+env-key route: its login check ignores a key in the environment, so log
+in once with `codex login --device-auth` from `byre shell` (or use
+codex-shared-auth to share that login).
 
 The agents' own login flows are still the better default: the
 credential lands in the agent's state volume, per project, and the
@@ -119,7 +126,7 @@ shared-auth skills make one login serve every box. Where an API key is
 the workflow, the passthrough keeps it out of the image, resolves it at
 every launch, and shows as a named grant in `byre status`. For a key
 that belongs to the project rather than your host environment, use a
-project credential instead (`byre credentials set OPENAI_API_KEY`; see
+project credential instead (`byre credentials set ANTHROPIC_API_KEY`; see
 [env vars](#pass-env-vars-into-the-box)).
 
 ## Use Podman instead of Docker?

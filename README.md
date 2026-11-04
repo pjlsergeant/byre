@@ -152,8 +152,8 @@ agent -- or enable the relevant _x-shared-auth_ skill(s) in
 
 **Use my API key instead of an agent login?**
 tldr: pass it at runtime -- `[env_from_host]` with
-`OPENAI_API_KEY = "env:OPENAI_API_KEY"` -- don't use `[env]`, which bakes
-it into the image.
+`ANTHROPIC_API_KEY = "env:ANTHROPIC_API_KEY"` for claude -- don't use
+`[env]`, which bakes it into the image.
 ([recipe](https://getbyre.com/docs/how-do-i/configure/#use-my-api-key-instead-of-an-agent-login))
 
 **Run parallel agents on the same repo?**
