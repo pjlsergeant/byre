@@ -218,9 +218,10 @@ passthrough from your host environment, or a project credential.
 **The claude onboarding seed assumes a quiet setup.** On a fresh config
 dir the claude skills mark onboarding complete by writing a `mktemp`'d
 file and then reopening it by name. That publish is not atomic: it
-assumes nothing replaces the temporary path in between, which holds
-because it runs during setup, where the agent has not started and repo
-code has finished.
+assumes nothing replaces the temporary path in between. It runs during
+setup, before the agent starts, but nothing enforces the assumption: a
+process repo code left running (a post-checkout hook's background child)
+could still swap the path.
 
 **byre's launcher runs its own helpers on the system PATH; the agent
 does not.** The box's PATH puts `~/.local/bin` first, where agent CLIs

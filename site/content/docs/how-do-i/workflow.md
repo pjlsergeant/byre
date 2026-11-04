@@ -152,9 +152,10 @@ Then copy the file the editor's footer names
 `byre.preset`. Packages that are not bundled need a `[sources]` row
 each, with its digest (`byre skill inspect <url>` prints it) -- the
 [configuration reference](/docs/configuration-reference/#presets-byrepreset)
-has the shape. Packages the preset does not install for you go in
-first, with `byre skill install <url> --digest sha256:... --yes`. Then
-the script applies the preset:
+has the shape; `preset apply --yes` installs each missing one from its
+row. A package left out of `[sources]` the script installs first, with
+`byre skill install <url> --digest sha256:... --yes`. Then the script
+applies the preset:
 
 ```sh
 byre preset apply --yes
