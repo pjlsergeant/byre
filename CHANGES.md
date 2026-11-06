@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## v1.14.0 — 2026-11-07
 
 - **Skills can declare what they require.** `requires = ["codex"]` in a
   skill.toml names skills it does not work without. byre refuses a box
