@@ -23,6 +23,32 @@ the rationale lives.
   process group holding stdout can outlive any timeout. Same fix shape as
   `boundPipe` in internal/commands/procgroup.go.
 
+- [ ] (XS) **Add form keeps a fixed validation error on screen** (field QA
+  2026-11-06, F2): in Claude Skills add, the ✗ for a bad name stays after the
+  name is corrected; Enter still accepts. Other add forms unchecked. Report:
+  `~/scratch/qa-v1.14.0.md`.
+
+- [ ] (XS) **Backup preview's reason is untrue for unused machine volumes**
+  (field QA 2026-11-06, F3): "the destination binds its own machine-scoped X"
+  prints for volumes the project never bound. Listing them is deliberate; the
+  sentence is the fault. Report: `~/scratch/qa-v1.14.0.md`.
+
+- [ ] (XS) **`byre context add`/`remove` cycles pile up blank lines** at the end
+  of the config (field QA 2026-11-06, F4). Cosmetic. Report:
+  `~/scratch/qa-v1.14.0.md`.
+
+- [ ] (S) **A Build files path with a space breaks the build** (field QA
+  2026-11-06, F1; also in v1.13.0): the editor and `byre status` accept it, then
+  the builder fails with a raw error, because `gen.CopyLine`'s `%q` form splits
+  on whitespace. Skill `files` share the emitter, untested. Report:
+  `~/scratch/qa-v1.14.0.md`.
+
+- [ ] (S) **Bring QA-PLAYBOOK.md up to v1.14.0** (field QA 2026-11-06, S1-S10):
+  nine recipes have stale expectations, and `byre build`, `preset apply --yes`,
+  `requires`, no-terminal logins, the claude env credential and the trixie base
+  have no journeys; `byre rebuild`'s pull is proven only to exit 0. Report:
+  `~/scratch/qa-v1.14.0.md`.
+
 - [ ] (S) **Retire the shared_auth legacy parser arms when their warnings go
   quiet** (ADR 0049 #1/#2, amended policy): the write side and the warning
   channel shipped 2026-08-23; the array and top-level parse arms
