@@ -14,6 +14,7 @@ import (
 
 	"github.com/pjlsergeant/byre/internal/commands"
 	"github.com/pjlsergeant/byre/internal/deliver"
+	"github.com/pjlsergeant/byre/internal/iconletters"
 	"github.com/pjlsergeant/byre/internal/packages"
 	byreversion "github.com/pjlsergeant/byre/internal/version"
 )
@@ -383,6 +384,7 @@ On a shared rootful daemon a box started by another Unix user is hidden;
 func deliverCmd(a app, dir string, s commands.Streams) *cobra.Command {
 	var opts deliver.Options
 	var installApp bool
+	var iconLetters string
 	c := &cobra.Command{
 		Use:   "deliver [<path>... | -]",
 		Short: "Deliver files from the host into a running box's /inbox.",
@@ -421,10 +423,12 @@ always the contract.
 it, or open it plain to deliver the clipboard; outcomes arrive as
 notifications. An optional ssh:// target (plus --remote-byre when the remote
 binary isn't on ssh's PATH) installs a remote-delivery drag target with a
-distinct icon; --name labels an install so several can coexist — the app
-becomes "Byre Deliver (<label>)" and the Quick Action "Deliver to Byre
-(<label>)" — without --name a remote install is named for
-its target and a local install stays the singleton. Re-run after moving
+distinct icon carrying up to two letters or digits (uppercased) taken
+from the target's host (or from --name); --icon-letters XY picks them when two installs would clash.
+--name labels an install so several can coexist — the app becomes "Byre
+Deliver (<label>)" and the Quick Action "Deliver to Byre (<label>)" —
+without --name a remote install is named for its target and a local
+install stays the singleton. Re-run after moving
 byre; --box bakes a fixed box (the remote's, when a target is given).`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -433,7 +437,7 @@ byre; --box bakes a fixed box (the remote's, when a target is given).`,
 				// a supplied flag the exclusivity promise rejects.
 				for _, f := range []string{"skip-uid-check", "no-clip", "boxes", "tar", "proto"} {
 					if cmd.Flags().Changed(f) {
-						return usageError("byre deliver --install-app: takes an optional ssh:// target, --box, --name, and --remote-byre")
+						return usageError("byre deliver --install-app: takes an optional ssh:// target, --box, --name, --icon-letters, and --remote-byre")
 					}
 				}
 				if len(args) > 1 {
@@ -474,12 +478,16 @@ byre; --box bakes a fixed box (the remote's, when a target is given).`,
 				if cmd.Flags().Changed("name") && strings.TrimSpace(opts.Name) == "" {
 					return usageError(`--name: blank value — label the install, or omit the flag for the default name`)
 				}
+				if cmd.Flags().Changed("icon-letters") && strings.TrimSpace(iconLetters) == "" {
+					return usageError("--icon-letters: blank value — give one or two letters or digits, or omit the flag to derive them from the label")
+				}
 				// Every baked value lands in line-oriented XML/UTF-8
 				// generated text, where a control character is a
 				// structural break shell quoting cannot contain and
 				// U+FFFE/U+FFFF cannot be represented at all.
 				for _, f := range []struct{ flag, v string }{
 					{"--box", opts.Box}, {"--name", opts.Name}, {"--remote-byre", opts.RemoteByre},
+					{"--icon-letters", iconLetters},
 				} {
 					// Not-UTF-8 checked too: sanitization would silently
 					// rewrite invalid bytes to U+FFFD, and the rune
@@ -496,12 +504,21 @@ byre; --box bakes a fixed box (the remote's, when a target is given).`,
 						return usageError("byre deliver --install-app: " + err.Error())
 					}
 				}
+				if iconLetters != "" {
+					if _, err := iconletters.Normalize(iconLetters); err != nil {
+						return usageError("byre deliver --install-app: " + err.Error())
+					}
+				}
 				return a.installApp(s, commands.InstallAppOptions{
-					Box:        opts.Box,
-					Name:       opts.Name,
-					RemoteByre: opts.RemoteByre,
-					SSH:        ssh,
+					Box:         opts.Box,
+					Name:        opts.Name,
+					RemoteByre:  opts.RemoteByre,
+					SSH:         ssh,
+					IconLetters: iconLetters,
 				})
+			}
+			if cmd.Flags().Changed("icon-letters") {
+				return usageError("byre deliver: --icon-letters applies only to --install-app")
 			}
 			// The remote-facing modes (ADR 0037) keep their surfaces frozen
 			// and small: --boxes answers exactly one question, --tar takes
@@ -550,6 +567,7 @@ byre; --box bakes a fixed box (the remote's, when a target is given).`,
 	c.Flags().BoolVar(&opts.Tar, "tar", false, "unpack a tar archive from stdin into /inbox (remote delivery's transport)")
 	c.Flags().IntVar(&opts.Proto, "proto", 0, "remote-delivery protocol handshake (fails on version skew)")
 	c.Flags().StringVar(&opts.RemoteByre, "remote-byre", "", "byre binary path on the ssh:// remote (when it isn't on the ssh PATH)")
+	c.Flags().StringVar(&iconLetters, "icon-letters", "", "with --install-app, the one or two letters or digits drawn over the icon (default: from the install's label)")
 	return c
 }
 

@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"image"
 	_ "image/png" // registered so icon dimensions can be decoded
+	"net"
 	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/pjlsergeant/byre/internal/deliver"
 	"github.com/pjlsergeant/byre/internal/gen"
+	"github.com/pjlsergeant/byre/internal/iconletters"
 )
 
 // `byre deliver --install-app` materializes the DELIVER APP (GLOSSARY): host
@@ -38,23 +41,27 @@ const launchPATH = `PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bi
 
 // InstallAppOptions is the --install-app surface. SSH is the canonical
 // ssh:// URL (empty = local); the commands package does not parse it.
+// IconLetters is the raw --icon-letters value (empty = derive from the
+// label).
 type InstallAppOptions struct {
-	Box, Name, RemoteByre, SSH string
+	Box, Name, RemoteByre, SSH, IconLetters string
 }
 
 // appInstall is one resolved install: display names, path fragments, and
 // the baked deliver argv. Unnamed local (empty label) keeps today's
 // singleton artifact names.
 type appInstall struct {
-	byrePath   string
-	box        string
-	name       string // --name as given (empty if derived from SSH)
-	remoteByre string
-	ssh        string
-	label      string // display label; empty = unnamed local singleton
-	display    string // "Byre Deliver" or "Byre Deliver (<label>)"
-	fsLabel    string // macOS path component
-	slug       string // Linux filename fragment
+	byrePath    string
+	box         string
+	name        string // --name as given (empty if derived from SSH)
+	remoteByre  string
+	ssh         string
+	label       string // display label; empty = unnamed local singleton
+	display     string // "Byre Deliver" or "Byre Deliver (<label>)"
+	fsLabel     string // macOS path component
+	slug        string // Linux filename fragment
+	letters     string // icon letters drawn; empty = plain art
+	lettersFlag string // normalized --icon-letters; empty = derived or none
 }
 
 // installNameMax is the byte cap on fsLabel and slug: a clean refusal
@@ -92,12 +99,12 @@ func resolveInstall(byrePath string, o InstallAppOptions) (appInstall, error) {
 	// control character is a structural break shell quoting cannot contain
 	// and an invalid byte makes the artifact not-text. The byre path is in
 	// the same class: it is baked into every grammar too.
-	for _, v := range []string{byrePath, o.Box, o.RemoteByre, o.SSH, o.Name} {
+	for _, v := range []string{byrePath, o.Box, o.RemoteByre, o.SSH, o.Name, o.IconLetters} {
 		if !utf8.ValidString(v) {
 			return appInstall{}, fmt.Errorf("%q is not valid UTF-8 — generated launchers are UTF-8 text", v)
 		}
 	}
-	for _, v := range []string{byrePath, o.Box, o.RemoteByre, o.SSH} {
+	for _, v := range []string{byrePath, o.Box, o.RemoteByre, o.SSH, o.IconLetters} {
 		if strings.ContainsFunc(v, InvalidArtifactRune) {
 			return appInstall{}, fmt.Errorf("characters in %q that a generated launcher cannot carry — line-oriented XML/UTF-8 text", v)
 		}
@@ -119,6 +126,15 @@ func resolveInstall(byrePath string, o InstallAppOptions) (appInstall, error) {
 	label := a.name
 	if label == "" && o.SSH != "" {
 		label = strings.TrimPrefix(o.SSH, "ssh://")
+	}
+	// An explicit --icon-letters is honoured on every install, the unnamed
+	// local singleton included; derived letters are for labeled installs.
+	if o.IconLetters != "" {
+		n, err := iconletters.Normalize(o.IconLetters)
+		if err != nil {
+			return appInstall{}, err
+		}
+		a.letters, a.lettersFlag = n, n
 	}
 	if label == "" {
 		return a, nil
@@ -142,7 +158,33 @@ func resolveInstall(byrePath string, o InstallAppOptions) (appInstall, error) {
 		}
 		return appInstall{}, fmt.Errorf("--name too long")
 	}
+	if a.letters == "" {
+		a.letters = iconletters.FromLabel(a.lettersSource())
+	}
 	return a, nil
+}
+
+// lettersSource is the text icon letters derive from: the name when one
+// was given, else the ssh target's host — the user part (root@, deploy@)
+// is shared across a fleet, so it would give every server the same
+// letters, and a port's digits would read as letters. The host comes
+// from the parsed target, decoded: the label is the URL form, where a
+// non-ASCII host is percent-encoded (münchen would read as "MC").
+func (a appInstall) lettersSource() string {
+	if a.name != "" {
+		return a.name
+	}
+	if t, isSSH, err := deliver.ParseSSHTarget(a.ssh); isSSH && err == nil {
+		return t.Host
+	}
+	hostPort := a.label
+	if i := strings.Index(hostPort, "@"); i >= 0 {
+		hostPort = hostPort[i+1:]
+	}
+	if host, _, err := net.SplitHostPort(hostPort); err == nil {
+		return host
+	}
+	return hostPort
 }
 
 // fsLabel sanitizes a label for a macOS path component: / and : become
@@ -247,6 +289,12 @@ func (a appInstall) rerun() string {
 		b.WriteString(" --remote-byre ")
 		b.WriteString(gen.ShellQuote(a.remoteByre))
 	}
+	// Only an explicit value is baked: derived letters follow from the
+	// label, so the rerun reproduces them without the flag.
+	if a.lettersFlag != "" {
+		b.WriteString(" --icon-letters ")
+		b.WriteString(gen.ShellQuote(a.lettersFlag))
+	}
 	return b.String()
 }
 
@@ -337,11 +385,24 @@ func hash8(s string) string {
 	return hex.EncodeToString(sum[:4])
 }
 
-func (a appInstall) iconPNG() []byte {
+// iconPNG is the install's icon: the base art for its kind, with its icon
+// letters drawn over it when it has any.
+func (a appInstall) iconPNG() ([]byte, error) {
+	base := deliverIconPNG
 	if a.ssh != "" {
-		return deliverIconSSHPNG
+		base = deliverIconSSHPNG
 	}
-	return deliverIconPNG
+	if a.letters == "" {
+		return base, nil
+	}
+	return iconletters.Render(base, a.letters)
+}
+
+// byreOwnedIcon reports icon bytes byre wrote: either raw asset (the
+// unnamed local icon, and every icon from before icon letters) or a
+// rendered PNG carrying byre's marker chunk.
+func byreOwnedIcon(b []byte) bool {
+	return bytes.Equal(b, deliverIconPNG) || bytes.Equal(b, deliverIconSSHPNG) || iconletters.IsByreRendered(b)
 }
 
 func (a appInstall) appBase() string {

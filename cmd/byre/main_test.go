@@ -54,7 +54,7 @@ func recorderApp(calls map[string]string) app {
 				boolStr(opts.SkipUIDCheck), boxPath, hostPath}, " "))
 		},
 		installApp: func(_ commands.Streams, o commands.InstallAppOptions) error {
-			return note("install-app", fmt.Sprintf("%q %q %q %q", o.Box, o.Name, o.RemoteByre, o.SSH))
+			return note("install-app", fmt.Sprintf("%q %q %q %q %q", o.Box, o.Name, o.RemoteByre, o.SSH, o.IconLetters))
 		},
 		worktree: func(_ commands.Streams, dir, name, path, agent string, selfEdit bool, _ commands.CredentialMode) error {
 			return note("worktree", strings.Join([]string{dir, name, path, agent, boolStr(selfEdit)}, " "))
@@ -184,10 +184,13 @@ func TestRunDispatch(t *testing.T) {
 		{[]string{"deliver", "--tar", "--proto=1", "--box", "abc", "--no-clip", "-"}, "deliver", "/proj abc  false true false true p1  -"},
 		{[]string{"deliver", "ssh://dev@far", "shot.png"}, "deliver", "/proj   false false false false p0  ssh://dev@far,shot.png"},
 		{[]string{"deliver", "--remote-byre", "/opt/byre", "ssh://far", "f"}, "deliver", "/proj   false false false false p0 /opt/byre ssh://far,f"},
-		{[]string{"deliver", "--install-app"}, "install-app", `"" "" "" ""`},
-		{[]string{"deliver", "--install-app", "--box", "abc"}, "install-app", `"abc" "" "" ""`},
-		{[]string{"deliver", "--install-app", "--name", "///"}, "install-app", `"" "///" "" ""`},
-		{[]string{"deliver", "--install-app", "ssh://u@h:2222", "--name", "n", "--remote-byre", "/x", "--box", "b"}, "install-app", `"b" "n" "/x" "ssh://u@h:2222"`},
+		{[]string{"deliver", "--install-app"}, "install-app", `"" "" "" "" ""`},
+		{[]string{"deliver", "--install-app", "--box", "abc"}, "install-app", `"abc" "" "" "" ""`},
+		{[]string{"deliver", "--install-app", "--name", "///"}, "install-app", `"" "///" "" "" ""`},
+		{[]string{"deliver", "--install-app", "ssh://u@h:2222", "--name", "n", "--remote-byre", "/x", "--box", "b"}, "install-app", `"b" "n" "/x" "ssh://u@h:2222" ""`},
+		// The raw value passes through; normalization is the install's.
+		{[]string{"deliver", "--install-app", "ssh://h", "--icon-letters", "eu"}, "install-app", `"" "" "" "ssh://h" "eu"`},
+		{[]string{"deliver", "--install-app", "--icon-letters", "Q"}, "install-app", `"" "" "" "" "Q"`},
 		{[]string{"grab", "out/report.pdf"}, "grab", "/proj  false out/report.pdf ."},
 		{[]string{"grab", "/workspace/a.txt", "~/dl"}, "grab", "/proj  false /workspace/a.txt ~/dl"},
 		{[]string{"grab", "--box", "x", "--skip-uid-check", "a.txt", "-"}, "grab", "/proj x true a.txt -"},
@@ -338,11 +341,19 @@ func TestRunUsageErrors(t *testing.T) {
 		{[]string{"deliver", "--install-app", "--name", "a\xffb"}, "--name is not valid UTF-8"},
 		{[]string{"deliver", "--install-app", "ssh://h", "--remote-byre", "/x\n/y"}, "--remote-byre contains characters a generated launcher cannot carry"},
 		// --no-clip=false is still a supplied flag the exclusivity promise rejects.
-		{[]string{"deliver", "--install-app", "--no-clip=false"}, "takes an optional ssh:// target, --box, --name, and --remote-byre"},
-		{[]string{"deliver", "--install-app", "--proto", "1"}, "takes an optional ssh:// target, --box, --name, and --remote-byre"},
-		{[]string{"deliver", "--install-app", "--tar", "-"}, "takes an optional ssh:// target, --box, --name, and --remote-byre"},
-		{[]string{"deliver", "--install-app", "--boxes"}, "takes an optional ssh:// target, --box, --name, and --remote-byre"},
-		{[]string{"deliver", "--install-app", "--skip-uid-check"}, "takes an optional ssh:// target, --box, --name, and --remote-byre"},
+		{[]string{"deliver", "--install-app", "--no-clip=false"}, "takes an optional ssh:// target, --box, --name, --icon-letters, and --remote-byre"},
+		{[]string{"deliver", "--install-app", "--proto", "1"}, "takes an optional ssh:// target, --box, --name, --icon-letters, and --remote-byre"},
+		{[]string{"deliver", "--install-app", "--tar", "-"}, "takes an optional ssh:// target, --box, --name, --icon-letters, and --remote-byre"},
+		{[]string{"deliver", "--install-app", "--boxes"}, "takes an optional ssh:// target, --box, --name, --icon-letters, and --remote-byre"},
+		{[]string{"deliver", "--install-app", "--skip-uid-check"}, "takes an optional ssh:// target, --box, --name, --icon-letters, and --remote-byre"},
+		{[]string{"deliver", "--install-app", "--icon-letters="}, "--icon-letters: blank value"},
+		{[]string{"deliver", "--install-app", "--icon-letters", "abc"}, "takes one or two letters or digits"},
+		{[]string{"deliver", "--install-app", "--icon-letters", "a-"}, "takes one or two letters or digits"},
+		{[]string{"deliver", "--install-app", "--icon-letters", "東"}, "has no glyph"},
+		{[]string{"deliver", "--install-app", "--icon-letters", "a\nb"}, "--icon-letters contains characters a generated launcher cannot carry"},
+		{[]string{"deliver", "--install-app", "--icon-letters", "a\xffb"}, "--icon-letters is not valid UTF-8"},
+		{[]string{"deliver", "--icon-letters", "AB", "f.txt"}, "--icon-letters applies only to --install-app"},
+		{[]string{"deliver", "--boxes", "--icon-letters", "AB"}, "--icon-letters applies only to --install-app"},
 		{[]string{"deliver", "--boxes", "x.txt"}, "--boxes: takes no paths"},
 		{[]string{"deliver", "--boxes", "--tar", "-"}, "takes only --proto and --skip-uid-check"},
 		{[]string{"deliver", "--boxes", "--box", "x"}, "takes only --proto and --skip-uid-check"},

@@ -195,7 +195,7 @@ printed paths.
 Remote and named installs share the same command:
 
 ```
-$ byre deliver --install-app [ssh://[user@]host[:port]] [--box id] [--name label] [--remote-byre path]
+$ byre deliver --install-app [ssh://[user@]host[:port]] [--box id] [--name label] [--remote-byre path] [--icon-letters XY]
 ```
 
 An `ssh://` target installs a remote-delivery drag target (distinct
@@ -204,6 +204,16 @@ installs can coexist as `Byre Deliver (<label>)` (the Quick Action
 likewise: "Deliver to Byre (<label>)"); without it a remote install is
 named for its target and a local install stays the singleton. `--box`
 on a remote install names the box on the *remote* machine.
+
+A labeled install's icon carries **icon letters**: up to two letters or
+digits, uppercased, drawn over the art, so several installs stay distinguishable in the Dock. They come
+from the target's host (`ssh://deploy@prod-eu.example` gives `PR` -- the
+user and port are skipped) or from `--name`, uppercased. When two
+installs would draw the same letters (`prod-eu` and `prod-us`),
+`--icon-letters XY` picks them: one or two letters or digits. A label
+that yields none leaves the icon plain, with a note naming the flag.
+The unnamed local app keeps the plain icon unless `--icon-letters` is
+given. Re-run `--install-app` to pick up new letters.
 
 On **Linux**, `--install-app` writes a `.desktop` launcher instead --
 experimental; see the platform note under "What works where".
@@ -309,5 +319,6 @@ byre's generated marker in their header (plus, for a labeled install,
 its identity token -- a colliding label refuses rather than clobbers);
 a same-named file byre didn't write is refused. Icons are the one
 non-text artifact: on Linux they are judged by content (only byre's own
-bytes are ever replaced; anything else is skipped with a note), and the
+bytes are ever replaced -- the raw art, or a PNG carrying byre's marker
+chunk; anything else is skipped with a note), and the
 icns inside a macOS bundle rides the bundle's own marker gate.

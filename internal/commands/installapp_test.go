@@ -12,6 +12,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/pjlsergeant/byre/internal/deliver"
+	"github.com/pjlsergeant/byre/internal/iconletters"
 )
 
 // thin aliases keep the install tests readable
@@ -165,6 +168,16 @@ func TestEmbeddedIconPacks(t *testing.T) {
 	}
 	if _, err := packICNS(deliverIconSSHPNG); err != nil {
 		t.Fatalf("embedded ssh icon does not pack: %v", err)
+	}
+	// ...and must stay renderable: a labeled install draws over it.
+	for name, asset := range map[string][]byte{"local": deliverIconPNG, "ssh": deliverIconSSHPNG} {
+		r, err := iconletters.Render(asset, "ZZ")
+		if err != nil {
+			t.Fatalf("%s icon does not render letters: %v", name, err)
+		}
+		if _, err := packICNS(r); err != nil {
+			t.Fatalf("%s rendered icon does not pack: %v", name, err)
+		}
 	}
 }
 
@@ -630,19 +643,21 @@ func TestInstallDarwinSSHIcon(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := packICNS(deliverIconSSHPNG)
-	if err != nil {
-		t.Fatal(err)
+	// A single-chunk icns: 8-byte header, 8-byte chunk header, PNG.
+	if len(got) < 16 || !iconletters.IsByreRendered(got[16:]) {
+		t.Fatal("ssh install did not pack a letter-rendered icon")
 	}
-	if !bytes.Equal(got, want) {
-		t.Fatal("ssh install did not pack deliverIconSSHPNG")
+	if repacked, err := packICNS(got[16:]); err != nil || !bytes.Equal(repacked, got) {
+		t.Fatalf("packed icon does not round-trip: %v", err)
 	}
-	local, err := packICNS(deliverIconPNG)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Equal(got, local) {
-		t.Fatal("ssh icon is identical to the local icon")
+	for name, asset := range map[string][]byte{"ssh": deliverIconSSHPNG, "local": deliverIconPNG} {
+		raw, err := packICNS(asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Equal(got, raw) {
+			t.Fatalf("ssh icon is the raw %s art, without letters", name)
+		}
 	}
 }
 
@@ -677,8 +692,11 @@ func TestInstallLinuxSSHIconAndEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ssh icon missing: %v", err)
 	}
-	if !bytes.Equal(got, deliverIconSSHPNG) {
-		t.Fatal("ssh icon bytes differ from deliverIconSSHPNG")
+	if !iconletters.IsByreRendered(got) || bytes.Equal(got, deliverIconSSHPNG) {
+		t.Fatal("ssh icon is not a letter-rendered PNG")
+	}
+	if gc, _, err := image.DecodeConfig(bytes.NewReader(got)); err != nil || gc.Width != cfg.Width || gc.Height != cfg.Height {
+		t.Fatalf("rendered icon size: %v %+v", err, gc)
 	}
 }
 
@@ -819,7 +837,7 @@ func TestDesktopEntryEscapesBackslashInName(t *testing.T) {
 }
 
 func TestInstallLinuxSkipsForeignIcon(t *testing.T) {
-	// A PNG can't carry the text marker; ownership is judged by content.
+	// Icon ownership is judged by content (raw art or byre's marker chunk).
 	// A user's file at the icon path is skipped with a note, never
 	// clobbered — and the install itself still lands.
 	d, _ := testDeps(t, "linux")
@@ -1072,5 +1090,181 @@ func TestInstallLinuxWarnsWhenIconDirFails(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "byre-deliver.desktop") {
 		t.Fatalf("desktop entry not installed: %q", out.String())
+	}
+}
+
+func TestResolveInstallIconLetters(t *testing.T) {
+	for _, c := range []struct {
+		o        InstallAppOptions
+		letters  string
+		explicit string
+	}{
+		// The host, not the user: root@/deploy@ is shared across a fleet.
+		{InstallAppOptions{SSH: "ssh://u@h:2222"}, "H", ""},
+		{InstallAppOptions{SSH: "ssh://deploy@prod-eu.example"}, "PR", ""},
+		{InstallAppOptions{SSH: "ssh://far"}, "FA", ""},
+		{InstallAppOptions{SSH: "ssh://[fe80::1]:22"}, "FE", ""},
+		{InstallAppOptions{SSH: "ssh://[fe80::1]"}, "FE", ""},
+		// From the decoded host: the CLI passes the URL form, where a
+		// non-ASCII host is percent-encoded.
+		{InstallAppOptions{SSH: deliver.SSHTarget{Host: "münchen"}.URL()}, "MÜ", ""},
+		{InstallAppOptions{SSH: deliver.SSHTarget{User: "root", Host: "é"}.URL()}, "É", ""},
+		{InstallAppOptions{SSH: deliver.SSHTarget{Host: "東京"}.URL()}, "", ""},
+		{InstallAppOptions{SSH: "ssh://münchen"}, "MÜ", ""},
+		{InstallAppOptions{Name: "studio", SSH: "ssh://u@h"}, "ST", ""},
+		{InstallAppOptions{Name: "My Box"}, "MY", ""},
+		{InstallAppOptions{}, "", ""},
+		{InstallAppOptions{IconLetters: "eu"}, "EU", "EU"},
+		{InstallAppOptions{SSH: "ssh://far", IconLetters: "x"}, "X", "X"},
+	} {
+		a := specOf(t, "/usr/bin/byre", c.o)
+		if a.letters != c.letters || a.lettersFlag != c.explicit {
+			t.Errorf("%+v: letters %q flag %q; want %q %q", c.o, a.letters, a.lettersFlag, c.letters, c.explicit)
+		}
+	}
+	if _, err := resolveInstall("/usr/bin/byre", InstallAppOptions{IconLetters: "abc"}); err == nil || !strings.Contains(err.Error(), "takes one or two letters or digits") {
+		t.Fatalf("bad --icon-letters: %v", err)
+	}
+}
+
+func TestRerunBakesExplicitIconLettersOnly(t *testing.T) {
+	explicit := specOf(t, "/usr/bin/byre", InstallAppOptions{SSH: "ssh://far", IconLetters: "eu"}).rerun()
+	if !strings.Contains(explicit, " --icon-letters 'EU'") {
+		t.Fatalf("explicit letters not baked: %q", explicit)
+	}
+	derived := specOf(t, "/usr/bin/byre", InstallAppOptions{SSH: "ssh://far"}).rerun()
+	if strings.Contains(derived, "--icon-letters") {
+		t.Fatalf("derived letters baked into the rerun: %q", derived)
+	}
+}
+
+// linuxIconPath is where a Linux install of o writes its icon.
+func linuxIconPath(t *testing.T, d installDeps, o InstallAppOptions) string {
+	t.Helper()
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(deliverIconPNG))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf("%s/.local/share/icons/hicolor/%dx%d/apps/%s.png", d.home, cfg.Width, cfg.Height, specOf(t, d.exe, o).iconName())
+}
+
+func TestInstallLinuxUnnamedIconStaysPlain(t *testing.T) {
+	d, _ := testDeps(t, "linux")
+	s, _, _ := testStreams("", false)
+	if err := installApp(s, InstallAppOptions{}, d); err != nil {
+		t.Fatal(err)
+	}
+	got, err := osReadFile(linuxIconPath(t, d, InstallAppOptions{}))
+	if err != nil || !bytes.Equal(got, deliverIconPNG) {
+		t.Fatalf("unnamed local icon is not the raw art: %v", err)
+	}
+}
+
+func TestInstallLinuxReplacesOwnRenderedIcon(t *testing.T) {
+	d, _ := testDeps(t, "linux")
+	s, _, errw := testStreams("", false)
+	if err := installApp(s, InstallAppOptions{SSH: "ssh://far"}, d); err != nil {
+		t.Fatal(err)
+	}
+	path := linuxIconPath(t, d, InstallAppOptions{SSH: "ssh://far"})
+	first, err := osReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := installApp(s, InstallAppOptions{SSH: "ssh://far", IconLetters: "ZZ"}, d); err != nil {
+		t.Fatal(err)
+	}
+	second, err := osReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(first, second) || !iconletters.IsByreRendered(second) {
+		t.Fatal("reinstall with new letters did not replace byre's own icon")
+	}
+	if strings.Contains(errw.String(), "icon skipped") {
+		t.Fatalf("own rendered icon treated as foreign: %q", errw.String())
+	}
+}
+
+func TestInstallLinuxUpgradesPreFeatureIcon(t *testing.T) {
+	d, _ := testDeps(t, "linux")
+	s, _, errw := testStreams("", false)
+	path := linuxIconPath(t, d, InstallAppOptions{SSH: "ssh://far"})
+	if err := osMkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := osWriteFile(path, deliverIconSSHPNG, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := installApp(s, InstallAppOptions{SSH: "ssh://far"}, d); err != nil {
+		t.Fatal(err)
+	}
+	got, err := osReadFile(path)
+	if err != nil || !iconletters.IsByreRendered(got) {
+		t.Fatalf("pre-feature raw icon not upgraded: %v; stderr %q", err, errw.String())
+	}
+}
+
+func TestInstallDarwinIconChangesOnReinstall(t *testing.T) {
+	d, _ := testDeps(t, "darwin")
+	s, _, _ := testStreams("", false)
+	icns := d.home + "/Applications/Byre Deliver (far).app/Contents/Resources/droplet.icns"
+	if err := installApp(s, InstallAppOptions{SSH: "ssh://far"}, d); err != nil {
+		t.Fatal(err)
+	}
+	first, err := osReadFile(icns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := installApp(s, InstallAppOptions{SSH: "ssh://far", IconLetters: "QQ"}, d); err != nil {
+		t.Fatal(err)
+	}
+	second, err := osReadFile(icns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := iconletters.Render(deliverIconSSHPNG, "QQ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := packICNS(rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(second, want) {
+		t.Fatal("reinstall with new letters did not install the QQ-rendered icon")
+	}
+	if bytes.Equal(first, second) {
+		t.Fatal("reinstall with new letters left the icon unchanged")
+	}
+}
+
+func TestInstallNotesUnderivableLettersForCJKHost(t *testing.T) {
+	d, _ := testDeps(t, "linux")
+	s, _, errw := testStreams("", false)
+	o := InstallAppOptions{SSH: deliver.SSHTarget{Host: "東京"}.URL()}
+	if err := installApp(s, o, d); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errw.String(), "no icon letters could be derived") {
+		t.Fatalf("no note for an underivable host: %q", errw.String())
+	}
+	got, err := osReadFile(linuxIconPath(t, d, o))
+	if err != nil || !bytes.Equal(got, deliverIconSSHPNG) {
+		t.Fatalf("underivable host's icon is not the plain art: %v", err)
+	}
+}
+
+func TestInstallNotesUnderivableLetters(t *testing.T) {
+	d, _ := testDeps(t, "linux")
+	s, _, errw := testStreams("", false)
+	if err := installApp(s, InstallAppOptions{Name: "---"}, d); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errw.String(), "no icon letters could be derived") || !strings.Contains(errw.String(), "--icon-letters") {
+		t.Fatalf("no note naming the remedy: %q", errw.String())
+	}
+	if _, err := osReadFile(d.home + "/.local/share/applications/byre-deliver-" + specOf(t, d.exe, InstallAppOptions{Name: "---"}).slug + ".desktop"); err != nil {
+		t.Fatalf("install did not land: %v", err)
 	}
 }

@@ -109,7 +109,9 @@ a readable macOS `.app` (display name "Byre Deliver", or a per-target
 named "Byre Deliver (<label>)") or Linux `.desktop` entry
 whose only job is invoking `byre deliver` on what you drop. The Finder
 Quick Action is "Deliver to Byre" ("Deliver to Byre (<label>)" for a
-named install). (ADR 0021)
+named install). A labeled install's icon carries its **icon letters**:
+up to two letters or digits, uppercased, from the label (the host,
+for an ssh target) or `--icon-letters`. (ADR 0021)
 _Avoid_: droplet (DigitalOcean owns it), materialize (reserved for
 built-in skill copies), shim.
 Exempt from the droplet avoidance: the `.app` bundle's INTERNAL

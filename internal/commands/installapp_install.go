@@ -113,6 +113,9 @@ func installApp(s Streams, o InstallAppOptions, d installDeps) error {
 	if err != nil {
 		return err
 	}
+	if a.label != "" && a.letters == "" {
+		fmt.Fprintf(s.Err, "byre: note: no icon letters could be derived from %q — the icon stays plain; pass --icon-letters XY to add some\n", a.label)
+	}
 	switch d.goos {
 	case "darwin":
 		return installDarwin(s, a, d)
@@ -219,7 +222,12 @@ func installDarwin(s Streams, a appInstall, d installDeps) error {
 		return err
 	}
 	// Icon: overwrite the stub's droplet/applet icns with ours.
-	if icns, err := packICNS(a.iconPNG()); err == nil {
+	png, err := a.iconPNG()
+	var icns []byte
+	if err == nil {
+		icns, err = packICNS(png)
+	}
+	if err == nil {
 		for _, name := range []string{"droplet.icns", "applet.icns"} {
 			_ = hostopen.PlainWriteFile(filepath.Join(staged, "Contents", "Resources", name), icns, 0o644, hostopen.HostUserOwned)
 		}
@@ -316,13 +324,15 @@ func installLinux(s Streams, a appInstall, d installDeps) error {
 	}
 	fmt.Fprintf(s.Out, "%s\n", entryPath)
 
-	// The icon lands in the hicolor theme at its actual size. A PNG can't
-	// carry the text marker, so ownership is judged by content: byre only
-	// ever writes the embedded assets, so anything else at the path is
-	// someone's file — skipped with a note, never clobbered (the icon is
-	// cosmetic; the install still lands).
-	png := a.iconPNG()
-	if cfg, _, err := image.DecodeConfig(bytes.NewReader(png)); err == nil {
+	// The icon lands in the hicolor theme at its actual size. Ownership is
+	// judged by content: byre writes either a raw embedded asset or a
+	// rendered PNG carrying its marker chunk (byreOwnedIcon), so anything
+	// else at the path is someone's file — skipped with a note, never
+	// clobbered (the icon is cosmetic; the install still lands).
+	png, err := a.iconPNG()
+	if err != nil {
+		fmt.Fprintf(s.Err, "byre: warning: icon skipped (%v)\n", err)
+	} else if cfg, _, err := image.DecodeConfig(bytes.NewReader(png)); err == nil {
 		iconDir := filepath.Join(d.home, ".local", "share", "icons", "hicolor",
 			fmt.Sprintf("%dx%d", cfg.Width, cfg.Height), "apps")
 		if err := hostopen.PlainMkdirAll(iconDir, 0o755, hostopen.HostUserOwned); err != nil {
@@ -338,7 +348,7 @@ func installLinux(s Streams, a appInstall, d installDeps) error {
 			if fi, lerr := hostopen.PlainLstat(iconPath, hostopen.HostUserOwned); lerr == nil {
 				existing, rerr := hostopen.PlainReadFile(iconPath, hostopen.HostUserOwned)
 				if fi.Mode().IsRegular() && rerr == nil &&
-					(bytes.Equal(existing, deliverIconPNG) || bytes.Equal(existing, deliverIconSSHPNG)) {
+					byreOwnedIcon(existing) {
 					write = true
 				} else {
 					fmt.Fprintf(s.Err, "byre: warning: icon skipped — %s exists and doesn't look byre-written; remove it yourself and re-run\n", iconPath)

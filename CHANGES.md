@@ -1,5 +1,14 @@
 # Changes
 
+## unreleased
+
+- **Remote deliver apps no longer share one Dock icon.** A labeled
+  install (`ssh://` target or `--name`) draws up to two letters or
+  digits over its icon, uppercased, from the host or the name;
+  `--icon-letters XY` picks them when two clash. Re-run `--install-app`
+  to pick them up. The unnamed local app keeps the plain icon unless
+  `--icon-letters` is given. `docs/DELIVER.md`.
+
 ## v1.14.0 — 2026-11-07
 
 - **Skills can declare what they require.** `requires = ["codex"]` in a
