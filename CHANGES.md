@@ -7,7 +7,12 @@
   digits over its icon, uppercased, from the host or the name;
   `--icon-letters XY` picks them when two clash. Re-run `--install-app`
   to pick them up. The unnamed local app keeps the plain icon unless
-  `--icon-letters` is given. `docs/DELIVER.md`.
+  `--icon-letters` is given. Icons are now drawn at every size, the
+  letters redrawn rather than shrunk, so they stay crisp at 16-64 px;
+  Linux installs write a set of icon-theme sizes (16 to 512 px; the
+  desktop scales them for the rest), so the launcher's icon now shows
+  in menus that never looked at the old 1024x1024 one.
+  `docs/DELIVER.md`.
 
 ## v1.14.0 — 2026-11-07
 

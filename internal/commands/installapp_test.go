@@ -131,52 +131,148 @@ func testPNG(t *testing.T, size int) []byte {
 	return buf.Bytes()
 }
 
+// wantICNS is the icns layout contract, written out independently of
+// icnsTypes so a wrong type->side mapping, a reordering, or an added or
+// dropped type fails: each element's type and the pixel side of the PNG
+// it carries, in file order. No icp4/icp5: inside an app bundle macOS
+// reads those as raw pixels, so a PNG there renders as static.
+var wantICNS = []struct {
+	typ  string
+	side int
+}{
+	{"ic11", 32}, {"ic12", 64}, {"ic07", 128},
+	{"ic13", 256}, {"ic08", 256}, {"ic14", 512}, {"ic09", 512}, {"ic10", 1024},
+}
+
+// testSet is a distinct PNG at every side wantICNS names.
+func testSet(t *testing.T) map[int][]byte {
+	t.Helper()
+	set := map[int][]byte{}
+	for _, w := range wantICNS {
+		set[w.side] = testPNG(t, w.side)
+	}
+	return set
+}
+
+type icnsEntry struct {
+	typ  string
+	data []byte
+}
+
+// icnsEntries walks an icns file, failing on a bad magic, total length,
+// or element length.
+func icnsEntries(t *testing.T, b []byte) []icnsEntry {
+	t.Helper()
+	if len(b) < 8 || string(b[:4]) != "icns" {
+		t.Fatalf("not an icns file")
+	}
+	if got := binary.BigEndian.Uint32(b[4:8]); int(got) != len(b) {
+		t.Fatalf("icns total length %d != file length %d", got, len(b))
+	}
+	var out []icnsEntry
+	for rest := b[8:]; len(rest) > 0; {
+		if len(rest) < 8 {
+			t.Fatalf("truncated icns element header")
+		}
+		n := int(binary.BigEndian.Uint32(rest[4:8]))
+		if n < 8 || n > len(rest) {
+			t.Fatalf("icns element %q length %d out of range", rest[:4], n)
+		}
+		out = append(out, icnsEntry{string(rest[:4]), rest[8:n]})
+		rest = rest[n:]
+	}
+	return out
+}
+
 func TestPackICNS(t *testing.T) {
-	pngBytes := testPNG(t, 512)
-	icns, err := packICNS(pngBytes)
+	set := testSet(t)
+	icns, err := packICNS(set)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(icns[:4]) != "icns" {
-		t.Fatalf("bad magic %q", icns[:4])
+	entries := icnsEntries(t, icns)
+	var got []string
+	for _, e := range entries {
+		got = append(got, e.typ)
+		if e.typ == "icp4" || e.typ == "icp5" {
+			t.Errorf("icns carries %s: a PNG in that slot renders as static inside an app bundle", e.typ)
+		}
 	}
-	if got := binary.BigEndian.Uint32(icns[4:8]); int(got) != len(icns) {
-		t.Fatalf("total length %d != %d", got, len(icns))
+	if len(entries) != len(wantICNS) {
+		t.Fatalf("icns elements %v; want %d (%v)", got, len(wantICNS), wantICNS)
 	}
-	if string(icns[8:12]) != "ic09" { // 512 → ic09
-		t.Fatalf("chunk type %q", icns[8:12])
+	byType := map[string][]byte{}
+	for i, e := range entries {
+		want := wantICNS[i]
+		if e.typ != want.typ {
+			t.Fatalf("element %d is %q; want %q (icns order %v)", i, e.typ, want.typ, got)
+		}
+		if !bytes.Equal(e.data, set[want.side]) {
+			t.Fatalf("%s payload is not the %d px PNG verbatim", e.typ, want.side)
+		}
+		byType[e.typ] = e.data
 	}
-	if !bytes.Equal(icns[16:], pngBytes) {
-		t.Fatal("PNG payload not verbatim")
+	// The @2x twins carry the same rendition as their 1x sibling.
+	if !bytes.Equal(byType["ic13"], byType["ic08"]) || !bytes.Equal(byType["ic14"], byType["ic09"]) {
+		t.Fatal("@2x twins differ from their 1x siblings")
 	}
 }
 
-func TestPackICNSRejectsBadSizes(t *testing.T) {
-	if _, err := packICNS(testPNG(t, 100)); err == nil || !strings.Contains(err.Error(), "must be 128, 256, 512, or 1024") {
-		t.Fatalf("100px must be rejected by the size rule, got: %v", err)
+func TestPackICNSRejects(t *testing.T) {
+	missing := testSet(t)
+	delete(missing, 64)
+	if _, err := packICNS(missing); err == nil || !strings.Contains(err.Error(), "missing the 64 px rendition") {
+		t.Errorf("missing rendition: %v", err)
 	}
-	if _, err := packICNS([]byte("not a png")); err == nil || !strings.Contains(err.Error(), "must be a PNG") {
-		t.Fatalf("non-PNG must be rejected by the decode rule, got: %v", err)
+	wrong := testSet(t)
+	wrong[128] = testPNG(t, 100)
+	if _, err := packICNS(wrong); err == nil || !strings.Contains(err.Error(), "must be 128 px (got 100)") {
+		t.Errorf("wrong-size rendition: %v", err)
+	}
+	notPNG := testSet(t)
+	notPNG[32] = []byte("not a png")
+	if _, err := packICNS(notPNG); err == nil || !strings.Contains(err.Error(), "must be a PNG") {
+		t.Errorf("non-PNG: %v", err)
 	}
 }
 
 func TestEmbeddedIconPacks(t *testing.T) {
-	// The committed asset must always be icns-packable — a bad swap-in
-	// (wrong size, not PNG) fails here, not at a user's install.
-	if _, err := packICNS(deliverIconPNG); err != nil {
-		t.Fatalf("embedded icon does not pack: %v", err)
-	}
-	if _, err := packICNS(deliverIconSSHPNG); err != nil {
-		t.Fatalf("embedded ssh icon does not pack: %v", err)
-	}
-	// ...and must stay renderable: a labeled install draws over it.
-	for name, asset := range map[string][]byte{"local": deliverIconPNG, "ssh": deliverIconSSHPNG} {
-		r, err := iconletters.Render(asset, "ZZ")
-		if err != nil {
-			t.Fatalf("%s icon does not render letters: %v", name, err)
+	// The committed assets must always render and pack at every size, plain
+	// and lettered -- a bad swap-in (too small, not PNG) fails here, not at
+	// a user's install.
+	for _, ssh := range []string{"", "ssh://h"} {
+		for _, letters := range []string{"", "ZZ"} {
+			a := appInstall{ssh: ssh, letters: letters}
+			set, err := a.iconSet(icnsSides())
+			if err != nil {
+				t.Fatalf("ssh=%q letters=%q: icon does not render: %v", ssh, letters, err)
+			}
+			if _, err := packICNS(set); err != nil {
+				t.Fatalf("ssh=%q letters=%q: icon does not pack: %v", ssh, letters, err)
+			}
+			if _, err := a.iconSet(linuxIconSides); err != nil {
+				t.Fatalf("ssh=%q letters=%q: Linux icon set does not render: %v", ssh, letters, err)
+			}
 		}
-		if _, err := packICNS(r); err != nil {
-			t.Fatalf("%s rendered icon does not pack: %v", name, err)
+	}
+}
+
+func TestIconSidesCoverEveryWrittenSize(t *testing.T) {
+	// The ownership gate (iconletters.IsByreRendered) recognizes only
+	// iconletters.Sides: a size byre writes outside them would never be
+	// replaced on reinstall.
+	in := map[int]bool{}
+	for _, s := range iconletters.Sides {
+		in[s] = true
+	}
+	for _, t2 := range icnsTypes {
+		if !in[t2.side] {
+			t.Errorf("icns %s side %d not in iconletters.Sides", t2.typ, t2.side)
+		}
+	}
+	for _, s := range linuxIconSides {
+		if !in[s] {
+			t.Errorf("Linux side %d not in iconletters.Sides", s)
 		}
 	}
 }
@@ -267,14 +363,7 @@ func TestInstallLinux(t *testing.T) {
 	if err != nil || !strings.Contains(string(entry), "Exec=/fake/bin/byre deliver %F") {
 		t.Fatalf("desktop entry wrong: %v %q", err, entry)
 	}
-	cfg, _, cfgErr := image.DecodeConfig(bytes.NewReader(deliverIconPNG))
-	if cfgErr != nil {
-		t.Fatal(cfgErr)
-	}
-	iconPath := fmt.Sprintf("%s/.local/share/icons/hicolor/%dx%d/apps/byre-deliver.png", d.home, cfg.Width, cfg.Height)
-	if icon, err := osReadFile(iconPath); err != nil || len(icon) == 0 {
-		t.Fatalf("icon missing: %v", err)
-	}
+	checkLinuxIconSet(t, d, InstallAppOptions{}, out.String())
 	if len(*calls) != 0 {
 		t.Fatalf("linux install should exec nothing: %v", *calls)
 	}
@@ -643,22 +732,62 @@ func TestInstallDarwinSSHIcon(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A single-chunk icns: 8-byte header, 8-byte chunk header, PNG.
-	if len(got) < 16 || !iconletters.IsByreRendered(got[16:]) {
-		t.Fatal("ssh install did not pack a letter-rendered icon")
+	entries := icnsEntries(t, got)
+	if len(entries) != len(wantICNS) {
+		t.Fatalf("%d icns elements; want %d", len(entries), len(wantICNS))
 	}
-	if repacked, err := packICNS(got[16:]); err != nil || !bytes.Equal(repacked, got) {
-		t.Fatalf("packed icon does not round-trip: %v", err)
+	for i, e := range entries {
+		side := wantICNS[i].side
+		if !iconletters.IsByreRendered(e.data) || bytes.Equal(e.data, deliverIconSSHPNG) || bytes.Equal(e.data, deliverIconPNG) {
+			t.Fatalf("%s: not a byre-rendered icon", e.typ)
+		}
+		// Letters at small AND large sizes: each is drawn afresh.
+		if (side == 32 || side == 1024) && bytes.Equal(e.data, plainIcon(t, deliverIconSSHPNG, side)) {
+			t.Fatalf("%s (%d px): no letters drawn", e.typ, side)
+		}
 	}
-	for name, asset := range map[string][]byte{"ssh": deliverIconSSHPNG, "local": deliverIconPNG} {
-		raw, err := packICNS(asset)
+}
+
+// plainIcon is asset rendered without letters at side: what an icon with
+// no letters must equal (iconletters' own tests prove a plain render
+// carries no letter ink; the art itself has white and black in it, so
+// scanning a real icon for ink cannot tell).
+func plainIcon(t *testing.T, asset []byte, side int) []byte {
+	t.Helper()
+	p, err := iconletters.Render(asset, "", side)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// checkLinuxIconSet asserts a marked PNG of the right size at every
+// linuxIconSides path, each listed on stdout, and nothing at the legacy
+// 1024 px path; it returns the icons by side.
+func checkLinuxIconSet(t *testing.T, d installDeps, o InstallAppOptions, stdout string) map[int][]byte {
+	t.Helper()
+	set := map[int][]byte{}
+	for _, side := range linuxIconSides {
+		path := linuxIconPath(t, d, o, side)
+		got, err := osReadFile(path)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("%d px icon missing: %v", side, err)
 		}
-		if bytes.Equal(got, raw) {
-			t.Fatalf("ssh icon is the raw %s art, without letters", name)
+		if !iconletters.IsByreRendered(got) {
+			t.Fatalf("%d px icon not byre-rendered", side)
 		}
+		if c, _, err := image.DecodeConfig(bytes.NewReader(got)); err != nil || c.Width != side || c.Height != side {
+			t.Fatalf("%d px icon size: %v %+v", side, err, c)
+		}
+		if !strings.Contains(stdout, path+"\n") {
+			t.Fatalf("stdout does not list %s:\n%s", path, stdout)
+		}
+		set[side] = got
 	}
+	if _, err := os.Lstat(linuxIconPath(t, d, o, legacyLinuxIconSide)); !os.IsNotExist(err) {
+		t.Fatalf("legacy 1024 px icon present: %v", err)
+	}
+	return set
 }
 
 func TestInstallLinuxSSHIconAndEntry(t *testing.T) {
@@ -683,20 +812,11 @@ func TestInstallLinuxSSHIconAndEntry(t *testing.T) {
 		!strings.Contains(string(entry), "Exec=/fake/bin/byre deliver ssh://far %F") {
 		t.Fatalf("ssh desktop entry:\n%s", entry)
 	}
-	cfg, _, cfgErr := image.DecodeConfig(bytes.NewReader(deliverIconSSHPNG))
-	if cfgErr != nil {
-		t.Fatal(cfgErr)
-	}
-	iconPath := fmt.Sprintf("%s/.local/share/icons/hicolor/%dx%d/apps/%s.png", d.home, cfg.Width, cfg.Height, ic)
-	got, err := osReadFile(iconPath)
-	if err != nil {
-		t.Fatalf("ssh icon missing: %v", err)
-	}
-	if !iconletters.IsByreRendered(got) || bytes.Equal(got, deliverIconSSHPNG) {
-		t.Fatal("ssh icon is not a letter-rendered PNG")
-	}
-	if gc, _, err := image.DecodeConfig(bytes.NewReader(got)); err != nil || gc.Width != cfg.Width || gc.Height != cfg.Height {
-		t.Fatalf("rendered icon size: %v %+v", err, gc)
+	out := s.Out.(*bytes.Buffer).String()
+	for side, got := range checkLinuxIconSet(t, d, InstallAppOptions{SSH: "ssh://far"}, out) {
+		if bytes.Equal(got, plainIcon(t, deliverIconSSHPNG, side)) {
+			t.Fatalf("%d px ssh icon has no letters", side)
+		}
 	}
 }
 
@@ -837,47 +957,50 @@ func TestDesktopEntryEscapesBackslashInName(t *testing.T) {
 }
 
 func TestInstallLinuxSkipsForeignIcon(t *testing.T) {
-	// Icon ownership is judged by content (raw art or byre's marker chunk).
-	// A user's file at the icon path is skipped with a note, never
-	// clobbered — and the install itself still lands.
+	// Icon ownership is judged by content, per size (byre's marker chunk).
+	// A user's file at one icon path is skipped with a note, never
+	// clobbered -- and the other sizes and the install itself still land.
 	d, _ := testDeps(t, "linux")
 	s, out, errw := testStreams("", false)
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(deliverIconPNG))
-	if err != nil {
-		t.Fatal(err)
-	}
-	iconDir := fmt.Sprintf("%s/.local/share/icons/hicolor/%dx%d/apps", d.home, cfg.Width, cfg.Height)
-	if err := osMkdirAll(iconDir, 0o755); err != nil {
+	foreignPath := linuxIconPath(t, d, InstallAppOptions{}, 32)
+	if err := osMkdirAll(filepath.Dir(foreignPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	foreign := []byte("the user's own icon bytes")
-	if err := osWriteFile(iconDir+"/byre-deliver.png", foreign, 0o644); err != nil {
+	if err := osWriteFile(foreignPath, foreign, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := installApp(s, InstallAppOptions{}, d); err != nil {
 		t.Fatal(err)
 	}
-	if b, err := osReadFile(iconDir + "/byre-deliver.png"); err != nil || !bytes.Equal(b, foreign) {
+	if b, err := osReadFile(foreignPath); err != nil || !bytes.Equal(b, foreign) {
 		t.Fatalf("foreign icon clobbered: %v", err)
 	}
-	if !strings.Contains(errw.String(), "icon skipped") {
-		t.Fatalf("no skip note: %q", errw.String())
+	if !strings.Contains(errw.String(), "icon skipped") || !strings.Contains(errw.String(), foreignPath) {
+		t.Fatalf("no skip note naming %s: %q", foreignPath, errw.String())
 	}
-	if strings.Contains(out.String(), "byre-deliver.png") {
+	if strings.Contains(out.String(), foreignPath) {
 		t.Fatalf("skipped icon still printed as installed: %q", out.String())
+	}
+	for _, side := range linuxIconSides {
+		if side == 32 {
+			continue
+		}
+		if b, err := osReadFile(linuxIconPath(t, d, InstallAppOptions{}, side)); err != nil || !iconletters.IsByreRendered(b) {
+			t.Fatalf("%d px icon not installed beside the foreign one: %v", side, err)
+		}
 	}
 
 	// Present-but-unprovable states skip too: existence is judged by
-	// Lstat, not by whether the read succeeded — a write-only file would
+	// Lstat, not by whether the read succeeded -- a write-only file would
 	// otherwise be truncated by the very write meant to "create" it, and
 	// a symlink followed somewhere else entirely.
 	d2, _ := testDeps(t, "linux")
 	s2, _, errw2 := testStreams("", false)
-	iconDir2 := fmt.Sprintf("%s/.local/share/icons/hicolor/%dx%d/apps", d2.home, cfg.Width, cfg.Height)
-	if err := osMkdirAll(iconDir2, 0o755); err != nil {
+	writeOnly := linuxIconPath(t, d2, InstallAppOptions{}, 64)
+	if err := osMkdirAll(filepath.Dir(writeOnly), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeOnly := iconDir2 + "/byre-deliver.png"
 	if err := osWriteFile(writeOnly, []byte("unreadable"), 0o200); err != nil {
 		t.Fatal(err)
 	}
@@ -896,12 +1019,12 @@ func TestInstallLinuxSkipsForeignIcon(t *testing.T) {
 
 	d3, _ := testDeps(t, "linux")
 	s3, _, errw3 := testStreams("", false)
-	iconDir3 := fmt.Sprintf("%s/.local/share/icons/hicolor/%dx%d/apps", d3.home, cfg.Width, cfg.Height)
-	if err := osMkdirAll(iconDir3, 0o755); err != nil {
+	link := linuxIconPath(t, d3, InstallAppOptions{}, 128)
+	if err := osMkdirAll(filepath.Dir(link), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	target := d3.home + "/elsewhere.png"
-	if err := os.Symlink(target, iconDir3+"/byre-deliver.png"); err != nil {
+	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
 	if err := installApp(s3, InstallAppOptions{}, d3); err != nil {
@@ -1085,11 +1208,55 @@ func TestInstallLinuxWarnsWhenIconDirFails(t *testing.T) {
 	if err := installApp(s, InstallAppOptions{}, d); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errw.String(), "icon not installed") {
-		t.Fatalf("no icon-install warning: %q", errw.String())
+	if n := strings.Count(errw.String(), "icon not installed"); n != 1 {
+		t.Fatalf("want one combined icon-install warning, got %d: %q", n, errw.String())
 	}
 	if !strings.Contains(out.String(), "byre-deliver.desktop") {
 		t.Fatalf("desktop entry not installed: %q", out.String())
+	}
+}
+
+func TestInstallLinuxOneIconDirFailureSparesTheRest(t *testing.T) {
+	// One size directory that cannot be made (a file where 24x24/apps
+	// belongs) costs that size alone: the other sizes still land, one
+	// warning names the failure, and the legacy 1024 icon -- byre's own --
+	// stays because the new set is incomplete.
+	d, _ := testDeps(t, "linux")
+	s, out, errw := testStreams("", false)
+	o := InstallAppOptions{SSH: "ssh://far"}
+	blocked := filepath.Dir(linuxIconPath(t, d, o, 24))
+	if err := osMkdirAll(filepath.Dir(blocked), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := osWriteFile(blocked, []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	legacy := linuxIconPath(t, d, o, legacyLinuxIconSide)
+	if err := osMkdirAll(filepath.Dir(legacy), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := osWriteFile(legacy, deliverIconSSHPNG, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := installApp(s, o, d); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(errw.String(), "icon not installed"); n != 1 || !strings.Contains(errw.String(), blocked) {
+		t.Fatalf("want one warning naming %s, got %d: %q", blocked, n, errw.String())
+	}
+	for _, side := range linuxIconSides {
+		if side == 24 {
+			continue
+		}
+		if b, err := osReadFile(linuxIconPath(t, d, o, side)); err != nil || !iconletters.IsByreRendered(b) {
+			t.Fatalf("%d px icon not installed after the 24 px dir failed: %v", side, err)
+		}
+	}
+	if !strings.Contains(out.String(), linuxIconPath(t, d, o, 512)) {
+		t.Fatalf("sizes after the failed one not printed: %q", out.String())
+	}
+	if b, err := osReadFile(legacy); err != nil || !bytes.Equal(b, deliverIconSSHPNG) {
+		t.Fatalf("legacy icon removed though the new set is incomplete: %v", err)
 	}
 }
 
@@ -1138,48 +1305,51 @@ func TestRerunBakesExplicitIconLettersOnly(t *testing.T) {
 	}
 }
 
-// linuxIconPath is where a Linux install of o writes its icon.
-func linuxIconPath(t *testing.T, d installDeps, o InstallAppOptions) string {
+// linuxIconPath is where a Linux install of o writes its side px icon.
+func linuxIconPath(t *testing.T, d installDeps, o InstallAppOptions, side int) string {
 	t.Helper()
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(deliverIconPNG))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return fmt.Sprintf("%s/.local/share/icons/hicolor/%dx%d/apps/%s.png", d.home, cfg.Width, cfg.Height, specOf(t, d.exe, o).iconName())
+	return fmt.Sprintf("%s/.local/share/icons/hicolor/%dx%d/apps/%s.png", d.home, side, side, specOf(t, d.exe, o).iconName())
 }
 
-func TestInstallLinuxUnnamedIconStaysPlain(t *testing.T) {
+func TestInstallLinuxUnnamedIconHasNoLetters(t *testing.T) {
 	d, _ := testDeps(t, "linux")
-	s, _, _ := testStreams("", false)
+	s, out, _ := testStreams("", false)
 	if err := installApp(s, InstallAppOptions{}, d); err != nil {
 		t.Fatal(err)
 	}
-	got, err := osReadFile(linuxIconPath(t, d, InstallAppOptions{}))
-	if err != nil || !bytes.Equal(got, deliverIconPNG) {
-		t.Fatalf("unnamed local icon is not the raw art: %v", err)
+	for side, got := range checkLinuxIconSet(t, d, InstallAppOptions{}, out.String()) {
+		if !bytes.Equal(got, plainIcon(t, deliverIconPNG, side)) {
+			t.Fatalf("unnamed local %d px icon is not the plain art", side)
+		}
 	}
 }
 
 func TestInstallLinuxReplacesOwnRenderedIcon(t *testing.T) {
 	d, _ := testDeps(t, "linux")
 	s, _, errw := testStreams("", false)
-	if err := installApp(s, InstallAppOptions{SSH: "ssh://far"}, d); err != nil {
+	o := InstallAppOptions{SSH: "ssh://far"}
+	if err := installApp(s, o, d); err != nil {
 		t.Fatal(err)
 	}
-	path := linuxIconPath(t, d, InstallAppOptions{SSH: "ssh://far"})
-	first, err := osReadFile(path)
-	if err != nil {
-		t.Fatal(err)
+	first := map[int][]byte{}
+	for _, side := range linuxIconSides {
+		b, err := osReadFile(linuxIconPath(t, d, o, side))
+		if err != nil {
+			t.Fatal(err)
+		}
+		first[side] = b
 	}
 	if err := installApp(s, InstallAppOptions{SSH: "ssh://far", IconLetters: "ZZ"}, d); err != nil {
 		t.Fatal(err)
 	}
-	second, err := osReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Equal(first, second) || !iconletters.IsByreRendered(second) {
-		t.Fatal("reinstall with new letters did not replace byre's own icon")
+	for _, side := range linuxIconSides {
+		second, err := osReadFile(linuxIconPath(t, d, o, side))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Equal(first[side], second) || !iconletters.IsByreRendered(second) {
+			t.Fatalf("%d px: reinstall with new letters did not replace byre's own icon", side)
+		}
 	}
 	if strings.Contains(errw.String(), "icon skipped") {
 		t.Fatalf("own rendered icon treated as foreign: %q", errw.String())
@@ -1187,21 +1357,80 @@ func TestInstallLinuxReplacesOwnRenderedIcon(t *testing.T) {
 }
 
 func TestInstallLinuxUpgradesPreFeatureIcon(t *testing.T) {
+	// Earlier installs wrote one icon at 1024x1024 (raw art, or a marked
+	// render): byre's own is removed once the size set replaces it; a
+	// foreign file there is left alone, unmentioned.
+	o := InstallAppOptions{SSH: "ssh://far"}
+	marked, err := iconletters.Render(deliverIconSSHPNG, "FA", legacyLinuxIconSide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]struct {
+		planted  []byte
+		survives bool
+	}{
+		"raw asset":     {deliverIconSSHPNG, false},
+		"marked render": {marked, false},
+		"foreign":       {[]byte("the user's own icon bytes"), true},
+	} {
+		d, _ := testDeps(t, "linux")
+		s, out, errw := testStreams("", false)
+		legacy := linuxIconPath(t, d, o, legacyLinuxIconSide)
+		if err := osMkdirAll(filepath.Dir(legacy), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := osWriteFile(legacy, c.planted, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := installApp(s, o, d); err != nil {
+			t.Fatal(err)
+		}
+		got, err := osReadFile(legacy)
+		switch {
+		case c.survives && (err != nil || !bytes.Equal(got, c.planted)):
+			t.Fatalf("%s: legacy file not left alone: %v", name, err)
+		case !c.survives && !os.IsNotExist(err):
+			t.Fatalf("%s: byre's legacy 1024 px icon not removed: %v", name, err)
+		}
+		if strings.Contains(errw.String(), legacy) {
+			t.Fatalf("%s: legacy path mentioned: %q", name, errw.String())
+		}
+		for _, side := range linuxIconSides {
+			if !strings.Contains(out.String(), linuxIconPath(t, d, o, side)) {
+				t.Fatalf("%s: %d px icon not installed: %q", name, side, out.String())
+			}
+		}
+	}
+}
+
+func TestInstallLinuxKeepsLegacyIconWhenASizeIsSkipped(t *testing.T) {
+	// A foreign file at one new size means the set is incomplete, so the
+	// byre-owned legacy 1024 icon stays: a partial install keeps whatever
+	// icon it had.
 	d, _ := testDeps(t, "linux")
 	s, _, errw := testStreams("", false)
-	path := linuxIconPath(t, d, InstallAppOptions{SSH: "ssh://far"})
-	if err := osMkdirAll(filepath.Dir(path), 0o755); err != nil {
+	o := InstallAppOptions{SSH: "ssh://far"}
+	foreignPath := linuxIconPath(t, d, o, 48)
+	legacy := linuxIconPath(t, d, o, legacyLinuxIconSide)
+	for path, b := range map[string][]byte{
+		foreignPath: []byte("the user's own icon bytes"),
+		legacy:      deliverIconSSHPNG,
+	} {
+		if err := osMkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := osWriteFile(path, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := installApp(s, o, d); err != nil {
 		t.Fatal(err)
 	}
-	if err := osWriteFile(path, deliverIconSSHPNG, 0o644); err != nil {
-		t.Fatal(err)
+	if !strings.Contains(errw.String(), "icon skipped") || !strings.Contains(errw.String(), foreignPath) {
+		t.Fatalf("no skip note naming %s: %q", foreignPath, errw.String())
 	}
-	if err := installApp(s, InstallAppOptions{SSH: "ssh://far"}, d); err != nil {
-		t.Fatal(err)
-	}
-	got, err := osReadFile(path)
-	if err != nil || !iconletters.IsByreRendered(got) {
-		t.Fatalf("pre-feature raw icon not upgraded: %v; stderr %q", err, errw.String())
+	if b, err := osReadFile(legacy); err != nil || !bytes.Equal(b, deliverIconSSHPNG) {
+		t.Fatalf("legacy icon removed though a size was skipped: %v", err)
 	}
 }
 
@@ -1223,11 +1452,11 @@ func TestInstallDarwinIconChangesOnReinstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rendered, err := iconletters.Render(deliverIconSSHPNG, "QQ")
+	set, err := specOf(t, d.exe, InstallAppOptions{SSH: "ssh://far", IconLetters: "QQ"}).iconSet(icnsSides())
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := packICNS(rendered)
+	want, err := packICNS(set)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1249,9 +1478,11 @@ func TestInstallNotesUnderivableLettersForCJKHost(t *testing.T) {
 	if !strings.Contains(errw.String(), "no icon letters could be derived") {
 		t.Fatalf("no note for an underivable host: %q", errw.String())
 	}
-	got, err := osReadFile(linuxIconPath(t, d, o))
-	if err != nil || !bytes.Equal(got, deliverIconSSHPNG) {
-		t.Fatalf("underivable host's icon is not the plain art: %v", err)
+	for _, side := range linuxIconSides {
+		got, err := osReadFile(linuxIconPath(t, d, o, side))
+		if err != nil || !bytes.Equal(got, plainIcon(t, deliverIconSSHPNG, side)) {
+			t.Fatalf("underivable host's %d px icon is not the plain art: %v", side, err)
+		}
 	}
 }
 

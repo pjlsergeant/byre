@@ -213,7 +213,10 @@ installs would draw the same letters (`prod-eu` and `prod-us`),
 `--icon-letters XY` picks them: one or two letters or digits. A label
 that yields none leaves the icon plain, with a note naming the flag.
 The unnamed local app keeps the plain icon unless `--icon-letters` is
-given. Re-run `--install-app` to pick up new letters.
+given. The letters are drawn afresh at every icon size, 16 px to
+1024 px, rather than shrunk from one big picture, so they stay legible
+in the Dock, Finder lists and Linux menus. Re-run `--install-app` to
+pick up new letters.
 
 On **Linux**, `--install-app` writes a `.desktop` launcher instead --
 experimental; see the platform note under "What works where".
@@ -318,7 +321,11 @@ per-target installs. Regeneration replaces only text artifacts carrying
 byre's generated marker in their header (plus, for a labeled install,
 its identity token -- a colliding label refuses rather than clobbers);
 a same-named file byre didn't write is refused. Icons are the one
-non-text artifact: on Linux they are judged by content (only byre's own
-bytes are ever replaced -- the raw art, or a PNG carrying byre's marker
-chunk; anything else is skipped with a note), and the
-icns inside a macOS bundle rides the bundle's own marker gate.
+non-text artifact: on Linux byre writes one PNG at each of eight
+icon-theme sizes (16x16 to 512x512; the desktop scales them for the
+rest), each judged by content (only byre-owned bytes are ever replaced
+-- the original raw art an earlier version wrote, or a PNG carrying
+byre's marker chunk; anything else is skipped with a note), and the
+single `1024x1024` icon earlier versions wrote is removed on reinstall
+when it is byre's. The icns inside a
+macOS bundle rides the bundle's own marker gate.

@@ -385,22 +385,57 @@ func hash8(s string) string {
 	return hex.EncodeToString(sum[:4])
 }
 
-// iconPNG is the install's icon: the base art for its kind, with its icon
-// letters drawn over it when it has any.
-func (a appInstall) iconPNG() ([]byte, error) {
+// icnsTypes are the renditions packICNS writes, all PNG payloads, in file
+// order: ascending pixel size, and where two types share a pixel size the
+// @2x type (half the point size) comes first, then the 1x type at that
+// size (the pair carry the same bytes). There is no 16 px slot: inside an
+// app bundle macOS reads icp4/icp5 as raw pixels, so a PNG there renders
+// as static, and the ARGB ic04/ic05 encoding is not worth carrying.
+// 16 pt comes from ic11 (16@2x) on Retina and is scaled down elsewhere.
+var icnsTypes = []struct {
+	typ  string
+	side int
+}{
+	{"ic11", 32}, {"ic12", 64}, {"ic07", 128},
+	{"ic13", 256}, {"ic08", 256}, {"ic14", 512}, {"ic09", 512}, {"ic10", 1024},
+}
+
+// linuxIconSides are the hicolor sizes the Linux install writes: a chosen
+// subset of the stock hicolor index.theme sizes (16, 24, 32, 48, 64, 128,
+// 256, 512); desktops scale one of these for the sizes not written.
+var linuxIconSides = []int{16, 24, 32, 48, 64, 128, 256, 512}
+
+// legacyLinuxIconSide is where installs before the multi-size set put
+// their one icon: a size stock hicolor does not list, so it is removed
+// (when byre's own) on reinstall.
+const legacyLinuxIconSide = 1024
+
+// icnsSides are the distinct sides icnsTypes needs.
+func icnsSides() []int {
+	var out []int
+	seen := map[int]bool{}
+	for _, t := range icnsTypes {
+		if !seen[t.side] {
+			seen[t.side] = true
+			out = append(out, t.side)
+		}
+	}
+	return out
+}
+
+// iconSet is the install's icon at each of sides: the base art for its
+// kind, scaled, with its icon letters (if any) drawn afresh at each size.
+func (a appInstall) iconSet(sides []int) (map[int][]byte, error) {
 	base := deliverIconPNG
 	if a.ssh != "" {
 		base = deliverIconSSHPNG
 	}
-	if a.letters == "" {
-		return base, nil
-	}
-	return iconletters.Render(base, a.letters)
+	return iconletters.RenderSizes(base, a.letters, sides)
 }
 
 // byreOwnedIcon reports icon bytes byre wrote: either raw asset (the
-// unnamed local icon, and every icon from before icon letters) or a
-// rendered PNG carrying byre's marker chunk.
+// single 1024 px icon installs wrote before icon letters) or a rendered
+// PNG carrying byre's marker chunk.
 func byreOwnedIcon(b []byte) bool {
 	return bytes.Equal(b, deliverIconPNG) || bytes.Equal(b, deliverIconSSHPNG) || iconletters.IsByreRendered(b)
 }
@@ -711,31 +746,41 @@ Categories=Utility;Development;
 `
 }
 
-// packICNS wraps one PNG as a .icns (modern icns chunks carry PNG bytes
-// directly — no Apple tooling involved). The source must be square at a
-// size with an icns type: 128/256/512/1024; macOS scales one good high-res
-// representation down gracefully.
-func packICNS(pngBytes []byte) ([]byte, error) {
-	cfg, format, err := image.DecodeConfig(bytes.NewReader(pngBytes))
-	if err != nil || format != "png" {
-		return nil, fmt.Errorf("icon must be a PNG: %v", err)
+// packICNS packs one PNG per icnsTypes entry into a .icns (modern icns
+// elements carry PNG bytes directly -- no Apple tooling involved): the
+// "icns" magic and big-endian total length, then each element as its type,
+// its big-endian length including the 8-byte header, and the PNG. pngs is
+// keyed by side and must hold a square PNG of that side for every type.
+func packICNS(pngs map[int][]byte) ([]byte, error) {
+	for _, side := range icnsSides() {
+		p, ok := pngs[side]
+		if !ok {
+			return nil, fmt.Errorf("icon set is missing the %d px rendition", side)
+		}
+		cfg, format, err := image.DecodeConfig(bytes.NewReader(p))
+		if err != nil || format != "png" {
+			return nil, fmt.Errorf("icon must be a PNG: %v", err)
+		}
+		if cfg.Width != cfg.Height {
+			return nil, fmt.Errorf("icon must be square (got %dx%d)", cfg.Width, cfg.Height)
+		}
+		if cfg.Width != side {
+			return nil, fmt.Errorf("icon rendition must be %d px (got %d)", side, cfg.Width)
+		}
 	}
-	if cfg.Width != cfg.Height {
-		return nil, fmt.Errorf("icon must be square (got %dx%d)", cfg.Width, cfg.Height)
-	}
-	types := map[int]string{128: "ic07", 256: "ic08", 512: "ic09", 1024: "ic10"}
-	typ, ok := types[cfg.Width]
-	if !ok {
-		return nil, fmt.Errorf("icon must be 128, 256, 512, or 1024 px square (got %d)", cfg.Width)
+	total := uint32(8)
+	for _, t := range icnsTypes {
+		total += uint32(8 + len(pngs[t.side]))
 	}
 	var out bytes.Buffer
-	chunkLen := uint32(8 + len(pngBytes))
-	total := uint32(8) + chunkLen
 	out.WriteString("icns")
 	_ = binary.Write(&out, binary.BigEndian, total)
-	out.WriteString(typ)
-	_ = binary.Write(&out, binary.BigEndian, chunkLen)
-	out.Write(pngBytes)
+	for _, t := range icnsTypes {
+		p := pngs[t.side]
+		out.WriteString(t.typ)
+		_ = binary.Write(&out, binary.BigEndian, uint32(8+len(p)))
+		out.Write(p)
+	}
 	return out.Bytes(), nil
 }
 

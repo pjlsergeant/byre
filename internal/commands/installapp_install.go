@@ -3,7 +3,6 @@ package commands
 import (
 	"bytes"
 	"fmt"
-	"image"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -222,10 +221,10 @@ func installDarwin(s Streams, a appInstall, d installDeps) error {
 		return err
 	}
 	// Icon: overwrite the stub's droplet/applet icns with ours.
-	png, err := a.iconPNG()
+	set, err := a.iconSet(icnsSides())
 	var icns []byte
 	if err == nil {
-		icns, err = packICNS(png)
+		icns, err = packICNS(set)
 	}
 	if err == nil {
 		for _, name := range []string{"droplet.icns", "applet.icns"} {
@@ -324,47 +323,39 @@ func installLinux(s Streams, a appInstall, d installDeps) error {
 	}
 	fmt.Fprintf(s.Out, "%s\n", entryPath)
 
-	// The icon lands in the hicolor theme at its actual size. Ownership is
-	// judged by content: byre writes either a raw embedded asset or a
-	// rendered PNG carrying its marker chunk (byreOwnedIcon), so anything
-	// else at the path is someone's file — skipped with a note, never
-	// clobbered (the icon is cosmetic; the install still lands).
-	png, err := a.iconPNG()
+	// The icon lands in the hicolor theme at every linuxIconSides size.
+	// Ownership is judged by content, per file: byre writes rendered PNGs
+	// carrying its marker chunk (byreOwnedIcon), so anything else at a
+	// path is someone's file -- skipped with a note, never clobbered (the
+	// icon is cosmetic; the install still lands).
+	iconsDir := filepath.Join(d.home, ".local", "share", "icons", "hicolor")
+	set, err := a.iconSet(linuxIconSides)
 	if err != nil {
 		fmt.Fprintf(s.Err, "byre: warning: icon skipped (%v)\n", err)
-	} else if cfg, _, err := image.DecodeConfig(bytes.NewReader(png)); err == nil {
-		iconDir := filepath.Join(d.home, ".local", "share", "icons", "hicolor",
-			fmt.Sprintf("%dx%d", cfg.Width, cfg.Height), "apps")
-		if err := hostopen.PlainMkdirAll(iconDir, 0o755, hostopen.HostUserOwned); err != nil {
-			fmt.Fprintf(s.Err, "byre: warning: icon not installed — %s: %v\n", iconDir, err)
-		} else {
-			iconPath := filepath.Join(iconDir, a.iconName()+".png")
-			// Existence is established by Lstat, not by whether a read
-			// succeeded: an unreadable file, a directory, or a symlink is
-			// PRESENT but of unprovable ownership — skipped, never written
-			// (a write would truncate a 0200 file the read couldn't see,
-			// or follow a symlink somewhere else entirely).
-			write := false
-			if fi, lerr := hostopen.PlainLstat(iconPath, hostopen.HostUserOwned); lerr == nil {
-				existing, rerr := hostopen.PlainReadFile(iconPath, hostopen.HostUserOwned)
-				if fi.Mode().IsRegular() && rerr == nil &&
-					byreOwnedIcon(existing) {
-					write = true
-				} else {
-					fmt.Fprintf(s.Err, "byre: warning: icon skipped — %s exists and doesn't look byre-written; remove it yourself and re-run\n", iconPath)
-				}
-			} else if os.IsNotExist(lerr) {
-				write = true
-			} else {
-				fmt.Fprintf(s.Err, "byre: warning: icon skipped — cannot check %s (%v)\n", iconPath, lerr)
+	} else {
+		written := 0
+		// A size directory that cannot be made costs only that size; the
+		// failures share one note, since the cause (the theme dir
+		// unwritable) is often common to all of them.
+		var mkdirFailed []string
+		for _, side := range linuxIconSides {
+			iconDir := filepath.Join(iconsDir, fmt.Sprintf("%dx%d", side, side), "apps")
+			if err := hostopen.PlainMkdirAll(iconDir, 0o755, hostopen.HostUserOwned); err != nil {
+				mkdirFailed = append(mkdirFailed, fmt.Sprintf("%s: %v", iconDir, err))
+				continue
 			}
-			if write {
-				if err := hostopen.PlainWriteFile(iconPath, png, 0o644, hostopen.HostUserOwned); err != nil {
-					fmt.Fprintf(s.Err, "byre: warning: icon not installed — %s: %v\n", iconPath, err)
-				} else {
-					fmt.Fprintf(s.Out, "%s\n", iconPath)
-				}
+			if installLinuxIcon(s, filepath.Join(iconDir, a.iconName()+".png"), set[side]) {
+				written++
 			}
+		}
+		if len(mkdirFailed) > 0 {
+			fmt.Fprintf(s.Err, "byre: warning: icon not installed at %d of %d sizes — %s\n", len(mkdirFailed), len(linuxIconSides), strings.Join(mkdirFailed, "; "))
+		}
+		// The legacy icon goes only once the full set replaces it: an
+		// install that wrote fewer sizes keeps whatever icon it had.
+		if written == len(linuxIconSides) {
+			side := legacyLinuxIconSide
+			removeLegacyLinuxIcon(filepath.Join(iconsDir, fmt.Sprintf("%dx%d", side, side), "apps", a.iconName()+".png"))
 		}
 	}
 	fmt.Fprintf(s.Err, "byre: installed the deliver launcher — drag files onto it in your app grid/dock\n")
@@ -375,4 +366,47 @@ func installLinux(s Streams, a appInstall, d installDeps) error {
 	fmt.Fprintf(s.Err, "byre: to uninstall: delete the paths above\n")
 	fmt.Fprintf(s.Err, "byre: to update (byre moved, new --box): re-run '%s'\n", a.rerun())
 	return nil
+}
+
+// installLinuxIcon writes png at path unless something not byre's is
+// there, printing the path on stdout when written. Existence is
+// established by Lstat, not by whether a read succeeded: an unreadable
+// file, a directory, or a symlink is PRESENT but of unprovable ownership
+// -- skipped, never written (a write would truncate a 0200 file the read
+// couldn't see, or follow a symlink somewhere else entirely). It reports
+// whether the icon was written.
+func installLinuxIcon(s Streams, path string, png []byte) bool {
+	if fi, lerr := hostopen.PlainLstat(path, hostopen.HostUserOwned); lerr == nil {
+		owned := false
+		if fi.Mode().IsRegular() {
+			existing, rerr := hostopen.PlainReadFile(path, hostopen.HostUserOwned)
+			owned = rerr == nil && byreOwnedIcon(existing)
+		}
+		if !owned {
+			fmt.Fprintf(s.Err, "byre: warning: icon skipped — %s exists and doesn't look byre-written; remove it yourself and re-run\n", path)
+			return false
+		}
+	} else if !os.IsNotExist(lerr) {
+		fmt.Fprintf(s.Err, "byre: warning: icon skipped — cannot check %s (%v)\n", path, lerr)
+		return false
+	}
+	if err := hostopen.PlainWriteFile(path, png, 0o644, hostopen.HostUserOwned); err != nil {
+		fmt.Fprintf(s.Err, "byre: warning: icon not installed — %s: %v\n", path, err)
+		return false
+	}
+	fmt.Fprintf(s.Out, "%s\n", path)
+	return true
+}
+
+// removeLegacyLinuxIcon removes the single 1024 px icon earlier installs
+// wrote, when it is a regular file byre wrote. Anything else there is not
+// byre's and is left alone, unmentioned.
+func removeLegacyLinuxIcon(path string) {
+	fi, err := hostopen.PlainLstat(path, hostopen.HostUserOwned)
+	if err != nil || !fi.Mode().IsRegular() {
+		return
+	}
+	if b, err := hostopen.PlainReadFile(path, hostopen.HostUserOwned); err == nil && byreOwnedIcon(b) {
+		_ = hostopen.PlainRemove(path, hostopen.HostUserOwned)
+	}
 }
