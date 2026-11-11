@@ -105,6 +105,10 @@ func TestRenderIsPackableDistinctAndMarked(t *testing.T) {
 		if _, _, _, a := img.At(0, 0).RGBA(); a != 0 {
 			t.Fatalf("%d: transparent corner became alpha %d", side, a)
 		}
+		// Art away from the letters keeps its colour.
+		if got := color.NRGBAModel.Convert(img.At(side/2, side/10)); got != (color.NRGBA{100, 120, 140, 255}) {
+			t.Fatalf("%d: art above the letters became %v", side, got)
+		}
 		white := false
 		for x := 0; x < side && !white; x++ {
 			r, g, b, _ := img.At(x, side/2).RGBA()

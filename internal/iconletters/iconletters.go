@@ -31,7 +31,6 @@ const (
 	capHeightFrac = 0.325    // cap height of the letters
 	maxWidthFrac  = 0.84     // widest the ink may run before the size shrinks
 	outlineFrac   = 1.0 / 48 // outline stamp distance
-	washAlpha     = 128      // black wash over the art, masked by its alpha
 )
 
 // markerText is the tEXt Comment a rendered icon carries: how a later
@@ -144,14 +143,6 @@ func Render(basePNG []byte, letters string) ([]byte, error) {
 	side := b.Dx()
 	dst := image.NewNRGBA(image.Rect(0, 0, side, side))
 	draw.Draw(dst, dst.Bounds(), base, b.Min, draw.Src)
-	// The wash darkens colour and leaves alpha exactly as the art had it:
-	// transparent corners stay transparent, and the art stays faintly
-	// visible beneath the letters.
-	for i := 0; i < len(dst.Pix); i += 4 {
-		for c := 0; c < 3; c++ {
-			dst.Pix[i+c] = uint8(uint32(dst.Pix[i+c]) * (255 - washAlpha) / 255)
-		}
-	}
 
 	face, err := sizedFace(f, letters, float64(side))
 	if err != nil {
