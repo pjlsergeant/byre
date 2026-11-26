@@ -3,6 +3,14 @@
 > **Amended by ADR 0059** (2026-10-02): "in a session" is the scope; the
 > one-shot helper containers run as root and are ADR 0059's decision.
 
+> **Amended 2026-11-26**: one helper may run while sessions do -- the editor's
+> volume **Clear**, which empties a volume a running box mounts so a shared
+> login can be reset without closing every box. It runs from the image of a
+> box already mounting that volume, networkless, with that one volume as its
+> only mount and a fixed delete script as its only command, and is removed
+> when it exits. The agent can only put files in the volume, which the
+> helper then deletes, so it gains no input into a root process.
+
 The generated image creates the `dev` user at the invoking host user's
 UID/GID (`--build-arg BYRE_UID/BYRE_GID`), chowns `/home/dev` and the
 volume mount points to it at build, and sets `USER dev` -- so the box runs
@@ -28,7 +36,8 @@ Consequences:
   inside root build steps); nothing runs as root after PID 1 in a session.
   The one exception is byre's one-shot helper containers (volume seeding,
   backup's capture, restore's pour), which run as root in the box's userns
-  and exit before any session starts (ADR 0059). Seeding mounts its
+  and exit before any session starts (ADR 0059), save the volume-clear
+  helper, which may run beside a session (amendment above). Seeding mounts its
   declared host source read-only and runs on the engine's default
   network; the backup helpers run networkless with no host bind.
 - First-run hooks run as the user -- a future skill needing privileged

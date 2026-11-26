@@ -1,5 +1,11 @@
 # `byre backup` / `byre restore`: one file holding a project's config and its state volumes
 
+> **Amended 2026-11-26**: the editor's volume Clear adds a helper (ADR 0008's
+> amendment). A project volume's clear helper carries `byre.helper=<project
+> id>` plus a run id, so the existing sweeps see it; a machine volume's
+> carries `byre.helper.machine=<physical volume name>` plus a run id, and
+> Delete and Clear of that volume refuse while one is present.
+
 Decided 2026-10-02. `byre backup` writes one file holding a project's config
 and its state volumes. `byre restore` takes that file and makes a fresh
 project from it, on this machine or another: config written, volumes filled,

@@ -1,5 +1,11 @@
 # Shared agent identity: machine-scoped volumes + companion skills
 
+> **Amended 2026-11-26**: the deliberate route is `byre config --global` ->
+> Volumes (enter on a machine-scoped row, or Volume data), offering Delete
+> and Clear. Delete refuses only while a container mounts that volume,
+> naming it; Clear empties the volume in place even while boxes run, and is
+> the logout story. Nothing refuses over unrelated running sessions.
+
 An agent login can be shared across all of a user's projects by enabling
 an opt-in **companion skill** (`claude-shared-auth`, `codex-shared-auth`,
 `gemini-shared-auth`) alongside the agent skill. Each companion
@@ -66,8 +72,9 @@ access is root-equivalent, which the security-model page states plainly.
 
 Lifecycle honesty: `byre status` prints machine-scoped volumes on their
 own row; `reset` and `forget` skip them and say so, naming the
-deliberate route (`byre config` -> Volumes -> clear, which doubles as
-the logout story and refuses while any byre session runs). A shared
+deliberate route (`byre config --global` -> Volumes -> Delete or Clear;
+Clear doubles as the logout story and works while boxes run -- see the
+amendment above). A shared
 credential is not classified a grant -- no host reach is widened, and
 per-project credentials were already account-capable -- but
 cross-project sharing is never invisible.
