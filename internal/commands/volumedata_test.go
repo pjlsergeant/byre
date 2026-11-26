@@ -72,7 +72,7 @@ func TestEmptyVolumeDataRunsInTheHoldersImage(t *testing.T) {
 	if !strings.Contains(note, "byre-web-1") {
 		t.Fatalf("note must name who still mounts it: %q", note)
 	}
-	if !strings.Contains(note, "restart the agent") {
+	if !strings.Contains(note, "start them again") {
 		t.Fatalf("note must say to restart the agents still holding it: %q", note)
 	}
 }

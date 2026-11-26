@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/pjlsergeant/byre/internal/packages"
@@ -300,7 +301,7 @@ func (m model) viewVolumes() string {
 			msg = fmt.Sprintf("Clear %q? Everything in it is deleted and the volume stays — boxes running with it now see it empty.", packages.EscapeTerminal(pend.Name))
 		}
 		if pend.Machine {
-			msg += "\nShared by ALL your projects — this affects every one (a shared agent login logs out everywhere)."
+			msg += "\nShared by ALL your projects — this affects every one (a shared agent login is gone for all of them)."
 		}
 		// With several engines installed the action is engine-local — say so,
 		// or "logged out everywhere" overclaims while the other engine's
@@ -313,17 +314,33 @@ func (m model) viewVolumes() string {
 				msg += "\n" + note
 			}
 		}
-		b.WriteString(errStyle.Render(msg + " [y/n]"))
+		b.WriteString(m.wrapStyled(errStyle, msg+" [y/n]"))
 	case m.volErr != "":
 		b.WriteString(m.errLine(m.volErr))
 	case m.volNote != "":
-		b.WriteString(okStyle.Render(m.volNote))
+		b.WriteString(m.wrapStyled(okStyle, m.volNote))
 	default:
 		b.WriteString(m.subFooterNote())
 	}
 
 	b.WriteString("\n\n" + helpLine("↑/↓", "move", "d", "delete", "c", "clear", "^s", "save", "esc", "back"))
 	return b.String()
+}
+
+// wrapStyled wraps each line of msg to the terminal width before styling it:
+// the view clips every line to the width, and the end of these messages
+// (the remedy, the [y/n]) is the part that must not be lost.
+func (m model) wrapStyled(st lipgloss.Style, msg string) string {
+	if m.width <= 0 {
+		return st.Render(msg)
+	}
+	var out []string
+	for _, line := range strings.Split(msg, "\n") {
+		for _, l := range wrapLine(line, m.width) {
+			out = append(out, st.Render(l))
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // groupVolumes orders rows for display: project-scoped first, then

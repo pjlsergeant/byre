@@ -116,6 +116,7 @@ type fakeVols struct {
 	cleared    []string
 	emptied    []string
 	sharedNote string
+	note       string // Empty's success note; "" means the default
 }
 
 func (f *fakeVols) List() ([]VolumeStatus, []string, error) { return f.vols, f.notes, nil }
@@ -127,6 +128,9 @@ func (f *fakeVols) Empty(v VolumeStatus) (string, error) {
 		return "", f.clearErr
 	}
 	f.emptied = append(f.emptied, v.Name)
+	if f.note != "" {
+		return f.note, nil
+	}
 	return "emptied in place", nil
 }
 

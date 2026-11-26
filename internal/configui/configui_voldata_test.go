@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/pjlsergeant/byre/internal/config"
 )
 
@@ -62,7 +63,7 @@ func TestGlobalMachineVolumeRowOffersDeleteAndClear(t *testing.T) {
 	if m.mode != modeVolumes || m.volPendClear < 0 || !m.volPendEmpty {
 		t.Fatalf("clear must arm the data screen's clear confirm: mode=%v pend=%d empty=%v err=%q", m.mode, m.volPendClear, m.volPendEmpty, m.volErr)
 	}
-	if v := m.viewVolumes(); !strings.Contains(v, "Clear \"zai-identity\"") || !strings.Contains(v, "logs out everywhere") {
+	if v := m.viewVolumes(); !strings.Contains(v, "Clear \"zai-identity\"") || !strings.Contains(v, "ALL your projects") {
 		t.Fatalf("confirm must name the volume and its machine-wide reach:\n%s", v)
 	}
 	mm, _ = m.Update(key("y"))
@@ -164,4 +165,38 @@ func TestVolumeRemovalRowClearKeyExplains(t *testing.T) {
 	if got := mm.(model).status; !strings.Contains(got, "no volume") {
 		t.Fatalf("c on a removal row must say why, got %q", got)
 	}
+}
+
+// The confirm and the result note end in what must be read (the [y/n], the
+// restart remedy), and the view clips every line to the terminal width, so
+// both wrap instead of running off a narrow screen.
+func TestVolumeConfirmAndNoteWrapToTheWidth(t *testing.T) {
+	long := "emptied in place — still mounted by byre-a-1 (running), byre-b-1 (running); exit those boxes and start them again"
+	fv := &fakeVols{vols: []VolumeStatus{{Name: "zai-identity", Exists: true, Machine: true, Engine: "docker"}}, note: long}
+	m := globalVolModel(fv)
+	m.width = 60
+	m.listCur = rowIndex(t, m.fieldRows(fVolumes), "zai-identity")
+	mm, _ := m.Update(key("enter"))
+	mm, _ = mm.(model).Update(key("c"))
+	m = mm.(model)
+	fits := func(v string) {
+		t.Helper()
+		for _, l := range strings.Split(v, "\n") {
+			if w := ansi.StringWidth(l); w > 60 {
+				t.Fatalf("line wider than the terminal (%d > 60): %q", w, l)
+			}
+		}
+	}
+	v := m.viewVolumes()
+	if !strings.Contains(v, "[y/n]") {
+		t.Fatalf("confirm lost its [y/n]:\n%s", v)
+	}
+	fits(v)
+	mm, _ = m.Update(key("y"))
+	m = mm.(model)
+	v = m.viewVolumes()
+	if !strings.Contains(v, "exit those boxes") || !strings.Contains(v, "again") {
+		t.Fatalf("the remedy must be on screen:\n%s", v)
+	}
+	fits(v)
 }

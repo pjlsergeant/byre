@@ -57,8 +57,10 @@ it, naming those boxes. **Clear** empties it and keeps it, and works
 while boxes are running -- the way to force a fresh shared login without
 closing every window. Running boxes see the volume empty at once, but
 an agent already running keeps what it read in memory and may write it
-back -- a login refreshing its token, say. So after a Clear, restart the
-agent in each box still using the volume, then log in once.
+back -- a login refreshing its token, say -- and a shell opened before
+the Clear can still hand the old login to an agent started from it. So
+after a Clear, exit every box still using the volume, start them again
+with `byre develop`, then log in once.
 
 **Moved the project, or moving it to another machine?** `byre rehome`
 and `byre backup` / `byre restore` carry these volumes across:

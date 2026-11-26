@@ -624,7 +624,7 @@ volume on disk, and one box using it running: `byre config --global` ->
 Volumes, cursor on the `*-identity` row. `d` names `x`/`c`; enter opens
 Delete and Clear. Delete: refused, naming the running box. Clear: confirm
 says shared by all projects; `y` reports "emptied in place — still
-mounted by <box>; restart the agent in those boxes..."; `ls -A ~/.byre-identity/<agent>` in that box is empty.
+mounted by <box>; exit those boxes and start them again..."; `ls -A ~/.byre-identity/<agent>` in that box is empty.
 Exit the box; Delete now succeeds and the Volume data section no longer
 lists it.
 
