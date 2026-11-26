@@ -1,6 +1,6 @@
 # Changes
 
-## unreleased
+## v1.15.0 — 2026-11-26
 
 - **Shared logins can be deleted or cleared from `byre config
   --global`.** Enter on a machine-wide volume (a shared agent login)
@@ -9,7 +9,10 @@
   disk. Delete refuses only while a box is using that volume, and names
   those boxes; it no longer refuses over every byre box on the machine.
   Clear empties the volume in place, so it works while boxes are
-  running: the way to force a fresh shared login. The same two actions
+  running: the way to force a fresh shared login. An agent already
+  running can write back the login it holds, so after a Clear exit the
+  boxes still using it and start them again with `byre develop`, as
+  the editor's note says. The same two actions
   are on every volume row in a project's editor; on the Volume data
   screen `d` deletes and `c` now clears (it used to delete).
   `site/content/docs/volumes-and-state.md`.
