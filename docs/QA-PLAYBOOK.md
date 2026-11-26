@@ -617,6 +617,17 @@ existing: `byre config` → Volume data. Expect two groups -- "Project
 volumes" and "Machine volumes — shared by all your projects" -- engine
 suffix per row, and the state-volume explainer line at the bottom.
 
+## Journey: delete / clear a shared login from the global editor
+
+With a shared-auth companion enabled in `default.config` and its identity
+volume on disk, and one box using it running: `byre config --global` ->
+Volumes, cursor on the `*-identity` row. `d` names `x`/`c`; enter opens
+Delete and Clear. Delete: refused, naming the running box. Clear: confirm
+says shared by all projects; `y` reports "emptied in place — still
+mounted by <box>"; `ls -A ~/.byre-identity/<agent>` in that box is empty.
+Exit the box; Delete now succeeds and the Volume data section no longer
+lists it.
+
 ## Journey: backup → restore round trip
 
 ADR 0059. `byre restore` is terminal-only: drive it in

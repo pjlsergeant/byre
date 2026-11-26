@@ -106,13 +106,15 @@ func TestPickerOptsPreservesUnknown(t *testing.T) {
 	}
 }
 
-// fakeVols is a test VolumeAdmin: List returns its volumes; Clear removes one
-// unless clearErr is set (simulating a live-session refusal).
+// fakeVols is a test VolumeAdmin: List returns its volumes; Delete removes
+// one unless clearErr is set (simulating an in-use refusal); Empty records
+// the clear and keeps the row.
 type fakeVols struct {
 	vols       []VolumeStatus
 	notes      []string
 	clearErr   error
 	cleared    []string
+	emptied    []string
 	sharedNote string
 }
 
@@ -120,7 +122,15 @@ func (f *fakeVols) List() ([]VolumeStatus, []string, error) { return f.vols, f.n
 
 func (f *fakeVols) SharedNote() string { return f.sharedNote }
 
-func (f *fakeVols) Clear(v VolumeStatus) error {
+func (f *fakeVols) Empty(v VolumeStatus) (string, error) {
+	if f.clearErr != nil {
+		return "", f.clearErr
+	}
+	f.emptied = append(f.emptied, v.Name)
+	return "emptied in place", nil
+}
+
+func (f *fakeVols) Delete(v VolumeStatus) error {
 	name := v.Name
 	if f.clearErr != nil {
 		return f.clearErr

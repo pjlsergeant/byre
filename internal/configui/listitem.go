@@ -107,7 +107,17 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "d", "x":
 		if m.listCur < addRow {
-			return m.accelerate(rows[m.listCur], "d")
+			// x is d's alias, except on a row where it names its own action
+			// (a volume's data delete, which d -- the declaration -- is not).
+			k := "d"
+			if msg.String() == "x" && m.hasChoiceKey(rows[m.listCur], "x") {
+				k = "x"
+			}
+			return m.accelerate(rows[m.listCur], k)
+		}
+	case "c":
+		if m.listCur < addRow && m.listField == fVolumes {
+			return m.accelerate(rows[m.listCur], "c")
 		}
 	case "o":
 		if m.listCur < addRow {
@@ -134,6 +144,15 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) hasChoiceKey(r listRow, key string) bool {
+	for _, c := range m.rowChoices(m.listField, r) {
+		if c.key == key {
+			return true
+		}
+	}
+	return false
+}
+
 // accelerate applies the row's menu action bound to key, or explains why the
 // row has none (the dead-ends read as information, not errors).
 func (m model) accelerate(r listRow, key string) (tea.Model, tea.Cmd) {
@@ -147,7 +166,7 @@ func (m model) accelerate(r listRow, key string) (tea.Model, tea.Cmd) {
 			return m.applyRowAct(c.act, r)
 		}
 	}
-	m.status = deadEndNote(m.listField, r)
+	m.status = m.deadEndNote(m.listField, r)
 	return m, nil
 }
 
@@ -164,6 +183,8 @@ const (
 	actRemoveHere // write this layer's removal marker for the inherited entry
 	actRestore    // drop this layer's marker (re-inherit / clear stale)
 	actOpen       // open an offered egress door: write the entry into this layer (ADR 0020)
+	actVolDelete  // delete the volume this declaration names, data and all (engine, not config)
+	actVolClear   // empty that volume in place (engine, not config)
 )
 
 type menuChoice struct {
@@ -179,6 +200,32 @@ type menuChoice struct {
 // default.config, i.e. every project on this machine (the wording-equals-
 // write rule; the action itself is legitimate, ADR 0020's hand-grant path).
 func (m model) rowChoices(f fieldID, r listRow) []menuChoice {
+	choices := m.configChoices(f, r)
+	if f == fVolumes && m.volumeDataReachable(r) {
+		// The data actions act on the engine, not the file: they write
+		// nothing to the config, and the confirm says what goes.
+		choices = append(choices,
+			menuChoice{"Delete the volume and its data", "x", actVolDelete},
+			menuChoice{"Clear its data (keep the volume)", "c", actVolClear})
+	}
+	return choices
+}
+
+// volumeDataReachable is whether this editor's VolumeAdmin can act on the
+// volume a row declares. A project editor reaches its own volumes and the
+// machine ones; the --global editor reaches only machine volumes, because a
+// project-scoped declaration there is one volume PER project, none of them
+// this editor's to name.
+func (m model) volumeDataReachable(r listRow) bool {
+	if m.vols == nil || r.vol == nil {
+		return false
+	}
+	return m.target == TargetProject || r.vol.MachineScoped()
+}
+
+// configChoices is the config half of rowChoices: what the cascade supports
+// for that field and kind.
+func (m model) configChoices(f fieldID, r listRow) []menuChoice {
 	switch r.kind {
 	case rowLocal, rowOverride:
 		return []menuChoice{{"Edit", "e", actEdit}, {"Delete", "d", actDelete}}
@@ -301,6 +348,8 @@ func (m model) applyRowAct(act rowAct, r listRow) (tea.Model, tea.Cmd) {
 		m.removeHere(r)
 	case actRestore:
 		m.deleteItem(m.listField, r.idx)
+	case actVolDelete, actVolClear:
+		return m.openVolumeAction(r.vol.Name, r.vol.MachineScoped(), act == actVolClear), nil
 	case actOpen:
 		// The opened door becomes THIS layer's own egress entry: user-authored,
 		// user-attributed, closable like any other (ADR 0020).
@@ -449,7 +498,15 @@ func skillRowNote(r listRow) string {
 // hostEnvRowNote points at the two hand edits that change the passthrough
 // (ADR 0026): disabling the key, or shadowing it with an explicit env value.
 // deadEndNote explains a keypress the cascade can't honor for this row.
-func deadEndNote(f fieldID, r listRow) string {
+func (m model) deadEndNote(f fieldID, r listRow) string {
+	if f == fVolumes && m.vols == nil && r.vol != nil {
+		return "no engine here to delete or clear volume data — a project's editor, or byre config --global for machine volumes, can"
+	}
+	if f == fVolumes && r.kind == rowSkill && m.volumeDataReachable(r) {
+		// The declaration is the skill's, but the data is the person's:
+		// say both doors, the one they most likely want first.
+		return "x deletes this volume, c clears its data (enter for both) — to stop using it, disable " + r.source + " in Skills"
+	}
 	if f == fEnv && r.kind == rowInherited {
 		return "can't unset an inherited var from this layer — override its value here, or edit the " + r.source + " config"
 	}

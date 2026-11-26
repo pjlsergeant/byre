@@ -723,6 +723,59 @@ func (r *Runner) VolumesByPrefix(prefix string) ([]string, error) {
 	return names, nil
 }
 
+// VolumeHolder is a container, in any state, that mounts a named volume:
+// what the engine would cite when it refuses to remove that volume.
+type VolumeHolder struct {
+	ID      string
+	Name    string
+	ImageID string // the image the container was created from, by id (a tag can move)
+	Running bool
+}
+
+// VolumeHolders lists every container (any state) that mounts the named
+// volume. The engine's volume filter narrows the candidates and each one is
+// confirmed from its own mount list, because docker's filter also matches a
+// bind mount's destination path.
+func (r *Runner) VolumeHolders(volume string) ([]VolumeHolder, error) {
+	out, err := r.capture(r.bin(), "ps", "-a", "-q", "--filter", "volume="+volume)
+	if err != nil {
+		return nil, err
+	}
+	ids := strings.Fields(out)
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	const format = `{{.Id}}|{{.Name}}|{{.Image}}|{{.State.Running}}|{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}},{{end}}{{end}}`
+	out, err = r.capture(r.bin(), append([]string{"inspect", "--type", "container", "-f", format}, ids...)...)
+	if err != nil {
+		return nil, err
+	}
+	return parseVolumeHolders(out, volume), nil
+}
+
+// parseVolumeHolders reads VolumeHolders' inspect lines, keeping only the
+// containers whose own mounts name the volume.
+func parseVolumeHolders(out, volume string) []VolumeHolder {
+	var hs []VolumeHolder
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Split(strings.TrimSpace(line), "|")
+		if len(f) != 5 {
+			continue
+		}
+		mounts := false
+		for _, m := range strings.Split(f[4], ",") {
+			if m == volume {
+				mounts = true
+			}
+		}
+		if !mounts {
+			continue
+		}
+		hs = append(hs, VolumeHolder{ID: f[0], Name: strings.TrimPrefix(f[1], "/"), ImageID: f[2], Running: f[3] == "true"})
+	}
+	return hs
+}
+
 // VolumeRemove removes a named volume.
 func (r *Runner) VolumeRemove(name string) error {
 	_, err := r.capture(r.bin(), "volume", "rm", name)

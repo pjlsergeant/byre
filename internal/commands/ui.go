@@ -30,7 +30,7 @@ func noteMachineVolumes(w io.Writer, r volumeRunner, uid int) {
 		return
 	}
 	fmt.Fprintf(w, "byre: NOT touched (machine-wide, shared by all your projects): %s\n", strings.Join(vols, ", "))
-	fmt.Fprintln(w, "byre: to delete one deliberately: byre config -> Volumes -> clear.")
+	fmt.Fprintln(w, "byre: to delete or clear one deliberately: byre config --global -> Volume data.")
 }
 
 // warnRootlessPodman warns, on w, when r drives rootless Podman WITHOUT the

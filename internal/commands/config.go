@@ -109,7 +109,7 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 	// project's box-writable roots, and --global/--layer (which belong to no
 	// project) hand it nothing to decline.
 	var editorRoots hostexec.Roots
-	var vols configui.VolumeAdmin // nil for --global and --layer (no project volumes)
+	var vols configui.VolumeAdmin // project volumes; machine volumes for --global; nil for --layer
 	var prepare func() error      // deferred store setup, run by the UI before its first write
 	var lockFile string           // the lock guarding THIS file ("" = no shared contender)
 	// livePaths is the project whose session liveness qualifies the editor's
@@ -136,6 +136,9 @@ func Config(s Streams, projectDir string, global bool, layer string) error {
 		// creates directories, and quitting an unsaved editor should leave no
 		// fresh ~/.byre behind either: create home only when a write lands.
 		prepare = func() error { return hostopen.PlainMkdirAll(home, 0o755, hostopen.StoreOwned) }
+		// Machine volumes belong to no project, so this is the editor
+		// that manages their data.
+		vols = newMachineVolumeAdmin(s.Err, projectDir)
 	case configui.TargetLayer:
 		path = config.LayerPath(home, layer)
 		title = "byre layer config  (" + layer + ")"
@@ -408,38 +411,62 @@ func firstLine(s string) string {
 	return s
 }
 
-// Clear removes a volume under the project setup lock, re-checking for a live
-// session inside it — the same guard `reset`/`forget` use, so a concurrent
-// `byre develop` can't seed a volume we're deleting (or vice versa). It refuses
-// rather than waiting behind setup and then deleting that setup's result. The row's
-// scope decides the Docker name: an orphaned machine volume may share its
-// logical name with a declared project one, so name alone is ambiguous.
-func (a *volumeAdmin) Clear(v configui.VolumeStatus) error {
+// Delete removes a volume under the project setup lock, taken WITHOUT
+// waiting -- the same guard `reset`/`forget` use, so a concurrent setup is
+// refused rather than waited behind and its result deleted. The row's scope
+// decides the Docker name: an orphaned machine volume may share its logical
+// name with a declared project one, so name alone is ambiguous. What stops
+// the delete is what the engine would refuse over -- a container mounting
+// the volume, named -- not some other byre box elsewhere on the machine.
+func (a *volumeAdmin) Delete(v configui.VolumeStatus) error {
 	r := a.runnerFor(v.Engine)
 	return withPreparedDestructiveSetupLock(a.paths.LockFile,
-		"re-open `byre config` and clear the volume again", a.prepare, func() error {
-			if live, err := liveSession(r, a.paths.ID); err != nil {
-				return fmt.Errorf("checking for a running session: %w", err)
-			} else if len(live) > 0 {
-				return fmt.Errorf("a session is running (%s) — exit it before clearing volumes", shortID(live[0]))
-			}
+		"re-open `byre config` and delete the volume again", a.prepare, func() error {
 			if err := refuseLeftoverHelpers(r, a.paths.ID); err != nil {
 				return err
 			}
 			if v.Machine {
-				// A machine-scoped volume is mounted by EVERY project's boxes, so
-				// the this-project guard above isn't enough: refuse while ANY byre
-				// session runs (bare label key = presence filter). Clearing it is
-				// the machine-wide logout story (ADR 0017).
-				if live, lerr := r.RunningContainersByLabel(labelKey); lerr != nil {
-					return fmt.Errorf("checking for running byre sessions: %w", lerr)
-				} else if len(live) > 0 {
-					return fmt.Errorf("this volume is shared by ALL your projects and a byre session is running (%s) — exit every session before clearing it", shortID(live[0]))
+				if err := refuseMachineHelper(r, a.physical(v)); err != nil {
+					return err
 				}
-				return r.VolumeRemove(machineVolumeName(os.Getuid(), v.Name))
 			}
-			return r.VolumeRemove(volumeName(a.paths.ID, v.Name))
+			return deleteVolumeData(r, a.physical(v))
 		})
+}
+
+// Empty clears a volume's contents and keeps it (see emptyVolumeData), under
+// the same lock and leftover-helper guard as Delete. A running box is not a
+// refusal here: emptying a volume a box is using is what this is for.
+func (a *volumeAdmin) Empty(v configui.VolumeStatus) (string, error) {
+	r := a.runnerFor(v.Engine)
+	var note string
+	err := withPreparedDestructiveSetupLock(a.paths.LockFile,
+		"re-open `byre config` and clear the volume again", a.prepare, func() error {
+			if err := refuseLeftoverHelpers(r, a.paths.ID); err != nil {
+				return err
+			}
+			// A machine volume's helper wears the machine label, the one every
+			// editor's clear of that volume checks; a project volume's wears
+			// the project's, which develop, backup, reset and forget sweep.
+			label := helperLabel(a.paths.ID)
+			if v.Machine {
+				if err := refuseMachineHelper(r, a.physical(v)); err != nil {
+					return err
+				}
+				label = helperMachineLabel(a.physical(v))
+			}
+			var eerr error
+			note, eerr = emptyVolumeData(r, a.physical(v), []string{label})
+			return eerr
+		})
+	return note, err
+}
+
+func (a *volumeAdmin) physical(v configui.VolumeStatus) string {
+	if v.Machine {
+		return machineVolumeName(os.Getuid(), v.Name)
+	}
+	return volumeName(a.paths.ID, v.Name)
 }
 
 // runnerFor maps a row's engine label back to its runner; rows always carry

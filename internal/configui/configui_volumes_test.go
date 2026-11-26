@@ -135,11 +135,11 @@ func TestVolumesClearFlow(t *testing.T) {
 		t.Fatalf("openVolumes: mode=%v n=%d", m.mode, len(m.volList))
 	}
 
-	// 'c' on a present volume arms the confirm; 'y' clears it.
-	mm, _ := m.updateVolumes(key("c"))
+	// 'd' on a present volume arms the delete confirm; 'y' deletes it.
+	mm, _ := m.updateVolumes(key("d"))
 	m = mm.(model)
-	if m.volPendClear != 0 {
-		t.Fatalf("clear should arm the confirm, volPendClear=%d", m.volPendClear)
+	if m.volPendClear != 0 || m.volPendEmpty {
+		t.Fatalf("d should arm the delete confirm, volPendClear=%d empty=%v", m.volPendClear, m.volPendEmpty)
 	}
 	// The armed confirm surfaces the admin's shared-volume warning (worktree blast
 	// radius) so the config UI is as loud as reset/forget.
@@ -150,10 +150,27 @@ func TestVolumesClearFlow(t *testing.T) {
 	mm, _ = m.updateVolumes(key("y"))
 	m = mm.(model)
 	if len(fv.cleared) != 1 || fv.cleared[0] != ".claude" {
-		t.Fatalf("expected .claude cleared, got %v", fv.cleared)
+		t.Fatalf("expected .claude deleted, got %v", fv.cleared)
 	}
 	if len(m.volList) != 1 {
-		t.Fatalf("list should refresh after clear, n=%d", len(m.volList))
+		t.Fatalf("list should refresh after delete, n=%d", len(m.volList))
+	}
+
+	// 'c' arms the CLEAR confirm, which empties in place and keeps the row.
+	fv.vols = []VolumeStatus{{Name: ".claude", Role: "state", Target: "/home/dev/.claude", Exists: true}}
+	m = m.openVolumes()
+	mm, _ = m.updateVolumes(key("c"))
+	m = mm.(model)
+	if m.volPendClear != 0 || !m.volPendEmpty {
+		t.Fatalf("c should arm the clear confirm, volPendClear=%d empty=%v", m.volPendClear, m.volPendEmpty)
+	}
+	mm, _ = m.updateVolumes(key("y"))
+	m = mm.(model)
+	if len(fv.emptied) != 1 || fv.emptied[0] != ".claude" || len(fv.cleared) != 1 {
+		t.Fatalf("c+y must empty, not delete: emptied=%v deleted=%v", fv.emptied, fv.cleared)
+	}
+	if !strings.Contains(m.viewVolumes(), "emptied in place") {
+		t.Errorf("the admin's note must be shown after a clear:\n%s", m.viewVolumes())
 	}
 
 	// Clearing an absent volume is refused with a message, no call made.
@@ -179,11 +196,11 @@ func TestVolumesDescriptionWrapsInsteadOfLosingItsTail(t *testing.T) {
 	m = m.openVolumes()
 	m.width = 100
 	out := m.viewVolumes()
-	if !strings.Contains(out, "logging out everywhere") {
+	if !strings.Contains(out, "logged out everywhere") {
 		t.Fatalf("the consequence clause must survive a 100-col width:\n%s", out)
 	}
 	for _, l := range strings.Split(out, "\n") {
-		if strings.Contains(l, "machine-scoped") && strings.Contains(l, "logging out everywhere") {
+		if strings.Contains(l, "machine-scoped") && strings.Contains(l, "logged out everywhere") {
 			t.Fatalf("description did not wrap (one line carries it all, so the clip would eat the tail):\n%s", l)
 		}
 	}

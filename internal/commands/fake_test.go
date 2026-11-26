@@ -26,6 +26,8 @@ type fakeRunner struct {
 	// ByLabel + NetnsInit, background goroutine) touch this fake concurrently.
 	// The real runner shares no such mutable state; this is test-only.
 	mu sync.Mutex
+	// holders answers VolumeHolders: the containers mounting each volume.
+	holders map[string][]runner.VolumeHolder
 
 	engine      runner.Engine // "" means docker
 	rootless    bool
@@ -433,6 +435,12 @@ func (f *fakeRunner) VolumeCreate(name string) error {
 	}
 	f.vols[name] = true
 	return nil
+}
+
+func (f *fakeRunner) VolumeHolders(volume string) ([]runner.VolumeHolder, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.holders[volume], nil
 }
 
 func (f *fakeRunner) VolumeRemove(name string) error {

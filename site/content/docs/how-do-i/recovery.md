@@ -107,9 +107,9 @@ rather than run without them. See
 
 ## Uninstall byre completely?
 
-tldr: `byre forget` in each project, clear machine volumes from the
-**Volume data** section of `byre config`, then delete `~/.byre` and the
-binary.
+tldr: `byre forget` in each project, delete machine volumes from the
+**Volume data** section of `byre config --global`, then delete `~/.byre`
+and the binary.
 
 byre leaves three kinds of thing on a machine, and nothing else -- no
 daemons, no background services, no networks:
@@ -117,7 +117,7 @@ daemons, no background services, no networks:
 - **Engine artifacts**, all prefixed `byre-`. `forget` clears a
   project's volumes and image across every installed engine.
   Machine-wide volumes (shared agent logins) survive it by design --
-  clear them from the **Volume data** section of `byre config`, or
+  delete them from the **Volume data** section of `byre config --global`, or
   remove `byre-machine-u*` volumes with your engine directly.
 - **The store**, `~/.byre` on the host.
 - **The deliver app**, if you installed it: `~/Applications/Byre

@@ -338,8 +338,11 @@ type model struct {
 	volList      []VolumeStatus
 	volNotes     []string // engine degrade notes (unreachable engine → copies not shown)
 	volCur       int
-	volPendClear int // index awaiting a clear-confirm, or -1
+	volPendClear int  // index awaiting a delete/clear confirm, or -1
+	volPendEmpty bool // the pending confirm is a clear (empty in place), not a delete
 	volErr       string
+	volNote      string // what the last delete/clear did
+	volReturn    uiMode // where esc goes: the form, or the declaration list it was opened from
 
 	// modeSkills (multi-select)
 	skillCur int
@@ -1348,7 +1351,7 @@ func (m model) renderValue(f fieldID, focused bool) string {
 	case fEngine:
 		return renderSeg(m.engineOpts, m.engineSel, focused)
 	case fVolumeData:
-		s := "view / clear" // an action row, not an empty value — don't dim it
+		s := "view / delete / clear" // an action row, not an empty value — don't dim it
 		if focused {
 			s += dimStyle.Render("  (enter)")
 		}

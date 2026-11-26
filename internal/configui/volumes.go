@@ -1,5 +1,5 @@
-// volumes.go owns the volumes screen (modeVolumes): listing a project's
-// volumes and clearing them ad hoc through the VolumeAdmin.
+// volumes.go owns the volumes screen (modeVolumes): listing what volumes hold
+// on disk and deleting or clearing them ad hoc through the VolumeAdmin.
 package configui
 
 import (
@@ -12,9 +12,10 @@ import (
 	"github.com/pjlsergeant/byre/internal/packages"
 )
 
-// VolumeAdmin lets the editor show a project's volumes and clear them ad hoc.
-// It's engine-backed, so the commands layer supplies it; a nil VolumeAdmin hides
-// the Volumes section (e.g. the global config, which has no project volumes).
+// VolumeAdmin lets the editor show volumes' data and delete or clear it ad hoc.
+// It's engine-backed, so the commands layer supplies it: a project's volumes in
+// a project editor, the machine volumes in the --global one. A nil VolumeAdmin
+// hides the Volume data row (a layer editor, or no usable engine).
 type VolumeAdmin interface {
 	// List returns one row per volume per engine, plus loud degrade notes
 	// for engines that could not be queried (installed but unreachable —
@@ -23,11 +24,15 @@ type VolumeAdmin interface {
 	// reachable engines list normally. The error return is for failures
 	// that leave nothing to show (config resolution), not engine trouble.
 	List() ([]VolumeStatus, []string, error)
-	// Clear removes the volume from the engine (refuses if a session is
-	// live). It takes the full row, not just the name: scope decides which
-	// Docker volume the logical name maps to, and an orphaned machine volume
-	// may share a logical name with a declared project one.
-	Clear(v VolumeStatus) error
+	// Delete removes the volume from the engine, refusing while a container
+	// mounts it. It takes the full row, not just the name: scope decides
+	// which Docker volume the logical name maps to, and an orphaned machine
+	// volume may share a logical name with a declared project one.
+	Delete(v VolumeStatus) error
+	// Empty is the editor's "clear": everything in the volume goes and the
+	// volume stays, so it works while boxes are running with it. The note
+	// says what happened (a volume nothing mounts is removed instead).
+	Empty(v VolumeStatus) (note string, err error)
 	// SharedNote returns a blast-radius warning to show before a clear (e.g. a
 	// worktree whose volumes are shared across the project's worktrees), or "" if none.
 	SharedNote() string
@@ -60,6 +65,8 @@ func (m model) openVolumes() model {
 	m.volCur = 0
 	m.volPendClear = -1
 	m.volErr = ""
+	m.volNote = ""
+	m.volReturn = modeForm
 	m.mode = modeVolumes
 	m.status = ""
 	m.errMsg = ""
@@ -67,7 +74,7 @@ func (m model) openVolumes() model {
 }
 
 func (m model) updateVolumes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// A clear is destructive, so it takes an explicit y/n confirm.
+	// Delete and clear are destructive, so each takes an explicit y/n confirm.
 	if m.volPendClear >= 0 {
 		switch msg.String() {
 		case "ctrl+s":
@@ -80,16 +87,28 @@ func (m model) updateVolumes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "y", "Y":
 			vol := m.volList[m.volPendClear]
 			m.volPendClear = -1
-			if err := m.vols.Clear(vol); err != nil {
+			var err error
+			if m.volPendEmpty {
+				var note string
+				note, err = m.vols.Empty(vol)
+				m.volNote = packages.EscapeTerminal(vol.Name + ": " + note)
+			} else {
+				err = m.vols.Delete(vol)
+				m.volNote = packages.EscapeTerminal(vol.Name) + ": deleted"
+			}
+			if err != nil {
 				m.volErr = err.Error()
+				m.volNote = ""
 			} else {
 				m.volErr = ""
-				if list, notes, lerr := m.vols.List(); lerr == nil {
-					m.volList = groupVolumes(list)
-					m.volNotes = notes
-					if m.volCur >= len(list) && m.volCur > 0 {
-						m.volCur = len(list) - 1
-					}
+			}
+			// Re-list either way: a failed action can still have changed
+			// the disk (a clear whose re-create failed left the volume gone).
+			if list, notes, lerr := m.vols.List(); lerr == nil {
+				m.volList = groupVolumes(list)
+				m.volNotes = notes
+				if m.volCur >= len(list) && m.volCur > 0 {
+					m.volCur = len(list) - 1
 				}
 			}
 		case "n", "N", "esc", "ctrl+c", "ctrl+q":
@@ -105,23 +124,64 @@ func (m model) updateVolumes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "esc", "ctrl+c", "ctrl+q":
-		m.mode = modeForm
+		m.mode = m.volReturn
 		return m, nil
 	case "ctrl+s":
 		return m.save(), nil
-	case "c", "d", "x":
+	case "d", "x", "c":
 		if len(m.volList) == 0 {
 			return m, nil
 		}
-		if !m.volList[m.volCur].Exists {
-			m.volErr = "that volume isn't present on disk — nothing to clear"
-			return m, nil
-		}
-		m.volPendClear = m.volCur
-		m.volErr = ""
-		return m, nil
+		return m.askVolumeAction(m.volCur, msg.String() == "c"), nil
 	}
 	return m, nil
+}
+
+// askVolumeAction puts row i up for a delete (or, with empty, a clear)
+// confirm.
+func (m model) askVolumeAction(i int, empty bool) model {
+	m.volNote = ""
+	if !m.volList[i].Exists {
+		m.volErr = "that volume isn't present on disk — nothing to delete or clear"
+		return m
+	}
+	m.volPendClear = i
+	m.volPendEmpty = empty
+	m.volErr = ""
+	return m
+}
+
+// openVolumeAction is a declaration row's Delete/Clear: it opens the data
+// screen on that volume's copy with the confirm already asked, and esc
+// brings the person back to the list they came from. Several engine copies
+// are several rows; the screen shows them all and the confirm names which
+// one it acts on.
+func (m model) openVolumeAction(name string, machine, empty bool) model {
+	back := m.mode
+	m = m.openVolumes()
+	if m.mode != modeVolumes {
+		return m // listing failed; openVolumes put the reason on the form
+	}
+	m.volReturn = back
+	// The first copy ON DISK: with two engines a declared volume lists once
+	// per engine, and the first row may be the copy that is not there.
+	found := -1
+	for i, v := range m.volList {
+		if v.Name == name && v.Machine == machine {
+			if found < 0 {
+				found = i
+			}
+			if v.Exists {
+				m.volCur = i
+				return m.askVolumeAction(i, empty)
+			}
+		}
+	}
+	if found >= 0 {
+		m.volCur = found
+	}
+	m.volErr = "that volume isn't present on disk — nothing to delete or clear"
+	return m
 }
 
 func (m model) viewVolumes() string {
@@ -133,7 +193,11 @@ func (m model) viewVolumes() string {
 		// proves nothing about declarations, and "(no volumes declared)"
 		// beside "copies aren't shown" would be a contradiction — the notes
 		// alone tell the true story there.
-		b.WriteString(dimStyle.Render("  (no volumes declared for this project)") + "\n")
+		empty := "  (no volumes declared for this project)"
+		if m.target == TargetGlobal {
+			empty = "  (no machine volumes on disk)"
+		}
+		b.WriteString(dimStyle.Render(empty) + "\n")
 	}
 	// Engine degrade notes: loud (bold, not dim) — an unreachable engine
 	// means this view's claims are narrowed, and that must not blend into
@@ -211,9 +275,9 @@ func (m model) viewVolumes() string {
 	}
 	// Description of the highlighted volume. Wrapped, not clipped: the
 	// frame-wide clip ends a long line in "…", and on this string the part
-	// past the ellipsis was the consequence ("clearing = logging out
-	// everywhere") -- exactly what the reader is deciding with, one row above
-	// the c-clear action it warns about.
+	// past the ellipsis was the consequence ("logged out everywhere") --
+	// exactly what the reader is deciding with, one row above the actions it
+	// warns about.
 	if m.volCur < len(m.volList) {
 		if d := volDescription(m.volList[m.volCur]); d != "" {
 			b.WriteString("\n")
@@ -231,15 +295,18 @@ func (m model) viewVolumes() string {
 	switch {
 	case m.volPendClear >= 0:
 		pend := m.volList[m.volPendClear]
-		msg := fmt.Sprintf("Clear %q? This deletes the volume and its data.", packages.EscapeTerminal(pend.Name))
-		if pend.Machine {
-			msg += "\nShared by ALL your projects — clearing it affects every one (a shared agent login logs out everywhere)."
+		msg := fmt.Sprintf("Delete %q? This removes the volume and everything in it.", packages.EscapeTerminal(pend.Name))
+		if m.volPendEmpty {
+			msg = fmt.Sprintf("Clear %q? Everything in it is deleted and the volume stays — boxes running with it now see it empty.", packages.EscapeTerminal(pend.Name))
 		}
-		// With several engines installed the clear is engine-local — say so,
+		if pend.Machine {
+			msg += "\nShared by ALL your projects — this affects every one (a shared agent login logs out everywhere)."
+		}
+		// With several engines installed the action is engine-local — say so,
 		// or "logged out everywhere" overclaims while the other engine's
 		// same-named copy keeps the login alive.
 		if multiEngine {
-			msg += fmt.Sprintf("\nThis clears the %s copy only — a same-named volume on another engine is its own row.", pend.Engine)
+			msg += fmt.Sprintf("\nThis acts on the %s copy only — a same-named volume on another engine is its own row.", pend.Engine)
 		}
 		if m.vols != nil {
 			if note := m.vols.SharedNote(); note != "" {
@@ -249,11 +316,13 @@ func (m model) viewVolumes() string {
 		b.WriteString(errStyle.Render(msg + " [y/n]"))
 	case m.volErr != "":
 		b.WriteString(m.errLine(m.volErr))
+	case m.volNote != "":
+		b.WriteString(okStyle.Render(m.volNote))
 	default:
 		b.WriteString(m.subFooterNote())
 	}
 
-	b.WriteString("\n\n" + helpLine("↑/↓", "move", "c", "clear", "^s", "save", "esc", "back"))
+	b.WriteString("\n\n" + helpLine("↑/↓", "move", "d", "delete", "c", "clear", "^s", "save", "esc", "back"))
 	return b.String()
 }
 
@@ -292,16 +361,16 @@ func volEngines(rows []VolumeStatus) int {
 
 func volDescription(v VolumeStatus) string {
 	if v.Orphan {
-		return "machine-scoped, ORPHANED — still on disk but no enabled skill declares it (e.g. shared-auth was disabled). Clearing deletes the shared data (a shared agent login: logged out everywhere)."
+		return "machine-scoped, ORPHANED — still on disk but no enabled skill declares it (e.g. shared-auth was disabled). Deleting or clearing it destroys the shared data (a shared agent login: logged out everywhere)."
 	}
 	if v.Machine {
-		return "machine-scoped — ONE volume shared by all your projects (ADR 0017). Clearing it affects every project (e.g. a shared agent login: clearing = logging out everywhere)."
+		return "machine-scoped — ONE volume shared by all your projects (ADR 0017). Deleting or clearing it affects every project (e.g. a shared agent login: logged out everywhere)."
 	}
 	switch v.Role {
 	case "state":
-		return "state — persists across rebuilds (agent auth, history, config). Clearing forces a re-login / re-init on the next develop."
+		return "state — persists across rebuilds (agent auth, history, config). Deleting or clearing it forces a re-login / re-init."
 	case "cache":
-		return "cache — disposable, rebuilt on demand (e.g. node_modules). Clearing just frees space."
+		return "cache — disposable, rebuilt on demand (e.g. node_modules). Deleting it just frees space."
 	}
 	return ""
 }

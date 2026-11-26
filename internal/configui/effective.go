@@ -60,6 +60,10 @@ type listRow struct {
 	// the attribution says WHO set the key, and this says what it affects --
 	// which was the one thing status printed and no editor screen did.
 	skews string
+	// vol is the volume an effective [[volumes]] row declares (nil on
+	// removal and stale-marker rows): what its Delete/Clear data actions
+	// act on.
+	vol *config.Volume
 }
 
 // fieldRows builds the effective rows for a list field: inherited entries in
@@ -959,9 +963,9 @@ func (m model) volumeRows() []listRow {
 		case hasKey(markerIdx, n):
 			rows = append(rows, listRow{kind: rowRemoved, text: volumeLine(v), source: src, idx: markerIdx[n]})
 		case hasKey(localIdx, n):
-			rows = append(rows, listRow{kind: rowOverride, text: volumeLine(m.volumes[localIdx[n]]), source: src, idx: localIdx[n]})
+			rows = append(rows, listRow{kind: rowOverride, text: volumeLine(m.volumes[localIdx[n]]), source: src, idx: localIdx[n], vol: &m.volumes[localIdx[n]]})
 		default:
-			rows = append(rows, listRow{kind: rowInherited, text: volumeLine(v), ident: n, source: src, vals: volumeVals(v)})
+			rows = append(rows, listRow{kind: rowInherited, text: volumeLine(v), ident: n, source: src, vals: volumeVals(v), vol: &v})
 		}
 	}
 	for i, v := range m.volumes {
@@ -973,7 +977,7 @@ func (m model) volumeRows() []listRow {
 			rows = append(rows, listRow{kind: rowRemoved, text: volumeLine(v), idx: markerIdx[v.Name]})
 			continue
 		}
-		rows = append(rows, listRow{kind: rowLocal, text: volumeLine(v), idx: i})
+		rows = append(rows, listRow{kind: rowLocal, text: volumeLine(v), idx: i, vol: &m.volumes[i]})
 	}
 	for i, v := range m.volumes {
 		if n, ok := config.CutRemoval(v.Name); ok && !lower[n] && !hasKey(localIdx, n) {
@@ -982,7 +986,7 @@ func (m model) volumeRows() []listRow {
 	}
 	for _, sk := range m.effectiveSkills() {
 		for _, v := range m.inh.Skills[sk].Volumes {
-			rows = append(rows, listRow{kind: rowSkill, text: volumeLine(v), source: "skill:" + sk})
+			rows = append(rows, listRow{kind: rowSkill, text: volumeLine(v), source: "skill:" + sk, vol: &v})
 		}
 	}
 	return rows

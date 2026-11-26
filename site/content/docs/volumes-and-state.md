@@ -49,9 +49,13 @@ unremoved there. `byre backup` and `byre rehome` take the same flags.
 
 **Machine-scoped volumes are never touched silently.** `reset` and
 `forget` exclude them and say so -- the machine-wide agent login must never die
-as a side effect of resetting one project. To delete one deliberately: clear
-it from the **Volume data** section of `byre config` (which refuses while
-any byre session is running).
+as a side effect of resetting one project. To get rid of one deliberately,
+open `byre config --global` and press enter on its row under **Volumes**
+(or use the **Volume data** section, which lists every machine volume on
+disk). **Delete** removes the volume, and refuses while a box is using
+it, naming those boxes. **Clear** empties it and keeps it, and works
+while boxes are running -- the way to force a fresh shared login without
+closing every window. Running boxes see the volume empty at once.
 
 **Moved the project, or moving it to another machine?** `byre rehome`
 and `byre backup` / `byre restore` carry these volumes across:

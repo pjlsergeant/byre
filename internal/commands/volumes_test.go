@@ -99,7 +99,7 @@ func TestVolumeAdminListsAndClearsOrphanedMachineVolumes(t *testing.T) {
 	if !found {
 		t.Fatalf("orphaned machine volume not listed: %+v", list)
 	}
-	if err := a.Clear(configui.VolumeStatus{Name: "claude-identity", Machine: true, Orphan: true, Exists: true}); err != nil {
+	if err := a.Delete(configui.VolumeStatus{Name: "claude-identity", Machine: true, Orphan: true, Exists: true}); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.removed) != 1 || f.removed[0] != orphan {
@@ -133,7 +133,7 @@ func TestVolumeAdminListsAndClearsPerEngine(t *testing.T) {
 		t.Fatalf("each engine's copy must be its own row, got %v", engines)
 	}
 
-	if err := a.Clear(configui.VolumeStatus{Name: "claude-identity", Machine: true, Orphan: true, Engine: "podman"}); err != nil {
+	if err := a.Delete(configui.VolumeStatus{Name: "claude-identity", Machine: true, Orphan: true, Engine: "podman"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(podman.removed) != 1 || podman.removed[0] != orphan {
@@ -153,7 +153,7 @@ func TestVolumeAdminClearRefusesWhileSetupIsInProgress(t *testing.T) {
 	defer held.Release()
 	f := &fakeRunner{vols: map[string]bool{volumeName(p.ID, "cache"): true}}
 	a := &volumeAdmin{rs: []engineRunner{f}, paths: p, projectDir: dir}
-	err = a.Clear(configui.VolumeStatus{Name: "cache", Exists: true})
+	err = a.Delete(configui.VolumeStatus{Name: "cache", Exists: true})
 	if err == nil || !strings.Contains(err.Error(), "wait for it to finish") {
 		t.Fatalf("setup-contention error = %v", err)
 	}

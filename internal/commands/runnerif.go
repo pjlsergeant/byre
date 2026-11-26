@@ -56,6 +56,9 @@ type volumeRunner interface {
 	VolumeExists(name string) (bool, error)
 	VolumeCreate(name string) error
 	VolumeRemove(name string) error
+	// VolumeHolders lists the containers (any state) mounting a volume: who
+	// a delete must wait for, and whose image a clear runs in.
+	VolumeHolders(volume string) ([]runner.VolumeHolder, error)
 	SeedVolume(name, hostPath, image string, id runner.Identity, helperLabel string) error
 	SeedLiteral(volName, destPath, content, image string, id runner.Identity, helperLabel string) error
 	SeedFiles(volName, srcDir string, files []string, image string, id runner.Identity, helperLabel string) error

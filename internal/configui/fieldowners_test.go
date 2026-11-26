@@ -76,7 +76,7 @@ var noWidgetKeys = map[string]string{
 // uiOnlyRows names rows that are not a config key at all, for the reverse
 // direction of the guard.
 var uiOnlyRows = map[fieldID]string{
-	fVolumeData: "the engine side of volumes: what exists on disk right now, and clearing one — no config key, and no file to write",
+	fVolumeData: "the engine side of volumes: what exists on disk right now, and deleting or clearing one — no config key, and no file to write",
 }
 
 // reachableFields is every row any editor target actually puts in its focus

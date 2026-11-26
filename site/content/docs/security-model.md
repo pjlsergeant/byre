@@ -443,9 +443,11 @@ Recovery:
   project's store.
 - **A helper container that outlives an engine outage is named, not
   removed.** Backup, restore, develop, `reset`, `forget`, `rehome` and
-  the config editor's volume Clear each refuse while one is there,
-  printing its `rm -f` line, so it is never silent, but removing it is
-  yours.
+  the config editor's volume Delete and Clear each refuse while one is
+  there, printing its `rm -f` line, so it is never silent, but removing
+  it is yours. One left by clearing a machine-wide volume is seen only by
+  the editors' Delete and Clear of that volume: a `develop` in any
+  project still mounts the volume while it is there.
 
 ## Reporting
 

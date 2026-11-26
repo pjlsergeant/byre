@@ -2,6 +2,17 @@
 
 ## unreleased
 
+- **Shared logins can be deleted or cleared from `byre config
+  --global`.** Enter on a machine-wide volume (a shared agent login)
+  under Volumes now offers **Delete** and **Clear**, and the global
+  editor gets the Volume data section listing every machine volume on
+  disk. Delete refuses only while a box is using that volume, and names
+  those boxes; it no longer refuses over every byre box on the machine.
+  Clear empties the volume in place, so it works while boxes are
+  running: the way to force a fresh shared login. The same two actions
+  are on every volume row in a project's editor; on the Volume data
+  screen `d` deletes and `c` now clears (it used to delete).
+  `site/content/docs/volumes-and-state.md`.
 - **Remote deliver apps no longer share one Dock icon.** A labeled
   install (`ssh://` target or `--name`) draws up to two letters or
   digits over its icon, uppercased, from the host or the name;

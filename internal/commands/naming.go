@@ -58,6 +58,10 @@ const (
 	helperKey    = "byre.helper"
 	helperSrcKey = "byre.helper.src"
 	helperRunKey = "byre.helper.run"
+	// helperMachineKey labels a helper emptying a MACHINE volume, valued by
+	// the volume's physical name: no project owns it, so no project sweep
+	// would find it under helperKey.
+	helperMachineKey = "byre.helper.machine"
 )
 
 // helperLabel, helperSrcLabel and helperRunLabel are the "key=value" forms of
@@ -66,6 +70,9 @@ const (
 func helperLabel(id string) string       { return helperKey + "=" + id }
 func helperSrcLabel(id string) string    { return helperSrcKey + "=" + id }
 func helperRunLabel(runID string) string { return helperRunKey + "=" + runID }
+func helperMachineLabel(physical string) string {
+	return helperMachineKey + "=" + physical
+}
 
 // helperProjectLabels are the two keys under which a helper can be holding
 // project id's volumes: its own and, for rehome's copy, the id it is copying
