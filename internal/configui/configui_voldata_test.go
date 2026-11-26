@@ -151,3 +151,17 @@ func TestVolumeRowClearKeyExplainsWithoutAnEngine(t *testing.T) {
 		t.Fatalf("c without an engine must say why, got %q", got)
 	}
 }
+
+// A removal row names no volume data, so c says so instead of doing nothing.
+func TestVolumeRemovalRowClearKeyExplains(t *testing.T) {
+	inh := Inherited{HasLower: true, Default: config.Config{Volumes: []config.Volume{{Name: "deps", Role: "cache", Target: "/w/nm"}}}}
+	cfg := config.Config{Volumes: []config.Volume{{Name: "!deps"}}}
+	m := newModel("t", "/tmp/x", cfg, nil, nil, nil, nil, inh, &fakeVols{}, TargetProject)
+	m.mode = modeList
+	m.listField = fVolumes
+	m.listCur = rowIndex(t, m.fieldRows(fVolumes), "deps")
+	mm, _ := m.Update(key("c"))
+	if got := mm.(model).status; !strings.Contains(got, "no volume") {
+		t.Fatalf("c on a removal row must say why, got %q", got)
+	}
+}

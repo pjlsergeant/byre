@@ -37,7 +37,9 @@ import (
 // "running", never the other way around.
 // helperKey, helperSrcKey and helperRunKey label the one-shot HELPER
 // containers byre runs against a project's volumes (seeding, rehome's copy,
-// backup's capture, restore's pour and both verbs' preflight):
+// backup's capture, restore's pour, both verbs' preflight, and the editors'
+// volume Clear; helperMachineKey replaces helperKey on a Clear of a machine
+// volume):
 // byre.helper=<project id> says which project's volumes the helper may be
 // holding, and byre.helper.run=<random per invocation> says which byre
 // invocation started it, so a verb cleaning up force-removes exactly ITS
@@ -64,8 +66,8 @@ const (
 	helperMachineKey = "byre.helper.machine"
 )
 
-// helperLabel, helperSrcLabel and helperRunLabel are the "key=value" forms of
-// the labels above: every query, every --label and every remedy line goes
+// helperLabel, helperSrcLabel, helperRunLabel and helperMachineLabel are the
+// "key=value" forms of the labels above: every query, every --label and every remedy line goes
 // through them.
 func helperLabel(id string) string       { return helperKey + "=" + id }
 func helperSrcLabel(id string) string    { return helperSrcKey + "=" + id }

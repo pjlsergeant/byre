@@ -103,7 +103,7 @@ func emptyVolumeData(r engineRunner, physical string, labels []string) (string, 
 			}
 		}
 		if err := r.VolumeCreate(physical); err != nil {
-			return "", fmt.Errorf("its data is gone, but creating it again empty failed on %s — clear it again to finish: %w", r.Engine(), err)
+			return "", fmt.Errorf("its data is gone, but creating it again empty failed on %s, so it is absent now: the next launch creates it, seeding it again if it declares a seed: %w", r.Engine(), err)
 		}
 		return "cleared — it is empty now", nil
 	}

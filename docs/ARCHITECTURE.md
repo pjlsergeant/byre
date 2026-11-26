@@ -281,8 +281,9 @@ Records are reaped opportunistically at the next create, when nothing
 points at them.
 
 The other containers byre creates are one-shot helpers that run to
-completion and exit: volume seeding, the worktree image step, and `byre
-backup`'s capture and `byre restore`'s pour. None of them writes a
+completion and exit: volume seeding, the worktree image step, `byre
+backup`'s capture and `byre restore`'s pour, and the config editors'
+volume Clear. None of them writes a
 launch record, because none launches a session (ADR 0053 as amended by
 ADR 0059), and none carries the project label. Their labels:
 
@@ -293,14 +294,20 @@ ADR 0059), and none carries the project label. Their labels:
 - rehome's migrate helper carries `byre.helper=<new id>` and
   `byre.helper.src=<old id>`, because it mounts both projects' volumes
   and a label key holds one value;
-- the worktree helper carries neither label.
+- the worktree helper carries neither label;
+- Clear's helper carries a run id plus `byre.helper=<project id>` for a
+  project volume, or `byre.helper.machine=<volume name>` for a
+  machine-wide one, which belongs to no project.
 
 Every command that mounts or mutates a project volume -- backup,
 restore, develop under its lock, `reset`, `forget`, `rehome`, and the
-config editor's volume Clear -- queries `byre.helper=<project id>` and
-`byre.helper.src=<project id>` first and refuses on a hit, naming the
-container and its `rm -f` line, so a labelled helper left behind by a
-killed byre or an engine outage can never run beside them unseen.
+config editor's volume Delete and Clear -- queries `byre.helper=<project
+id>` and `byre.helper.src=<project id>` first and refuses on a hit,
+naming the container and its `rm -f` line, so a labelled helper left
+behind by a killed byre or an engine outage can never run beside them
+unseen. A machine volume's Clear helper is queried only by the editors'
+Delete and Clear of that volume: a `develop` in any project still mounts
+the volume while one is left (stated on the security-model page).
 
 **`develop` is single-session per directory** (ADR 0004): if a session
 is already running here, it reports that session (and how to re-attach

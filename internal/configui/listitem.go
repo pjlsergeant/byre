@@ -499,7 +499,13 @@ func skillRowNote(r listRow) string {
 // (ADR 0026): disabling the key, or shadowing it with an explicit env value.
 // deadEndNote explains a keypress the cascade can't honor for this row.
 func (m model) deadEndNote(f fieldID, r listRow) string {
-	if f == fVolumes && m.vols == nil && r.vol != nil {
+	if f == fVolumes && r.vol == nil {
+		return "this row names no volume, so there is no data to delete or clear"
+	}
+	if f == fVolumes && m.vols == nil {
+		if m.target == TargetGlobal {
+			return "byre couldn't use an engine when this editor opened, so it can't delete or clear volume data — start Docker or Podman and reopen it"
+		}
 		return "no engine here to delete or clear volume data — a project's editor, or byre config --global for machine volumes, can"
 	}
 	if f == fVolumes && r.kind == rowSkill && m.volumeDataReachable(r) {
