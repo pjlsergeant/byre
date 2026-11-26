@@ -138,7 +138,9 @@ func emptyVolumeData(r engineRunner, physical string, labels []string) (string, 
 		}
 		return "", fmt.Errorf("emptying the volume on %s: %w", r.Engine(), err)
 	}
-	return fmt.Sprintf("emptied in place — still mounted by %s", holderList(hs)), nil
+	// A running agent keeps what it read in memory (a login especially) and
+	// can write it back, refilling the volume for every box sharing it.
+	return fmt.Sprintf("emptied in place — still mounted by %s; restart the agent in those boxes, or it may write back what it still holds (a login, say)", holderList(hs)), nil
 }
 
 // machineVolumeAdmin is the --global editor's VolumeAdmin: the volumes that

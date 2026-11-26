@@ -55,7 +55,10 @@ open `byre config --global` and press enter on its row under **Volumes**
 disk). **Delete** removes the volume, and refuses while a box is using
 it, naming those boxes. **Clear** empties it and keeps it, and works
 while boxes are running -- the way to force a fresh shared login without
-closing every window. Running boxes see the volume empty at once.
+closing every window. Running boxes see the volume empty at once, but
+an agent already running keeps what it read in memory and may write it
+back -- a login refreshing its token, say. So after a Clear, restart the
+agent in each box still using the volume, then log in once.
 
 **Moved the project, or moving it to another machine?** `byre rehome`
 and `byre backup` / `byre restore` carry these volumes across:

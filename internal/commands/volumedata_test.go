@@ -72,6 +72,9 @@ func TestEmptyVolumeDataRunsInTheHoldersImage(t *testing.T) {
 	if !strings.Contains(note, "byre-web-1") {
 		t.Fatalf("note must name who still mounts it: %q", note)
 	}
+	if !strings.Contains(note, "restart the agent") {
+		t.Fatalf("note must say to restart the agents still holding it: %q", note)
+	}
 }
 
 // With nothing mounting it, clear removes the volume and creates it again
